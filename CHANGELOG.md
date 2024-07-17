@@ -2,6 +2,13 @@
 
 ## WIP
 
+## Added
+- [Platform] native on arm64 Linux. [Thx @aldebogdanov]
+- [Datalog] `cardinality` function to count the number of unique values of an
+  attribute
+- [Datalog] `attr-size` function to count the number of datoms with the
+  given attribute
+
 ## Fixed
 - [Datalog] Planner: nested logic predicates.
 - [Datalog] Planner: multiple predicates turned ranges.

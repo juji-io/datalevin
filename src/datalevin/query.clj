@@ -27,6 +27,7 @@
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.map.mutable.primitive ObjectDoubleHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
@@ -157,14 +158,14 @@
       (str "Merge " (vec vars) " by scanning " (mapv first attrs-v) ".")
       (str "Filter by predicates on " (mapv first attrs-v) "."))))
 
-(defrecord LinkStep [type index attr var fidx in out cols save]
+(defrecord LinkStep [type index attr var fidx in out cols save rratio sratio]
 
   IStep
   (-execute [_ context db rel]
     (let [tuples (:tuples rel)
           out-rel
           (-> rel
-              (update :attrs update-attrs [var])
+              (update :attrs update-attrs (if fidx [] [var]))
               (assoc :tuples
                      (cond
                        (int? var) (db/-val-eq-scan-e db tuples index attr var)
@@ -1731,18 +1732,18 @@
 
 (defn- estimate-scan-v-size
   [db ^long e-size steps]
-  (let [{:keys [know-e? ^long mcount]} (first steps)]
+  (let [{:keys [know-e?] res1 :result sp1 :sample} (first steps)]
     (if know-e?
       1
       (let [{:keys [result sample]} (peek steps)
             ^double selectivity
             (cond
-              result (let [s (.size ^List (:tuples result))]
-                       (if (< 0 s) (/ s mcount) 0.0009))
-              sample (let [s (.size ^List (:tuples sample))]
-                       (if (< 0 s)
-                         (/ s ^long c/init-exec-size-threshold)
-                         0.0009)))]
+              result (let [s1 (.size ^List (:tuples res1))
+                           s  (.size ^List (:tuples result))]
+                       (if (< 0 s) (/ s s1) 0.0009))
+              sample (let [s1 (.size ^List (:tuples sp1))
+                           s  (.size ^List (:tuples sample))]
+                       (if (< 0 s) (/ s s1) 0.0009)))]
         (estimate-round (* e-size selectivity))))))
 
 (defn- estimate-scan-v-cost
@@ -1852,7 +1853,8 @@
         fidx  (find-index tgt lcols)
         cols  (cond-> (enrich-cols lcols index attr)
                 (nil? fidx) (conj tgt))]
-    [(LinkStep. type index attr tgt fidx in new-key cols *save-intermediate*)
+    [(LinkStep. type index attr tgt fidx in new-key cols *save-intermediate*
+                nil nil)
      (or fidx (dec (count cols)))]))
 
 (defn- rev-ref-plan
@@ -1870,12 +1872,6 @@
       [step]
       [step (merge-scan-step db step n-index new-key new-steps attr)])))
 
-(defn- max-domain-cardinality
-  [db {:keys [attr attrs]}]
-  (if attr
-    (db/-cardinality db attr)
-    (apply max (map #(db/-cardinality db %) (vals attrs)))))
-
 (defn- count-init-follows
   [db {:keys [tuples]} attr index]
   (reduce
@@ -1886,27 +1882,32 @@
           (transient #{}) tuples))))
 
 (defn- estimate-link-size
-  [db {:keys [attr attrs tgt] :as link} prev-size last-step index]
-  (let [attr                    (or attr (val (first (dissoc attrs tgt))))
-        {:keys [result sample]} last-step]
+  [db link-e {:keys [attr attrs tgt]} ratios prev-size last-step index]
+  (let [attr                    (or attr (attrs tgt))
+        ratio-key               [link-e attr tgt]
+        {:keys [result sample]} last-step
+        stuples                 (:tuples sample)
+        rtuples                 (:tuples result)]
     (estimate-round
       (cond
-        (seq (:tuples sample))
-        (* prev-size
-           (/ (count-init-follows db sample attr index)
-              (.size ^List (:tuples sample))))
-        (seq (:tuples result))
-        (count-init-follows db result attr index)
-        :else (* prev-size
-                 (/ (db/-count db [nil attr nil])
-                    ^long (max-domain-cardinality db link)))))))
+        (seq stuples) (let [ssize  (count-init-follows db sample attr index)
+                            sratio (double (/ (if (zero? ^long ssize) 1 ssize)
+                                              (.size ^List stuples)))]
+                        (.put ratios ratio-key sratio)
+                        (* prev-size sratio))
+        (seq rtuples) (let [rsize (count-init-follows db result attr index)]
+                        (.put ratios ratio-key
+                              (double (/ rsize (.size ^List rtuples))))
+                        rsize)
+        :else         (* prev-size (.get ratios ratio-key))))))
 
 (defn- estimate-join-size
-  [db link prev-size last-step index new-base-plan]
+  [db link-e link ratios prev-size last-step index new-base-plan]
   (let [steps (:steps new-base-plan)]
     (if (identical? :ref (:type link))
       (estimate-scan-v-size db prev-size steps)
-      (let [e-size (estimate-link-size db link prev-size last-step index)]
+      (let [e-size (estimate-link-size
+                     db link-e link ratios prev-size last-step index)]
         (estimate-scan-v-size db e-size steps)))))
 
 (defn- estimate-e-plan-cost
@@ -1962,20 +1963,21 @@
            size)))
 
 (defn- binary-plan
-  [db nodes new-base-plan prev-plan link-e new-e new-key]
-  (let [link      (some #(when (= new-e (:tgt %)) %)
+  [db nodes base-plans ratios prev-plan link-e new-e-set new-key]
+  (let [new-base  (base-plans new-e-set)
+        new-e     (first new-e-set)
+        link      (some #(when (= new-e (:tgt %)) %)
                         (get-in nodes [link-e :links]))
         last-step (peek (:steps prev-plan))
         index     (index-by-link (:cols last-step) link-e link)
-        prev-size (:size prev-plan)
-        size      (estimate-join-size db link prev-size last-step index
-                                      new-base-plan)
-        e-plan    (e-plan db prev-plan index link new-key new-base-plan size)
-        h-plan    (h-plan prev-plan new-base-plan new-key size)]
+        size      (estimate-join-size db link-e link ratios (:size prev-plan)
+                                      last-step index new-base)
+        e-plan    (e-plan db prev-plan index link new-key new-base size)
+        h-plan    (h-plan prev-plan new-base new-key size)]
     (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- plans
-  [db nodes connected base-plans prev-table]
+  [db nodes connected base-plans prev-plans ratios]
   (persistent!
     (reduce-kv
       (fn [table prev-key prev-plan]
@@ -1987,15 +1989,15 @@
                       new-key  (set/union prev-key new-e)
                       cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
                       {:keys [cost] :as new-plan}
-                      (binary-plan db nodes (base-plans new-e) prev-plan
-                                   (first link-e) (first new-e) new-key)]
+                      (binary-plan db nodes base-plans ratios prev-plan
+                                   (first link-e) new-e new-key)]
                   (if (< ^long cost ^long cur-cost)
                     (assoc! t new-key new-plan)
                     t))
                 t)
               t))
           table connected))
-      (transient {}) prev-table)))
+      (transient {}) prev-plans)))
 
 (defn- connected-pairs
   [nodes component]
@@ -2010,17 +2012,18 @@
   (let [n (count component)]
     (if (= n 1)
       [(base-plan db nodes (first component))]
-      (let [connected (connected-pairs nodes component)
-            tables    (FastList. n)
-            n-1       (dec n)
-            base-ps   (build-base-plans db nodes component)]
-        (.add tables base-ps)
+      (let [connected  (connected-pairs nodes component)
+            tables     (FastList. n)
+            ratios     (ObjectDoubleHashMap.)
+            n-1        (dec n)
+            base-plans (build-base-plans db nodes component)]
+        (.add tables base-plans)
         (dotimes [i n-1]
-          (.add tables (plans db nodes connected base-ps (.get tables i))))
+          (.add tables
+                (plans db nodes connected base-plans (.get tables i) ratios)))
         (reduce
           (fn [plans i]
-            (cons ((.get tables i) (:in (first (:steps (first plans)))))
-                  plans))
+            (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
           [(-> (.get tables n-1) first val)]
           (range (dec n-1) -1 -1))))))
 
