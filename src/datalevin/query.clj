@@ -449,7 +449,9 @@
       (fn [vec k]
         (if (some (fn [e]
                     (if (set? e)
-                      (e k)
+                      (if (set? k)
+                        (not-empty (set/intersection e k))
+                        (e k) )
                       (= e k)))
                   vec1)
           vec
@@ -1536,9 +1538,6 @@
 
 (defn- estimate-round [x] (long (Math/ceil x)))
 
-;; TODO sample instead
-;; (defn- pred-count [^long n] (estimate-round (* ^double c/magic-number-pred n)))
-
 (defn- nillify [v] (if (or (identical? v c/v0) (identical? v c/vmax)) nil v))
 
 (defn- range->start-end [[[_ lv] [_ hv]]] [(nillify lv) (nillify hv)])
@@ -1753,9 +1752,12 @@
                         0 attrs-v)
         ^long n-fidx  (reduce
                         (fn [^long c [_ {:keys [fidx]}]] (if fidx (inc c) c))
-                        0 attrs-v)]
+                        0 attrs-v)
+        n-attrs       (count attrs-v)]
     (* size
-       (count attrs-v)
+       (if (zero? n-attrs)
+         1
+         ^long (estimate-round (* ^double c/magic-cost-attr n-attrs)))
        (if (zero? n-preds)
          1
          ^long (estimate-round (* ^double c/magic-cost-pred n-preds)))
@@ -1884,7 +1886,7 @@
   [db link-e {:keys [attr attrs tgt]} ^ObjectDoubleHashMap ratios
    prev-size last-step index]
   (let [attr                    (or attr (attrs tgt))
-        ratio-key               [link-e attr tgt]
+        ratio-key               [link-e tgt]
         {:keys [result sample]} last-step
         stuples                 (:tuples sample)
         rtuples                 (:tuples result)]
@@ -1915,29 +1917,32 @@
                      db link-e link ratios prev-size last-step index)]
         (estimate-scan-v-size db e-size steps)))))
 
+(defn- estimate-link-cost
+  [{:keys [fidx]} size]
+  (estimate-round (* size (if fidx c/magic-cost-fidx 1))))
+
 (defn- estimate-e-plan-cost
-  [{:keys [size]} cur-steps res-size]
+  [prev-size cur-steps]
   (let [step1 (first cur-steps)
         n     (count cur-steps)]
     (if (and (= 1 n) (instance? MergeScanStep step1))
-      (estimate-scan-v-cost step1 size)
+      (estimate-scan-v-cost step1 prev-size)
       (if (= 1 n)
-        res-size
-        (+ ^long res-size
-           ^long (estimate-scan-v-cost (peek cur-steps) res-size))))))
+        (estimate-link-cost step1 prev-size)
+        (+ ^long (estimate-link-cost step1 prev-size)
+           ^long (estimate-scan-v-cost (peek cur-steps) prev-size))))))
 
 (defn- e-plan
-  [db prev-plan index link new-key new-base-plan result-size]
+  [db {:keys [steps cost size]} index link new-key new-base-plan result-size]
   (let [new-steps (:steps new-base-plan)
-        last-step (peek (:steps prev-plan))
+        last-step (peek steps)
         cur-steps
         (case (:type link)
           :ref    [(merge-scan-step db last-step index new-key new-steps nil)]
           :_ref   (rev-ref-plan db last-step index link new-key new-steps)
           :val-eq (val-eq-plan db last-step index link new-key new-steps))]
     (Plan. cur-steps
-           (+ ^long (:cost prev-plan)
-              ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
+           (+ ^long cost ^long (estimate-e-plan-cost size cur-steps))
            result-size)))
 
 (defn- estimate-hash-cost
@@ -2025,7 +2030,7 @@
             base-plans (build-base-plans db nodes component)]
         ;; (println "connected pairs>" connected)
         (.add tables base-plans)
-        ;; (println "base plans keys->" (keys base-plans))
+        (println "base plans keys->" (keys base-plans))
         (dotimes [i n-1]
           (let [plans (plans db nodes connected base-plans (.get tables i) ratios)]
             ;; (println i "plans count ->" (count plans))
@@ -2035,7 +2040,6 @@
           (fn [plans i]
             (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
           [(apply min-key :cost (vals (.get tables n-1)))]
-          ;; [(-> (.get tables n-1) first val)]
           (range (dec n-1) -1 -1))))))
 
 (defn- dfs
@@ -2095,9 +2099,9 @@
   [context db [f & r]]
   (reduce
     (fn [rel step]
-      ;; (println "step->" step)
+      ;; (println "step->" step "attrs" (:attrs rel))
       (-execute step context db rel))
-    (do ;; (println "init->" f)
+    (do ;;(println "init->" f)
       (-execute f context db nil)) r))
 
 (defn- execute-plan

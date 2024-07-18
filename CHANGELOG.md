@@ -27,7 +27,10 @@
   which, the same number of samples are collected instead. These significantly
   improved subsequent join size estimation, as these initial steps hugely impact
   the final plan.
-- [Datalog] Planner: consider much larger planning search space.
+- [Datalog] Planner: search full plan space initially, until the number of plans
+  considered reaches `plan-space-reduction-threshold` (default 100,000), then
+  greedy search is performed in later steps, as these later steps has less
+  impact on performance.
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed

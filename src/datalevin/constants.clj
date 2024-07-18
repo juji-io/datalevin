@@ -355,33 +355,29 @@
 ;; datalog query engine
 
 (def ^{:dynamic true
-       :doc     "Magic number for predicates when estimating size"}
-  magic-number-pred 0.2)
-
-(def ^{:dynamic true
-       :doc     "Magic number for many cardinality when estimating size"}
-  magic-number-many 2.0)
-
-(def ^{:dynamic true
-       :doc     "Magic number for ratio of attribute presence"}
-  magic-number-presence 0.8)
-
-(def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred 3.0)
+  magic-cost-pred 2.0)
+
+(def ^{:dynamic true
+       :doc     "Cost associated with adding attributes when estimating size"}
+  magic-cost-attr 1.3)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx 1.2)
+  magic-cost-fidx 0.9)
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 3.0)
+  magic-cost-hash 2.0)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
 above which, the same number of items will be sampled instead"}
   init-exec-size-threshold 1024)
+
+(def ^{:dynamic true
+       :doc     "The number of plans considered for initial full planning, above which greedy search is performed"}
+  init-exec-size-threshold 100000)
 
 ;; search engine
 

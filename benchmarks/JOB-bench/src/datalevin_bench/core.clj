@@ -1400,7 +1400,7 @@
              [?mi-idx :movie-info-idx/info-type ?it2]
              ])
 
-(def q-14b '[:find ?mi.info ?mi-idx.info ?t.title
+(def q-14b '[:find (min ?mi-idx.info) (min ?t.title)
              :where
              [?it1 :info-type/info "countries"]
              [?it2 :info-type/info "rating"]
@@ -1461,7 +1461,7 @@
              [?mi :movie-info/note ?mi.note]
              [(like ?mi.note "%internet%")]
              [?mi :movie-info/info ?mi.info]
-             [(like ?mi.info "USA:% 200%")]
+             [(and (like ?mi.info "USA:%") (like ?mi.info "% 200%"))]
              [?t :title/production-year ?t.production-year]
              [(< 2000 ?t.production-year)]
              [?at :aka-title/movie ?t]
@@ -1476,6 +1476,7 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
+;; good plan
 (def q-15b '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1487,7 +1488,7 @@
              [?mi :movie-info/note ?mi.note]
              [(like ?mi.note "%internet%")]
              [?mi :movie-info/info ?mi.info]
-             [(like ?mi.info "USA:% 200%")]
+             [(and (like ?mi.info "USA:%") (like ?mi.info "% 200%"))]
              [?t :title/production-year ?t.production-year]
              [(<= 2005 ?t.production-year 2010)]
              [?at :aka-title/movie ?t]
@@ -1501,7 +1502,7 @@
              [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
              ])
-
+;; horrible
 (def q-15c '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1510,7 +1511,7 @@
              [(like ?mi.note "%internet%")]
              [?mi :movie-info/info ?mi.info]
              [(and (like ?mi.info "USA:%")
-                   (or (like ?mi.info "%199%") (like ?mi.info "%200%")))]
+                   (or (like ?mi.info "% 199%") (like ?mi.info "% 200%")))]
              [?t :title/production-year ?t.production-year]
              [(< 1990 ?t.production-year)]
              [?at :aka-title/movie ?t]
@@ -1525,6 +1526,7 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
+;; oom
 (def q-15d '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1598,6 +1600,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; good plan
 (def q-16d '[:find (min ?an.name) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1742,6 +1745,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; good plan
 (def q-18c '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -1823,6 +1827,7 @@
              [?ci :cast-info/person-role ?chn]
              ])
 
+;; good plan
 (def q-19c '[:find (min ?n.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -1960,6 +1965,7 @@
              [?cc :complete-cast/status ?cct2]
              [?t :title/title ?t.title]])
 
+;; good plan
 (def q-21a '[:find (min ?cn.name) (min ?lt.link) (min ?t.title)
              :where
              [?cn :company-name/country-code ?cn.country-code]
@@ -2283,6 +2289,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; oom
 (def q-24a '[:find (min ?chn.name) (min ?n.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -3236,4 +3243,5 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-13d (d/db conn))
+;; (d/explain {:run? true} q-24a (d/db conn))
+;; =>
