@@ -681,20 +681,22 @@
     (try
       (or (when-let [^Rtx rtx (.poll pool)]
             (.renew rtx))
-          (->Rtx this
-                 (.txnRead env)
-                 (bf/allocate-buffer c/+max-key-size+)
-                 (bf/allocate-buffer c/+max-key-size+)
-                 (bf/allocate-buffer c/+max-key-size+)
-                 (bf/allocate-buffer c/+max-key-size+)
-                 (bf/allocate-buffer c/+max-key-size+)
-                 (volatile! false)))
+          (locking env
+            (->Rtx this
+                   (.txnRead env)
+                   (bf/allocate-buffer c/+max-key-size+)
+                   (bf/allocate-buffer c/+max-key-size+)
+                   (bf/allocate-buffer c/+max-key-size+)
+                   (bf/allocate-buffer c/+max-key-size+)
+                   (bf/allocate-buffer c/+max-key-size+)
+                   (volatile! false))))
       (catch Txn$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.core/open-kv` for more details." {}))))
+           `datalevin.core/open-kv` for more details." {})))
+    )
 
   (return-rtx [_ rtx]
     (.reset ^Rtx rtx)

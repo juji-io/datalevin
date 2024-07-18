@@ -27,6 +27,8 @@
   which, the same number of samples are collected instead. These significantly
   improved subsequent join size estimation, as these initial steps hugely impact
   the final plan.
+- [Datalog] Planner: consider much larger planning search space.
+- [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.

@@ -59,7 +59,8 @@ We translated the SQL schema to equivalent Datalevin schema, shown in
 `datalevin-bench.core` namespace. The attribute names follow Clojure convention.
 
 The same set of CSV files are transformed into datoms and loaded into
-Datalevin by uncomment and run `(def db ...)`.
+Datalevin by uncommenting and running `(def db ...)`. This loads 277,878,514
+dotams into Datalevin.
 
 ## Queries
 
@@ -67,8 +68,8 @@ The `queries` directory contains 113 SQL queries for this benchmark. These
 queries all involve more than 5 tables and often have 10 or more where clauses.
 
 We manually translated the SQL queries to equivalent Datalevin queries, and
-manually verified that Postgresql and Datalevin produce the same results (note
-1).
+manually verified that Postgresql and Datalevin produce the same results for the
+same queries (note 1).
 
 For example, the query 1b of the benchmark:
 
@@ -116,7 +117,7 @@ SSD drive, running Ubuntu 22.04:
 
 * PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled
 by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
-* Datalevin 0.9.8
+* Datalevin 0.9.9
 
 For Postgresql, run `postgres-time` script to run all queries. We report the
 `EXPLAIN ANALYZE` execution time in order to remove the impact of client/server
@@ -130,4 +131,4 @@ Note 1: Manual verification is needed because all the queries return `MIN` resul
   on UTF-8 encoding, as `SELECT LEAST('(as Grosvenor Park)','(Set Decoration
   Rentals)');` returns `"(Set Decoration Rentals)"`. So we removed `MIN()` to
   obtain full results in order to verify that Datalevin produces exactly the
-  same results before running `MIN()`.
+  same results as Postgresql before running `MIN()`.
