@@ -1989,12 +1989,10 @@
   (persistent!
     (reduce-kv
       (fn [table prev-key prev-plan]
-        (reduce
-          (fn [t pair]
-            (let [link-e (peek prev-key)
-                  new-e  (peek pair)]
-              (if (and (= link-e (first pair))
-                       (not (some #(= % new-e) prev-key)))
+        (let [prev-key-set (set prev-key)]
+          (reduce
+            (fn [t [link-e new-e]]
+              (if (and (prev-key-set link-e) (not (prev-key-set new-e)))
                 (let [new-key  (conj prev-key new-e)
                       cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
                       {:keys [cost] :as new-plan}
@@ -2003,8 +2001,8 @@
                   (if (< ^long cost ^long cur-cost)
                     (assoc! t new-key new-plan)
                     t))
-                t)))
-          table connected))
+                t))
+            table connected)))
       (transient {}) prev-plans)))
 
 (defn- connected-pairs
@@ -2025,12 +2023,12 @@
             ratios     (ObjectDoubleHashMap.)
             n-1        (dec n)
             base-plans (build-base-plans db nodes component)]
-        ;; (println "connected pairs->" connected)
+        ;; (println "connected pairs>" connected)
         (.add tables base-plans)
         ;; (println "base plans keys->" (keys base-plans))
         (dotimes [i n-1]
           (let [plans (plans db nodes connected base-plans (.get tables i) ratios)]
-            ;; (println i "plans ->" plans)
+            ;; (println i "plans count ->" (count plans))
             (.add tables plans)))
         ;; (println "tables->" tables)
         (reduce
