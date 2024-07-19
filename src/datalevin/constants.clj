@@ -368,7 +368,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 2.0)
+  magic-cost-hash 2.5)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
@@ -377,7 +377,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "The number of plans considered for initial full planning, above which greedy search is performed"}
-  init-exec-size-threshold 100000)
+  plan-space-reduction-threshold 100000)
 
 ;; search engine
 

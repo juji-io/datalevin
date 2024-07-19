@@ -1826,6 +1826,7 @@
         skip-vs  (set (mapv vars-m skips))
         vars     (sequence (comp (remove keyword?) (remove skip-vs)) vars)
         in       (:out last-step)
+        out      (if (set? in) (set new-key) new-key)
         cols     (into lcols
                        (comp (remove skips)
                           (map (fn [attr]
@@ -1833,7 +1834,7 @@
                                    #{attr v}
                                    attr))))
                        attrs)]
-    (MergeScanStep. index attrs-v vars in new-key cols *save-intermediate*
+    (MergeScanStep. index attrs-v vars in out cols *save-intermediate*
                     nil nil)))
 
 (defn- index-by-link
@@ -1851,11 +1852,12 @@
 (defn- link-step
   [type last-step index attr tgt new-key]
   (let [in    (:out last-step)
+        out   (if (set? in) (set new-key) new-key)
         lcols (:cols last-step)
         fidx  (find-index tgt lcols)
         cols  (cond-> (enrich-cols lcols index attr)
                 (nil? fidx) (conj tgt))]
-    [(LinkStep. type index attr tgt fidx in new-key cols *save-intermediate*)
+    [(LinkStep. type index attr tgt fidx in out cols *save-intermediate*)
      (or fidx (dec (count cols)))]))
 
 (defn- rev-ref-plan
@@ -1895,13 +1897,11 @@
         (seq stuples)
         (let [^long size    (count-init-follows db sample attr index)
               ^double ratio (/ size (.size ^List stuples))]
-          ;; (println "put sample ratio->" ratio-key ratio)
           (.put ratios ratio-key ratio)
           (* ^long prev-size ratio))
         (seq rtuples)
         (let [^long size (count-init-follows db result attr index)
               ratio      (/ size (.size ^List rtuples))]
-          ;; (println "put result ratio->" ratio-key ratio)
           (.put ratios ratio-key ratio)
           size)
         :else
@@ -1960,13 +1960,13 @@
 
 (defn- h-plan
   [prev-plan new-base-plan new-key size]
-  (let [in (:out (peek (:steps prev-plan)))]
+  (let [in  (:out (peek (:steps prev-plan)))
+        out (if (set? in) (set new-key) new-key)]
     (Plan. (conj (-> (:steps new-base-plan)
                      (assoc-in [0 :in] in)
                      (assoc-in [0 :save-in?] true))
-                 (HashJoinStep.
-                   in new-key (hash-cols prev-plan new-base-plan)
-                   *save-intermediate*))
+                 (HashJoinStep. in out (hash-cols prev-plan new-base-plan)
+                                *save-intermediate*))
            (+ ^long (:cost prev-plan)
               ^long (:cost new-base-plan)
               ^long (estimate-hash-cost prev-plan new-base-plan))
@@ -1991,6 +1991,7 @@
 
 (defn- plans
   [db nodes connected base-plans prev-plans ratios]
+  ;; TODO fold when prev-plans count are bigger than 512
   (persistent!
     (reduce-kv
       (fn [table prev-key prev-plan]
@@ -2018,6 +2019,49 @@
       (vswap! pairs conj [e (:tgt link)]))
     @pairs))
 
+#_(defn- adjust-outs
+    [plans]
+    ;; TODO fold
+    (persistent!
+      (reduce-kv
+        (fn [m k plan]
+          (assoc! m k
+                  (update plan :steps
+                          (fn [steps]
+                            (if (= 1 steps)
+                              [(update (first steps) :out set)]
+                              [(first steps)
+                               (update (peek steps) :out set)])))))
+        (transient {}) plans)))
+
+(defn- adjust-in-outs
+  [plan io-key]
+  (update plan :steps
+          (fn [steps]
+            (if (= 1 steps)
+              [(update (first steps) io-key set)]
+              [(update (first steps) io-key set)
+               (update (peek steps) io-key set)]))))
+
+(defn- shrink-space
+  [plans]
+  ;; TODO fold
+  (persistent!
+    (reduce-kv
+      (fn [m k ps]
+        (assoc! m k (-> (peek (apply min-key (fn [[_ plan]] (:cost plan)) ps))
+                        ;; (adjust-in-outs :in)
+                        (adjust-in-outs :out))))
+      (transient {}) (group-by (fn [[k _]] (set k)) plans))))
+
+(defn- trace-steps
+  [tables n-1]
+  (reduce
+    (fn [plans i]
+      (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
+    [(apply min-key :cost (vals (.get tables n-1)))]
+    (range (dec n-1) -1 -1)))
+
 (defn- plan-component
   [db nodes component]
   (let [n (count component)]
@@ -2028,19 +2072,14 @@
             ratios     (ObjectDoubleHashMap.)
             n-1        (dec n)
             base-plans (build-base-plans db nodes component)]
-        ;; (println "connected pairs>" connected)
         (.add tables base-plans)
-        (println "base plans keys->" (keys base-plans))
         (dotimes [i n-1]
-          (let [plans (plans db nodes connected base-plans (.get tables i) ratios)]
-            ;; (println i "plans count ->" (count plans))
-            (.add tables plans)))
-        ;; (println "tables->" tables)
-        (reduce
-          (fn [plans i]
-            (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
-          [(apply min-key :cost (vals (.get tables n-1)))]
-          (range (dec n-1) -1 -1))))))
+          (let [prevs (.get tables i)
+                plans (plans db nodes connected base-plans prevs ratios)]
+            (if (< c/plan-space-reduction-threshold (count plans))
+              (.add tables (shrink-space plans))
+              (.add tables plans))))
+        (trace-steps tables n-1)))))
 
 (defn- dfs
   [graph start]
@@ -2098,11 +2137,8 @@
 (defn- execute-steps
   [context db [f & r]]
   (reduce
-    (fn [rel step]
-      ;; (println "step->" step "attrs" (:attrs rel))
-      (-execute step context db rel))
-    (do ;;(println "init->" f)
-      (-execute f context db nil)) r))
+    (fn [rel step] (-execute step context db rel))
+    (-execute f context db nil) r))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]

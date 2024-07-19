@@ -93,5 +93,6 @@
       sut/q-23a [["movie" "The Analysts"]]
       sut/q-23b [["movie" "The Big Mope"]]
       sut/q-23c [["movie" "Dirt Merchant"]]
-      sut/q-24a []
+      sut/q-24a [["Additional Voices" "Baker, Andrea" "Baiohazâdo 6"]]
+      sut/q-24b [["Tigress" "Jolie, Angelina" "Kung Fu Panda 2"]]
       )))
