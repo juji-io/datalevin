@@ -4,36 +4,34 @@
 
 ## Added
 - [Platform] native on arm64 Linux. [Thx @aldebogdanov]
-- [Datalog] `cardinality` function to count the number of unique values of an
-  attribute
-- [Datalog] `attr-size` function to count the number of datoms with the
-  given attribute
 
 ## Fixed
 - [Datalog] Planner: nested logic predicates.
 - [Datalog] Planner: multiple predicates turned ranges.
 - [Datalog] Planner: missing range turned predicates.
 - [Datalog] Planner: incorrect result columns for certain hash-join step.
-- [Datalog] Planner: need to first try target var to find index for ref-plan.
+- [Datalog] Planner: need to first try target var to find index for :ref plan.
 - [Datalog] Planner: fail to unify with existing vars in certain cases. #263
 - [Datalog] Planner: skip initial attribute when it does not have a var.
 - [Datalog] Planner: target var may be already bound for link step.
+- [Datalog] Planner: missing bound var in merge scan.
 - [Datalog] `like` function failed to match in certain cases.
 - [Datalog] `clear` function also clear the meta dbi
 
 ## Impproved
-- [Datalog] Planner: execute initial step if its size is small during planning,
-  controlled by dynamic var `init-exec-size-threshold` (default 1024), above
-  which, the same number of samples are collected instead. These significantly
-  improved subsequent join size estimation, as these initial steps hugely impact
-  the final plan.
+- [Datalog] Planner: execute initial step if result size is small during
+  planning, controlled by dynamic var `init-exec-size-threshold` (default 1024),
+  above which, the same number of samples are collected instead. These
+  significantly improved subsequent join size estimation, as these initial steps
+  hugely impact the final plan.
 - [Datalog] Planner: search full plan space initially, until the number of plans
   considered reaches `plan-space-reduction-threshold` (default 100,000), then
-  greedy search is performed in later steps, as these later steps has less
-  impact on performance.
+  greedy search is performed in later stages, as these later ones have less
+  impact on performance. This avoids out of memory during planning.
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed
+- [Datalog] maintain an estimated attribute total size during transaction.
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
 
 ## 0.9.8 (2024-06-29)

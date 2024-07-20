@@ -666,13 +666,15 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [_ a]
-    (or (let [as (lmdb/get-value lmdb c/meta ((schema a) :db/aid) :int :id)]
-          (if (= as 0) 1 as))
-        (lmdb/key-range-list-count
-          lmdb c/ave
-          [:closed
-           (datom->indexable schema (d/datom c/e0 a nil) false)
-           (datom->indexable schema (d/datom c/emax a nil) true)] :av)))
+    (let [aid ((schema a) :db/aid)]
+      (or (lmdb/get-value lmdb c/meta aid :int :id)
+          (let [as (lmdb/key-range-list-count
+                     lmdb c/ave
+                     [:closed
+                      (datom->indexable schema (d/datom c/e0 a nil) false)
+                      (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
+            (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
+            as))))
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 

@@ -1,6 +1,7 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
+   [datalevin.db :as db]
    [clojure.java.io :as io]
    [clojure.string :as s]))
 
@@ -134,37 +135,37 @@
 
 (defn- add-comp-cast-type []
   (map (fn [[id content]]
-         (d/datom (+ comp-cast-type-base (Long/parseLong id))
+         (d/datom (+ ^long comp-cast-type-base (Long/parseLong id))
                   :comp-cast-type/kind content))
        (d/read-csv (slurp "data/comp_cast_type.csv"))))
 
 (defn- add-company-type []
   (map (fn [[id content]]
-         (d/datom (+ company-type-base (Long/parseLong id))
+         (d/datom (+ ^long company-type-base (Long/parseLong id))
                   :company-type/kind content))
        (d/read-csv (slurp  "data/company_type.csv"))))
 
 (defn- add-kind-type []
   (map (fn [[id content]]
-         (d/datom (+ kind-type-base (Long/parseLong id))
+         (d/datom (+ ^long kind-type-base (Long/parseLong id))
                   :kind-type/kind content))
        (d/read-csv (slurp "data/kind_type.csv"))))
 
 (defn- add-link-type []
   (map (fn [[id content]]
-         (d/datom (+ link-type-base (Long/parseLong id))
+         (d/datom (+ ^long link-type-base (Long/parseLong id))
                   :link-type/link content))
        (d/read-csv (slurp "data/link_type.csv"))))
 
 (defn- add-role-type []
   (map (fn [[id content]]
-         (d/datom (+ role-type-base (Long/parseLong id))
+         (d/datom (+ ^long role-type-base (Long/parseLong id))
                   :role-type/role content))
        (d/read-csv (slurp "data/role_type.csv"))))
 
 (defn- add-info-type []
   (map (fn [[id content]]
-         (d/datom (+ info-type-base (Long/parseLong id))
+         (d/datom (+ ^long info-type-base (Long/parseLong id))
                   :info-type/info content))
        (d/read-csv (slurp "data/info_type.csv"))))
 
@@ -172,13 +173,13 @@
   (sequence
     (comp
       (map (fn [[id movie linked-movie link-type]]
-             (let [eid (+ movie-link-base (Long/parseLong id))]
+             (let [eid (+ ^long movie-link-base (Long/parseLong id))]
                [(d/datom eid :movie-link/movie
-                         (+ title-base (Long/parseLong movie)))
+                         (+ ^long title-base (Long/parseLong movie)))
                 (d/datom eid :movie-link/linked-movie
-                         (+ title-base (Long/parseLong linked-movie)))
+                         (+ ^long title-base (Long/parseLong linked-movie)))
                 (d/datom eid :movie-link/link-type
-                         (+ link-type-base (Long/parseLong link-type)))])))
+                         (+ ^long link-type-base (Long/parseLong link-type)))])))
       cat)
     (d/read-csv (slurp "data/movie_link.csv"))))
 
@@ -188,9 +189,9 @@
       (map
         (fn [[id person name imdb-index name-pcode-cf
              name-pcode-nf surname-pcode]]
-          (let [eid (+ aka-name-base (Long/parseLong id))]
+          (let [eid (+ ^long aka-name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :aka-name/person
-                              (+ name-base (Long/parseLong person)))
+                              (+ ^long name-base (Long/parseLong person)))
                      (d/datom eid :aka-name/name name)]
               (not (s/blank? imdb-index))
               (conj (d/datom eid :aka-name/imdb-index imdb-index))
@@ -208,16 +209,16 @@
     (comp
       (map
         (fn [[id movie title imdb-index kind production-year phonetic-code
-              episode-of season-nr episode-nr note]]
-          (let [eid (+ aka-title-base (Long/parseLong id))]
+             episode-of season-nr episode-nr note]]
+          (let [eid (+ ^long aka-title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :aka-title/movie
-                              (+ title-base (Long/parseLong movie)))
+                              (+ ^long title-base (Long/parseLong movie)))
                      (d/datom eid :aka-title/title title)]
               (not (s/blank? imdb-index))
               (conj (d/datom eid :aka-title/imdb-index imdb-index))
               (not (s/blank? kind))
               (conj (d/datom eid :aka-title/kind
-                             (+ kind-type-base (Long/parseLong kind))))
+                             (+ ^long kind-type-base (Long/parseLong kind))))
               (not (s/blank? production-year))
               (conj (d/datom eid :aka-title/production-year
                              (Long/parseLong production-year)))
@@ -225,7 +226,7 @@
               (conj (d/datom eid :aka-title/phonetic-code phonetic-code))
               (not (s/blank? episode-of))
               (conj (d/datom eid :aka-title/episode-of
-                             (+ title-base (Long/parseLong episode-of))))
+                             (+ ^long title-base (Long/parseLong episode-of))))
               (not (s/blank? season-nr))
               (conj (d/datom eid :aka-title/season-nr (Long/parseLong season-nr)))
               (not (s/blank? episode-nr))
@@ -240,7 +241,7 @@
     (comp
       (map
         (fn [[id name country-code imdb-id name-pcode-nf name-pcode-sf]]
-          (let [eid (+ company-name-base (Long/parseLong id))]
+          (let [eid (+ ^long company-name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :company-name/name name)]
               (not (s/blank? country-code))
               (conj (d/datom eid :company-name/country-code country-code))
@@ -258,13 +259,13 @@
     (comp
       (map
         (fn [[id movie subject status]]
-          (let [eid (+ complete-cast-base (Long/parseLong id))]
+          (let [eid (+ ^long complete-cast-base (Long/parseLong id))]
             [(d/datom eid :complete-cast/movie
-                      (+ title-base (Long/parseLong movie)))
+                      (+ ^long title-base (Long/parseLong movie)))
              (d/datom eid :complete-cast/subject
-                      (+ comp-cast-type-base (Long/parseLong subject)))
+                      (+ ^long comp-cast-type-base (Long/parseLong subject)))
              (d/datom eid :complete-cast/status
-                      (+ comp-cast-type-base (Long/parseLong status)))])))
+                      (+ ^long comp-cast-type-base (Long/parseLong status)))])))
       cat)
     (d/read-csv (slurp "data/complete_cast.csv"))))
 
@@ -273,7 +274,7 @@
     (comp
       (map
         (fn [[id keyword phonetic-code]]
-          (let [eid (+ keyword-base (Long/parseLong id))]
+          (let [eid (+ ^long keyword-base (Long/parseLong id))]
             [(d/datom eid :keyword/keyword keyword)
              (d/datom eid :keyword/phonetic-code phonetic-code)])))
       cat)
@@ -284,7 +285,7 @@
     (comp
       (map
         (fn [[id name imdb-index imdb-id name-pcode-nf surname-pcode]]
-          (let [eid (+ char-name-base (Long/parseLong id))]
+          (let [eid (+ ^long char-name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :char-name/name name)]
               (not (s/blank? imdb-index))
               (conj (d/datom eid :char-name/imdb-index imdb-index))
@@ -302,14 +303,14 @@
     (comp
       (map
         (fn [[id movie company company-type note]]
-          (let [eid (+ movie-companies-base (Long/parseLong id))]
+          (let [eid (+ ^long movie-companies-base (Long/parseLong id))]
             (cond-> [(d/datom eid :movie-companies/movie
-                              (+ title-base (Long/parseLong movie)))
+                              (+ ^long title-base (Long/parseLong movie)))
                      (d/datom eid :movie-companies/company
-                              (+ company-name-base
+                              (+ ^long company-name-base
                                  (Long/parseLong company)))
                      (d/datom eid :movie-companies/company-type
-                              (+ company-type-base
+                              (+ ^long company-type-base
                                  (Long/parseLong company-type)))]
               (not (s/blank? note))
               (conj (d/datom eid :movie-companies/note note))))))
@@ -320,11 +321,11 @@
   (sequence
     (comp
       (map (fn [[id movie info-type info note]]
-             (let [eid (+ movie-info-base (Long/parseLong id))]
+             (let [eid (+ ^long movie-info-base (Long/parseLong id))]
                (cond-> [(d/datom eid :movie-info/movie
-                                 (+ title-base (Long/parseLong movie)))
+                                 (+ ^long title-base (Long/parseLong movie)))
                         (d/datom eid :movie-info/info-type
-                                 (+ info-type-base
+                                 (+ ^long info-type-base
                                     (Long/parseLong info-type)))
                         (d/datom eid :movie-info/info info)]
                  (not (s/blank? note))
@@ -337,11 +338,11 @@
     (comp
       (map
         (fn [[id movie info-type info note]]
-          (let [eid (+ movie-info-idx-base (Long/parseLong id))]
+          (let [eid (+ ^long movie-info-idx-base (Long/parseLong id))]
             (cond-> [(d/datom eid :movie-info-idx/movie
-                              (+ title-base (Long/parseLong movie)))
+                              (+ ^long title-base (Long/parseLong movie)))
                      (d/datom eid :movie-info-idx/info-type
-                              (+ info-type-base (Long/parseLong info-type)))
+                              (+ ^long info-type-base (Long/parseLong info-type)))
                      (d/datom eid :movie-info-idx/info info)]
               (not (s/blank? note))
               (conj (d/datom eid :movie-info-idx/note note))))))
@@ -352,11 +353,11 @@
   (sequence
     (comp
       (map (fn [[id movie keyword]]
-             (let [eid (+ movie-keyword-base (Long/parseLong id))]
+             (let [eid (+ ^long movie-keyword-base (Long/parseLong id))]
                [(d/datom eid :movie-keyword/movie
-                         (+ title-base (Long/parseLong movie)))
+                         (+ ^long title-base (Long/parseLong movie)))
                 (d/datom eid :movie-keyword/keyword
-                         (+ keyword-base (Long/parseLong keyword)))])))
+                         (+ ^long keyword-base (Long/parseLong keyword)))])))
       cat)
     (d/read-csv reader)))
 
@@ -365,8 +366,8 @@
     (comp
       (map
         (fn [[id name imdb-index imdb-id gender name-pcode-cf name-pcode-nf
-              surname-pcode]]
-          (let [eid (+ name-base (Long/parseLong id))]
+             surname-pcode]]
+          (let [eid (+ ^long name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :name/name name)]
               (not (s/blank? imdb-index))
               (conj (d/datom eid :name/imdb-index imdb-index))
@@ -388,11 +389,11 @@
     (comp
       (map
         (fn [[id person info-type info note]]
-          (let [eid (+ person-info-base (Long/parseLong id))]
+          (let [eid (+ ^long person-info-base (Long/parseLong id))]
             (cond-> [(d/datom eid :person-info/person
-                              (+ name-base (Long/parseLong person)))
+                              (+ ^long name-base (Long/parseLong person)))
                      (d/datom eid :person-info/info-type
-                              (+ info-type-base (Long/parseLong info-type)))
+                              (+ ^long info-type-base (Long/parseLong info-type)))
                      (d/datom eid :person-info/info info)]
               (not (s/blank? note))
               (conj (d/datom eid :person-info/note note))))))
@@ -518,7 +519,7 @@
             ))))
 
 ;; assume data is already loaded into db
-(def conn (d/get-conn "db2"))
+(def conn (d/get-conn "db"))
 
 ;; queries that beat postgres are labeled 'good plan'
 
@@ -1120,6 +1121,7 @@
              [?chn :char-name/name ?chn.name]
              [?t :title/title ?t.title]])
 
+;; bad
 (def q-10c '[:find (min ?chn.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -1310,7 +1312,6 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              [?t :title/title ?t.title]])
 
-;; horrible
 (def q-13b '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1355,7 +1356,6 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
-;; oom
 (def q-13d '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1502,7 +1502,7 @@
              [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
              ])
-;; horrible
+;; bad
 (def q-15c '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1526,7 +1526,6 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-;; oom
 (def q-15d '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -2289,7 +2288,6 @@
              [?t :title/title ?t.title]
              ])
 
-;; oom
 (def q-24a '[:find (min ?chn.name) (min ?n.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -2323,6 +2321,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; good plan
 (def q-24b '[:find (min ?chn.name) (min ?n.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -2384,6 +2383,7 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
+;; good plan
 (def q-25b '[:find (min ?mi-idx.info) (min ?n.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -2505,6 +2505,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; good plan
 (def q-26c '[:find (min ?chn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cct1 :comp-cast-type/kind "cast"]
@@ -2711,6 +2712,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; good plan
 (def q-28c '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cct1 :comp-cast-type/kind "cast"]
@@ -2750,6 +2752,7 @@
              [?t :title/title ?t.title]
              ])
 
+;; bad
 (def q-29a '[:find (min ?n.name)
              :where
              [?cct1 :comp-cast-type/kind "cast"]
@@ -3243,4 +3246,11 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-24b (d/db conn))
+(comment
+
+  (d/explain {:run? true} q-33c (d/db conn))
+
+
+  (db/-count (d/db conn) [nil :title/production-year nil])
+
+  )

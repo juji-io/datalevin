@@ -76,8 +76,11 @@
   (sh "git" "push" "origin" "master"))
 
 (defn run-tests []
-  (println "\n\n[ Running tests ]\n")
+  (println "\n\n[ Running lein tests ]\n")
   (sh "./lein-test" :dir "script")
+
+  (println "\n\n[ Running JOB tests ]\n")
+  (sh "clj -Xtest" :dir "benchmarks/JOB-bench")
 
   (println "\n\n[ Testing jar ]\n")
   (sh "./jar" :dir "script")

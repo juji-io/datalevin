@@ -144,8 +144,18 @@ programming for query planning [10], which is used in almost all RDBMS. Instead
 of considering all possible combinations of join orders, the plan enumeration is
 based on connected components of the query graph. Each connected component has
 its own plan and its own execution sequence. Multiple connected components are
-processed concurrently. The resulting relations are joined afterwards, and the 
+processed concurrently. The resulting relations are joined afterwards, and the
 order of which is based on result size.
+
+### Dynamic plan search policy (new)
+
+The plan search space initially considers all join orders exhaustively, for the
+early steps have huge impact on the quality of the final plan. When the number
+of plans considered reaches a user configurable threshold, the planner turns the
+search policy to a greedy one. The shrinkage of plan search space in the later
+stages of planning has relatively little impact on quality of the final plan,
+while results in significant savings in memory consumption and planning time for
+those complex queries that reach the threshold.
 
 ### Left-deep join tree
 
@@ -162,17 +172,30 @@ also count in base relations, the cardinality estimation obtained there is quite
 accurate, so we want to leverage that accuracy by keeping at least one base
 relation in each join.
 
-### Direct counting for cardinality estimation (new)
+### Direct counting for result size estimation (new)
 
 As mentioned, the main advantage of our system is having more accurate
-cardinality estimation. Instead of relying on statistics based estimations
-using histograms, we count elements directly, because counts in our list based
-triple storage are cheap to obtain. Since the planner is only interested in
-smallest count within one entity class, the counting is capped by the current
-minimum, so the time spent in counting is minimized. Compared with statistics
-based estimation, counting is simple, accurate and always up to date. For those
-cases that cannot be counted, we use magic numbers. In the future, we will add
-sampling based estimations.
+result size estimation. Instead of relying on statistics based estimations
+using histograms and the like, we count elements directly, because counts in our
+list based triple storage are cheap to obtain. Since the planner is only
+interested in smallest count within one entity class, the counting is capped by
+the current minimum, so the time spent in counting is minimized. Compared with
+statistics based estimation, counting is simple, accurate and always up to date.
+
+### Query and data specific sampling (new)
+
+For large result size, even capped counting is too expensive to perform.
+Sampling is used when result size is larger than a threshold. To ensure
+representative samples that are specific to the query and data distribution, we
+rely on the dependencies among entities in the query graph. From the smallest
+entity class, we topologically sort the entity classes according to the
+dependencies, and sample them in that order. Selectivity of all possible joins
+are obtained through sampling initially, and later joins use these selectivity
+ratios to estimate result sizes. This sampling approach is more accurate than
+commonly used cardinality based approach, which relies on strong statistical
+assumptions that are often violated. In addition, the dependency based sampling
+order also limits the data ranges from which we sample, so sampling is cheap to
+perform.
 
 ## Limitation
 
@@ -184,10 +207,10 @@ considered at the moment, future work may consider relations on a hypergraph
 
 ## Benchmarks
 
-Right now, only an existing benchmark developed in Datascript is performed. The 
+Right now, only an existing benchmark developed in Datascript is performed. The
 speedup compared with Datascript engine is substantial. The details can be found
 [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench).
-Queries in this benchmarks are fairly simple, so we plan to port the join order
+Queries in this benchmarks are fairly simple, so we are porting the join order
 benchmark (JOB) [5] from SQL in order to properly exercise the query optimizer.
 
 ## Remark

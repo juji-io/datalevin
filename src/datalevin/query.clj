@@ -1556,17 +1556,11 @@
 (defn- count-k-datoms
   [node db k]
   (reduce-kv
-    (fn [{:keys [mcount] :as node} attr {:keys [val range pred]}]
+    (fn [{:keys [mcount] :as node} attr {:keys [val range]}]
       (let [^long c (cond
-                      (some? val) (db/-count db [nil attr val])
+                      (some? val) (db/-count db [nil attr val] mcount)
                       range       (range-count db attr range mcount)
-                      :else       (db/-count db [nil attr nil]))
-            #_      (cond->
-                        (cond
-                          (some? val) (db/-count db [nil attr val] mcount)
-                          range       (range-count db attr range mcount)
-                          :else       (db/-count db [nil attr nil]))
-                      pred (pred-count))]
+                      :else       (db/-count db [nil attr nil]))]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
           (< c ^long mcount) (-> node
@@ -1584,10 +1578,8 @@
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
   (reduce-kv
-    (fn [{:keys [mcount] :as node} attr {:keys [pred]}]
-      (let [^long c (db/-count db [e attr nil] mcount)
-            #_      (cond-> (db/-count db [e attr nil] mcount)
-                      pred (pred-count))]
+    (fn [{:keys [mcount] :as node} attr _]
+      (let [^long c (db/-count db [e attr nil] mcount)]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
           (< c ^long mcount) (-> node
@@ -1730,20 +1722,22 @@
             isp  (assoc :sample (-sample merge db isp))))))))
 
 (defn- estimate-scan-v-size
-  [db ^long e-size steps]
+  [^long e-size steps]
   (let [{:keys [know-e?] res1 :result sp1 :sample} (first steps)]
     (if know-e?
       1
-      (let [{:keys [result sample]} (peek steps)
-            ^double selectivity
-            (cond
-              result (let [s1 (.size ^List (:tuples res1))
-                           s  (.size ^List (:tuples result))]
-                       (if (< 0 s) (/ s s1) 0.0009))
-              sample (let [s1 (.size ^List (:tuples sp1))
-                           s  (.size ^List (:tuples sample))]
-                       (if (< 0 s) (/ s s1) 0.0009)))]
-        (estimate-round (* e-size selectivity))))))
+      (let [{:keys [result sample]} (peek steps)]
+        (estimate-round
+          (* e-size
+             (cond
+               result (let [s (.size ^List (:tuples result))]
+                        (if (< 0 s)
+                          (/ s (.size ^List (:tuples res1)))
+                          (/ 1 (inc c/init-exec-size-threshold))))
+               sample (let [s (.size ^List (:tuples sample))]
+                        (if (< 0 s)
+                          (/ s (.size ^List (:tuples sp1)))
+                          (/ 1 (inc c/init-exec-size-threshold)))))))))))
 
 (defn- estimate-scan-v-cost
   [{:keys [attrs-v]} ^long size]
@@ -1772,8 +1766,7 @@
                               (cond-> (* ^long mcount (count vars))
                                 pred (* ^double c/magic-cost-pred)))]
     (if (< 1 (count steps))
-      (+ ^long init-cost
-         ^long (estimate-scan-v-cost (peek steps) mcount))
+      (+ ^long init-cost ^long (estimate-scan-v-cost (peek steps) mcount))
       init-cost)))
 
 (defn- base-plan
@@ -1783,7 +1776,7 @@
         steps           (init-node-steps db kv)]
     (Plan. steps
            (estimate-base-cost node steps)
-           (estimate-scan-v-size db mcount steps))))
+           (estimate-scan-v-size mcount steps))))
 
 (defn- build-base-plans
   [db nodes component]
@@ -1805,7 +1798,8 @@
         attrs-v2 (:attrs-v s2)
         attrs2   (mapv first attrs-v2)
         vars-m   (cond-> (zipmap attrs2 (:vars s2))
-                   v1 (assoc attr1 v1))
+                   v1     (assoc attr1 v1)
+                   bound? (assoc attr1 (gensym "?bound")))
         preds-m  (assoc (zipmap attrs2 (mapv (comp :pred peek) attrs-v2))
                         attr1 (cond-> (add-back-range v1 s1)
                                 bound? (add-pred #(= % val1))))
@@ -1818,13 +1812,13 @@
                          #{} attrs-v2)
         skips    (cond-> (conj skips2 skip-attr)
                    (or bound? (nil? v1)) (conj attr1))
-        vars     (replace vars-m attrs)
+        vars'    (replace vars-m attrs)
         lcols    (:cols last-step)
-        fidxs    (mapv #(find-index % lcols) vars)
+        fidxs    (mapv #(find-index % lcols) vars')
         attrs-v  (attrs-vec attrs preds skips fidxs)
         skips    (into #{} (keep (fn [[a m]] (when (m :skip?) a))) attrs-v)
         skip-vs  (set (mapv vars-m skips))
-        vars     (sequence (comp (remove keyword?) (remove skip-vs)) vars)
+        vars     (sequence (comp (remove keyword?) (remove skip-vs)) vars')
         in       (:out last-step)
         out      (if (set? in) (set new-key) new-key)
         cols     (into lcols
@@ -1834,8 +1828,7 @@
                                    #{attr v}
                                    attr))))
                        attrs)]
-    (MergeScanStep. index attrs-v vars in out cols *save-intermediate*
-                    nil nil)))
+    (MergeScanStep. index attrs-v vars in out cols *save-intermediate* nil nil)))
 
 (defn- index-by-link
   [cols link-e {:keys [type attr attrs tgt var]}]
@@ -1912,10 +1905,10 @@
   [db link-e link ratios prev-size last-step index new-base-plan]
   (let [steps (:steps new-base-plan)]
     (if (identical? :ref (:type link))
-      (estimate-scan-v-size db prev-size steps)
-      (let [e-size (estimate-link-size
-                     db link-e link ratios prev-size last-step index)]
-        (estimate-scan-v-size db e-size steps)))))
+      (estimate-scan-v-size prev-size steps)
+      (let [e-size (estimate-link-size db link-e link ratios prev-size
+                                       last-step index)]
+        (estimate-scan-v-size e-size steps)))))
 
 (defn- estimate-link-cost
   [{:keys [fidx]} size]
@@ -1979,15 +1972,17 @@
         size     (estimate-join-size db link-e link ratios (:size prev-plan)
                                      last-step index new-base)
         e-plan   (e-plan db prev-plan index link new-key new-base size)
-        h-plan   (h-plan prev-plan new-base new-key size)]
-    (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
+        ;; h-plan   (h-plan prev-plan new-base new-key size)
+        ]
+    e-plan
+    #_(if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
   (apply min-key :cost
          (for [link (filter #(= new-e (:tgt %)) (get-in nodes [link-e :links]))]
-           (binary-plan* db base-plans ratios prev-plan (peek (:steps prev-plan))
-                         link-e new-e link new-key))))
+           (binary-plan* db base-plans ratios prev-plan
+                         (peek (:steps prev-plan)) link-e new-e link new-key))))
 
 (defn- plans
   [db nodes connected base-plans prev-plans ratios]
@@ -2019,29 +2014,13 @@
       (vswap! pairs conj [e (:tgt link)]))
     @pairs))
 
-#_(defn- adjust-outs
-    [plans]
-    ;; TODO fold
-    (persistent!
-      (reduce-kv
-        (fn [m k plan]
-          (assoc! m k
-                  (update plan :steps
-                          (fn [steps]
-                            (if (= 1 steps)
-                              [(update (first steps) :out set)]
-                              [(first steps)
-                               (update (peek steps) :out set)])))))
-        (transient {}) plans)))
-
-(defn- adjust-in-outs
-  [plan io-key]
-  (update plan :steps
-          (fn [steps]
-            (if (= 1 steps)
-              [(update (first steps) io-key set)]
-              [(update (first steps) io-key set)
-               (update (peek steps) io-key set)]))))
+(defn- adjust-outs
+  [plan]
+  (update plan :steps (fn [steps]
+                        (if (= 1 (count steps))
+                          [(update (first steps) :out set)]
+                          [(first steps)
+                           (update (peek steps) :out set)]))))
 
 (defn- shrink-space
   [plans]
@@ -2050,8 +2029,7 @@
     (reduce-kv
       (fn [m k ps]
         (assoc! m k (-> (peek (apply min-key (fn [[_ plan]] (:cost plan)) ps))
-                        ;; (adjust-in-outs :in)
-                        (adjust-in-outs :out))))
+                        adjust-outs)))
       (transient {}) (group-by (fn [[k _]] (set k)) plans))))
 
 (defn- trace-steps
@@ -2074,8 +2052,8 @@
             base-plans (build-base-plans db nodes component)]
         (.add tables base-plans)
         (dotimes [i n-1]
-          (let [prevs (.get tables i)
-                plans (plans db nodes connected base-plans prevs ratios)]
+          (let [plans (plans db nodes connected base-plans (.get tables i)
+                             ratios)]
             (if (< c/plan-space-reduction-threshold (count plans))
               (.add tables (shrink-space plans))
               (.add tables plans))))
@@ -2137,7 +2115,8 @@
 (defn- execute-steps
   [context db [f & r]]
   (reduce
-    (fn [rel step] (-execute step context db rel))
+    (fn [rel step]
+      (-execute step context db rel))
     (-execute f context db nil) r))
 
 (defn- execute-plan

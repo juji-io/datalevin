@@ -14,7 +14,7 @@
    [clojure.lang IPersistentVector]
    [datalevin.utl BitOps]
    [java.nio ByteBuffer]
-   [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
+   [java.io Writer PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
    [java.lang RuntimeException]))
 
@@ -328,6 +328,11 @@ values;")
                    flags]
   IKVTxable
   (kv-txable? [_] true))
+
+(defmethod print-method KVTxData
+  [^KVTxData d, ^Writer w]
+  (.write w (pr-str [(.-op d) (.-dbi-name d) (.-k d) (.-v d) (.-kt d)
+                     (.-vt d)])))
 
 (defn kv-tx
   ([op dbi k]
