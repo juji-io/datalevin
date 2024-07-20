@@ -441,22 +441,25 @@
 
 (defn hash-attrs [key-fn tuples] (-group-by key-fn '() tuples))
 
-(defn- diff-keys
+(defn- diff-keys*
   "return (- vec2 vec1) elements"
   [vec1 vec2]
   (persistent!
     (reduce
-      (fn [vec k]
-        (if (some (fn [e]
-                    (if (set? e)
-                      (if (set? k)
-                        (not-empty (set/intersection e k))
-                        (e k) )
-                      (= e k)))
+      (fn [d e2]
+        (if (some (fn [e1]
+                    (if (set? e1)
+                      (if (set? e2)
+                        (when-let [is (not-empty (set/intersection e1 e2))]
+                          (every? symbol? is))
+                        (e1 e2))
+                      (= e1 e2)))
                   vec1)
-          vec
-          (conj! vec k)))
+          d
+          (conj! d e2)))
       (transient []) vec2)))
+
+(def diff-keys (memoize diff-keys*))
 
 (defn- attr-keys
   "attrs are map, preserve order by val"
@@ -1729,15 +1732,18 @@
       (let [{:keys [result sample]} (peek steps)]
         (estimate-round
           (* e-size
-             (cond
-               result (let [s (.size ^List (:tuples result))]
-                        (if (< 0 s)
-                          (/ s (.size ^List (:tuples res1)))
-                          (/ 1 (inc c/init-exec-size-threshold))))
-               sample (let [s (.size ^List (:tuples sample))]
-                        (if (< 0 s)
-                          (/ s (.size ^List (:tuples sp1)))
-                          (/ 1 (inc c/init-exec-size-threshold)))))))))))
+             (double
+               (cond
+                 result
+                 (let [s (.size ^List (:tuples result))]
+                   (if (< 0 s)
+                     (/ s (.size ^List (:tuples res1)))
+                     (/ 1 (inc ^long c/init-exec-size-threshold))))
+                 sample
+                 (let [s (.size ^List (:tuples sample))]
+                   (if (< 0 s)
+                     (/ s (.size ^List (:tuples sp1)))
+                     (/ 1 (inc ^long c/init-exec-size-threshold))))))))))))
 
 (defn- estimate-scan-v-cost
   [{:keys [attrs-v]} ^long size]
@@ -1912,7 +1918,7 @@
 
 (defn- estimate-link-cost
   [{:keys [fidx]} size]
-  (estimate-round (* size (if fidx c/magic-cost-fidx 1))))
+  (estimate-round (* ^long size (double (if fidx c/magic-cost-fidx 1.0)))))
 
 (defn- estimate-e-plan-cost
   [prev-size cur-steps]
@@ -1972,10 +1978,8 @@
         size     (estimate-join-size db link-e link ratios (:size prev-plan)
                                      last-step index new-base)
         e-plan   (e-plan db prev-plan index link new-key new-base size)
-        ;; h-plan   (h-plan prev-plan new-base new-key size)
-        ]
-    e-plan
-    #_(if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
+        h-plan   (h-plan prev-plan new-base new-key size)]
+    (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
@@ -2033,7 +2037,7 @@
       (transient {}) (group-by (fn [[k _]] (set k)) plans))))
 
 (defn- trace-steps
-  [tables n-1]
+  [^List tables ^long n-1]
   (reduce
     (fn [plans i]
       (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
@@ -2054,7 +2058,7 @@
         (dotimes [i n-1]
           (let [plans (plans db nodes connected base-plans (.get tables i)
                              ratios)]
-            (if (< c/plan-space-reduction-threshold (count plans))
+            (if (< ^long c/plan-space-reduction-threshold (count plans))
               (.add tables (shrink-space plans))
               (.add tables plans))))
         (trace-steps tables n-1)))))
@@ -2116,6 +2120,8 @@
   [context db [f & r]]
   (reduce
     (fn [rel step]
+      ;; (println "attrs-> " (:attrs rel))
+      ;; (println "step-> " step)
       (-execute step context db rel))
     (-execute f context db nil) r))
 

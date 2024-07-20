@@ -1,8 +1,6 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
-   [datalevin.db :as db]
-   [clojure.java.io :as io]
    [clojure.string :as s]))
 
 (def schema
@@ -3248,9 +3246,8 @@
 
 (comment
 
-  (d/explain {:run? true} q-33c (d/db conn))
+  (d/explain {:run? true} q-33a (d/db conn))
 
 
-  (db/-count (d/db conn) [nil :title/production-year nil])
 
   )
