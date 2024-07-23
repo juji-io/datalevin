@@ -3,6 +3,7 @@
   (:require
    [clojure.walk :as walk]
    [clojure.string :as s]
+   [clojure.core.memoize :as m]
    [clojure.java.io :as io])
   (:import
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -320,7 +321,7 @@
           (FastList.)
           coll))
 
-(defn long-inc ^long [^long x] (inc x))
+(defn long-inc ^long [^long x] (unchecked-inc x))
 
 (def conjv (fnil conj []))
 (def conjs (fnil conj #{}))
@@ -445,11 +446,10 @@
         (link-vars ~vr (var ~n))
         ~vr))))
 
-(defn reservoir-sampling
-  "optimized reservoir sampling, random sample n out of m items, returns a
-  sorted array of sampled indices, or returns nil if n >= m"
+(defn- reservoir-sampling*
   ^longs [^long m ^long n]
-  (when (< n m)
+  (cond
+    (< n m)
     (let [indices (long-array (range n))
           r       (Random.)
           p       (Math/log (- 1.0 (double (/ n m))))]
@@ -458,4 +458,12 @@
           (aset indices (.nextInt r n) i)
           (recur (+ i (long (/ (Math/log (- 1.0 (.nextDouble r))) p)) 1))))
       (Arrays/sort indices)
-      indices)))
+      indices)
+    (= n m) (long-array (range n))
+    :else   nil))
+
+(def
+  ^{:arglists '([m n])
+    :doc      "optimized reservoir sampling, random sample n out of m items, returns a
+  sorted array of sampled indices, or returns nil if n > m"}
+  reservoir-sampling (m/lru reservoir-sampling*))

@@ -21,6 +21,7 @@
    [org.clojure/clojure "1.11.3"]
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
+   [org.clojure/core.memoize "1.1.266"]
    [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.9.4"]
@@ -38,6 +39,7 @@
    [org.roaringbitmap/RoaringBitmap "1.1.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
+   [org.clojure/core.memoize]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
    [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]

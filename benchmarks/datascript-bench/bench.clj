@@ -81,6 +81,7 @@
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"../..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.3\"}
+                  org.clojure/core.memoize {:mvn/version \"1.1.266\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
                   com.taoensso/nippy    {:mvn/version \"3.4.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}

@@ -63,10 +63,8 @@ of elements, which is the most critical input for query planning. Some list
 counts can be immediately read from the index, without performing actual
 range scan to count them. For example, in our storage schema, the number of
 datoms matching `[?e :an-attr "bound value"]` pattern can be obtained from the
-`:ave` index in constant time. Other counts can also be cheaply counted. For
-example, cardinality (number of distinct values) of an attribute can be obtained
-by counting only the number of keys in an `ave` range. There is no need to
-maintain expensive and often inaccurate statistics.
+`:ave` index in constant time, without maintaining specialized statistics
+collecting facilities and storage.
 
 ## Query Optimizations
 
@@ -182,20 +180,24 @@ interested in smallest count within one entity class, the counting is capped by
 the current minimum, so the time spent in counting is minimized. Compared with
 statistics based estimation, counting is simple, accurate and always up to date.
 
-### Query and data specific sampling (new)
+### Query specific sampling (new)
 
 For large result size, even capped counting is too expensive to perform.
 Sampling is used when result size is larger than a threshold. To ensure
 representative samples that are specific to the query and data distribution, we
-rely on the dependencies among entities in the query graph. From the smallest
-entity class, we topologically sort the entity classes according to the
-dependencies, and sample them in that order. Selectivity of all possible joins
-are obtained through sampling initially, and later joins use these selectivity
-ratios to estimate result sizes. This sampling approach is more accurate than
-commonly used cardinality based approach, which relies on strong statistical
-assumptions that are often violated. In addition, the dependency based sampling
-order also limits the data ranges from which we sample, so sampling is cheap to
-perform.
+perform sampling by execution under actual query conditions. This sampling
+approach is more accurate than commonly used cardinality based approach, which
+relies on strong statistical assumptions that are often violated.
+
+During transaction, each attribute also maintains a representative sample of
+entity ids that has it. This is used when an attribute has no condition
+constraining it in the query. Otherwise, online sampling is performed during
+query. Both use reservoir sampling methods.
+
+A sample of base entity IDs are collected first, then merge scans are performed to
+obtain base selectivity ratios. Finally, the selectivity of all possible two way
+joins are obtained by counting the number of linked entity ids based on these
+samples. Later joins use these selectivity ratios to estimate result sizes.
 
 ## Limitation
 

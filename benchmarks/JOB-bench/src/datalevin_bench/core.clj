@@ -3246,7 +3246,9 @@
 
 (comment
 
-  (d/explain {:run? true} q-33a (d/db conn))
+  (d/explain {:run? true} q-31a (d/db conn))
+
+
 
 
 

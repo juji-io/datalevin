@@ -185,3 +185,10 @@
         (when (pred (aget tuple idx))
           (.add new-tuples tuple))))
     (relation! attrs new-tuples)))
+
+(defn projection
+  [{:keys [tuples]} index]
+  (persistent!
+    (reduce
+      (fn [s ^objects t] (conj! s (aget t index)))
+      (transient #{}) tuples)))

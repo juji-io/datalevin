@@ -674,6 +674,32 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest int-int-range-query-test
+  (let [dir  (u/tmp-dir (str "int-int-range-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
+    (l/open-dbi lmdb "t")
+    (l/transact-kv lmdb "t" [[:put [2 4] 4]
+                             [:put [1 2] 2]
+                             [:put [3 2] 5]
+                             [:put [5 2] 6]
+                             [:put [1 3] 3]
+                             [:put [1 1] 1]
+                             ]
+                   :int-int :id)
+    (is (= [[[2 4] 4] [[3 2] 5]]
+           (l/get-range lmdb "t" [:closed [2 2] [3 3]] :int-int :id)))
+    (is (= [[[3 2] 5] [[5 2] 6]]
+           (l/get-range lmdb "t"
+                        [:closed-open [3 0] [5 Integer/MAX_VALUE]]
+                        :int-int :id)))
+    (is (= [[[3 2] 5]]
+           (l/get-range lmdb "t"
+                        [:closed [3 0] [4 0]] :int-int :id)))
+    (is (= [] (l/get-range lmdb "t"
+                           [:closed [13 0] [14 0]] :int-int :id)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
 (deftest sample-key-freqs-test
   (let [dir  (u/tmp-dir (str "sample-keys-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})

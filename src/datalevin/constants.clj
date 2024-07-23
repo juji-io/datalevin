@@ -376,8 +376,12 @@ above which, the same number of items will be sampled instead"}
   init-exec-size-threshold 1024)
 
 (def ^{:dynamic true
-       :doc     "The number of plans considered for initial full planning, above which greedy search is performed"}
-  plan-space-reduction-threshold 100000)
+       :doc     "The number of plans considered for initial full planning, beyond which greedy search is performed"}
+  plan-space-reduction-threshold 20000)
+
+(def ^{:dynamic true
+       :doc     "The maximal number of items from which direct sampling will be performed"}
+  max-direct-sample-base 20000000)
 
 ;; search engine
 

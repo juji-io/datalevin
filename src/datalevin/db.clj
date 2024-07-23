@@ -4,6 +4,7 @@
    [clojure.walk]
    [clojure.data]
    [clojure.set]
+   [clojure.core.memoize :as m]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
    [datalevin.lru :as lru]
    [datalevin.datom :as d
@@ -60,9 +61,12 @@
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
   (-sample-init-tuples [db a mcount v-range pred get-v?])
+  (-e-sample [db a])
   (-eav-scan-v [db tuples eid-idx attrs-v])
   (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound])
-  (-val-eq-filter-e [db tuples v-idx attr f-idx]))
+  (-val-eq-filter-e [db tuples v-idx attr f-idx])
+  (-sample-link-e [db vs attr mcount])
+  )
 
 ;; ----------------------------------------------------------------------------
 
@@ -141,8 +145,14 @@
   (-sample-init-tuples
     [db a mcount v-ranges pred get-v?]
     (wrap-cache
-        store [:sample-init-tuples a v-ranges pred get-v?]
+        store [:sample-init-tuples a mcount v-ranges pred get-v?]
       (s/sample-ave-tuples store a mcount v-ranges pred get-v?)))
+
+  (-e-sample
+    [db a]
+    (wrap-cache
+        store [:e-sample a]
+      (s/e-sample store a)))
 
   (-eav-scan-v
     [db tuples eid-idx attrs-v]
@@ -166,6 +176,12 @@
     (wrap-cache
         store [:val-eq-filter-e tuples v-idx attr f-idx]
       (s/val-eq-filter-e store tuples v-idx attr f-idx)))
+
+  (-sample-link-e
+    [db vs attr mcount]
+    (wrap-cache
+        store [:sample-link-e vs attr mcount]
+      (s/sample-link-e store vs attr mcount)))
 
   ISearch
   (-search
