@@ -1985,7 +1985,7 @@
 
 (defn- plans
   [db nodes pairs base-plans prev-plans ratios]
-  (apply merge-with
+  (apply u/merge-with
          (fn [p1 p2] (if (< ^long (:cost p2) ^long (:cost p1)) p2 p1))
          (pmap
            (fn [[prev-key prev-plan]]
@@ -2019,13 +2019,13 @@
   (persistent!
     (reduce-kv
       (fn [m k ps]
-        (assoc! m k (-> (peek (apply min-key (fn [[_ plan]] (:cost plan)) ps))
+        (assoc! m k (-> (peek (apply min-key (fn [p] (:cost (peek p))) ps))
                         (update :steps (fn [ss]
                                          (if (= 1 (count ss))
                                            [(update (first ss) :out set)]
                                            [(first ss)
                                             (update (peek ss) :out set)]))))))
-      (transient {}) (group-by (fn [[k _]] (set k)) plans))))
+      (transient {}) (group-by (fn [p] (set (nth p 0))) plans))))
 
 (defn- trace-steps
   [^List tables ^long n-1]

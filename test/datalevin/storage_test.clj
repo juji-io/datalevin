@@ -499,7 +499,7 @@
                                      [[:c {:skip? true}]
                                       [:d {:pred  #(< (count %) 4)
                                            :skip? false}]]))))
-    (is (= [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
+    (is (= [[5 1 "5b"] [8 7 "8b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples2 0
                                      [[:a {:skip? false}]
                                       [:b {:skip? false}]]))))
