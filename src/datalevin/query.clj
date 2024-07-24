@@ -2345,8 +2345,8 @@
            pt (double (/ planning-time 1000000))]
        (vswap! *explain* assoc
                :actual-result-size (count result-set)
-               :planning-time (str (format "%.3f" pt) " ms")
-               :execution-time (str (format "%.3f" et) " ms")
+               :planning-time (format "%.3f" pt)
+               :execution-time (format "%.3f" et)
                :opt-clauses opt-clauses
                :query-graph (walk/postwalk
                               (fn [e]

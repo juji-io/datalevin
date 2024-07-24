@@ -1,6 +1,7 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
+   [clojure.java.io :as io]
    [clojure.string :as s]))
 
 (def schema
@@ -518,6 +519,7 @@
 
 ;; assume data is already loaded into db
 (def conn (d/get-conn "db"))
+(def db (d/db conn))
 
 ;; queries that beat postgres are labeled 'good plan'
 
@@ -3244,9 +3246,29 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
+(def queries (into []
+                   (filter #(s/starts-with? (name %) "q-"))
+                   (sort (keys (ns-publics 'datalevin-bench.core)))))
+
+(defn -main [&opts]
+  (println "The Join Order Benchmark 1Pass test ...")
+
+  (with-open [w (io/writer "datalevin_onepass_time.csv")]
+    (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
+    (doseq [q queries]
+      (let [qname (s/replace (name q) "q-" "")
+            query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
+            res   (d/explain {:run? true} query db)]
+        (d/write-csv w [[qname (res :planning-time) (res :execution-time)]]))))
+
+  (d/close conn)
+
+  (println "Done. Results are in datalevin_onepass_time.csv"))
+
 (comment
 
   (d/explain {:run? true} q-31a (d/db conn))
+
 
 
 
