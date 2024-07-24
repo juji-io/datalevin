@@ -19,17 +19,16 @@
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
-   [datalevin.bits :as b]
-   [clojure.core.memoize :as m])
+   [datalevin.bits :as b])
   (:import
    [java.util Arrays List]
+   [java.util.concurrent ConcurrentHashMap]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [org.eclipse.collections.impl.map.mutable.primitive ObjectDoubleHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
@@ -444,7 +443,9 @@
 
 (defn hash-attrs [key-fn tuples] (-group-by key-fn '() tuples))
 
-(defn- diff-keys*
+(def op-cache (lru/cache 256 :constant))
+
+(defn- diff-keys
   "return (- vec2 vec1) elements"
   [vec1 vec2]
   (persistent!
@@ -453,7 +454,7 @@
         (if (some (fn [e1]
                     (if (set? e1)
                       (if (set? e2)
-                        (when-let [is (not-empty (set/intersection e1 e2))]
+                        (when-let [is (not-empty (u/intersection e1 e2))]
                           (every? symbol? is))
                         (e1 e2))
                       (= e1 e2)))
@@ -461,8 +462,6 @@
           d
           (conj! d e2)))
       (transient []) vec2)))
-
-(def diff-keys (m/lru diff-keys*))
 
 (defn- attr-keys
   "attrs are map, preserve order by val"
@@ -1645,37 +1644,37 @@
   (mapv (fn [a p f]
           [a (cond-> {:pred p :skip? false :fidx nil}
                (skips a) (assoc :skip? true)
-               f         (assoc :fidx f :skip? true)
-               )])
+               f         (assoc :fidx f :skip? true))])
         attrs preds fidxs))
 
 (defn- init-steps
   [db e node single?]
   (let [{:keys [bound free mpath mcount]}       node
         {:keys [var val range pred] :as clause} (get-in node mpath)
-        schema                                  (db/-schema db)
-        attr                                    (peek mpath)
-        know-e?                                 (int? e)
-        no-var?                                 (or (not var) (qu/placeholder? var))
-        init                                    (cond-> (map->InitStep
-                                                          {:attr attr :vars [e] :out [e]
-                                                           :mcount (:count clause)
-                                                           :save *save-intermediate*})
-                                                  var     (assoc :pred pred
-                                                                 :vars (cond-> [e]
-                                                                         (not no-var?) (conj var))
-                                                                 :range range)
-                                                  val     (assoc :val val)
-                                                  know-e? (assoc :know-e? true)
-                                                  true    (#(assoc % :cols (if (= 1 (count (:vars %)))
-                                                                             [e]
-                                                                             [e #{attr var}]))))
-        ectx                                    (map->Context {})
-        init                                    (if single?
-                                                  init
-                                                  (if (< ^long c/init-exec-size-threshold ^long mcount)
-                                                    (assoc init :sample (-sample init db nil))
-                                                    (assoc init :result (-execute init ectx db nil))))]
+
+        schema  (db/-schema db)
+        attr    (peek mpath)
+        know-e? (int? e)
+        no-var? (or (not var) (qu/placeholder? var))
+        init    (cond-> (map->InitStep
+                          {:attr attr :vars [e] :out [e]
+                           :mcount (:count clause)
+                           :save *save-intermediate*})
+                  var     (assoc :pred pred
+                                 :vars (cond-> [e]
+                                         (not no-var?) (conj var))
+                                 :range range)
+                  val     (assoc :val val)
+                  know-e? (assoc :know-e? true)
+                  true    (#(assoc % :cols (if (= 1 (count (:vars %)))
+                                             [e]
+                                             [e #{attr var}]))))
+        ectx    (map->Context {})
+        init    (if single?
+                  init
+                  (if (< ^long c/init-exec-size-threshold ^long mcount)
+                    (assoc init :sample (-sample init db nil))
+                    (assoc init :result (-execute init ectx db nil))))]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
@@ -1685,7 +1684,7 @@
                                           (update :pred add-pred #(= val %))
                                           (assoc :var (gensym "?bound")))])))
               all     (->> (concatv bound1 (dissoc free attr))
-                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
+                           (sort-by (fn [[a _]] ((schema a) :db/aid))))
               attrs   (mapv first all)
               vars    (mapv attr-var all)
               vars-m  (zipmap attrs vars)
@@ -1711,6 +1710,8 @@
             ires (assoc :result (-execute merge ectx db ires))
             isp  (assoc :sample (-sample merge db isp))))))))
 
+(def default-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
+
 (defn- estimate-scan-v-size
   [^long e-size steps]
   (let [{:keys [know-e?] res1 :result sp1 :sample} (first steps)]
@@ -1719,18 +1720,15 @@
       (let [{:keys [result sample]} (peek steps)]
         (estimate-round
           (* e-size
-             (double
-               (cond
-                 result
-                 (let [s (.size ^List (:tuples result))]
-                   (if (< 0 s)
-                     (/ s (.size ^List (:tuples res1)))
-                     (/ 1 (inc ^long c/init-exec-size-threshold))))
-                 sample
-                 (let [s (.size ^List (:tuples sample))]
-                   (if (< 0 s)
-                     (/ s (.size ^List (:tuples sp1)))
-                     (/ 1 (inc ^long c/init-exec-size-threshold))))))))))))
+             (double (cond
+                       result (let [s (.size ^List (:tuples result))]
+                                (if (< 0 s)
+                                  (/ s (.size ^List (:tuples res1)))
+                                  default-ratio))
+                       sample (let [s (.size ^List (:tuples sample))]
+                                (if (< 0 s)
+                                  (/ s (.size ^List (:tuples sp1)))
+                                  default-ratio))))))))))
 
 (defn- estimate-scan-v-cost
   [{:keys [attrs-v]} ^long size]
@@ -1769,9 +1767,9 @@
    (let [node   (get nodes e)
          mcount (:mcount node)]
      (when-not (zero? ^long mcount)
-       (if single?
-         (Plan. (init-steps db e node single?) nil nil)
-         (let [isteps (init-steps db e node single?)]
+       (let [isteps (init-steps db e node single?)]
+         (if single?
+           (Plan. isteps nil nil)
            (Plan. isteps
                   (estimate-base-cost node isteps)
                   (estimate-scan-v-size mcount isteps))))))))
@@ -1879,7 +1877,7 @@
     1 (r/projection rel index)))
 
 (defn- estimate-link-size
-  [db link-e {:keys [attr attrs tgt]} ^ObjectDoubleHashMap ratios
+  [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
    prev-size last-step index]
   (let [attr                    (or attr (attrs tgt))
         ratio-key               [link-e tgt]
@@ -1899,8 +1897,8 @@
           (.put ratios ratio-key ratio)
           size)
         :else
-        (let [ratio (.getIfAbsent ratios ratio-key 0.0009)]
-          (* ^long prev-size ratio))))))
+        (* ^long prev-size
+           ^double (.getOrDefault ratios ratio-key default-ratio))))))
 
 (defn- estimate-join-size
   [db link-e link ratios prev-size last-step index new-base-plan]
@@ -1917,14 +1915,13 @@
 
 (defn- estimate-e-plan-cost
   [prev-size cur-steps]
-  (let [step1 (first cur-steps)
-        n     (count cur-steps)]
-    (if (and (= 1 n) (instance? MergeScanStep step1))
-      (estimate-scan-v-cost step1 prev-size)
-      (if (= 1 n)
-        (estimate-link-cost step1 prev-size)
-        (+ ^long (estimate-link-cost step1 prev-size)
-           ^long (estimate-scan-v-cost (peek cur-steps) prev-size))))))
+  (let [step1 (first cur-steps)]
+    (if (= 1 (count cur-steps))
+      (if (instance? MergeScanStep step1)
+        (estimate-scan-v-cost step1 prev-size)
+        (estimate-link-cost step1 prev-size))
+      (+ ^long (estimate-link-cost step1 prev-size)
+         ^long (estimate-scan-v-cost (peek cur-steps) prev-size)))))
 
 (defn- e-plan
   [db {:keys [steps cost size]} index link new-key new-base-plan result-size]
@@ -2048,7 +2045,7 @@
           [nil]
           (let [pairs  (connected-pairs nodes component)
                 tables (FastList. n)
-                ratios (ObjectDoubleHashMap.)
+                ratios (ConcurrentHashMap.)
                 n-1    (dec n)]
             (.add tables base-plans)
             (dotimes [i n-1]

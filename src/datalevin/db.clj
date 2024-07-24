@@ -65,7 +65,7 @@
   (-eav-scan-v [db tuples eid-idx attrs-v])
   (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound])
   (-val-eq-filter-e [db tuples v-idx attr f-idx])
-  (-sample-link-e [db vs attr mcount])
+  ;; (-sample-link-e [db vs attr mcount])
   )
 
 ;; ----------------------------------------------------------------------------
@@ -177,11 +177,11 @@
         store [:val-eq-filter-e tuples v-idx attr f-idx]
       (s/val-eq-filter-e store tuples v-idx attr f-idx)))
 
-  (-sample-link-e
-    [db vs attr mcount]
-    (wrap-cache
-        store [:sample-link-e vs attr mcount]
-      (s/sample-link-e store vs attr mcount)))
+  #_(-sample-link-e
+      [db vs attr mcount]
+      (wrap-cache
+          store [:sample-link-e vs attr mcount]
+        (s/sample-link-e store vs attr mcount)))
 
   ISearch
   (-search

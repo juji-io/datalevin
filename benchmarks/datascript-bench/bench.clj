@@ -177,4 +177,4 @@
         (run-benchmarks version vm benchmarks)))))
 
 (shutdown-agents)
-;; (System/exit 0)
+(System/exit 0)

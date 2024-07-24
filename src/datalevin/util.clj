@@ -6,8 +6,9 @@
    [clojure.core.memoize :as m]
    [clojure.java.io :as io])
   (:import
+   [clojure.lang IEditableCollection IPersistentSet ITransientSet]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util Random Arrays]
+   [java.util Random Arrays Iterator]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -322,6 +323,7 @@
           coll))
 
 (defn long-inc ^long [^long x] (unchecked-inc x))
+(defn long-dec ^long [^long x] (unchecked-dec x))
 
 (def conjv (fnil conj []))
 (def conjs (fnil conj #{}))
@@ -352,7 +354,11 @@
 
 (defn index-of
   [pred xs]
-  (some (fn [[x idx]] (when (pred x) idx)) (mapv vector xs (range))))
+  (loop [i 0 xs xs]
+    (when (seq xs)
+      (if (pred (first xs))
+        i
+        (recur (inc i) (rest xs))))))
 
 (defn idxs-of
   [pred coll]
@@ -375,6 +381,27 @@
         (comp (map-indexed #(when-not (rm-idxs-set %1) %2))
            (remove nil?))
         coll))
+
+(defn intersection
+  [^IEditableCollection s1 ^IPersistentSet s2]
+  (if (< (count s2) (count s1))
+    (recur s2 s1)
+    (let [^Iterator items (.iterator ^Iterable s1)]
+      (if (instance? IEditableCollection s1)
+        (loop [^ITransientSet out (.asTransient s1)]
+          (if (.hasNext items)
+            (let [item (.next items)]
+              (if (.contains s2 item)
+                (recur out)
+                (recur (.disjoin out item))))
+            (.persistent out)))
+        (loop [^IPersistentSet out s1]
+          (if (.hasNext items)
+            (let [item (.next items)]
+              (if (.contains s2 item)
+                (recur out)
+                (recur (.disjoin out item))))
+            out))))))
 
 (defn array? [^Object x] (some-> x .getClass .isArray))
 

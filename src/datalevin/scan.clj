@@ -288,14 +288,14 @@
   (let [^Iterator iter (.iterator iterable)]
     (loop []
       (if (.hasNext iter)
-        (let [kv             (.next iter)
-              ^ByteBuffer kb (l/k kv)
-              ^ByteBuffer vb (l/v kv)]
+        (let [kv (.next iter)]
           (if raw-pred?
             (do (when-let [res (pred kv)] (.cons holder res))
                 (recur))
-            (let [rk (b/read-buffer kb k-type)
-                  rv (b/read-buffer vb v-type)]
+            (let [^ByteBuffer kb (l/k kv)
+                  ^ByteBuffer vb (l/v kv)
+                  rk             (b/read-buffer kb k-type)
+                  rv             (b/read-buffer vb v-type)]
               (when-let [res (pred rk rv)] (.cons holder res))
               (recur))))
         holder))))

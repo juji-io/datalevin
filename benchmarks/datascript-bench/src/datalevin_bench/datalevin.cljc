@@ -124,40 +124,43 @@
 
 (defn ^:export add-1 []
   (core/bench-10
-    (reduce
-      (fn [db p]
-        (-> db
-            (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
-            (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-            (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
-            (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
-            (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
-      (d/empty-db (u/tmp-dir (str "datalevin-bench-add-1" (UUID/randomUUID)))
-                  schema {:kv-opts
-                          {:flags #{:nordahead :notls :writemap :nosync}}})
-      core/people20k)))
+    (d/close-db
+      (reduce
+        (fn [db p]
+          (-> db
+              (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+              (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+              (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
+              (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+              (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
+        (d/empty-db (u/tmp-dir (str "datalevin-bench-add-1" (UUID/randomUUID)))
+                    schema {:kv-opts
+                            {:flags #{:nordahead :notls :writemap :nosync}}})
+        core/people20k))))
 
 
 (defn ^:export add-5 []
   (core/bench-10
-    (reduce (fn [db p] (d/db-with db [p]))
-            (d/empty-db (u/tmp-dir (str "datalevin-bench-add-5"
-                                        (UUID/randomUUID)))
-                        schema
-                        {:kv-opts
-                         {:flags #{:nordahead :notls :writemap :nosync}}})
-            core/people20k)))
+    (d/close-db
+      (reduce (fn [db p] (d/db-with db [p]))
+              (d/empty-db (u/tmp-dir (str "datalevin-bench-add-5"
+                                          (UUID/randomUUID)))
+                          schema
+                          {:kv-opts
+                           {:flags #{:nordahead :notls :writemap :nosync}}})
+              core/people20k))))
 
 
 (defn ^:export add-all []
   (core/bench-10
-    (d/db-with
-      (d/empty-db (u/tmp-dir (str "datalevin-bench-add-all"
-                                  (UUID/randomUUID)))
-                  schema
-                  {:kv-opts
-                   {:flags #{:nordahead :notls :writemap :nosync}}})
-      core/people20k)))
+    (d/close-db
+      (d/db-with
+        (d/empty-db (u/tmp-dir (str "datalevin-bench-add-all"
+                                    (UUID/randomUUID)))
+                    schema
+                    {:kv-opts
+                     {:flags #{:nordahead :notls :writemap :nosync}}})
+        core/people20k))))
 
 
 (defn ^:export init []
@@ -169,10 +172,11 @@
                            :when (not= k :db/id)]
                        (d/datom id k v)))]
     (core/bench-10
-      (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init"
-                                        (UUID/randomUUID)))
-                 schema {:kv-opts
-                         {:flags #{:nordahead :notls :writemap :nosync}}}))))
+      (d/close-db
+        (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init"
+                                          (UUID/randomUUID)))
+                   schema {:kv-opts
+                           {:flags #{:nordahead :notls :writemap :nosync}}})))))
 
 
 (defn ^:export retract-5 []
@@ -183,76 +187,94 @@
                            {:kv-opts
                             {:flags #{:nordahead :notls :writemap :nosync}}})
                core/people20k)
-        eids (->> (d/datoms db :ave :name) (map :e) (shuffle))]
-    (core/bench-10
-      (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
+        eids (->> (d/datoms db :ave :name) (map :e) (shuffle))
+        res  (core/bench-10
+               (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]]))
+                       db eids))]
+    (d/close-db db)
+    res))
 
 ;; each query gets an identical DB, to remove caching effect
 
 (defn ^:export q1 []
-  (core/bench
-    (d/q '[:find ?e
-           :where [?e :name "Ivan"]]
-         db100k-1)))
+  (let [res (core/bench
+              (d/q '[:find ?e
+                     :where [?e :name "Ivan"]]
+                   db100k-1))]
+    (d/close-db db100k-1)
+    res))
 
 (defn ^:export q2 []
-  (core/bench
-    (d/q '[:find ?e ?a
-           :where
-           [?e :name "Ivan"]
-           [?e :age ?a]]
-         db100k-2)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?a
+                     :where
+                     [?e :name "Ivan"]
+                     [?e :age ?a]]
+                   db100k-2))]
+    (d/close-db db100k-2)
+    res))
 
 (defn ^:export q2-switch []
-  (core/bench
-    (d/q '[:find ?e ?a
-           :where
-           [?e :age ?a]
-           [?e :name "Ivan"]]
-         db100k-2s)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?a
+                     :where
+                     [?e :age ?a]
+                     [?e :name "Ivan"]]
+                   db100k-2s))]
+    (d/close-db db100k-2s)
+    res))
 
 (defn ^:export q3 []
-  (core/bench
-    (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
-           [?e :age ?a]
-           [?e :sex :male]]
-         db100k-3)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?a
+                     :where [?e :name "Ivan"]
+                     [?e :age ?a]
+                     [?e :sex :male]]
+                   db100k-3))]
+    (d/close-db db100k-3)
+    res))
 
 
 (defn ^:export q4 []
-  (core/bench
-    (d/q '[:find ?e ?l ?a
-           :where [?e :name "Ivan"]
-           [?e :last-name ?l]
-           [?e :age ?a]
-           [?e :sex :male]]
-         db100k-4)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?l ?a
+                     :where [?e :name "Ivan"]
+                     [?e :last-name ?l]
+                     [?e :age ?a]
+                     [?e :sex :male]]
+                   db100k-4))]
+    (d/close-db db100k-4)
+    res))
 
 (defn ^:export q5 []
-  (core/bench
-    (d/q '[:find ?e1 ?l ?a
-           :where [?e :name "Ivan"]
-           [?e :age ?a]
-           [?e1 :age ?a]
-           [?e1 :last-name ?l]]
-         db100k-5)))
-
+  (let [res (core/bench
+              (d/q '[:find ?e1 ?l ?a
+                     :where [?e :name "Ivan"]
+                     [?e :age ?a]
+                     [?e1 :age ?a]
+                     [?e1 :last-name ?l]]
+                   db100k-5))]
+    (d/close-db db100k-5)
+    res))
 
 (defn ^:export qpred1 []
-  (core/bench
-    (d/q '[:find ?e ?s
-           :where [?e :salary ?s]
-           [(> ?s 50000)]]
-         db100k-p1)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?s
+                     :where [?e :salary ?s]
+                     [(> ?s 50000)]]
+                   db100k-p1))]
+    (d/close-db db100k-p1)
+    res))
 
 (defn ^:export qpred2 []
-  (core/bench
-    (d/q '[:find ?e ?s
-           :in   $ ?min_s
-           :where [?e :salary ?s]
-           [(> ?s ?min_s)]]
-         db100k-p2 50000)))
+  (let [res (core/bench
+              (d/q '[:find ?e ?s
+                     :in   $ ?min_s
+                     :where [?e :salary ?s]
+                     [(> ?s ?min_s)]]
+                   db100k-p2 50000))]
+    (d/close-db db100k-p2)
+    res))
 
 (defn bench-rules [db]
   (d/q '[:find ?e ?e2
@@ -266,32 +288,46 @@
           (follows ?t ?y)]]))
 
 (defn ^:export rules-wide-3x3 []
-  (let [db (wide-db 3 3)]
-    (core/bench (bench-rules db))))
+  (let [db  (wide-db 3 3)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-wide-5x3 []
-  (let [db (wide-db 5 3)]
-    (core/bench (bench-rules db))))
+  (let [db  (wide-db 5 3)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-wide-7x3 []
-  (let [db (wide-db 7 3)]
-    (core/bench (bench-rules db))))
+  (let [db  (wide-db 7 3)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-wide-4x6 []
-  (let [db (wide-db 4 6)]
-    (core/bench (bench-rules db))))
+  (let [db  (wide-db 4 6)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-long-10x3 []
-  (let [db (long-db 10 3)]
-    (core/bench (bench-rules db))))
+  (let [db  (long-db 10 3)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-long-30x3 []
-  (let [db (long-db 30 3)]
-    (core/bench (bench-rules db))))
+  (let [db  (long-db 30 3)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 (defn ^:export rules-long-30x5 []
-  (let [db (long-db 30 5)]
-    (core/bench (bench-rules db))))
+  (let [db  (long-db 30 5)
+        res (core/bench (bench-rules db))]
+    (d/close-db db)
+    res))
 
 #?(:clj
    (defn ^:export -main [& names]

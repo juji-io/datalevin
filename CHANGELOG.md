@@ -30,13 +30,13 @@
   greedy search is performed in later stages, as these later ones have less
   impact on performance. This provides a good balance between planning time and
   plan quality, while avoiding potential out of memory issue during planning.
-- [Datalog] Planner: do parallel processing whenever appropriate
+- [Datalog] Planner: do parallel processing whenever appropriate.
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed
-- [Datalog] maintain an estimated attribute total size during transaction.
-- [Datalog] maintain a representative sample of entity ids for each attribute
-  during transaction.
+- [Datalog] maintain an estimated total size and a representative sample of
+  entity ids for each attribute, processed periodically according to
+  `sample-processing-interval`(default 600 second).
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
 
 ## 0.9.8 (2024-06-29)

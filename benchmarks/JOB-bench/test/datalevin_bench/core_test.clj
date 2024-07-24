@@ -120,5 +120,5 @@
       sut/q-32b [["alternate language version of" "12 oz. Mouse" "'Angel': Season 2 Overview"]]
       sut/q-33a [["495 Productions" "495 Productions" "3.3" "2.7" "A Double Shot at Love" "A Shot at Love with Tila Tequila"]]
       sut/q-33b [["MTV Netherlands" "495 Productions" "3.3" "2.7" "A Double Shot at Love" "A Shot at Love with Tila Tequila"]]
-      sut/q-33c [["2BE" "495 Productions" "1.3" "1.0" "A Double Shot at Love" "A Double Shot at Love"]]
-      )))
+      sut/q-33c [["2BE" "495 Productions" "1.3" "1.0" "A Double Shot at Love" "A Double Shot at Love"]])
+    (d/close conn)))

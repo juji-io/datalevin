@@ -380,8 +380,8 @@ above which, the same number of items will be sampled instead"}
   plan-space-reduction-threshold 20000)
 
 (def ^{:dynamic true
-       :doc     "The maximal number of items from which direct sampling will be performed"}
-  max-direct-sample-base 20000000)
+       :doc     "Time interval between sample processing, in seconds "}
+  sample-processing-interval 600)
 
 ;; search engine
 
