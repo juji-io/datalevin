@@ -60,7 +60,7 @@ We translated the SQL schema to equivalent Datalevin schema, shown in
 
 The same set of CSV files are transformed into datoms and loaded into
 Datalevin by uncommenting and running `(def db ...)`. This loads 277,878,514
-dotams into Datalevin.
+datoms into Datalevin.
 
 ## Queries
 

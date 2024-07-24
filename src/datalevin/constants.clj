@@ -356,11 +356,11 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred 2.0)
+  magic-cost-pred #_3.0 2.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding attributes when estimating size"}
-  magic-cost-attr 1.3)
+  magic-cost-attr 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
