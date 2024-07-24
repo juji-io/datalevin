@@ -4,10 +4,6 @@
 
 set -eou pipefail
 
-app_name=dtlv
-
-test0_name=dtlv-test0
-
 if [ -z "$GRAALVM_HOME" ]; then
     echo "Please set GRAALVM_HOME"
     exit 1
@@ -21,21 +17,29 @@ export DTLV_COMPILE_NATIVE=true
 
 echo $JAVA_HOME
 
+args_app=(
+    "--verbose"
+    "-jar" "target/main.uberjar.jar"
+    "-H:Name=dtlv"
+)
 
-MAIN_JAR="target/main.uberjar.jar"
+args_test0=(
+    "--verbose"
+    "-jar" "target/test0.uberjar.jar"
+    "-H:Name=dtlv-test0"
+)
 
-TEST0_JAR="target/test0.uberjar.jar"
+if [[ "${STATIC_EXCEPT_LIBC:-}" =~ ^(true|1)$ ]]; then
+    args_app+=("-H:+StaticExecutableWithDynamicLibC")
+    args_test0+=("-H:+StaticExecutableWithDynamicLibC")
+fi
 
 lein clean
 lein with-profile native-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" \
-    --verbose \
-    -jar "$MAIN_JAR" ${app_name}
+"$GRAALVM_HOME/bin/native-image" "${args_app[@]}"
 
 lein clean
 lein with-profile test0-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" \
-     --verbose \
-     -jar "$TEST0_JAR" ${test0_name}
+"$GRAALVM_HOME/bin/native-image" "${args_test0[@]}"

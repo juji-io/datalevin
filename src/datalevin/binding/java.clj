@@ -1156,7 +1156,7 @@
                                        {}))
           aarch64? (cond
                      osx?     ["liblmdb.dylib" "macos-latest-aarch64-shared"]
-                     linux?   ["liblmdb.so" "aarch64-linux-gnu"]
+                     linux?   ["liblmdb.so" "ubuntu-latest-aarch64-shared"]
                      freebsd? ["liblmdb.so" "freebsd-os-provided-local-lib"]
                      :else    (u/raise "Unsupported OS " os-name " on aarch64"
                                        {}))
