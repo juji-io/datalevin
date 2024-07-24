@@ -675,8 +675,8 @@
                               (advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
                               (System/currentTimeMillis) :attr :long))
-        (lmdb/transact-kv lmdb txs)
-        (fulltext-index search-engines ft-ds))))
+        (fulltext-index search-engines ft-ds)
+        (lmdb/transact-kv lmdb txs))))
 
   (fetch [_ datom]
     (mapv #(retrieved->datom lmdb attrs %)
