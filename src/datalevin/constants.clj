@@ -360,15 +360,15 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding attributes when estimating size"}
-  magic-cost-attr 1.2)
+  magic-cost-attr 1.2 #_1.1)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx 0.9)
+  magic-cost-fidx #_0.9 1.1)
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 2.5)
+  magic-cost-hash 2.5 #_2.0 #_3.0 #_2.8 #_2.5 #_3.5 #_4.0 #_3.2 #_1.5)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,

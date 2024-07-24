@@ -96,7 +96,9 @@ relation. The bulk of query execution time is spent on this operation.
 The input list of entity IDs may come from a search on `:ave` index that returns
 an entity ID list, a set of linking references from a relation produced
 in the previous step, or the reverse references from the previous step, and so
-on.
+on. The tuples are sorted by entity IDs prior to being used to scan the index,
+this reduces LMDB cursor seek time and leverages the cache better, more than
+offsetting the cost of sorting.
 
 ### Query graph simplification
 
@@ -145,16 +147,6 @@ its own plan and its own execution sequence. Multiple connected components are
 processed concurrently. The resulting relations are joined afterwards, and the
 order of which is based on result size.
 
-### Dynamic plan search policy (new)
-
-The plan search space initially considers all join orders exhaustively, for the
-early steps have huge impact on the quality of the final plan. When the number
-of plans considered reaches a user configurable threshold, the planner turns the
-search policy to a greedy one. The shrinkage of plan search space in the later
-stages of planning has relatively little impact on quality of the final plan,
-while results in significant savings in memory consumption and planning time for
-those complex queries that reach the threshold.
-
 ### Left-deep join tree
 
 Our planner generates left-deep join trees, which may not be optimal [8], but
@@ -166,9 +158,19 @@ cardinality estimation. [5]
 
 We do not consider bushy join trees, as our join methods are mainly based on
 scanning indices, so a base relation is needed for each join. Since we
-also count in base relations, the cardinality estimation obtained there is quite
+also count in base relations, the size estimation obtained there is quite
 accurate, so we want to leverage that accuracy by keeping at least one base
 relation in each join.
+
+### Dynamic plan search policy (new)
+
+The plan search space initially considers all join orders exhaustively, for the
+early steps have huge impact on the quality of the final plan. When the number
+of plans considered reaches a user configurable threshold, the planner turns the
+search policy to a greedy one. The shrinkage of plan search space in the later
+stages of planning has relatively little impact on quality of the final plan,
+while results in significant savings in memory consumption and planning time for
+those complex queries that reach the threshold.
 
 ### Direct counting for result size estimation (new)
 
@@ -194,10 +196,12 @@ entity ids that has it. This is used when an attribute has no condition
 constraining it in the query. Otherwise, online sampling is performed during
 query. Both use reservoir sampling methods.
 
-A sample of base entity IDs are collected first, then merge scans are performed to
-obtain base selectivity ratios. Finally, the selectivity of all possible two way
-joins are obtained by counting the number of linked entity ids based on these
-samples. Later joins use these selectivity ratios to estimate result sizes.
+A sample of base entity IDs are collected first, then merge scans are performed
+to obtain base selectivity ratios. Finally, the selectivity of all possible two
+way joins are obtained by counting the number of linked entity ids based on
+these samples. Later joins use these selectivity ratios to estimate result
+sizes. We have found sampling more than 2-way joins (e.g. [6]) less effective,
+so we stick with sampling base and 2-way join selectivity only.
 
 ## Limitation
 
@@ -248,7 +252,7 @@ optimizer: cardinality estimation [6]. It is hard to have good cardinality
 estimation in RDBMS because the data are stored in rows, so it becomes rather
 expensive and complicated trying to unpack them to get attribute value
 counts or to sample by rows [4]. On the other hand, it is cheap and
-straightforward to count elements directly in the already unpacked
+straightforward to count or sample elements directly in the already unpacked
 indices of triple stores.
 
 ## Conclusion
