@@ -110,7 +110,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.7.1" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.7.3" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.datascript"
            benchmarks)
@@ -119,7 +119,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src\" \"src-datomic\"]"
-                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7075" version) "\"}}"
+                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7180" version) "\"}}"
                 "}")
            "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
@@ -153,8 +153,8 @@
 
 (def default-versions
   [
-   ;;["latest" "datomic"]
-   ;;["latest" "datascript"]
+   ["latest" "datomic"]
+   ["latest" "datascript"]
    ["0.9.8" "datalevin"]
    ["latest" "datalevin"]
    ])

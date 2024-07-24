@@ -4,7 +4,7 @@
 QUERY_DIR=./queries
 
 echo "The Join Order Benchmark 1Pass test ..."
-echo -e "Query Name,Execution Time (ms)" > job_onepass_time.csv
+echo -e "Query Name,Planning Time (ms),Execution Time (ms)" > postgres_onepass_time.csv
 
 for file in $QUERY_DIR/*.sql
 do
@@ -15,6 +15,9 @@ do
   cat $file >> test.sql
   result=$(psql -p 5434 -f test.sql)
   echo $result > $short_file".json"
-  exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p')
-  echo -e "$query_name,$exec_time" >> job_onepass_time.csv
+  plan_time=$(echo $result | sed -n 's/.*"Planning Time": \([0-9]*\.[0-9]*\).*/\1/p') 
+  exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p') 
+  echo -e "$query_name,$plan_time,$exec_time" >> postgres_onepass_time.csv
 done
+
+echo "Done. Resutls are in postgres_onepass_time.csv"

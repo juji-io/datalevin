@@ -17,9 +17,9 @@ Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB. Each
 CSV file is a table, with the biggest table having over 36 million rows, while
 the smallest has only 4 rows.
 
-### Postgresql
+### PostgreSQL
 
-Assume a Postgresql server is running.
+Assume a PostgreSQL server is running.
 
 First import the schema: `psql -f data/schema.sql`
 
@@ -68,8 +68,8 @@ The `queries` directory contains 113 SQL queries for this benchmark. These
 queries all involve more than 5 tables and often have 10 or more where clauses.
 
 We manually translated the SQL queries to equivalent Datalevin queries, and
-manually verified that Postgresql and Datalevin produce the same results for the
-same queries (note 1).
+manually verified that PostgreSQL and Datalevin produce exactly the same results
+for the same queries (note 1).
 
 For example, the query 1b of the benchmark:
 
@@ -110,18 +110,41 @@ is translated into the equivalent Datalevin query:
   [?t :title/title ?t.title]]
 ```
 
-## Results
+Most queries in the benchmark are more complex than this example.
+
+## Run Benchmark
 
 These software were tested on Intel Core i7-6850K CPU @ 3.60GHz, 64GB RAM, 1 TB
 SSD drive, running Ubuntu 22.04:
 
 * PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled
 by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
-* Datalevin 0.9.9
+* Datalevin latest in this repository
 
-For Postgresql, run `postgres-time` script to run all queries. We report the
-`EXPLAIN ANALYZE` execution time in order to remove the impact of client/server
-communication. The results are in `job_onepass_time.csv`.
+For PostgreSQL, run `postgres-time` script to run all queries. The results are
+PostgreSQL's own `EXPLAIN ANALYZE` reports written into a CSV file
+`postgres_onepass_time.csv`, in order to remove the impact of client/server
+communication and other unrelated factors.
+
+```bash
+./postgres-time
+```
+
+For Datalevin, both `lein` and `clj` build tools are needed, the former is for
+building the main project, and the later for running the benchmark. Same as the
+above, the results are `explain` reports written into a CSV file
+`datalevin_onepass_time.csv`.
+
+```bash
+cd ../..
+lein run   # this runs essential tests to ensure a good build
+cd benchmarks/JOB-bench
+clj -Xbench
+```
+
+## Results
+
+
 
 Note 1: Manual verification is needed because all the queries return `MIN` results,
   but Postgresql version 16's `MIN` function result is not consistent with UTF-8

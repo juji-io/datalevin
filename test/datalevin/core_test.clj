@@ -576,3 +576,33 @@
                     "fred")))
       (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
       (sut/close conn1))))
+
+(deftest datalog-readme-test
+  (let [dir  (u/tmp-dir (str "readme-test-" (UUID/randomUUID)))
+        conn (sut/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
+                                :name {:db/valueType :db.type/string
+                                       :db/unique    :db.unique/identity}})]
+    (let [rp (sut/transact! conn
+                            [{:name "Frege", :db/id -1, :nation "France",
+                              :aka  ["foo" "fred"]}
+                             {:name "Peirce", :db/id -2, :nation "france"}
+                             {:name "De Morgan", :db/id -3, :nation "English"}])]
+      (is (= 8 (count (:tx-data rp)))))
+    (is (= #{["France"]}
+           (sut/q '[:find ?nation
+                    :in $ ?alias
+                    :where
+                    [?e :aka ?alias]
+                    [?e :nation ?nation]]
+                  (sut/db conn)
+                  "fred")))
+    (sut/transact! conn [[:db/retract 1 :name "Frege"]])
+    (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+           (sut/q '[:find (pull ?e [*])
+                    :in $ ?alias
+                    :where
+                    [?e :aka ?alias]]
+                  (sut/db conn)
+                  "fred")))
+    (sut/close conn)
+    (u/delete-files dir)))
