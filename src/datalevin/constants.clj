@@ -356,27 +356,39 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred #_3.0 2.0)
+  magic-cost-pred 1.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding attributes when estimating size"}
-  magic-cost-attr 1.2 #_1.1)
+  magic-cost-attr 1.3)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx #_0.9 1.1)
+  magic-cost-fidx 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 2.5 #_2.0 #_3.0 #_2.8 #_2.5 #_3.5 #_4.0 #_3.2 #_1.5)
+  magic-cost-hash 2.5)
+
+(def ^{:dynamic true
+       :doc     "Cost associated with scanning e based on a"}
+  magic-cost-init-scan-e 1.05)
+
+(def ^{:dynamic true
+       :doc     "Cost associated with merge-scan join"}
+  magic-cost-merge-scan-v 1.5)
+
+(def ^{:dynamic true
+       :doc     "Cost associated with val-eq-scan join"}
+  magic-cost-val-eq-scan-e 1.0)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
 above which, the same number of items will be sampled instead"}
-  init-exec-size-threshold 1024)
+  init-exec-size-threshold 1000)
 
 (def ^{:dynamic true
-       :doc     "The number of plans considered for initial full planning, beyond which greedy search is performed"}
+       :doc     "The number of plans considered in each step initially, beyond which greedy search is performed"}
   plan-space-reduction-threshold 20000)
 
 (def ^{:dynamic true

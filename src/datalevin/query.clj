@@ -229,7 +229,7 @@
 (defn remove-pairs
   [xs ys]
   (let [pairs (sequence (comp (map vector)
-                           (remove (fn [[x y]] (= x y))))
+                              (remove (fn [[x y]] (= x y))))
                         xs ys)]
     [(map first pairs)
      (map peek pairs)]))
@@ -253,7 +253,6 @@
   [context clause]
   (let [final-attrs     (filter qu/free-var? clause)
         final-attrs-map (zipmap final-attrs (range))
-        ;;         clause-cache    (atom {}) ;; TODO
         solve           (fn [prefix-context clauses]
                           (reduce -resolve-clause prefix-context clauses))
         empty-rels?     (fn [context]
@@ -795,7 +794,7 @@
 (defn remove-pairs
   [xs ys]
   (let [pairs (sequence (comp (map vector)
-                           (remove (fn [[x y]] (= x y))))
+                              (remove (fn [[x y]] (= x y))))
                         xs ys)]
     [(map first pairs)
      (map peek pairs)]))
@@ -819,7 +818,6 @@
   [context clause]
   (let [final-attrs     (filter qu/free-var? clause)
         final-attrs-map (zipmap final-attrs (range))
-        ;;         clause-cache    (atom {}) ;; TODO
         solve           (fn [prefix-context clauses]
                           (reduce -resolve-clause prefix-context clauses))
         empty-rels?     (fn [context]
@@ -998,7 +996,7 @@
      (let [[_ & clauses]    clause
            bound            (bound-vars context)
            negation-vars    (qu/collect-vars clauses)
-           _                (when (empty? (set/intersection bound negation-vars))
+           _                (when (empty? (u/intersection bound negation-vars))
                               (raise "Insufficient bindings: none of "
                                      negation-vars " is bound in " orig-clause
                                      {:error :query/where :form orig-clause}))
@@ -1214,7 +1212,7 @@
     (and not or) (qu/collect-vars args)
     (set (sequence
            (comp (filter #(instance? Variable %))
-              (map :symbol))
+                 (map :symbol))
            args))))
 
 (defn- pushdownable
@@ -1740,6 +1738,7 @@
                         0 attrs-v)
         n-attrs       (count attrs-v)]
     (* size
+       ^double c/magic-cost-merge-scan-v
        (if (zero? n-attrs)
          1
          ^long (estimate-round (* ^double c/magic-cost-attr n-attrs)))
@@ -1754,7 +1753,8 @@
   [{:keys [mcount]} steps]
   (let [{:keys [vars pred]} (first steps)
         init-cost           (estimate-round
-                              (cond-> (* ^long mcount (count vars))
+                              (cond-> (* ^double c/magic-cost-init-scan-e
+                                         ^long mcount (count vars))
                                 pred (* ^double c/magic-cost-pred)))]
     (if (< 1 (count steps))
       (+ ^long init-cost ^long (estimate-scan-v-cost (peek steps) mcount))
@@ -1807,8 +1807,8 @@
                                 bound? (add-pred #(= % val1))))
         schema   (db/-schema db)
         attrs    (->> (conj attrs2 attr1)
-                      (sort-by #((schema %) :db/aid))
-                      (remove #{(:attr last-step)}))
+                      (remove #{(:attr last-step)})
+                      (sort-by #((schema %) :db/aid)))
         preds    (replace preds-m attrs)
         skips2   (reduce (fn [ss [a m]] (if (m :skip?) (conj ss a) ss))
                          #{} attrs-v2)
@@ -1833,11 +1833,13 @@
     (MergeScanStep. index attrs-v vars in out cols *save-intermediate* nil nil)))
 
 (defn- index-by-link
-  [cols link-e {:keys [type attr attrs tgt var]}]
-  (case type
-    :ref    (or (find-index tgt cols) (find-index attr cols))
+  [cols link-e link]
+  (case (:type link)
+    :ref    (or (find-index (:tgt link) cols)
+                (find-index (:attr link) cols))
     :_ref   (find-index link-e cols)
-    :val-eq (or (find-index var cols) (find-index (attrs link-e) cols))))
+    :val-eq (or (find-index (:var link) cols)
+                (find-index ((:attrs link) link-e) cols))))
 
 (defn- enrich-cols
   [cols index attr]
@@ -1911,7 +1913,9 @@
 
 (defn- estimate-link-cost
   [{:keys [fidx]} size]
-  (estimate-round (* ^long size (double (if fidx c/magic-cost-fidx 1.0)))))
+  (estimate-round (* ^long size
+                     ^double c/magic-cost-val-eq-scan-e
+                     (double (if fidx c/magic-cost-fidx 1.0)))))
 
 (defn- estimate-e-plan-cost
   [prev-size cur-steps]
@@ -1944,9 +1948,9 @@
 
 (defn- hash-cols
   [prev-plan new-base-plan]
-  (let [cols1 (:cols (peek (:steps prev-plan)))
-        cols2 (:cols (peek (:steps new-base-plan)))]
-    (concatv cols1 (diff-keys cols1 cols2))))
+  (let [cols1 (:cols (peek (:steps prev-plan)))]
+    (concatv cols1
+             (diff-keys cols1 (:cols (peek (:steps new-base-plan)))))))
 
 (defn- h-plan
   [prev-plan new-base-plan new-key size]
@@ -2115,11 +2119,14 @@
 
 (defn- execute-steps
   [context db [f & r]]
+  ;; TODO piplining
   (reduce
     (fn [rel step]
       ;; (println "attrs-> " (:attrs rel))
       ;; (println "step-> " step)
-      (-execute step context db rel))
+      (if (zero? (.size ^List (:tuples rel)))
+        (reduced rel)
+        (-execute step context db rel)))
     (do
       ;; (println "init-> " f)
       (-execute f context db nil)) r))

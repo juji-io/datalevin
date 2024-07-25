@@ -15,17 +15,17 @@
    [datalevin.storage Store]
    [datalevin.db DB]))
 
-(def fn-cache (lru/cache 1000 :fn-cache))
+(def like-cache (lru/cache 128 :like-cache))
 
 (defn- like
   ([input pattern]
    (like input pattern nil false))
   ([input pattern opts]
    (like input pattern opts false))
-  ([input pattern {:keys [escape] :as opts} not?]
+  ([input pattern {:keys [escape]} not?]
    (let [matcher
          (lru/-get
-           fn-cache [:like pattern opts not?]
+           like-cache [pattern escape not?]
            (fn []
              (let [pb  (.getBytes ^String pattern StandardCharsets/UTF_8)
                    fsm (if escape (LikeFSM. pb escape) (LikeFSM. pb))
@@ -46,10 +46,8 @@
   ([input coll not?]
    (assert (and (coll? coll) (not (map? coll)))
            "function `in` expects a collection")
-   (let [checker (lru/-get fn-cache [:in coll not?]
-                           (fn []
-                             (let [s (set coll)]
-                               (if not? #(not (s %)) s))))]
+   (let [checker (let [s (set coll)]
+                   (if not? #(not (s %)) s))]
      (checker input))))
 
 (defn- not-in [input coll] (in input coll true))

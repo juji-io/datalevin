@@ -535,6 +535,16 @@
           lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))
     res))
 
+(defn- sort-tuples-by-eid
+  [tuples ^long eid-idx]
+  (if (vector? tuples)
+    (sort-by #(nth % eid-idx) tuples)
+    (doto ^List tuples
+      (.sort (reify Comparator
+               (compare [_ a b]
+                 (- ^long (aget ^objects a eid-idx)
+                    ^long (aget ^objects b eid-idx))))))))
+
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
 (deftype Store [lmdb
@@ -925,13 +935,7 @@
     (let [attr->aid #((schema %) :db/aid)
           aids      (mapv (comp attr->aid first) attrs-v)]
       (when (and (seq tuples) (seq aids) (not-any? nil? aids))
-        (let [tuples   (if (vector? tuples)
-                         (sort-by #(nth % eid-idx) tuples)
-                         (doto ^List tuples
-                           (.sort (reify Comparator
-                                    (compare [_ a b]
-                                      (- ^long (aget ^objects a eid-idx)
-                                         ^long (aget ^objects b eid-idx)))))))
+        (let [tuples   (sort-tuples-by-eid tuples eid-idx)
               na       (count aids)
               maps     (mapv peek attrs-v)
               skips    (boolean-array (map :skip? maps))

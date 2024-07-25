@@ -21,16 +21,17 @@
 
 ## Improved
 - [Datalog] Planner: execute initial step if result size is small during
-  planning, controlled by dynamic var `init-exec-size-threshold` (default 1024),
+  planning, controlled by dynamic var `init-exec-size-threshold` (default 1000),
   above which, the same number of samples are collected instead. These
   significantly improved subsequent join size estimation, as these initial steps
   hugely impact the final plan.
 - [Datalog] Planner: search full plan space initially, until the number of plans
-  considered reaches `plan-space-reduction-threshold` (default 20,000), then
-  greedy search is performed in later stages, as these later ones have less
-  impact on performance. This provides a good balance between planning time and
-  plan quality, while avoiding potential out of memory issue during planning.
-- [Datalog] Planner: do parallel processing whenever appropriate.
+  considered in a step reaches `plan-space-reduction-threshold` (default
+  20,000), then greedy search is performed in later stages, as these later ones
+  have less impact on performance. This provides a good balance between planning
+  time and plan quality, while avoiding potential out of memory issue during
+  planning.
+- [Datalog] Planner: do parallel processing whenever appropriate during planning.
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed

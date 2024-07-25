@@ -4,7 +4,6 @@
    [clojure.walk]
    [clojure.data]
    [clojure.set]
-   [clojure.core.memoize :as m]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
    [datalevin.lru :as lru]
    [datalevin.datom :as d

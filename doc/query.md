@@ -107,6 +107,31 @@ works mainly on the simplified graph that consists of stars and the links
 between them [3] [7] [9], this significantly reduces the size of optimizer
 search space.
 
+### Cost based query optimizer
+
+We built a Selinger style cost-based query optimizer that uses dynamic
+programming for query planning [10], which is used in almost all RDBMS. Instead
+of considering all possible combinations of join orders, the plan enumeration is
+based on connected components of the query graph. Each connected component has
+its own plan and its own execution sequence. Multiple connected components are
+processed concurrently. The resulting relations are joined afterwards, and the
+order of which is based on result size.
+
+### Left-deep join tree
+
+Our planner generates left-deep join trees, which may not be optimal [8], but
+work well for our simplified query graph, since stars are already turned into
+meta nodes and mostly chains remain. This also reduces the cost of cost
+estimation, which dominates the cost of planning. The impact of the loss of
+search space is relatively small, compared with the impact of inaccuracy in
+cardinality estimation. [5]
+
+We do not consider bushy join trees, as our join methods are mainly based on
+scanning indices, so a base relation is needed for each join. Since we
+also count in base relations, the size estimation obtained there is quite
+accurate, so we want to leverage that accuracy by keeping at least one base
+relation in each join.
+
 ### Join methods
 
 Currently, we consider four join methods.
@@ -137,40 +162,18 @@ left-deep join tree.
 The choice of these methods is determined by the optimizer based on its cost
 estimation.
 
-### Cost based query optimizer
+### Directional join result size estimation (new)
 
-We built a Selinger style cost-based query optimizer that uses dynamic
-programming for query planning [10], which is used in almost all RDBMS. Instead
-of considering all possible combinations of join orders, the plan enumeration is
-based on connected components of the query graph. Each connected component has
-its own plan and its own execution sequence. Multiple connected components are
-processed concurrently. The resulting relations are joined afterwards, and the
-order of which is based on result size.
-
-### Left-deep join tree
-
-Our planner generates left-deep join trees, which may not be optimal [8], but
-work well for our simplified query graph, since stars are already turned into
-meta nodes and mostly chains remain. This also reduces the cost of cost
-estimation, which dominates the cost of planning. The impact of the loss of
-search space is relatively small, compared with the impact of inaccuracy in
-cardinality estimation. [5]
-
-We do not consider bushy join trees, as our join methods are mainly based on
-scanning indices, so a base relation is needed for each join. Since we
-also count in base relations, the size estimation obtained there is quite
-accurate, so we want to leverage that accuracy by keeping at least one base
-relation in each join.
-
-### Dynamic plan search policy (new)
-
-The plan search space initially considers all join orders exhaustively, for the
-early steps have huge impact on the quality of the final plan. When the number
-of plans considered reaches a user configurable threshold, the planner turns the
-search policy to a greedy one. The shrinkage of plan search space in the later
-stages of planning has relatively little impact on quality of the final plan,
-while results in significant savings in memory consumption and planning time for
-those complex queries that reach the threshold.
+The traditional join result size estimation formula used in RDBMS like PostgrSQL
+is based on a very simplistic statistical assumption: the attributes are
+considered statistically independent from one another. Data in the real world
+almost never meet this idealized assumptions. One major consequence of such
+simplification is that the join size estimation formula is un-directional, the
+same outcome is predicted regardless the side of the joins. In Datalevin, the
+`:ref` and `:_ref` join methods described above are directional, hence the size
+estimation should also be directional. No attribute independence assumption is
+made in our size estimation, as it is based entirely on counting and sampling.
+Data correlations are encoded naturally by these methods.
 
 ### Direct counting for result size estimation (new)
 
@@ -185,11 +188,9 @@ statistics based estimation, counting is simple, accurate and always up to date.
 ### Query specific sampling (new)
 
 For large result size, even capped counting is too expensive to perform.
-Sampling is used when result size is larger than a threshold. To ensure
-representative samples that are specific to the query and data distribution, we
-perform sampling by execution under actual query conditions. This sampling
-approach is more accurate than commonly used cardinality based approach, which
-relies on strong statistical assumptions that are often violated.
+Sampling is used when result size is expected to be larger than a threshold. To
+ensure representative samples that are specific to the query and data
+distribution, we perform sampling by execution under actual query conditions.
 
 During transaction, each attribute also maintains a representative sample of
 entity ids that has it. This is used when an attribute has no condition
@@ -200,8 +201,18 @@ A sample of base entity IDs are collected first, then merge scans are performed
 to obtain base selectivity ratios. Finally, the selectivity of all possible two
 way joins are obtained by counting the number of linked entity ids based on
 these samples. Later joins use these selectivity ratios to estimate result
-sizes. We have found sampling more than 2-way joins (e.g. [6]) less effective,
-so we stick with sampling base and 2-way join selectivity only.
+sizes. We have found sampling more than 2-way joins (e.g. [6]) to be less
+effective, so we stick with sampling base and 2-way join selectivity only.
+
+### Dynamic plan search policy (new)
+
+The plan search space initially include all possible join orders as our joins
+are directional.  When the number of plans considered reaches a user
+configurable threshold, the planner turns the search policy from an exhaustive
+search to a greedy one. The shrinkage of plan search space in the later stages
+of planning has relatively little impact on quality of the final plan, while
+results in significant savings in memory consumption and planning time for those
+complex queries that reach the threshold.
 
 ## Limitation
 

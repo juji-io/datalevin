@@ -10,7 +10,6 @@
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
-                 [org.clojure/core.memoize]
                  [org.babashka/sci]
                  [com.cognitect/transit-clj]
                  [org.clojars.huahaiy/dtlvnative-windows-amd64]
