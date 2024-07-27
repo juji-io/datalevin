@@ -11,12 +11,13 @@ do
   # Get filename
   short_file=$(basename "$file")
   query_name="${short_file%.*}"
+  echo "run $query_name"
   echo -n "EXPLAIN (ANALYZE, FORMAT JSON) " > test.sql
   cat $file >> test.sql
   result=$(psql -p 5434 -f test.sql)
   echo $result > $short_file".json"
-  plan_time=$(echo $result | sed -n 's/.*"Planning Time": \([0-9]*\.[0-9]*\).*/\1/p') 
-  exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p') 
+  plan_time=$(echo $result | sed -n 's/.*"Planning Time": \([0-9]*\.[0-9]*\).*/\1/p')
+  exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p')
   echo -e "$query_name,$plan_time,$exec_time" >> postgres_onepass_time.csv
 done
 

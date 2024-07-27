@@ -540,6 +540,7 @@
   [^List tuples]
   (let [size (.size tuples)
         s-1  (dec size)]
-    (when (and (< 0 size) (identical? :datalevin/end-scan (.get tuples s-1)))
-      (.remove tuples s-1))
-    tuples))
+    (if (and (< 0 size) (identical? :datalevin/end-scan (.get tuples s-1)))
+      (do (.remove tuples s-1)
+          (recur tuples))
+      tuples)))

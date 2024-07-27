@@ -3257,6 +3257,7 @@
     (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
     (doseq [q queries]
       (let [qname (s/replace (name q) "q-" "")
+            _     (println "run" qname)
             query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
             res   (d/explain {:run? true} query db)]
         (d/write-csv w [[qname (res :planning-time) (res :execution-time)]]))))
@@ -3267,7 +3268,7 @@
 
 (comment
 
-  (d/explain {:run? true} q-31a (d/db conn))
+  (d/explain {:run? true} q-10a (d/db conn))
 
 
 

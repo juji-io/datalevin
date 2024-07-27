@@ -140,7 +140,9 @@
 
   (-sample [_ db tuples]
     (if (< 0 (.size ^List tuples))
-      (let [src  (doto (LinkedBlockingQueue.) (.addAll tuples))
+      (let [src  (doto (LinkedBlockingQueue.)
+                   (.addAll tuples)
+                   (.add :datalevin/end-scan))
             sink (FastList.)]
         (db/-eav-scan-v db src sink index attrs-v)
         sink)
@@ -1665,7 +1667,8 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [bound1  (->> (dissoc bound attr)
+        (let [
+              bound1  (->> (dissoc bound attr)
                            (mapv (fn [[a {:keys [val] :as b}]]
                                    [a (-> b
                                           (update :pred add-pred #(= val %))
