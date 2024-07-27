@@ -58,12 +58,12 @@
 (extend-type nil ISearchable (-searchable? [_] false))
 
 (defprotocol ITuples
-  (-init-tuples [db a mcount v-range pred get-v?])
-  (-sample-init-tuples [db a mcount v-range pred get-v?])
+  (-init-tuples [db out a v-range pred get-v?])
+  (-sample-init-tuples [db out a mcount v-range pred get-v?])
   (-e-sample [db a])
-  (-eav-scan-v [db tuples eid-idx attrs-v])
-  (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound])
-  (-val-eq-filter-e [db tuples v-idx attr f-idx])
+  (-eav-scan-v [db in out eid-idx attrs-v])
+  (-val-eq-scan-e [db in out v-idx attr] [db in out v-idx attr bound])
+  (-val-eq-filter-e [db in out v-idx attr f-idx])
   ;; (-sample-link-e [db vs attr mcount])
   )
 
@@ -136,16 +136,12 @@
 
   ITuples
   (-init-tuples
-    [db a mcount v-ranges pred get-v?]
-    (wrap-cache
-        store [:init-tuples a v-ranges pred get-v?]
-      (s/ave-tuples store a mcount v-ranges pred get-v?)))
+    [db out a v-ranges pred get-v?]
+    (s/ave-tuples store out a v-ranges pred get-v?))
 
   (-sample-init-tuples
-    [db a mcount v-ranges pred get-v?]
-    (wrap-cache
-        store [:sample-init-tuples a mcount v-ranges pred get-v?]
-      (s/sample-ave-tuples store a mcount v-ranges pred get-v?)))
+    [db out a mcount v-ranges pred get-v?]
+    (s/sample-ave-tuples store out a mcount v-ranges pred get-v?))
 
   (-e-sample
     [db a]
@@ -154,27 +150,19 @@
       (s/e-sample store a)))
 
   (-eav-scan-v
-    [db tuples eid-idx attrs-v]
-    (wrap-cache
-        store [:eav-scan-v tuples eid-idx attrs-v]
-      (s/eav-scan-v store tuples eid-idx attrs-v)))
+    [db in out eid-idx attrs-v]
+    (s/eav-scan-v store in out eid-idx attrs-v))
 
   (-val-eq-scan-e
-    [db tuples v-idx attr]
-    (wrap-cache
-        store [:val-eq-scan-e tuples v-idx attr]
-      (s/val-eq-scan-e store tuples v-idx attr)))
+    [db in out v-idx attr]
+    (s/val-eq-scan-e store in out v-idx attr))
   (-val-eq-scan-e
-    [db tuples v-idx attr bound]
-    (wrap-cache
-        store [:val-eq-scan-e tuples v-idx attr bound]
-      (s/val-eq-scan-e store tuples v-idx attr bound)))
+    [db in out v-idx attr bound]
+    (s/val-eq-scan-e store in out v-idx attr bound))
 
   (-val-eq-filter-e
-    [db tuples v-idx attr f-idx]
-    (wrap-cache
-        store [:val-eq-filter-e tuples v-idx attr f-idx]
-      (s/val-eq-filter-e store tuples v-idx attr f-idx)))
+    [db in out v-idx attr f-idx]
+    (s/val-eq-filter-e store in out v-idx attr f-idx))
 
   #_(-sample-link-e
       [db vs attr mcount]

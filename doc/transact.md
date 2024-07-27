@@ -34,7 +34,8 @@ For key-value API, `with-transaction-kv` macro is used for explicit transaction.
 `with-transaction` macro is used for Datalog API. Basically, all the code in the
 body of the macros run inside a single read/write transaction with a single
 thread. These work the same in all modes of Datalevin: embedded, client/server,
-or babashka pod. For usage examples, see tests in `datalevin.withtxn-test` or `datalevin.remote-withtxnkv-test`.
+or babashka pod. For usage examples, see tests in `datalevin.withtxn-test` or
+`datalevin.remote-withtxnkv-test`.
 
 Rollback from within the transaction can be done with `abort-transact-kv` and
 `abort-transact`.
@@ -57,7 +58,7 @@ server or babashka. The source code of the function will be interpreted by
 limitations, e.g. except for built-in ones, normal Clojure vars are not
 accessible. We will address these limitations in the future.
 
-`:db.fn/coll` is another way to call a transaction function, which does not
+`:db.fn/call` is another way to call a transaction function, which does not
 store the function in the database, so this is usable in embedded mode, where that function is available in user code to call and that function can be a regular Clojure function.
 
 For usage examples, see tests in `datalevin.test.transact`.

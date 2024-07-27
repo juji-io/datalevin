@@ -9,7 +9,7 @@
    [clojure.lang IEditableCollection IPersistentSet ITransientSet
     Associative IKVReduce]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util Random Arrays Iterator]
+   [java.util Random Arrays Iterator List]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -535,3 +535,11 @@
           indices)
         (= n m) (long-array (range n))
         :else   nil))))
+
+(defn remove-end-scan
+  [^List tuples]
+  (let [size (.size tuples)
+        s-1  (dec size)]
+    (when (and (< 0 size) (identical? :datalevin/end-scan (.get tuples s-1)))
+      (.remove tuples s-1))
+    tuples))

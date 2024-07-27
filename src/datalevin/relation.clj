@@ -187,7 +187,7 @@
     (relation! attrs new-tuples)))
 
 (defn projection
-  [{:keys [tuples]} index]
+  [tuples index]
   (persistent!
     (reduce
       (fn [s ^objects t] (conj! s (aget t index)))
