@@ -367,10 +367,6 @@
   magic-cost-fidx 1.2)
 
 (def ^{:dynamic true
-       :doc     "Cost associated with hash join"}
-  magic-cost-hash 2.5)
-
-(def ^{:dynamic true
        :doc     "Cost associated with scanning e based on a"}
   magic-cost-init-scan-e 1.02)
 

@@ -172,18 +172,39 @@
          (if (identical? type :_ref) "reverse reference " "equal values ")
          " of " attr ".")))
 
-#_(defrecord HashJoinStep [in out cols save]
+(defn- init-attrs
+  [step]
+  (let [{:keys [know-e? val vars]} step
+        get-v?                     (< 1 (count vars))
+        e                          (first vars)
+        v                          (peek vars)]
+    (cond
+      know-e?    (cond-> {'_ 0} get-v? (assoc v 1))
+      (nil? val) (cond-> {e 0} get-v? (assoc v 1))
+      :else      {e 0})))
 
-    IStep
-    (-execute [_ context _ rel]
-      (let [rel1    (@(:intermediates context) in)
-            out-rel (hash-join rel1 rel)]
-        (save-intermediates context save in rel1)
-        (save-intermediates context save out out-rel)
-        out-rel))
+(defn- update-attrs
+  [attrs vars]
+  (let [n (count attrs)]
+    (into attrs (comp (remove #{'_})
+                   (map-indexed (fn [i v] [v (+ n ^long i)])))
+          vars)))
 
-    (-explain [_ _]
-      (str "Hash join with the relation of " in)))
+(defn- merge-attrs [prev {:keys [vars]}] (update-attrs prev vars))
+
+(defn- link-attrs
+  [prev {:keys [var fidx]}]
+  (update-attrs prev (if fidx [] [var])))
+
+(defn- accumulate-attrs
+  [steps]
+  (reduce
+    (fn [as step]
+      (case (-type step)
+        :init  (init-attrs step)
+        :merge (merge-attrs as step)
+        :link  (link-attrs as step)))
+    nil steps))
 
 (defrecord Node [links mpath mcount bound free])
 
@@ -432,22 +453,13 @@
 
 (defn hash-attrs [key-fn tuples] (-group-by key-fn '() tuples))
 
-(def op-cache (lru/cache 256 :constant))
-
 (defn- diff-keys
   "return (- vec2 vec1) elements"
   [vec1 vec2]
   (persistent!
     (reduce
       (fn [d e2]
-        (if (some (fn [e1]
-                    (if (set? e1)
-                      (if (set? e2)
-                        (when-let [is (not-empty (u/intersection e1 e2))]
-                          (every? symbol? is))
-                        (e1 e2))
-                      (= e1 e2)))
-                  vec1)
+        (if (some (fn [e1] (= e1 e2)) vec1)
           d
           (conj! d e2)))
       (transient []) vec2)))
@@ -1938,43 +1950,13 @@
            (+ ^long cost ^long (estimate-e-plan-cost size cur-steps))
            result-size)))
 
-;; (defn- estimate-hash-cost
-;;   [prev-plan new-base-plan]
-;;   (estimate-round
-;;     (* ^double c/magic-cost-hash
-;;        (+ ^long (:size prev-plan) ^long (:size new-base-plan)))))
-
-;; (defn- hash-cols
-;;   [prev-plan new-base-plan]
-;;   (let [cols1 (:cols (peek (:steps prev-plan)))]
-;;     (concatv cols1
-;;              (diff-keys cols1 (:cols (peek (:steps new-base-plan)))))))
-
-#_(defn- h-plan
-    [prev-plan new-base-plan new-key size]
-    (let [in  (:out (peek (:steps prev-plan)))
-          out (if (set? in) (set new-key) new-key)]
-      (Plan. (conj (-> (:steps new-base-plan)
-                       (assoc-in [0 :in] in)
-                       (assoc-in [0 :save-in?] true))
-                   (HashJoinStep. in out (hash-cols prev-plan new-base-plan)
-                                  *save-intermediate*))
-             (+ ^long (:cost prev-plan)
-                ^long (:cost new-base-plan)
-                ^long (estimate-hash-cost prev-plan new-base-plan))
-             size)))
-
 (defn- binary-plan*
   [db base-plans ratios prev-plan last-step link-e new-e link new-key]
   (let [index    (index-by-link (:cols last-step) link-e link)
         new-base (base-plans [new-e])
         size     (estimate-join-size db link-e link ratios (:size prev-plan)
-                                     last-step index new-base)
-        e-plan   (e-plan db prev-plan index link new-key new-base size)
-        ;; h-plan   (h-plan prev-plan new-base new-key size)
-        ]
-    e-plan
-    #_(if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
+                                     last-step index new-base)]
+    (e-plan db prev-plan index link new-key new-base size)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
@@ -2116,40 +2098,6 @@
             (assoc-in c [:plan src] plans))))
       context graph)
     context))
-
-(defn- init-attrs
-  [step]
-  (let [{:keys [know-e? val vars]} step
-        get-v?                     (< 1 (count vars))
-        e                          (first vars)
-        v                          (peek vars)]
-    (cond
-      know-e?    (cond-> {'_ 0} get-v? (assoc v 1))
-      (nil? val) (cond-> {e 0} get-v? (assoc v 1))
-      :else      {e 0})))
-
-(defn- update-attrs
-  [attrs vars]
-  (let [n (count attrs)]
-    (into attrs (comp (remove #{'_})
-                   (map-indexed (fn [i v] [v (+ n ^long i)])))
-          vars)))
-
-(defn- merge-attrs [prev {:keys [vars]}] (update-attrs prev vars))
-
-(defn- link-attrs
-  [prev {:keys [var fidx]}]
-  (update-attrs prev (if fidx [] [var])))
-
-(defn- accumulate-attrs
-  [steps]
-  (reduce
-    (fn [as step]
-      (case (-type step)
-        :init  (init-attrs step)
-        :merge (merge-attrs as step)
-        :link  (link-attrs as step)))
-    nil steps))
 
 (defn- execute-steps
   "execute all steps of a component's plan to obtain a relation"
