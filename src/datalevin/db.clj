@@ -21,6 +21,7 @@
    [datalevin.lru LRU]
    [java.util SortedSet Comparator]
    [java.util.concurrent ConcurrentHashMap]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
 
 ;;;;;;;;;; Protocols
@@ -187,9 +188,11 @@
            (s/e-datoms store e) ; e _ _
            (s/av-datoms store a v) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                 (s/ave-tuples
-                   store a 1024 [[[:closed c/v0] [:closed c/vmax]]]
-                   nil true)) ; _ a _
+                 (let [out (FastList.)]
+                   (s/ave-tuples
+                     store out a [[[:closed c/v0] [:closed c/vmax]]] nil true)
+                   (u/remove-end-scan out)
+                   out)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)

@@ -2154,33 +2154,28 @@
   (let [n      (count steps)
         attrs  (accumulate-attrs steps)
         tuples (FastList.)]
-    (println "attrs->" attrs)
-    (let [res
-          (if (= n 1)
-            (do (-execute (first steps) context db nil tuples)
-                (println "step->" (first steps))
-                (u/remove-end-scan tuples)
-                (r/relation! attrs tuples))
-            (let [n-1      (dec n)
-                  sinks    (object-array (repeatedly n-1 #(LinkedBlockingQueue.)))
-                  writing? (writing? db)]
-              (doall
-                (mapv #_(if writing? map pmap)
-                      (fn [step ^long i]
-                        (let [i-1 (dec i)]
-                          (println "step->" (first steps))
-                          (cond
-                            (zero? i)
-                            (-execute step context db nil (aget sinks i))
-                            (= i n-1)
-                            (-execute step context db (aget sinks i-1) tuples)
-                            :else
-                            (-execute step context db (aget sinks i-1)
-                                      (aget sinks i)))))
-                      steps (range)))
-              (u/remove-end-scan tuples)
-              (r/relation! attrs tuples)))]
-      (println "res->" res))))
+    (if (= n 1)
+      (do (-execute (first steps) context db nil tuples)
+          (u/remove-end-scan tuples)
+          (r/relation! attrs tuples))
+      (let [n-1      (dec n)
+            sinks    (object-array (repeatedly n-1 #(LinkedBlockingQueue.)))
+            writing? (writing? db)]
+        (doall
+          ((if writing? map pmap)
+           (fn [step ^long i]
+             (let [i-1 (dec i)]
+               (cond
+                 (zero? i)
+                 (-execute step context db nil (aget sinks i))
+                 (= i n-1)
+                 (-execute step context db (aget sinks i-1) tuples)
+                 :else
+                 (-execute step context db (aget sinks i-1)
+                           (aget sinks i)))))
+           steps (range)))
+        (u/remove-end-scan tuples)
+        (r/relation! attrs tuples)))))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
@@ -2210,16 +2205,13 @@
   (binding [*implicit-source* (get (:sources context) '$)]
     (let [{:keys [result-set] :as context} (-> context
                                                build-graph
-                                               build-plan)
-
-          c (if (= result-set #{})
-              (do (plan-explain) context)
-              (as-> context c
-                (do (plan-explain) c)
-                (if run? (execute-plan c) c)
-                (if run? (reduce resolve-clause c (:late-clauses c)) c)))]
-      (println "context->" c)
-      c)))
+                                               build-plan)]
+      (if (= result-set #{})
+        (do (plan-explain) context)
+        (as-> context c
+          (do (plan-explain) c)
+          (if run? (execute-plan c) c)
+          (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
