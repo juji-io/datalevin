@@ -379,6 +379,10 @@
   magic-cost-val-eq-scan-e 1.0)
 
 (def ^{:dynamic true
+       :doc     "Cost associated with hash join"}
+  magic-cost-hash 2.5)
+
+(def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
 above which, the same number of items will be sampled instead"}
   init-exec-size-threshold 1000)

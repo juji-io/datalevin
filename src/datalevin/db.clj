@@ -16,10 +16,10 @@
    [datalevin.inline :refer [update assoc]])
   (:import
    [datalevin.datom Datom]
-   [datalevin.storage IStore Store]
+   [datalevin.storage IStore Store TuplePipe]
    [datalevin.remote DatalogStore]
    [datalevin.lru LRU]
-   [java.util SortedSet Comparator]
+   [java.util SortedSet Comparator Collection]
    [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
@@ -60,11 +60,16 @@
 
 (defprotocol ITuples
   (-init-tuples [db out a v-range pred get-v?])
+  (-init-tuples-list [db a v-range pred get-v?])
   (-sample-init-tuples [db out a mcount v-range pred get-v?])
+  (-sample-init-tuples-list [db a mcount v-range pred get-v?])
   (-e-sample [db a])
   (-eav-scan-v [db in out eid-idx attrs-v])
+  (-eav-scan-v-list [db in eid-idx attrs-v])
   (-val-eq-scan-e [db in out v-idx attr] [db in out v-idx attr bound])
+  (-val-eq-scan-e-list [db in v-idx attr] [db in v-idx attr bound])
   (-val-eq-filter-e [db in out v-idx attr f-idx])
+  (-val-eq-filter-e-list [db in v-idx attr f-idx])
   ;; (-sample-link-e [db vs attr mcount])
   )
 
@@ -140,9 +145,21 @@
     [db out a v-ranges pred get-v?]
     (s/ave-tuples store out a v-ranges pred get-v?))
 
+  (-init-tuples-list
+    [db a v-ranges pred get-v?]
+    (wrap-cache
+        store [:init-tuples a v-ranges pred get-v?]
+      (s/ave-tuples-list store  a v-ranges pred get-v?)))
+
   (-sample-init-tuples
     [db out a mcount v-ranges pred get-v?]
     (s/sample-ave-tuples store out a mcount v-ranges pred get-v?))
+
+  (-sample-init-tuples-list
+    [db a mcount v-ranges pred get-v?]
+    (wrap-cache
+        store [:sample-init-tuples a mcount v-ranges pred get-v?]
+      (s/sample-ave-tuples-list store a mcount v-ranges pred get-v?)))
 
   (-e-sample
     [db a]
@@ -154,16 +171,41 @@
     [db in out eid-idx attrs-v]
     (s/eav-scan-v store in out eid-idx attrs-v))
 
+  (-eav-scan-v-list
+    [db in eid-idx attrs-v]
+    (wrap-cache
+        store [:eav-scan-v in eid-idx attrs-v]
+      (s/eav-scan-v-list store in eid-idx attrs-v)))
+
   (-val-eq-scan-e
     [db in out v-idx attr]
     (s/val-eq-scan-e store in out v-idx attr))
+
+  (-val-eq-scan-e-list
+    [db in v-idx attr]
+    (wrap-cache
+        store [:val-eq-scan-e in v-idx attr]
+      (s/val-eq-scan-e-list store in v-idx attr)))
+
   (-val-eq-scan-e
     [db in out v-idx attr bound]
     (s/val-eq-scan-e store in out v-idx attr bound))
 
+  (-val-eq-scan-e-list
+    [db in v-idx attr bound]
+    (wrap-cache
+        store [:val-eq-scan-e in v-idx attr bound]
+      (s/val-eq-scan-e-list store in v-idx attr bound)))
+
   (-val-eq-filter-e
     [db in out v-idx attr f-idx]
     (s/val-eq-filter-e store in out v-idx attr f-idx))
+
+  (-val-eq-filter-e-list
+    [db in v-idx attr f-idx]
+    (wrap-cache
+        store [:val-eq-filter-e in v-idx attr f-idx]
+      (s/val-eq-filter-e-list store in v-idx attr f-idx)))
 
   #_(-sample-link-e
       [db vs attr mcount]

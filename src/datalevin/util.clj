@@ -9,7 +9,7 @@
    [clojure.lang IEditableCollection IPersistentSet ITransientSet
     Associative IKVReduce]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util Random Arrays Iterator List]
+   [java.util Random Arrays Iterator List Collection Deque]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -537,10 +537,19 @@
         :else   nil))))
 
 (defn remove-end-scan
-  [^List tuples]
-  (let [size (.size tuples)
-        s-1  (dec size)]
-    (if (and (< 0 size) (identical? :datalevin/end-scan (.get tuples s-1)))
-      (do (.remove tuples s-1)
-          (recur tuples))
-      tuples)))
+  [^Collection tuples]
+  (if (.isEmpty tuples)
+    tuples
+    (if (instance? Deque tuples)
+      (let [l (.getLast ^Deque tuples)]
+        (if (identical? :datalevin/end-scan l)
+          (do (.removeLast ^Deque tuples)
+              (recur tuples))
+          tuples))
+      (let [size (.size ^List tuples)
+            s-1  (dec size)
+            l    (.get tuples s-1)]
+        (if (identical? :datalevin/end-scan l)
+          (do (.remove ^List tuples s-1)
+              (recur tuples))
+          tuples)))))

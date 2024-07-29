@@ -7,18 +7,16 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   ;; [datalevin.test.core :as tdc :refer [db-fixture]]
-   [clojure.test :refer [deftest testing is are use-fixtures]]
+   [clojure.test :refer [deftest testing is are]]
    [datalevin.lmdb :as lmdb]
    [clojure.string :as s])
   (:import
-   [java.util UUID]
+   [java.util UUID Collection]
    [java.util.concurrent LinkedBlockingQueue]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.storage Store]
    [datalevin.datom Datom]))
 
-;; (use-fixtures :each db-fixture)
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
@@ -432,16 +430,15 @@
                                :db/valueType   :db.type/string}}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})
-        in      (LinkedBlockingQueue.)
-        out     (FastList.)
-        ]
+        in      (sut/tuple-pipe)
+        out     (FastList.)]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
 
     (are [tuples eid-idx attrs-v result]
         (do (.clear out)
-            (.clear in)
-            (.addAll in tuples)
-            (.add in :datalevin/end-scan)
+            (sut/reset in)
+            (.addAll ^Collection in tuples)
+            (.add ^Collection in :datalevin/end-scan)
             (sut/eav-scan-v store in out eid-idx attrs-v)
             (is (= result (mapv vec (butlast out)))))
       tuples0 0 [[:a {:pred #(< ^long % 5) :skip? false}]]
@@ -560,15 +557,14 @@
                            :b {:db/valueType :db.type/string}}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})
-        in      (LinkedBlockingQueue.)
-        out     (FastList.)
-        ]
+        in      (sut/tuple-pipe)
+        out     (FastList.)]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7])
     (are [tuples veid-idx attr result]
         (do (.clear out)
-            (.clear in)
-            (.addAll in tuples)
-            (.add in :datalevin/end-scan)
+            (sut/reset in)
+            (.addAll ^Collection in tuples)
+            (.add ^Collection in :datalevin/end-scan)
             (sut/val-eq-scan-e store in out veid-idx attr)
             (is (= result (mapv vec (butlast out)))))
 

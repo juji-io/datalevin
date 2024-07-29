@@ -257,7 +257,7 @@
 
 (defn- aggregate-sum [coll] (reduce + 0 coll))
 
-(defn- aggregate-avg [coll] (/ ^double (aggregate-sum coll) (count coll)))
+(defn aggregate-avg [coll] (/ ^double (aggregate-sum coll) (count coll)))
 
 (defn- aggregate-median [coll]
   (let [terms (sort coll)
