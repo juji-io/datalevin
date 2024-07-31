@@ -14,7 +14,7 @@
   (:import
    [java.util UUID List Random Comparator Collection]
    [java.util.concurrent ScheduledExecutorService Executors TimeUnit Callable
-    LinkedBlockingQueue ExecutorService]
+    LinkedBlockingQueue ConcurrentLinkedDeque ]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
@@ -377,6 +377,99 @@
   (ave-kv->retrieved
     lmdb (b/read-buffer (lmdb/k kv) :av) (b/read-buffer (lmdb/v kv) :eg)))
 
+(defprotocol ITuplePipe
+  (pipe? [this] "test if implements this protocol")
+  (produce [this]
+    "take a tuple from the pipe, block if there is nothing to take, if encounter :datalevin/end-scan, return it and end the pipe, return nil if pipe has ended")
+  (drain-to [this sink] "pour all remaining content into sink")
+  (reset [this] "reset the pipe for next round of operation")
+  (total [this] "return the total number of tuples pass through the pipe"))
+
+(extend-type Object ITuplePipe (pipe? [_] false))
+(extend-type nil ITuplePipe (pipe? [_] false))
+
+(deftype TuplePipe [^LinkedBlockingQueue queue
+                    ^:volatile-mutable total
+                    ^:volatile-mutable ended?]
+  ITuplePipe
+  (pipe? [_] true)
+  (produce [_]
+    (when-not ended?
+      (let [o (.take queue)]
+        (if (identical? :datalevin/end-scan o)
+          (set! ended? true)
+          (set! total (u/long-inc total)))
+        o)))
+  (drain-to [_ sink] (.drainTo queue sink))
+  (reset [_]
+    (.clear queue)
+    (set! ended? false))
+  (total [_] total)
+
+  Collection
+  (add [_ o] (.add queue o))
+  (addAll [_ o] (.addAll queue o)))
+
+(defn tuple-pipe [] (->TuplePipe (LinkedBlockingQueue.) 0 false))
+
+(defprotocol IHashPipe
+  (hash-pipe? [this] "test if implements this protocol")
+  (wait-input [this] "wait for when all input tuples are in")
+  (get-last [this] "get the last item")
+  (remove-last [this] "remove last item")
+  (set-out-size [this n] "called to set the number of tuples produced")
+  (out-size [this] "return the total number of tuples produced"))
+
+(extend-type Object IHashPipe (hash-pipe? [_] false))
+(extend-type nil IHashPipe (hash-pipe? [_] false))
+
+(deftype HashPipe [^ConcurrentLinkedDeque buffer
+                   ^:volatile-mutable out-size]
+  IHashPipe
+  (hash-pipe? [_] true)
+  (out-size [_] out-size)
+  (set-out-size [_ n] (set! out-size n))
+  (get-last [_] (.getLast buffer))
+  (remove-last [_] (.removeLast buffer))
+  (wait-input [this]
+    (locking this
+      (while (or (.isEmpty buffer)
+                 (not= :datalevin/end-scan (.getLast buffer)))
+        (.wait ^Object this))))
+
+  Collection
+  (iterator [_] (.iterator buffer))
+  (size [_] (.size buffer))
+  (isEmpty [_] (.isEmpty buffer))
+  (add [_ o] (.add buffer o))
+  (addAll [_ o] (.addAll buffer o)))
+
+(defn hash-pipe [] (->HashPipe (ConcurrentLinkedDeque.) 0))
+
+(defn finish-output
+  [^Collection sink]
+  (.add sink :datalevin/end-scan)
+  (when (hash-pipe? sink)
+    (locking sink (.notify ^Object sink))))
+
+(defn remove-end-scan
+  [^Collection tuples]
+  (if (.isEmpty tuples)
+    tuples
+    (if (hash-pipe? tuples)
+      (let [l (get-last tuples)]
+        (if (identical? :datalevin/end-scan l)
+          (do (remove-last tuples)
+              (recur tuples))
+          tuples))
+      (let [size (.size ^List tuples)
+            s-1  (dec size)
+            l    (.get ^List tuples s-1)]
+        (if (identical? :datalevin/end-scan l)
+          (do (.remove ^List tuples s-1)
+              (recur tuples))
+          tuples)))))
+
 (defn- sampling
   [i j ^longs sample-indices work]
   (let [len (alength sample-indices)]
@@ -389,12 +482,9 @@
                 (vswap! i u/long-inc))
               (vswap! j u/long-inc)))))))
 
-(defn- ave-tuples-scan-need-v
-  [lmdb ^Collection out aid vt val-ranges sample-indices]
-  (let [work  (fn [kv]
-                (let [^Retrieved r (retrieve-ave lmdb kv)]
-                  (.add out (object-array [(.-e r) (.-v r)]))))
-        i     (volatile! 0)
+(defn- ave-tuples-scan*
+  [lmdb ^Collection out aid vt val-ranges sample-indices work]
+  (let [i     (volatile! 0)
         j     (volatile! 0)
         len   (when sample-indices (alength ^longs sample-indices))
         visit (if sample-indices
@@ -404,109 +494,52 @@
       (when (or (nil? len) (< ^long @i ^long len))
         (lmdb/visit-list-range
           lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))
-    (.add out :datalevin/end-scan)))
+    (finish-output out)))
+
+(defn- ave-tuples-scan-need-v
+  [lmdb ^Collection out aid vt val-ranges sample-indices]
+  (ave-tuples-scan*
+    lmdb out aid vt val-ranges sample-indices
+    (fn [kv]
+      (let [^Retrieved r (retrieve-ave lmdb kv)]
+        (.add out (object-array [(.-e r) (.-v r)]))))))
 
 (defn- ave-tuples-scan-need-v-vpred
   [lmdb ^Collection out vpred aid vt val-ranges sample-indices]
-  (let [work  (fn [kv]
-                (let [^Retrieved r (retrieve-ave lmdb kv)
-                      v            (.-v r)]
-                  (when (vpred v)
-                    (.add out (object-array [(.-e r) v])))))
-        i     (volatile! 0)
-        j     (volatile! 0)
-        len   (when sample-indices (alength ^longs sample-indices))
-        visit (if sample-indices
-                (sampling i j sample-indices work)
-                work)]
-    (doseq [val-range val-ranges]
-      (when (or (nil? len) (< ^long @i ^long len))
-        (lmdb/visit-list-range
-          lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))
-    (.add out :datalevin/end-scan )))
+  (ave-tuples-scan*
+    lmdb out aid vt val-ranges sample-indices
+    (fn [kv]
+      (let [^Retrieved r (retrieve-ave lmdb kv)
+            v            (.-v r)]
+        (when (vpred v)
+          (.add out (object-array [(.-e r) v])))))))
 
 (defn- ave-tuples-scan-no-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]
-  (let [work  (fn [kv]
-                (.add out (object-array [(b/read-buffer (lmdb/v kv) :id)])))
-        i     (volatile! 0)
-        j     (volatile! 0)
-        len   (when sample-indices (alength ^longs sample-indices))
-        visit (if sample-indices
-                (sampling i j sample-indices work)
-                work)]
-    (doseq [val-range val-ranges]
-      (when (or (nil? len) (< ^long @i ^long len))
-        (lmdb/visit-list-range
-          lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))
-    (.add out :datalevin/end-scan)))
+  (ave-tuples-scan*
+    lmdb out aid vt val-ranges sample-indices
+    (fn [kv]
+      (.add out (object-array [(b/read-buffer (lmdb/v kv) :id)])))))
 
 (defn- ave-tuples-scan-no-v-vpred
   [lmdb ^Collection out vpred aid vt val-ranges sample-indices]
-  (let [work  (fn [kv]
-                (let [^Retrieved r (retrieve-ave lmdb kv)
-                      v            (.-v r)]
-                  (when (vpred v)
-                    (.add out (object-array [(.-e r)])))))
-        i     (volatile! 0)
-        j     (volatile! 0)
-        len   (when sample-indices (alength ^longs sample-indices))
-        visit (if sample-indices
-                (sampling i j sample-indices work)
-                work)]
-    (doseq [val-range val-ranges]
-      (when (or (nil? len) (< ^long @i ^long len))
-        (lmdb/visit-list-range
-          lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))
-    (.add out :datalevin/end-scan)))
+  (ave-tuples-scan*
+    lmdb out aid vt val-ranges sample-indices
+    (fn [kv]
+      (let [^Retrieved r (retrieve-ave lmdb kv)
+            v            (.-v r)]
+        (when (vpred v)
+          (.add out (object-array [(.-e r)])))))))
 
-;; (defn- sort-tuples-by-eid
-;;   [tuples ^long eid-idx]
-;;   (if (vector? tuples)
-;;     (sort-by #(nth % eid-idx) tuples)
-;;     (doto ^List tuples
-;;       (.sort (reify Comparator
-;;                (compare [_ a b]
-;;                  (- ^long (aget ^objects a eid-idx)
-;;                     ^long (aget ^objects b eid-idx))))))))
-
-(defprotocol ITuplePipe
-  (pipe? [_] "test if implements this protocol")
-  (produce [this]
-    "take a tuple from the pipe, block if there is nothing to take, if encounter :datalevin/end-scan, return it and end the pipe, return nil if pipe has ended")
-  (drain-to [this sink] "pour all cached content into sink")
-  (reset [this] "reset the pipe for next round of operation")
-  (total [this] "return the total number of tuples pass through the pipe"))
-
-(extend-type Object ITuplePipe (pipe? [_] false))
-(extend-type nil ITuplePipe (pipe? [_] false))
-
-(deftype TuplePipe [^LinkedBlockingQueue queue
-                    ^:volatile-mutable ^long total
-                    ^:volatile-mutable ended?]
-  ITuplePipe
-  (pipe? [_] true)
-  (produce [_]
-    (when-not ended?
-      (let [o (.take queue)]
-        (if (identical? :datalevin/end-scan o)
-          (set! ended? true)
-          (set! total (u/long-inc total)))
-        o)))
-  (drain-to [_ sink]
-    (.drainTo queue sink))
-  (reset [_]
-    (.clear queue)
-    (set! ended? false))
-  (total [_] total)
-
-  Collection
-  (add [_ o]
-    (.add queue o))
-  (addAll [_ o]
-    (.addAll queue o)))
-
-(defn tuple-pipe [] (->TuplePipe (LinkedBlockingQueue.) 0 false))
+(defn- sort-tuples-by-eid
+  [tuples ^long eid-idx]
+  (if (vector? tuples)
+    (sort-by #(nth % eid-idx) tuples)
+    (doto ^List tuples
+      (.sort (reify Comparator
+               (compare [_ a b]
+                 (- ^long (aget ^objects a eid-idx)
+                    ^long (aget ^objects b eid-idx))))))))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
@@ -879,14 +912,14 @@
   (ave-tuples-list [store attr val-ranges vpred get-v?]
     (let [out (FastList.)]
       (.ave-tuples store out attr val-ranges vpred get-v? nil)
-      (u/remove-end-scan out)
+      (remove-end-scan out)
       out))
 
   (sample-ave-tuples [store out attr mcount val-ranges vpred get-v?]
     (when mcount
       (let [indices (u/reservoir-sampling mcount c/init-exec-size-threshold)]
         (.ave-tuples store out attr val-ranges vpred get-v? indices)
-        (u/remove-end-scan out))))
+        (remove-end-scan out))))
 
   (sample-ave-tuples-list [store attr mcount val-ranges vpred get-v?]
     (let [out (FastList.)]
@@ -917,7 +950,7 @@
                 (loop [tuple (produce in)]
                   (when tuple
                     (if (identical? tuple :datalevin/end-scan)
-                      (.add ^Collection out :datalevin/end-scan)
+                      (finish-output out)
                       (let [te ^long (aget ^objects tuple eid-idx)]
                         (if-let [ts (.get seen te)]
                           (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
@@ -957,7 +990,7 @@
                 (loop [tuple (produce in)]
                   (when tuple
                     (if (identical? tuple :datalevin/end-scan)
-                      (.add ^Collection out :datalevin/end-scan)
+                      (finish-output out)
                       (let [te ^long (aget ^objects tuple eid-idx)]
                         (if-let [ts (.get seen te)]
                           (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
@@ -1019,6 +1052,7 @@
           aids      (mapv (comp attr->aid first) attrs-v)]
       (when (and (seq aids) (not-any? nil? aids))
         (let [na       (count aids)
+              in       (sort-tuples-by-eid in eid-idx)
               nt       (.size ^List in)
               out      (FastList.)
               maps     (mapv peek attrs-v)
@@ -1139,7 +1173,7 @@
           (loop [tuple (produce in)]
             (when tuple
               (if (identical? tuple :datalevin/end-scan)
-                (.add ^Collection out :datalevin/end-scan)
+                (finish-output out)
                 (let [v (aget ^objects tuple v-idx)]
                   (lmdb/visit-list
                     lmdb c/ave (fn [kv]
@@ -1159,7 +1193,7 @@
           (loop [tuple (produce in)]
             (when tuple
               (if (identical? tuple :datalevin/end-scan)
-                (.add ^Collection out :datalevin/end-scan)
+                (finish-output out)
                 (let [v (aget ^objects tuple v-idx)]
                   (if-let [ts (not-empty (.get seen v))]
                     (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
@@ -1226,7 +1260,7 @@
           (loop [tuple (produce in)]
             (when tuple
               (if (identical? tuple :datalevin/end-scan)
-                (.add ^Collection out :datalevin/end-scan)
+                (finish-output out)
                 (let [old-e (aget ^objects tuple f-idx)
                       v     (aget ^objects tuple v-idx)]
                   (lmdb/visit-list

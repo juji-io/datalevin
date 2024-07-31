@@ -27,11 +27,12 @@
          (lru/-get
            like-cache [pattern escape not?]
            (fn []
-             (let [pb  (.getBytes ^String pattern StandardCharsets/UTF_8)
-                   fsm (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-                   f   #(.match fsm
-                                (.getBytes ^String % StandardCharsets/UTF_8))]
-               (if not? #(not (f %)) f))))]
+             (locking pattern
+               (let [pb  (.getBytes ^String pattern StandardCharsets/UTF_8)
+                     fsm (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+                     f   #(.match fsm
+                                  (.getBytes ^String % StandardCharsets/UTF_8))]
+                 (if not? #(not (f %)) f)))))]
      (matcher input))))
 
 (defn- not-like

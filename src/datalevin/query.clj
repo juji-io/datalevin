@@ -24,11 +24,11 @@
    [datalevin.bits :as b])
   (:import
    [java.util Arrays List Collection]
-   [java.util.concurrent ConcurrentHashMap ConcurrentLinkedDeque]
+   [java.util.concurrent ConcurrentHashMap]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.db DB]
-   [datalevin.storage Store]
+   [datalevin.storage Store HashPipe]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
@@ -68,12 +68,12 @@
           e      (first vars)]
       (if result
         (do (.addAll ^Collection sink result)
-            (.add ^Collection sink :datalevin/end-scan))
+            (s/finish-output sink))
         (cond
           know-e?
           (let [src (doto ^Collection (s/tuple-pipe)
                       (.add (object-array [e]))
-                      (.add :datalevin/end-scan))]
+                      (s/finish-output))]
             (if get-v?
               (db/-eav-scan-v db src sink 0 [[attr {:skip? false}]])
               (s/drain-to src sink)))
@@ -141,7 +141,7 @@
   (-execute-pipe [_ db source sink]
     (if result
       (do (.addAll ^Collection sink result)
-          (.add ^Collection sink :datalevin/end-scan))
+          (s/finish-output sink))
       (db/-eav-scan-v db source sink index attrs-v)))
 
   (-sample [_ db tuples]
@@ -192,16 +192,16 @@
   (-type [_] :hash)
 
   (-execute [_ db src]
-    (hash-join (r/relation! (cols->attrs lcols) (u/remove-end-scan src))
-               (execute-steps {} db base-steps)))
+    (:tuples
+     (hash-join (r/relation! (cols->attrs lcols) (s/remove-end-scan src))
+                (execute-steps {} db base-steps))))
 
   (-execute-pipe [this db src sink]
-    (while (or (.isEmpty ^ConcurrentLinkedDeque src)
-               (not= :datalevin/end-scan (.getLast ^ConcurrentLinkedDeque src)))
-      :wait)
-    (let [tuples (:tuples (-execute this db src))]
+    (s/wait-input src)
+    (let [tuples (-execute this db src)]
+      (s/set-out-size src (.size ^List tuples))
       (.addAll ^Collection sink tuples)
-      (.add ^Collection sink :datalevin/end-scan)))
+      (s/finish-output sink)))
 
   (-explain [_ _]
     (str "Hash join " (first (set/difference (set out) (set in)))
@@ -1885,7 +1885,7 @@
   [db tuples attr index]
   (reduce
     (fn [s v] (+ ^long s ^long (db/-count db [nil attr v])))
-    1 (r/projection (u/remove-end-scan tuples) index)))
+    1 (r/projection (s/remove-end-scan tuples) index)))
 
 (defn- estimate-link-size
   [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
@@ -2129,10 +2129,11 @@
                 (assoc m (:out step)
                        {:tuples-count
                         (let [sink (aget sinks i)]
-                          (if (s/pipe? sink)
-                            (s/total sink)
-                            ;; TODO consider hash join
-                            (.size ^Collection (u/remove-end-scan sink))))}))
+                          (cond
+                            (s/pipe? sink)      (s/total sink)
+                            (s/hash-pipe? sink) (s/out-size sink)
+                            :else
+                            (.size ^Collection (s/remove-end-scan sink))))}))
               {(:out (peek steps)) {:tuples-count (.size tuples)}}
               (butlast steps)))))
 
@@ -2156,7 +2157,7 @@
       (let [n-1    (dec n)
             tuples (FastList.)
             pipes  (object-array (map #(if (identical? (-type %) :hash)
-                                         (ConcurrentLinkedDeque.)
+                                         (s/hash-pipe)
                                          (s/tuple-pipe))
                                       (rest steps)))
             work   (fn [step ^long i]
@@ -2167,7 +2168,7 @@
                            (-execute-pipe step db src tuples)
                            (-execute-pipe step db src (aget pipes i))))))]
         (dorun ((if (writing? db) map pmap) work steps (range)))
-        (u/remove-end-scan tuples)
+        (s/remove-end-scan tuples)
         (save-intermediates context steps pipes tuples)
         (r/relation! attrs tuples)))))
 

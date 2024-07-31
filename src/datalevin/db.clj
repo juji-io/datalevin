@@ -233,7 +233,7 @@
                  (let [out (FastList.)]
                    (s/ave-tuples
                      store out a [[[:closed c/v0] [:closed c/vmax]]] nil true)
-                   (u/remove-end-scan out)
+                   (s/remove-end-scan out)
                    out)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))

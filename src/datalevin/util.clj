@@ -535,21 +535,3 @@
           indices)
         (= n m) (long-array (range n))
         :else   nil))))
-
-(defn remove-end-scan
-  [^Collection tuples]
-  (if (.isEmpty tuples)
-    tuples
-    (if (instance? Deque tuples)
-      (let [l (.getLast ^Deque tuples)]
-        (if (identical? :datalevin/end-scan l)
-          (do (.removeLast ^Deque tuples)
-              (recur tuples))
-          tuples))
-      (let [size (.size ^List tuples)
-            s-1  (dec size)
-            l    (.get tuples s-1)]
-        (if (identical? :datalevin/end-scan l)
-          (do (.remove ^List tuples s-1)
-              (recur tuples))
-          tuples)))))

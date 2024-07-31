@@ -380,7 +380,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 2.5)
+  magic-cost-hash 6.5)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
