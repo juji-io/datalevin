@@ -63,28 +63,6 @@
   IStep
   (-type [_] :init)
 
-  (-execute-pipe [_ db _ sink]
-    (let [get-v? (< 1 (count vars))
-          e      (first vars)]
-      (if result
-        (do (.addAll ^Collection sink result)
-            (s/finish-output sink))
-        (cond
-          know-e?
-          (let [src (doto ^Collection (s/tuple-pipe)
-                      (.add (object-array [e]))
-                      (s/finish-output))]
-            (if get-v?
-              (db/-eav-scan-v db src sink 0 [[attr {:skip? false}]])
-              (s/drain-to src sink)))
-          (nil? val)
-          (db/-init-tuples
-            db sink attr
-            (or range [[[:closed c/v0] [:closed c/vmax]]]) pred get-v?)
-          :else
-          (db/-init-tuples
-            db sink attr [[[:closed val] [:closed val]]] nil false)))))
-
   (-execute [_ db _]
     (let [get-v? (< 1 (count vars))
           e      (first vars)]
@@ -102,6 +80,27 @@
           :else
           (db/-init-tuples-list
             db attr [[[:closed val] [:closed val]]] nil false)))))
+
+  (-execute-pipe [_ db _ sink]
+    (let [get-v? (< 1 (count vars))
+          e      (first vars)]
+      (if result
+        (.addAll ^Collection sink result)
+        (cond
+          know-e?
+          (let [src (doto ^Collection (s/tuple-pipe)
+                      (.add (object-array [e]))
+                      (s/finish-output))]
+            (if get-v?
+              (db/-eav-scan-v db src sink 0 [[attr {:skip? false}]])
+              (s/drain-to src sink)))
+          (nil? val)
+          (db/-init-tuples
+            db sink attr
+            (or range [[[:closed c/v0] [:closed c/vmax]]]) pred get-v?)
+          :else
+          (db/-init-tuples
+            db sink attr [[[:closed val] [:closed val]]] nil false)))))
 
   (-sample [_ db _]
     (let [get-v? (< 1 (count vars))]
@@ -140,8 +139,7 @@
 
   (-execute-pipe [_ db source sink]
     (if result
-      (do (.addAll ^Collection sink result)
-          (s/finish-output sink))
+      (.addAll ^Collection sink result)
       (db/-eav-scan-v db source sink index attrs-v)))
 
   (-sample [_ db tuples]
@@ -200,8 +198,7 @@
     (s/wait-input src)
     (let [tuples (-execute this db src)]
       (s/set-out-size src (.size ^List tuples))
-      (.addAll ^Collection sink tuples)
-      (s/finish-output sink)))
+      (.addAll ^Collection sink tuples)))
 
   (-explain [_ _]
     (str "Hash join " (first (set/difference (set out) (set in)))
@@ -2156,18 +2153,21 @@
       :else
       (let [n-1    (dec n)
             tuples (FastList.)
-            pipes  (object-array (map #(if (identical? (-type %) :hash)
-                                         (s/hash-pipe)
-                                         (s/tuple-pipe))
-                                      (rest steps)))
+            pipes  (object-array (mapv #(if (identical? (-type %) :hash)
+                                          (s/hash-pipe)
+                                          (s/tuple-pipe))
+                                       (rest steps)))
             work   (fn [step ^long i]
                      (if (zero? i)
                        (-execute-pipe step db nil (aget pipes 0))
                        (let [src (aget pipes (dec i))]
                          (if (= i n-1)
                            (-execute-pipe step db src tuples)
-                           (-execute-pipe step db src (aget pipes i))))))]
-        (dorun ((if (writing? db) map pmap) work steps (range)))
+                           (-execute-pipe step db src (aget pipes i))))))
+            finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
+        (dorun ((if (writing? db) map pmap)
+                (fn [step i] (work step i) (finish i))
+                steps (range)))
         (s/remove-end-scan tuples)
         (save-intermediates context steps pipes tuples)
         (r/relation! attrs tuples)))))

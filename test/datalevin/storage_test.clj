@@ -116,11 +116,11 @@
                       [[[:closed c/v0] [:closed c/vmax]]]
                       (constantly true))
       (.drainTo pipe res)
-      (is (= [c/e0] (map #(aget ^objects % 0) (butlast res))))
+      (is (= [c/e0] (map #(aget ^objects % 0) res)))
       (.clear res)
       (sut/ave-tuples store pipe b [[[:closed v1] [:closed v1]]])
       (.drainTo pipe res)
-      (is (= [c/e0] (map #(aget ^objects % 0) (butlast res))))
+      (is (= [c/e0] (map #(aget ^objects % 0) res)))
       (.clear res)
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
       (is (= [d d1] (sut/slice store :ave
@@ -342,7 +342,7 @@
         (do (.clear res)
             (sut/ave-tuples store pipe a range pred get-v?)
             (.drainTo pipe res)
-            (is (= result (set (mapv vec (butlast res))))))
+            (is (= result (set (mapv vec res)))))
 
       :b [[[:closed 11] [:closed c/vmax]]] nil false
       (set [[8] [10]])
@@ -440,7 +440,7 @@
             (.addAll ^Collection in tuples)
             (.add ^Collection in :datalevin/end-scan)
             (sut/eav-scan-v store in out eid-idx attrs-v)
-            (is (= result (mapv vec (butlast out)))))
+            (is (= result (mapv vec out))))
       tuples0 0 [[:a {:pred #(< ^long % 5) :skip? false}]]
       [[5 1]]
 
@@ -566,7 +566,7 @@
             (.addAll ^Collection in tuples)
             (.add ^Collection in :datalevin/end-scan)
             (sut/val-eq-scan-e store in out veid-idx attr)
-            (is (= result (mapv vec (butlast out)))))
+            (is (= result (mapv vec out))))
 
       tuples0 0 :c
       []
