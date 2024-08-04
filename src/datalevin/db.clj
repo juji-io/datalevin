@@ -19,6 +19,7 @@
    [datalevin.storage IStore Store]
    [datalevin.remote DatalogStore]
    [datalevin.lru LRU]
+   [datalevin.utl LRUCache]
    [java.util SortedSet Comparator]
    [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -508,7 +509,7 @@
               :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
               :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
               :vaet          (TreeSortedSet. ^Comparator d/cmp-datoms-vaet)
-              :pull-patterns (lru/cache 32 :constant)})]
+              :pull-patterns (LRUCache. 64)})]
     (swap! dbs assoc (s/db-name store) db)
     db))
 

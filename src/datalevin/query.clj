@@ -14,7 +14,7 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.inline :refer [update assoc]]
-   [datalevin.lru :as lru]
+   ;; [datalevin.lru :as lru]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
@@ -34,7 +34,7 @@
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
-(def ^:dynamic *query-cache* (lru/cache 32 :constant))
+(def ^:dynamic *query-cache* (LRUCache. 128))
 
 (def ^:dynamic *explain* nil)
 
@@ -2256,9 +2256,16 @@
                            e)) plan)
                :late-clauses late-clauses)))))
 
+(defn- parsed-q
+  [q]
+  (or (.get ^LRUCache *query-cache* q)
+      (let [res (dp/parse-query q)]
+        (.put ^LRUCache *query-cache* q res)
+        res)))
+
 (defn q
   [q & inputs]
-  (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
+  (let [parsed-q (parsed-q q)]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find          (:qfind parsed-q)
             find-elements (dp/find-elements find)
@@ -2290,7 +2297,7 @@
 
 (defn- plan-only
   [q & inputs]
-  (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
+  (let [parsed-q (parsed-q q)]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
         (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {})

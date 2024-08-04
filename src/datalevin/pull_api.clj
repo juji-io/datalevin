@@ -5,10 +5,10 @@
    [datalevin.constants :as c]
    [datalevin.datom :as dd]
    [datalevin.util :as u :refer [cond+]]
-   [datalevin.timeout :as timeout]
-   [datalevin.lru :as lru])
+   [datalevin.timeout :as timeout])
   (:import
    [datalevin.db DB]
+   [datalevin.utl LRUCache]
    [datalevin.datom Datom]
    [datalevin.pull_parser PullAttr PullPattern]))
 
@@ -304,8 +304,11 @@
 (defn parse-opts
   ([^DB db pattern] (parse-opts db pattern nil))
   ([^DB db pattern {:keys [visitor]}]
-   {:pattern (lru/-get (.-pull-patterns db) pattern
-                       #(dpp/parse-pattern db pattern))
+   {:pattern (let [^LRUCache c (.-pull-patterns db)]
+               (or (.get c pattern)
+                   (let [res (dpp/parse-pattern db pattern)]
+                     (.put c pattern res)
+                     res)))
     :context (Context. db visitor)}))
 
 (defn pull
