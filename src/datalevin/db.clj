@@ -149,7 +149,7 @@
     [db a v-ranges pred get-v?]
     (wrap-cache
         store [:init-tuples a v-ranges pred get-v?]
-      (s/ave-tuples-list store  a v-ranges pred get-v?)))
+      (s/ave-tuples-list store a v-ranges pred get-v?)))
 
   (-sample-init-tuples
     [db out a mcount v-ranges pred get-v?]

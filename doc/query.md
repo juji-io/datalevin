@@ -214,6 +214,18 @@ of planning has relatively little impact on quality of the final plan, while
 results in significant savings in memory consumption and planning time for those
 complex queries that reach the threshold.
 
+### Parallel processing
+
+While requiring no additional facilities to collect statistics, our counting and
+sampling based query planning method does more work than traditional statistics
+based methods at query time. Fortunately, these work are amicable for parallel
+processing, so it is done whenever appropriate.
+
+Pipeling is used for plan execution, so multiple tuples in different execution
+steps are in flight at the same time. A tuple generated from one step becomes input
+of next step. Each step is processed by a dedicated thread (putting multiple
+threads on a single step was tried and abandoned due to worse performance).
+
 ## Limitation
 
 Currently, the query optimizer handles normal where clauses only: triple

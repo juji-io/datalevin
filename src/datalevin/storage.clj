@@ -23,8 +23,6 @@
    [org.eclipse.collections.impl.map.mutable.primitive LongIntHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
-   [org.eclipse.collections.impl.set.mutable UnifiedSet]
-   [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -389,11 +387,10 @@
 (extend-type nil ITuplePipe (pipe? [_] false))
 
 (deftype TuplePipe [^LinkedBlockingQueue queue
-                    ^:volatile-mutable total
-                    ]
+                    ^:volatile-mutable total]
   ITuplePipe
   (pipe? [_] true)
-  (produce [this]
+  (produce [_]
     (let [o (.take queue)]
       (when-not (identical? :datalevin/end-scan o)
         (set! total (u/long-inc total))
@@ -479,7 +476,7 @@
               (vswap! j u/long-inc)))))))
 
 (defn- ave-tuples-scan*
-  [lmdb ^Collection out aid vt val-ranges sample-indices work]
+  [lmdb aid vt val-ranges sample-indices work]
   (let [i     (volatile! 0)
         j     (volatile! 0)
         len   (when sample-indices (alength ^longs sample-indices))
@@ -494,7 +491,7 @@
 (defn- ave-tuples-scan-need-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]
   (ave-tuples-scan*
-    lmdb out aid vt val-ranges sample-indices
+    lmdb aid vt val-ranges sample-indices
     (fn [kv]
       (let [^Retrieved r (retrieve-ave lmdb kv)]
         (.add out (object-array [(.-e r) (.-v r)]))))))
@@ -502,7 +499,7 @@
 (defn- ave-tuples-scan-need-v-vpred
   [lmdb ^Collection out vpred aid vt val-ranges sample-indices]
   (ave-tuples-scan*
-    lmdb out aid vt val-ranges sample-indices
+    lmdb aid vt val-ranges sample-indices
     (fn [kv]
       (let [^Retrieved r (retrieve-ave lmdb kv)
             v            (.-v r)]
@@ -512,14 +509,14 @@
 (defn- ave-tuples-scan-no-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]
   (ave-tuples-scan*
-    lmdb out aid vt val-ranges sample-indices
+    lmdb aid vt val-ranges sample-indices
     (fn [kv]
       (.add out (object-array [(b/read-buffer (lmdb/v kv) :id)])))))
 
 (defn- ave-tuples-scan-no-v-vpred
   [lmdb ^Collection out vpred aid vt val-ranges sample-indices]
   (ave-tuples-scan*
-    lmdb out aid vt val-ranges sample-indices
+    lmdb aid vt val-ranges sample-indices
     (fn [kv]
       (let [^Retrieved r (retrieve-ave lmdb kv)
             v            (.-v r)]
@@ -946,8 +943,8 @@
                   (when tuple
                     (let [te ^long (aget ^objects tuple eid-idx)]
                       (if-let [ts (.get seen te)]
-                        (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                          (.addAll ^Collection out new))
+                        (.addAll ^Collection out
+                                 (r/prod-tuples (r/single-tuples tuple) ts))
                         (let [iter (lmdb/val-iterator iterable)
                               vs   (FastList. na)]
                           (loop [next? (lmdb/seek-key iter te :id)
@@ -974,18 +971,18 @@
                                   (do (.put seen te (r/single-tuples
                                                       (object-array [])))
                                       (.add ^Collection out tuple))
-                                  (let [vst (object-array vs)
-                                        new (r/join-tuples tuple vst)]
+                                  (let [vst (object-array vs)]
                                     (.put seen te (r/single-tuples vst))
-                                    (.add ^Collection out new))))))))
+                                    (.add ^Collection out
+                                          (r/join-tuples tuple vst)))))))))
                       (recur (produce in))))))
               (fn [iterable]
                 (loop [tuple (produce in)]
                   (when tuple
                     (let [te ^long (aget ^objects tuple eid-idx)]
                       (if-let [ts (.get seen te)]
-                        (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                          (.addAll ^Collection out new))
+                        (.addAll ^Collection out
+                                 (r/prod-tuples (r/single-tuples tuple) ts))
                         (let [iter (lmdb/val-iterator iterable)
                               vs   (FastList. na)]
                           (loop [next? (lmdb/seek-key iter te :id)
@@ -1026,11 +1023,12 @@
                                 (when (and dups (not (true? dups)))
                                   (.add vs dups))
                                 (when (== ^long ai na)
-                                  (let [vst (r/many-tuples vs)
-                                        new (r/prod-tuples
-                                              (r/single-tuples tuple) vst)]
+                                  (let [vst (r/many-tuples vs)]
                                     (.put seen te vst)
-                                    (.addAll ^Collection out new))))))))
+                                    (.addAll ^Collection out
+                                             (r/prod-tuples
+                                               (r/single-tuples tuple)
+                                               vst)))))))))
                       (recur (produce in)))))))
             [:closed
              (b/indexable nil (aget aids 0) c/v0 nil c/g0)
@@ -1038,7 +1036,7 @@
                           c/vmax nil c/gmax)]
             :avg)))))
 
-  (eav-scan-v-list [store in eid-idx attrs-v]
+  (eav-scan-v-list [_ in eid-idx attrs-v]
     (let [attr->aid #((schema %) :db/aid)
           aids      (mapv (comp attr->aid first) attrs-v)]
       (when (and (seq aids) (not-any? nil? aids))
@@ -1065,8 +1063,8 @@
                   (let [tuple (.get ^List in i)
                         te    ^long (aget ^objects tuple eid-idx)]
                     (if-let [ts (.get seen te)]
-                      (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                        (.addAll ^Collection out new))
+                      (.addAll ^Collection out
+                               (r/prod-tuples (r/single-tuples tuple) ts))
                       (let [iter (lmdb/val-iterator iterable)
                             vs   (FastList. na)]
                         (loop [next? (lmdb/seek-key iter te :id)
@@ -1093,17 +1091,17 @@
                                 (do (.put seen te (r/single-tuples
                                                     (object-array [])))
                                     (.add ^Collection out tuple))
-                                (let [vst (object-array vs)
-                                      new (r/join-tuples tuple vst)]
+                                (let [vst (object-array vs)]
                                   (.put seen te (r/single-tuples vst))
-                                  (.add ^Collection out new)))))))))))
+                                  (.add ^Collection out
+                                        (r/join-tuples tuple vst))))))))))))
               (fn [iterable]
                 (dotimes [i nt]
                   (let [tuple (.get ^List in i)
                         te    ^long (aget ^objects tuple eid-idx)]
                     (if-let [ts (.get seen te)]
-                      (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                        (.addAll ^Collection out new))
+                      (.addAll ^Collection out
+                               (r/prod-tuples (r/single-tuples tuple) ts))
                       (let [iter (lmdb/val-iterator iterable)
                             vs   (FastList. na)]
                         (loop [next? (lmdb/seek-key iter te :id)
@@ -1144,11 +1142,12 @@
                               (when (and dups (not (true? dups)))
                                 (.add vs dups))
                               (when (== ^long ai na)
-                                (let [vst (r/many-tuples vs)
-                                      new (r/prod-tuples
-                                            (r/single-tuples tuple) vst)]
+                                (let [vst (r/many-tuples vs)]
                                   (.put seen te vst)
-                                  (.addAll ^Collection out new))))))))))))
+                                  (.addAll ^Collection out
+                                           (r/prod-tuples
+                                             (r/single-tuples tuple)
+                                             vst)))))))))))))
             [:closed
              (b/indexable nil (aget aids 0) c/v0 nil c/g0)
              (b/indexable nil (aget aids (dec (alength aids)))
@@ -1183,20 +1182,20 @@
             (when tuple
               (let [v (aget ^objects tuple v-idx)]
                 (if-let [ts (not-empty (.get seen v))]
-                  (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                    (.addAll ^Collection out new))
+                  (.addAll ^Collection out
+                           (r/prod-tuples (r/single-tuples tuple) ts))
                   (let [es (LongArrayList.)]
                     (lmdb/visit-list
                       lmdb c/ave
                       (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
                       (b/indexable nil aid v vt nil) :av)
-                    (let [ts  (r/vertical-tuples (.toArray es))
-                          new (r/prod-tuples (r/single-tuples tuple) ts)]
+                    (let [ts (r/vertical-tuples (.toArray es))]
                       (.put seen v ts)
-                      (.addAll ^Collection out new))))
+                      (.addAll ^Collection out
+                               (r/prod-tuples (r/single-tuples tuple) ts)))))
                 (recur (produce in)))))))))
 
-  (val-eq-scan-e-list [store in v-idx attr]
+  (val-eq-scan-e-list [_ in v-idx attr]
     (when attr
       (when-let [props (schema attr)]
         (let [vt   (value-type props)
@@ -1207,17 +1206,16 @@
             (let [tuple (.get ^List in i)
                   v     (aget ^objects tuple v-idx)]
               (if-let [ts (not-empty (.get seen v))]
-                (let [new (r/prod-tuples (r/single-tuples tuple) ts)]
-                  (.addAll out new))
+                (.addAll out (r/prod-tuples (r/single-tuples tuple) ts))
                 (let [es (LongArrayList.)]
                   (lmdb/visit-list
                     lmdb c/ave
                     (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
                     (b/indexable nil aid v vt nil) :av)
-                  (let [ts  (r/vertical-tuples (.toArray es))
-                        new (r/prod-tuples (r/single-tuples tuple) ts)]
+                  (let [ts (r/vertical-tuples (.toArray es))]
                     (.put seen v ts)
-                    (.addAll out new))))))
+                    (.addAll out (r/prod-tuples (r/single-tuples tuple)
+                                                ts)))))))
           out))))
 
   (val-eq-scan-e-list [_ in v-idx attr bound]
@@ -1255,7 +1253,7 @@
                   (b/indexable nil aid v vt nil) :av)
                 (recur (produce in)))))))))
 
-  (val-eq-filter-e-list [store in v-idx attr f-idx]
+  (val-eq-filter-e-list [_ in v-idx attr f-idx]
     (when attr
       (when-let [props (schema attr)]
         (let [vt  (value-type props)

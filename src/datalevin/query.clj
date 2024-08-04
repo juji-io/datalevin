@@ -1973,8 +1973,10 @@
         size     (estimate-join-size db link-e link ratios (:size prev-plan)
                                      last-step index new-base)
         e-plan   (e-plan db prev-plan index link new-key new-base size)
-        h-plan   (h-plan prev-plan new-base new-key size)]
-    (if (< ^long (:cost h-plan) ^long (:cost e-plan)) h-plan e-plan)))
+        ;; h-plan   (h-plan prev-plan new-base new-key size)
+        ]
+    e-plan
+    #_(if (< ^long (:cost h-plan) ^long (:cost e-plan)) h-plan e-plan)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
@@ -2158,6 +2160,7 @@
                                           (s/tuple-pipe))
                                        (rest steps)))
             work   (fn [step ^long i]
+                     ;; (when (identical? (-type step) :hash) (println "hash" ))
                      (if (zero? i)
                        (-execute-pipe step db nil (aget pipes 0))
                        (let [src (aget pipes (dec i))]
