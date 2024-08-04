@@ -7,31 +7,31 @@
    [datalevin.storage :as st]
    [datalevin.search :as s]
    [datalevin.entity :as de]
-   [datalevin.lru :as lru]
    [datalevin.util :as u :refer [raise]])
   (:import
-   [java.nio.charset StandardCharsets]
-   [datalevin.utl LikeFSM]
+   [datalevin.utl LikeFSM LRUCache]
    [datalevin.storage Store]
    [datalevin.db DB]))
 
-(def like-cache (lru/cache 128 :like-cache))
+(def like-cache (LRUCache. 512))
 
 (defn- like
   ([input pattern]
    (like input pattern nil false))
   ([input pattern opts]
    (like input pattern opts false))
-  ([input pattern {:keys [escape]} not?]
+  ([input ^String pattern {:keys [escape]} not?]
    (let [matcher
-         (lru/-get
-           like-cache [pattern escape not?]
-           (fn []
-             (let [pb  (.getBytes ^String pattern StandardCharsets/UTF_8)
-                   fsm (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-                   f   #(.match fsm
-                                (.getBytes ^String % StandardCharsets/UTF_8))]
-               (if not? #(not (f %)) f))))]
+         (let [k [pattern escape not?]]
+           (or (.get ^LRUCache like-cache k)
+               (let [mf (let [pb  (.getBytes pattern)
+                              fsm (if escape
+                                    (LikeFSM. pb escape)
+                                    (LikeFSM. pb))
+                              f   #(.match fsm (.getBytes ^String %))]
+                          (if not? #(not (f %)) f))]
+                 (.put ^LRUCache like-cache k mf)
+                 mf)))]
      (matcher input))))
 
 (defn- not-like

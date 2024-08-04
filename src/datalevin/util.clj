@@ -513,7 +513,7 @@
         (link-vars ~vr (var ~n))
         ~vr))))
 
-(def sample-cache (lru/cache 100 :sample))
+(def sample-cache (lru/cache 256 :sample))
 
 (defn reservoir-sampling
   "optimized reservoir sampling, random sample n out of m items, returns a

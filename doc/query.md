@@ -134,7 +134,7 @@ relation in each join.
 
 ### Join methods
 
-Currently, we consider four join methods.
+Currently, we consider three join methods.
 
 For two sets of where clauses involving two classes of entities respectively,
 e.g. `?e` and `?f`, we currently consider the following cases. If there
@@ -147,17 +147,9 @@ starts with `?f` relation and scan `:vae` index to obtain corresponding list of
 
 The third case is the value equality case, where `e` and `f` are linked due to
 unification of attribute values, then `:ave` index is scanned to find the
-target's entity IDs. The above three methods are essentially scanning indices
+target's entity IDs. These methods are essentially scanning indices
 for a list of entity IDs. Other attribute values then need to be merge scanned
 to obtain a full relation.
-
-The fourth method instead does merge scan first, then attempt to join
-two relations using hash join afterwards. The choice of probing and building
-side of the hash join is determined during execution, instead of being
-predetermined by the planner. This avoids the possibility of building the hash
-table on the wrong side due to inaccurate cardinality estimation. This property
-also makes our join tree more like a zig-zag one, rather than a pure
-left-deep join tree.
 
 The choice of these methods is determined by the optimizer based on its cost
 estimation.

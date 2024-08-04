@@ -11,7 +11,6 @@
    [datalevin.query-util :as qu]
    [datalevin.relation :as r]
    [datalevin.storage :as s]
-   [datalevin.rules :as ru]
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.inline :refer [update assoc]]
@@ -28,7 +27,7 @@
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.db DB]
-   [datalevin.storage Store HashPipe]
+   [datalevin.storage Store]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
@@ -173,36 +172,6 @@
     (str "Merge " var " by "
          (if (identical? type :_ref) "reverse reference" "equal values")
          " of " attr ".")))
-
-(defn- cols->attrs
-  [cols]
-  (u/reduce-indexed
-    (fn [m col i]
-      (let [v (if (set? col)
-                (some #(when (symbol? %) %) col)
-                col)]
-        (assoc m v i)))
-    {} cols))
-
-(defrecord HashJoinStep [in out cols lcols base-steps]
-
-  IStep
-  (-type [_] :hash)
-
-  (-execute [_ db src]
-    (:tuples
-     (hash-join (r/relation! (cols->attrs lcols) (s/remove-end-scan src))
-                (execute-steps {} db base-steps))))
-
-  (-execute-pipe [this db src sink]
-    (s/wait-input src)
-    (let [tuples (-execute this db src)]
-      (s/set-out-size src (.size ^List tuples))
-      (.addAll ^Collection sink tuples)))
-
-  (-explain [_ _]
-    (str "Hash join " (first (set/difference (set out) (set in)))
-         " with the relation of " in)))
 
 (defrecord Node [links mpath mcount bound free])
 
@@ -457,14 +426,7 @@
   (persistent!
     (reduce
       (fn [d e2]
-        (if (some (fn [e1]
-                    (if (set? e1)
-                      (if (set? e2)
-                        (when-let [is (not-empty (u/intersection e1 e2))]
-                          (every? symbol? is))
-                        (e1 e2))
-                      (= e1 e2)))
-                  vec1)
+        (if (some (fn [e1] (= e1 e2)) vec1)
           d
           (conj! d e2)))
       (transient []) vec2)))
@@ -778,109 +740,6 @@
            {:error :query/where :form clause})
 
     :else true))
-
-(def rule-seqid (atom 0))
-
-(defn expand-rule
-  [clause context]
-  (let [[rule & call-args] clause
-        seqid              (swap! rule-seqid inc)
-        branches           (get (:rules context) rule)]
-    (for [branch branches
-          :let   [[[_ & rule-args] & clauses] branch
-                  replacements (zipmap rule-args call-args)]]
-      (walk/postwalk
-        #(if (qu/free-var? %)
-           (u/some-of
-             (replacements %)
-             (symbol (str (name %) "__auto__" seqid)))
-           %)
-        clauses))))
-
-(defn remove-pairs
-  [xs ys]
-  (let [pairs (sequence (comp (map vector)
-                              (remove (fn [[x y]] (= x y))))
-                        xs ys)]
-    [(map first pairs)
-     (map peek pairs)]))
-
-(defn rule-gen-guards
-  [rule-clause used-args]
-  (let [[rule & call-args] rule-clause
-        prev-call-args     (get used-args rule)]
-    (for [prev-args prev-call-args
-          :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
-      [(concatv ['-differ?] call-args prev-args)])))
-
-(defn split-guards
-  [clauses guards]
-  (let [bound-vars (qu/collect-vars clauses)
-        pred       (fn [[[_ & vars]]] (every? bound-vars vars))]
-    [(filter pred guards)
-     (remove pred guards)]))
-
-(defn solve-rule
-  [context clause]
-  (let [final-attrs     (filter qu/free-var? clause)
-        final-attrs-map (zipmap final-attrs (range))
-        solve           (fn [prefix-context clauses]
-                          (reduce -resolve-clause prefix-context clauses))
-        empty-rels?     (fn [context]
-                          (some #(empty? (:tuples %)) (:rels context)))]
-    (loop [stack (list {:prefix-clauses []
-                        :prefix-context context
-                        :clauses        [clause]
-                        :used-args      {}
-                        :pending-guards {}})
-           rel   (r/relation! final-attrs-map (FastList.))]
-      (if-some [frame (first stack)]
-        (let [[clauses [rule-clause & next-clauses]]
-              (split-with #(not (rule? context %)) (:clauses frame))]
-          (if (nil? rule-clause)
-
-            ;; no rules -> expand, collect, sum
-            (let [context (solve (:prefix-context frame) clauses)
-                  tuples  (u/distinct-by vec (-collect context final-attrs))
-                  new-rel (r/relation! final-attrs-map tuples)]
-              (recur (next stack) (r/sum-rel rel new-rel)))
-
-            ;; has rule -> add guards -> check if dead -> expand rule -> push to stack, recur
-            (let [[rule & call-args] rule-clause
-                  guards
-                  (rule-gen-guards rule-clause (:used-args frame))
-                  [active-gs pending-gs]
-                  (split-guards (concatv (:prefix-clauses frame) clauses)
-                                (concatv guards (:pending-guards frame)))]
-              (if (some #(= % '[(-differ?)]) active-gs) ;; trivial always false case like [(not= [?a ?b] [?a ?b])]
-
-                ;; this branch has no data, just drop it from stack
-                (recur (next stack) rel)
-
-                (let [prefix-clauses (concatv clauses active-gs)
-                      prefix-context (solve (:prefix-context frame)
-                                            prefix-clauses)]
-                  (if (empty-rels? prefix-context)
-
-                    ;; this branch has no data, just drop it from stack
-                    (recur (next stack) rel)
-
-                    ;; need to expand rule to branches
-                    (let [used-args (assoc (:used-args frame) rule
-                                           (conj (get (:used-args frame)
-                                                      rule [])
-                                                 call-args))
-                          branches  (expand-rule rule-clause context)]
-                      (recur (concatv
-                               (for [branch branches]
-                                 {:prefix-clauses prefix-clauses
-                                  :prefix-context prefix-context
-                                  :clauses        (concatv branch next-clauses)
-                                  :used-args      used-args
-                                  :pending-guards pending-gs})
-                               (next stack))
-                             rel))))))))
-        rel))))
 
 (defn dynamic-lookup-attrs
   [source pattern]
@@ -1216,10 +1075,10 @@
   [{:keys [fn args]}]
   (case (:symbol fn)
     (and not or) (qu/collect-vars args)
-    (set (sequence
-           (comp (filter #(instance? Variable %))
-                 (map :symbol))
-           args))))
+    (into #{}
+          (comp (filter #(instance? Variable %))
+             (map :symbol))
+          args)))
 
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
@@ -1381,7 +1240,7 @@
         (str/replace (str esc "_") "_"))))
 
 (defn- wildcard-free-like-pattern
-  [^String pattern {:keys [escape] :as opts}]
+  [^String pattern {:keys [escape]}]
   (LikeFSM/isValid (.getBytes pattern) (or escape \!))
   (let [pstring (like-pattern-as-string pattern escape)]
     (when (and (not (str/includes? pstring "%"))
@@ -1826,7 +1685,7 @@
         attrs-v  (attrs-vec attrs preds skips fidxs)
         skips    (into #{} (keep (fn [[a m]] (when (m :skip?) a))) attrs-v)
         skip-vs  (set (mapv vars-m skips))
-        vars     (sequence (comp (remove keyword?) (remove skip-vs)) vars')
+        vars     (into [] (comp (remove keyword?) (remove skip-vs)) vars')
         in       (:out last-step)
         out      (if (set? in) (set new-key) new-key)
         cols     (into lcols
@@ -1927,7 +1786,7 @@
   [prev-size cur-steps]
   (let [step1 (first cur-steps)]
     (if (= 1 (count cur-steps))
-      (if (instance? MergeScanStep step1)
+      (if (identical? (-type step1) :merge)
         (estimate-scan-v-cost step1 prev-size)
         (estimate-link-cost step1 prev-size))
       (+ ^long (estimate-link-cost step1 prev-size)
@@ -1946,48 +1805,24 @@
            (+ ^long cost ^long (estimate-e-plan-cost size cur-steps))
            result-size)))
 
-(defn- estimate-hash-cost
-  [prev-plan new-base-plan]
-  (estimate-round
-    (* ^double c/magic-cost-hash
-       (+ ^long (:size prev-plan) ^long (:size new-base-plan)))))
-
-(defn- h-plan
-  [prev-plan new-base-plan new-key size]
-  (let [lstep (peek (:steps prev-plan))
-        in    (:out lstep)
-        lcols (:cols lstep)
-        out   (if (set? in) (set new-key) new-key)
-        steps (:steps new-base-plan)
-        ncols (concatv lcols (diff-keys lcols (:cols (peek steps))))]
-    (Plan. [(HashJoinStep. in out ncols lcols steps)]
-           (+ ^long (:cost prev-plan)
-              ^long (:cost new-base-plan)
-              ^long (estimate-hash-cost prev-plan new-base-plan))
-           size)))
-
 (defn- binary-plan*
   [db base-plans ratios prev-plan last-step link-e new-e link new-key]
   (let [index    (index-by-link (:cols last-step) link-e link)
         new-base (base-plans [new-e])
         size     (estimate-join-size db link-e link ratios (:size prev-plan)
-                                     last-step index new-base)
-        e-plan   (e-plan db prev-plan index link new-key new-base size)
-        ;; h-plan   (h-plan prev-plan new-base new-key size)
-        ]
-    e-plan
-    #_(if (< ^long (:cost h-plan) ^long (:cost e-plan)) h-plan e-plan)))
+                                     last-step index new-base)]
+    (e-plan db prev-plan index link new-key new-base size)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
   (apply min-key :cost
-         (sequence
-           (comp
-             (filter #(= new-e (:tgt %)))
-             (map #(binary-plan*
-                     db base-plans ratios prev-plan
-                     (peek (:steps prev-plan)) link-e new-e % new-key)))
-           (get-in nodes [link-e :links]))))
+         (into []
+               (comp
+                 (filter #(= new-e (:tgt %)))
+                 (map #(binary-plan*
+                         db base-plans ratios prev-plan
+                         (peek (:steps prev-plan)) link-e new-e % new-key)))
+               (get-in nodes [link-e :links]))))
 
 (defn- plans
   [db nodes pairs base-plans prev-plans ratios]
@@ -2128,13 +1963,21 @@
                 (assoc m (:out step)
                        {:tuples-count
                         (let [sink (aget sinks i)]
-                          (cond
-                            (s/pipe? sink)      (s/total sink)
-                            (s/hash-pipe? sink) (s/out-size sink)
-                            :else
+                          (if (s/pipe? sink)
+                            (s/total sink)
                             (.size ^Collection (s/remove-end-scan sink))))}))
               {(:out (peek steps)) {:tuples-count (.size tuples)}}
               (butlast steps)))))
+
+(defn- cols->attrs
+  [cols]
+  (u/reduce-indexed
+    (fn [m col i]
+      (let [v (if (set? col)
+                (some #(when (symbol? %) %) col)
+                col)]
+        (assoc m v i)))
+    {} cols))
 
 (defn- execute-steps
   "execute all steps of a component's plan to obtain a relation"
@@ -2142,25 +1985,18 @@
   (let [steps (vec steps)
         n     (count steps)
         attrs (cols->attrs (:cols (peek steps)))]
-    (cond
-      (= n 1)
-      (let [tuples (-execute (first steps) db nil)]
-        (save-intermediates context steps nil tuples)
-        (r/relation! attrs tuples))
-      (= n 2)
-      (let [src    (-execute (first steps) db nil)
-            tuples (-execute (peek steps) db src)]
-        (save-intermediates context steps (object-array [src]) tuples)
-        (r/relation! attrs tuples))
-      :else
+    (condp = n
+      1 (let [tuples (-execute (first steps) db nil)]
+          (save-intermediates context steps nil tuples)
+          (r/relation! attrs tuples))
+      2 (let [src    (-execute (first steps) db nil)
+              tuples (-execute (peek steps) db src)]
+          (save-intermediates context steps (object-array [src]) tuples)
+          (r/relation! attrs tuples))
       (let [n-1    (dec n)
             tuples (FastList.)
-            pipes  (object-array (mapv #(if (identical? (-type %) :hash)
-                                          (s/hash-pipe)
-                                          (s/tuple-pipe))
-                                       (rest steps)))
+            pipes  (object-array (repeatedly n-1 s/tuple-pipe))
             work   (fn [step ^long i]
-                     ;; (when (identical? (-type step) :hash) (println "hash" ))
                      (if (zero? i)
                        (-execute-pipe step db nil (aget pipes 0))
                        (let [src (aget pipes (dec i))]

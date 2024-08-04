@@ -195,7 +195,8 @@ This adds an unbound attribute to the results.
       db100k)
 ```
 Datalevin is now over 3X faster than Datascript. The reason is that Datalevin
-performs a merge scan on the index instead of a hash join to get the values of `:age`, so it processed a lot less intermediate results.
+performs a merge scan on the index instead of a hash join to get the values of
+`:age`, so it processed a lot less intermediate results.
 
 Datomic is over 10X slower than Datalevin for this query.
 
@@ -307,10 +308,6 @@ worst in this query, close to be 2.8X slower than Datalevin.
 |Datomic|178.7|
 |Datascript|352.1|
 |Datalevin|126.0|
-
-There's not much an optimizer can do for this one, because the selectivity of the
-join attribute is not high enough to afford an better plan than brute-forcily
-hash-joining them. Apparently, Datalevin hash-joins better than the other two.
 
 #### qpred1
 

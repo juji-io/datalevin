@@ -14,7 +14,7 @@
   (:import
    [java.util UUID List Random Comparator Collection]
    [java.util.concurrent ScheduledExecutorService Executors TimeUnit Callable
-    LinkedBlockingQueue ConcurrentLinkedDeque]
+    LinkedBlockingQueue]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
@@ -405,63 +405,21 @@
 
 (defn tuple-pipe [] (->TuplePipe (LinkedBlockingQueue.) 0))
 
-(defprotocol IHashPipe
-  (hash-pipe? [this] "test if implements this protocol")
-  (wait-input [this] "wait for when all input tuples are in")
-  (get-last [this] "get the last item")
-  (remove-last [this] "remove last item")
-  (set-out-size [this n] "called to set the number of tuples produced")
-  (out-size [this] "return the total number of tuples produced"))
-
-(extend-type Object IHashPipe (hash-pipe? [_] false))
-(extend-type nil IHashPipe (hash-pipe? [_] false))
-
-(deftype HashPipe [^ConcurrentLinkedDeque buffer
-                   ^:volatile-mutable out-size]
-  IHashPipe
-  (hash-pipe? [_] true)
-  (out-size [_] out-size)
-  (set-out-size [_ n] (set! out-size n))
-  (get-last [_] (.getLast buffer))
-  (remove-last [_] (.removeLast buffer))
-  (wait-input [this]
-    (locking this
-      (while (or (.isEmpty buffer)
-                 (not= :datalevin/end-scan (.getLast buffer)))
-        (.wait ^Object this))))
-
-  Collection
-  (iterator [_] (.iterator buffer))
-  (size [_] (.size buffer))
-  (isEmpty [_] (.isEmpty buffer))
-  (add [_ o] (.add buffer o))
-  (addAll [_ o] (.addAll buffer o)))
-
-(defn hash-pipe [] (->HashPipe (ConcurrentLinkedDeque.) 0))
-
 (defn finish-output
   [^Collection sink]
-  (.add sink :datalevin/end-scan)
-  (when (hash-pipe? sink)
-    (locking sink (.notify ^Object sink))))
+  (.add sink :datalevin/end-scan))
 
 (defn remove-end-scan
   [^Collection tuples]
   (if (.isEmpty tuples)
     tuples
-    (if (hash-pipe? tuples)
-      (let [l (get-last tuples)]
-        (if (identical? :datalevin/end-scan l)
-          (do (remove-last tuples)
-              (recur tuples))
-          tuples))
-      (let [size (.size ^List tuples)
-            s-1  (dec size)
-            l    (.get ^List tuples s-1)]
-        (if (identical? :datalevin/end-scan l)
-          (do (.remove ^List tuples s-1)
-              (recur tuples))
-          tuples)))))
+    (let [size (.size ^List tuples)
+          s-1  (dec size)
+          l    (.get ^List tuples s-1)]
+      (if (identical? :datalevin/end-scan l)
+        (do (.remove ^List tuples s-1)
+            (recur tuples))
+        tuples))))
 
 (defn- sampling
   [i j ^longs sample-indices work]
