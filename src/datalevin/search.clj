@@ -8,13 +8,13 @@
    [datalevin.analyzer :as a]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
-   [datalevin.lru :as lru]
    [clojure.string :as s])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.spill SpillableMap]
    [datalevin.lmdb IAdmin]
+   [datalevin.utl LRUCache]
    [java.util ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
@@ -398,12 +398,21 @@
           (u/raise "Unable to re-index search. " e {:dir (l/dir lmdb)})))
       (u/raise "Can only re-index search when :include-text? is true" {}))))
 
+(defmacro wrap-cache
+  [engine k v]
+  `(let [^LRUCache c# (.-cache ~engine)
+         k#           ~k]
+     (or (.get c# k#)
+         (let [v# ~v]
+           (.put c# k# v#)
+           v#))))
+
 (defn- get-pos-info
   [^SearchEngine engine doc-id term-id]
-  (lru/-get
-    (.-cache engine) [:get-pos-info doc-id term-id]
-    #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
-                  [doc-id term-id] :int-int :pos-info)))
+  (wrap-cache
+    engine [:get-pos-info doc-id term-id]
+    (l/get-value (.-lmdb engine) (.-positions-dbi engine)
+                 [doc-id term-id] :int-int :pos-info)))
 
 (defn- get-offsets
   [^SearchEngine engine doc-id term-id]
@@ -536,10 +545,10 @@
 
 (defn- get-term-info
   [^SearchEngine engine term]
-  (lru/-get (.-cache engine)
-            [:get-term-info term]
-            #(l/get-value (.-lmdb engine) (.-terms-dbi engine) term
-                          :string :term-info)))
+  (wrap-cache
+    engine [:get-term-info term]
+    (l/get-value (.-lmdb engine) (.-terms-dbi engine) term
+                 :string :term-info)))
 
 (defn- term-id->term-info
   [^SearchEngine engine term-id]
@@ -548,10 +557,10 @@
 
 (defn- doc-ref->id
   [^SearchEngine engine doc-ref]
-  (lru/-get (.-cache engine)
-            [:doc-ref->id doc-ref]
-            #(l/get-value (.-lmdb engine) (.-docs-dbi engine)
-                          doc-ref :data :int)))
+  (wrap-cache
+    engine [:doc-ref->id doc-ref]
+    (l/get-value (.-lmdb engine) (.-docs-dbi engine)
+                 doc-ref :data :int)))
 
 (defn- term-ids-via-positions-dbi
   [^SearchEngine engine doc-ref]
@@ -568,24 +577,24 @@
 
 (defn- doc-ref->term-ids
   [^SearchEngine engine doc-ref]
-  (lru/-get (.-cache engine)
-            [:doc-ref->term-ids doc-ref]
-            #(let [ar (peek (l/get-value (.-lmdb engine)
-                                         (.-docs-dbi engine)
-                                         doc-ref :data :doc-info))]
-               (if (< 0 (alength ^ints ar))
-                 ar
-                 (term-ids-via-positions-dbi engine doc-ref)))))
+  (wrap-cache
+    engine [:doc-ref->term-ids doc-ref]
+    (let [ar (peek (l/get-value (.-lmdb engine)
+                                (.-docs-dbi engine)
+                                doc-ref :data :doc-info))]
+      (if (< 0 (alength ^ints ar))
+        ar
+        (term-ids-via-positions-dbi engine doc-ref)))))
 
 (defn- remove-doc*
   [^SearchEngine engine doc-id doc-ref]
-  (let [txs           (FastList.)
-        norms         ^IntShortHashMap (.-norms engine)
-        norm          (.get norms doc-id)
-        terms-dbi     (.-terms-dbi engine)
-        positions-dbi (.-positions-dbi engine)
-        rawtext-dbi   (.-rawtext-dbi engine)
-        cache         (.-cache engine)]
+  (let [txs             (FastList.)
+        norms           ^IntShortHashMap (.-norms engine)
+        norm            (.get norms doc-id)
+        terms-dbi       (.-terms-dbi engine)
+        positions-dbi   (.-positions-dbi engine)
+        rawtext-dbi     (.-rawtext-dbi engine)
+        ^LRUCache cache (.-cache engine)]
     (.add txs (l/kv-tx :del rawtext-dbi doc-id :int))
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
       (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
@@ -595,17 +604,15 @@
                               (del-max-weight sl doc-id mw tf norm)
                               (sl/remove sl doc-id)]
                              :string :term-info))
-          (-> cache
-              (lru/-del [:get-term-info term])
-              (lru/-del [:get-pos-info doc-id term-id]))))
+          (.remove cache [:get-term-info term])
+          (.remove cache [:get-pos-info doc-id term-id])))
       (.add txs (l/kv-tx :del positions-dbi [doc-id term-id] :int-int)))
     (.add txs (l/kv-tx :del (.-docs-dbi engine) doc-ref :data))
     (.remove ^SpillableMap (.-docs engine) doc-id)
     (.remove norms doc-id)
     (l/transact-kv (.-lmdb engine) txs)
-    (-> cache
-        (lru/-del [:doc-ref->id doc-ref])
-        (lru/-del [:doc-ref->term-ids doc-ref])))
+    (.remove cache [:doc-ref->id doc-ref])
+    (.remove cache [:doc-ref->term-ids doc-ref]))
   :doc-removed)
 
 (defn- add-doc*
@@ -803,7 +810,7 @@
                        terms     ;; term-id -> term
                        docs      ;; doc-id -> doc-ref
                        norms     ;; doc-id -> norm
-                       (lru/cache 100000 :constant)
+                       (LRUCache. 100000)
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)
                        index-position?

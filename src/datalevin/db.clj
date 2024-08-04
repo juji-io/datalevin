@@ -16,10 +16,10 @@
    [datalevin.inline :refer [update assoc]])
   (:import
    [datalevin.datom Datom]
-   [datalevin.storage IStore Store TuplePipe]
+   [datalevin.storage IStore Store]
    [datalevin.remote DatalogStore]
    [datalevin.lru LRU]
-   [java.util SortedSet Comparator Collection]
+   [java.util SortedSet Comparator]
    [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))

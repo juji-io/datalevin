@@ -25,6 +25,10 @@ public class LRUCache {
         map.put(key, value);
     }
 
+    public Object remove(Object key) {
+        return map.remove(key);
+    }
+
     public void clear() {
         map.clear();
     }

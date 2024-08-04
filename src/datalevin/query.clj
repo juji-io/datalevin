@@ -25,7 +25,7 @@
    [java.util Arrays List Collection]
    [java.util.concurrent ConcurrentHashMap]
    [clojure.lang ILookup LazilyPersistentVector]
-   [datalevin.utl LikeFSM]
+   [datalevin.utl LikeFSM LRUCache]
    [datalevin.db DB]
    [datalevin.storage Store]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
