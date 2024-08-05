@@ -356,7 +356,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred 1.5)
+  magic-cost-pred 1.4)
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding attributes when estimating size"}
@@ -389,7 +389,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}
-  sample-processing-interval 600)
+  sample-processing-interval 3600)
 
 ;; search engine
 

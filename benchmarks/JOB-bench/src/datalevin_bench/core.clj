@@ -1,9 +1,10 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
-   [datalevin.built-ins :as b]
    [clojure.java.io :as io]
-   [clojure.string :as s]))
+   [clojure.string :as s])
+  (:import
+   [java.util Arrays]))
 
 (def schema
   {:aka-name/person        {:db/valueType :db.type/ref}
@@ -3251,7 +3252,7 @@
                    (filter #(s/starts-with? (name %) "q-"))
                    (sort (keys (ns-publics 'datalevin-bench.core)))))
 
-(def warmup-times 2)
+(def warmup-times 5)
 (def bench-times 5)
 
 (def result-filename "datalevin_times.csv")
@@ -3259,22 +3260,27 @@
 (defn -main [&opts]
   (println "The Join Order Benchmark Test ...")
 
-  ((with-open [w (io/writer result-filename)]
-     (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
-     (doseq [q queries]
-       (let [qname   (s/replace (name q) "q-" "")
-             _       (println "bench" qname)
-             query   (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
-             _       (dotimes [_ warmup-times] (d/q query db))
-             [pt et] (let [times (mapv
-                                   (fn [e]
-                                     [(Double/parseDouble (e :planning-time))
-                                      (Double/parseDouble (e :execution-time))])
-                                   (for [_ (range bench-times)]
-                                     (d/explain {:run? true} query db)))]
-                       [(format "%.3f" (b/aggregate-avg (map first times)))
-                        (format "%.3f" (b/aggregate-avg (map peek times)))])]
-         (d/write-csv w [[qname pt et]])))))
+  (with-open [w (io/writer result-filename)]
+    (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
+    (doseq [q queries]
+      (let [mid     (long (* 0.5 bench-times))
+            qname   (s/replace (name q) "q-" "")
+            _       (println "bench" qname)
+            query   (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
+            _       (dotimes [_ warmup-times] (d/q query db))
+            [pt et] (let [times (mapv
+                                  (fn [e]
+                                    [(Double/parseDouble (e :planning-time))
+                                     (Double/parseDouble (e :execution-time))])
+                                  (for [_ (range bench-times)]
+                                    (d/explain {:run? true} query db)))
+                          pts   (double-array (map first times))
+                          ets   (double-array (map peek times))]
+                      (Arrays/sort pts)
+                      (Arrays/sort ets)
+                      [(format "%.3f" (aget pts mid))
+                       (format "%.3f" (aget ets mid))])]
+        (d/write-csv w [[qname pt et]]))))
 
   (d/close conn)
 

@@ -38,7 +38,7 @@
 ## Changed
 - [Datalog] maintain an estimated total size and a representative sample of
   entity ids for each attribute, processed periodically according to
-  `sample-processing-interval`(default 600 second).
+  `sample-processing-interval`(default 3600 second).
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
 
 ## 0.9.8 (2024-06-29)

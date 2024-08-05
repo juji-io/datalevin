@@ -144,7 +144,7 @@
   (-init-tuples-list
     [db a v-ranges pred get-v?]
     (wrap-cache
-        store [:init-tuples a v-ranges pred get-v?]
+      store [:init-tuples a v-ranges pred get-v?]
       (s/ave-tuples-list store a v-ranges pred get-v?)))
 
   (-sample-init-tuples
@@ -154,13 +154,13 @@
   (-sample-init-tuples-list
     [db a mcount v-ranges pred get-v?]
     (wrap-cache
-        store [:sample-init-tuples a mcount v-ranges pred get-v?]
+      store [:sample-init-tuples a mcount v-ranges pred get-v?]
       (s/sample-ave-tuples-list store a mcount v-ranges pred get-v?)))
 
   (-e-sample
     [db a]
     (wrap-cache
-        store [:e-sample a]
+      store [:e-sample a]
       (s/e-sample store a)))
 
   (-eav-scan-v
@@ -170,7 +170,7 @@
   (-eav-scan-v-list
     [db in eid-idx attrs-v]
     (wrap-cache
-        store [:eav-scan-v in eid-idx attrs-v]
+      store [:eav-scan-v in eid-idx attrs-v]
       (s/eav-scan-v-list store in eid-idx attrs-v)))
 
   (-val-eq-scan-e
@@ -180,7 +180,7 @@
   (-val-eq-scan-e-list
     [db in v-idx attr]
     (wrap-cache
-        store [:val-eq-scan-e in v-idx attr]
+      store [:val-eq-scan-e in v-idx attr]
       (s/val-eq-scan-e-list store in v-idx attr)))
 
   (-val-eq-scan-e
@@ -190,7 +190,7 @@
   (-val-eq-scan-e-list
     [db in v-idx attr bound]
     (wrap-cache
-        store [:val-eq-scan-e in v-idx attr bound]
+      store [:val-eq-scan-e in v-idx attr bound]
       (s/val-eq-scan-e-list store in v-idx attr bound)))
 
   (-val-eq-filter-e
@@ -200,7 +200,7 @@
   (-val-eq-filter-e-list
     [db in v-idx attr f-idx]
     (wrap-cache
-        store [:val-eq-filter-e in v-idx attr f-idx]
+      store [:val-eq-filter-e in v-idx attr f-idx]
       (s/val-eq-filter-e-list store in v-idx attr f-idx)))
 
   ISearch
@@ -208,7 +208,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store [:search e a v]
+        store [:search e a v]
         (case-tree
           [e a (some? v)]
           [(s/fetch store (datom e a v)) ; e a v
@@ -220,11 +220,8 @@
            (s/e-datoms store e) ; e _ _
            (s/av-datoms store a v) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                 (let [out (FastList.)]
-                   (s/ave-tuples
-                     store out a [[[:closed c/v0] [:closed c/vmax]]] nil true)
-                   (s/remove-end-scan out)
-                   out)) ; _ a _
+                 (s/ave-tuples-list
+                   store a [[[:closed c/v0] [:closed c/vmax]]] nil true)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)
@@ -235,7 +232,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store [:first e a v]
+        store [:first e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -259,7 +256,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store [:last e a v]
+        store [:last e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -286,7 +283,7 @@
     [db pattern cap]
     (let [[e a v] pattern]
       (wrap-cache
-          store [:count e a v cap]
+        store [:count e a v cap]
         (case-tree
           [e a (some? v)]
           [(s/size store :eav (datom e a v) (datom e a v) cap) ; e a v
@@ -304,7 +301,7 @@
   (-populated?
     [db index c1 c2 c3]
     (wrap-cache
-        store [:populated? index c1 c2 c3]
+      store [:populated? index c1 c2 c3]
       (s/populated? store index
                     (components->pattern db index c1 c2 c3 e0)
                     (components->pattern db index c1 c2 c3 emax))))
@@ -312,7 +309,7 @@
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store [:datoms index c1 c2 c3]
+      store [:datoms index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (components->pattern db index c1 c2 c3 emax))))
@@ -326,13 +323,13 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-        store [:range-datoms index start-datom end-datom]
+      store [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index c1 c2 c3]
     (wrap-cache
-        store [:first-datom index c1 c2 c3]
+      store [:first-datom index c1 c2 c3]
       (s/head store index
               (components->pattern db index c1 c2 c3 e0)
               (components->pattern db index c1 c2 c3 emax))))
@@ -340,7 +337,7 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store [:seek index c1 c2 c3]
+      store [:seek index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (datom emax c1 nil))))
@@ -348,7 +345,7 @@
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store [:rseek index c1 c2 c3]
+      store [:rseek index c1 c2 c3]
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 c1 nil))))
@@ -356,12 +353,12 @@
   (-cardinality
     [db attr]
     (wrap-cache store [:cardinality attr]
-      (s/cardinality store attr)))
+                (s/cardinality store attr)))
 
   (-index-range
     [db attr start end]
     (wrap-cache
-        store [:index-range attr start end]
+      store [:index-range attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :ave (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
@@ -372,7 +369,7 @@
   (-index-range-size
     [db attr start end cap]
     (wrap-cache
-        store [:index-range-size attr start end]
+      store [:index-range-size attr start end]
       (s/av-range-size store attr start end cap))))
 
 ;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
