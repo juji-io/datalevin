@@ -14,7 +14,6 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.inline :refer [update assoc]]
-   ;; [datalevin.lru :as lru]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]

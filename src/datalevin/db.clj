@@ -5,7 +5,6 @@
    [clojure.data]
    [clojure.set]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
-   [datalevin.lru :as lru]
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
    [datalevin.util :as u
@@ -18,7 +17,6 @@
    [datalevin.datom Datom]
    [datalevin.storage IStore Store]
    [datalevin.remote DatalogStore]
-   [datalevin.lru LRU]
    [datalevin.utl LRUCache]
    [java.util SortedSet Comparator]
    [java.util.concurrent ConcurrentHashMap]
@@ -70,9 +68,7 @@
   (-val-eq-scan-e [db in out v-idx attr] [db in out v-idx attr bound])
   (-val-eq-scan-e-list [db in v-idx attr] [db in v-idx attr bound])
   (-val-eq-filter-e [db in out v-idx attr f-idx])
-  (-val-eq-filter-e-list [db in v-idx attr f-idx])
-  ;; (-sample-link-e [db vs attr mcount])
-  )
+  (-val-eq-filter-e-list [db in v-idx attr f-idx]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -96,16 +92,15 @@
    (refresh-cache store (s/last-modified store)))
   ([store target]
    (.put ^ConcurrentHashMap caches (s/dir store)
-         (lru/lru (:cache-limit (s/opts store)) target))))
+         (LRUCache. (:cache-limit (s/opts store)) target))))
 
 (defmacro wrap-cache
   [store pattern body]
   `(let [cache# (.get ^ConcurrentHashMap caches (s/dir ~store))]
-     (if-some [cached# (get ^LRU cache# ~pattern nil)]
+     (if-some [cached# (.get ^LRUCache cache# ~pattern)]
        cached#
        (let [res# ~body]
-         (.put ^ConcurrentHashMap caches (s/dir ~store)
-               (assoc cache# ~pattern res#))
+         (.put ^LRUCache cache# ~pattern res#)
          res#))))
 
 (defn vpred
@@ -207,12 +202,6 @@
     (wrap-cache
         store [:val-eq-filter-e in v-idx attr f-idx]
       (s/val-eq-filter-e-list store in v-idx attr f-idx)))
-
-  #_(-sample-link-e
-      [db vs attr mcount]
-      (wrap-cache
-          store [:sample-link-e vs attr mcount]
-        (s/sample-link-e store vs attr mcount)))
 
   ISearch
   (-search
@@ -403,7 +392,7 @@
     (let [store  (.-store ^DB x)
           target (s/last-modified store)
           cache  (.get ^ConcurrentHashMap caches (s/dir store))]
-      (when (< ^long (.-target ^LRU cache) ^long target)
+      (when (< ^long (.target ^LRUCache cache) ^long target)
         (refresh-cache store target)))
     true))
 
@@ -841,9 +830,7 @@
 
             (and
               (multival? db a)
-              (or
-                ;; (arrays/array? v)
-                (and (coll? v) (not (map? v)))))
+              (and (coll? v) (not (map? v))))
             (let [[insert upsert] (split a v)]
               [(cond-> entity'
                  (not (empty? insert)) (assoc a insert))
@@ -1075,8 +1062,10 @@
                               (:v (-first-datom db :eav eid tuple nil)))]
               (cond
                 (= value current) entities
-                (nil? value)      (conj entities ^::internal [:db/retract eid tuple current])
-                :else             (conj entities ^::internal [:db/add eid tuple value]))))
+                (nil? value)
+                (conj entities ^::internal [:db/retract eid tuple current])
+                :else
+                (conj entities ^::internal [:db/add eid tuple value]))))
           entities
           tuples+values))
       [] (::queued-tuples report))))

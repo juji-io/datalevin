@@ -300,10 +300,7 @@
   (val-eq-filter-e [this in out v-idx attr f-idx]
     "emit tuples to out")
   (val-eq-filter-e-list [this in v-idx attr f-idx]
-    "Return tuples filtered by the given attribute values")
-  ;; (sample-link-e [this vs attr mcount]
-  ;;   "Return tuples with eid as the only column sampled by attribute values")
-  )
+    "Return tuples filtered by the given attribute values"))
 
 (defn e-aid-v->datom
   [store e-aid-v]
@@ -1227,29 +1224,7 @@
                                (when (= ^long e ^long old-e)
                                  (.add out tuple))))
                 (b/indexable nil aid v vt nil) :av)))
-          out))))
-
-  #_(sample-link-e [_ vs attr mcount]
-      (when (and (seq vs) attr)
-        (when-let [props (schema attr)]
-          (let [vt   (value-type props)
-                aid  (props :db/aid)
-                res  (FastList.)
-                idxs (if (< ^long mcount ^long c/init-exec-size-threshold)
-                       (long-array (range mcount))
-                       (u/reservoir-sampling mcount c/init-exec-size-threshold))
-                len  (alength ^longs idxs)
-                vi   (volatile! 0)
-                vj   (volatile! 0)]
-            (doseq [v vs]
-              (when (< ^long @vi len)
-                (let [es    (LongArrayList.)
-                      work  (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
-                      visit (sampling vi vj idxs work)]
-                  (lmdb/visit-list
-                    lmdb c/ave visit (b/indexable nil aid v vt nil) :av)
-                  (.addAll res (r/vertical-tuples (.toArray es))))))
-            res)))))
+          out)))))
 
 (defn fulltext-index
   [search-engines ft-ds]

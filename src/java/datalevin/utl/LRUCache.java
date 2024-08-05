@@ -6,6 +6,8 @@ public class LRUCache {
     int capacity;
     Map<Object, Object> map;
 
+    long target;
+
     public LRUCache(int capacity) {
         this.capacity = capacity;
         map = Collections.synchronizedMap(new LinkedHashMap<Object, Object>(capacity,
@@ -15,6 +17,15 @@ public class LRUCache {
                     return size() > capacity;
                 }
             });
+    }
+
+    public LRUCache(int capacity, long target) {
+        this(capacity);
+        this.target = target;
+    }
+
+    public long target() {
+        return target;
     }
 
     public Object get(Object key) {
