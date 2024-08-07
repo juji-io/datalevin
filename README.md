@@ -283,7 +283,7 @@ See [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascrip
 for a detailed analysis of the results.
 
 We also compared Datalevin and PostgreSQL in handling complex queries, using
-[Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark). On a
+[Join Order Benchmark](benchmarks/JOB-bench). On a
 MacBook Pro, Apple M3 chip with 12 cores, 30 GB memory and 1TB SSD drive, here's
 the average times:
 
