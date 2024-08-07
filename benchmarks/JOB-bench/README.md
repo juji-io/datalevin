@@ -1,10 +1,14 @@
 # Join Order Benchmark (JOB)
 
 [JOB](https://github.com/gregrahn/join-order-benchmark) is a standard SQL
-benchmark that stresses database query optimizers, as described in the paper:
+benchmark that stresses database query optimizers, as described in the
+influential paper:
 
-Viktor Leis, et al. "How Good Are Query Optimizers, Really?" PVLDB Volume 9,
-No. 3, 2015 [pdf](http://www.vldb.org/pvldb/vol9/p204-leis.pdf)
+Viktor Leis, et al. "How Good Are Query Optimizers, Really?" PVLDB Volume 9, No. 3, 2015 [pdf](http://www.vldb.org/pvldb/vol9/p204-leis.pdf)
+
+This benchmark uses real world data set, and is extremely challenging, compared
+with other benchmarks, such as TPC series. We ported this benchmark to Datalog
+to see how Datalevin handle complex queries.
 
 ## Data Set
 
@@ -14,8 +18,9 @@ May 2013. The exported CSV files of the data set can be downloaded from
 http://homepages.cwi.nl/~boncz/job/imdb.tgz
 
 Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB. Each
-CSV file is a table, with the biggest table having over 36 million rows, while
-the smallest has only 4 rows.
+CSV file is a table. The data is highly normalized, with many foreign key
+references. The biggest table having over 36 million rows, while the smallest
+has only 4 rows.
 
 ### PostgreSQL
 
@@ -52,10 +57,9 @@ Then copy the CSV data into tables, e.g. in psql:
 
 Finally create foreign key indices: `psql -f data/fkindexes.sql`
 
-
 ### Datalevin
 
-We translated the SQL schema to equivalent Datalevin schema, shown in
+We translated the SQL schema to equivalent Datalevin schema, as shown in
 `datalevin-bench.core` namespace. The attribute names follow Clojure convention.
 
 The same set of CSV files are transformed into datoms and loaded into
@@ -65,11 +69,11 @@ datoms into Datalevin.
 ## Queries
 
 The `queries` directory contains 113 SQL queries for this benchmark. These
-queries all involve more than 5 tables and often have 10 or more where clauses.
+queries all involve more than 5 tables and often have 10 or more where clauses,
 
 We manually translated the SQL queries to equivalent Datalevin queries, and
 manually verified that PostgreSQL and Datalevin produce exactly the same results
-for the same queries (note 1).
+for the same query (note 1).
 
 For example, the query 1b of the benchmark:
 
@@ -114,40 +118,115 @@ Most queries in the benchmark are more complex than this example.
 
 ## Run Benchmark
 
-These software were tested on Intel Core i7-6850K CPU @ 3.60GHz, 64GB RAM, 1 TB
-SSD drive, running Ubuntu 22.04:
+These software were tested on a MacBook Pro 16 inch Nov 2023, Apple M3 Pro chip,
+6 performance core and 6 efficiency core, 36GB memory, 1TB SSD disk:
 
-* PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled
-by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
+* Homebrew PostgreSQL@16
 * Datalevin latest in this repository
 
-For PostgreSQL, run `postgres-time` script to run all queries. The results are
-PostgreSQL's own `EXPLAIN ANALYZE` reports written into a CSV file
-`postgres_onepass_time.csv`, in order to remove the impact of client/server
-communication and other unrelated factors.
+All software were in default configuration without any tuning.
+
+For PostgreSQL, first run `postgres-time` bash script to warm up. This runs all
+113 queries one after another. Then run the script again. The results of the
+second run were reported.
+
+The numbers were extracted from PostgreSQL's own `EXPLAIN ANALYZE` results, and
+written into a CSV file `postgres_onepass_time.csv`, in order to remove the
+impact of client/server communication and other unrelated factors.
 
 ```bash
+./postgres-time
 ./postgres-time
 ```
 
 For Datalevin, both `lein` and `clj` build tools are needed, the former is for
-building the main project, and the later for running the benchmark. Same as the
-above, the results are `explain` reports written into a CSV file
-`datalevin_onepass_time.csv`.
+building the main project, and the later for running the benchmark.
+
+Same as the above, we run `clj -Xbench` once to warm up. Then run it again to report the
+results. The numbers were extracted from `explain` function results and written
+into a CSV file `datalevin_onepass_time.csv`.
 
 ```bash
 cd ../..
 lein run   # this runs essential tests to ensure a good build
 cd benchmarks/JOB-bench
 clj -Xbench
+clj -Xbench
 ```
+
+We did not run the same query repeatedly and then compute the median or average
+for the query, because that would be mainly benchmarking caching behavior of the
+databases, as both have various caches. In this test, we are mainly interested
+in the behavior of query optimizer.
 
 ## Results
 
+We look at the timing results. The total query time can be divided into two
+parts: query planning time and plan execution time. Raw data files are the
+following:
 
+* [PostgreSQL](postgres_onepass_time.csv)
+* [Datalevin](datalevin_onepass_time.csv)
+
+### Wall clock time
+
+Table below shows how long it took for the systems to finish running 113 queries
+in this benchmark:
+
+|DB|Wall Clock Time (seconds)|
+|---|---|
+|PostgreSQL|204|
+|Datalevin|156|
+
+Datalevin is about 1.3X faster than PostgreSQL overall in running these complex
+queries.
+
+### Planning time
+
+Numbers below are in milliseconds.
+
+|DB|Mean|Min|Median|Max|
+|---|---|---|---|---|
+|PostgreSQL|9.8 |0.8 |3.6 |44.1 |
+|Datalevin|76.6 |5.5 |66.5 |505.8 |
+
+Datalevin spent almost an order of magnitude more time than PostgreSQL on
+query planning.
+
+### Execution time
+
+Numbers below are in milliseconds.
+
+|DB|Mean|Min|Median|Max|
+|---|---|---|---|---|
+|PostgreSQL|1752.6 |3.0 |174.6 |55251.3 |
+|Datalevin|1251.5 |0.1 |184.8 |27261.4 |
+
+On average, Datalevin is 1.4X faster than PostgreSQL in plan execution.
+The median times are similar, the differences are mainly in
+extrema. The best plan in Datalevin can be an order of magnitude faster, while
+the worst plan in PostgreSQL can be 2X slower than the worst plan in Datalevin.
+
+## Remarks
+
+For these complex queries, planning time is insignificant compared with the long
+execution time. While PostgreSQL is extremely fast in coming up with its plans,
+the quality of the plans seems to be worse than that of Datalevin, as it
+routinely misses the best plans and occasionally come up with extremely bad
+plans that took a long time to run. On the other hand, Datalevin spend more time
+in query planning, and it manages to find some very good plans while fares
+better when the planning algorithm misses the mark.
+
+PostgreSQL's planning algorithm is based on statistics collected by separate
+processes, so it is more expensive to maintain, at the same time, less
+effective, due to its strong statistical assumptions that are almost never true
+in real data. Datalevin's planning algorithm holds much weaker statistical
+assumptions, and is based on counting and sampling at query time, while it is
+more expensive to plan, the generated plans are of higher quality, resulting in
+better overall query performance in handling complex queries.
 
 Note 1: Manual verification is needed because all the queries return `MIN` results,
-  but Postgresql version 16's `MIN` function result is not consistent with UTF-8
+  but PostgreSQL version 16's `MIN` function result is not consistent with UTF-8
   encoding, and not even with its own `<` or `LEAST` function results. For
   example, for query 1b, Postgresql 16 `MIN(mc_note)` returns `"(as Grosvenor
   Park)"`, but `"(Set Decoration Rentals)"` should be the correct answer based

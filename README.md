@@ -66,14 +66,15 @@ semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
 [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database) for
-persistence. We then added a [cost-based query optimizer](doc/query.md) to
-enhance query performance.
+persistence. We then added a [cost-based query optimizer](doc/query.md),
+resulting in query performance [competitive](benchmarks/JOB-bench) against SQL
+RDBMS such as PostgreSQL.
 
 Datalevin can be used as a library, embedded in applications to manage state, e.g.
 used like SQLite; or it can run in a networked
 [client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
 mode (default port is 8898) with full-fledged role-based access control (RBAC)
-on the server, e.g. used like Postgres.
+on the server, e.g. used like PostgreSQL.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB also [performs
@@ -273,26 +274,28 @@ here is how it looks.
 <img src="benchmarks/datascript-bench/Write.png" alt="write benchmark" height="300"></img>
 </p>
 
-In this benchmark, both Datomic and Datascript are running in in-memory mode, as
-they require another database for persistence. The `init` write condition, i.e.
-bulk loading prepared datoms, is not available in Datomic. Datalevin write here
-is configured with LMDB `nosync` mode to better match the in-memory conditions,
-i.e. the operating system is responsible for flushing data to disk.
 
 In all benchmarked queries, Datalevin is the fastest among the three tested
 systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
 Datomic do not. Datalevin also has a caching layer for index access.
 
-Writes are slower, as expected, as Datalevin does write to disk even though sync
-is not explicitly called, while others are purely
-in memory. The bulk loading speed is good, writing 100K datoms to disk in less
-than 0.2 seconds; the same data can also be transacted with all the integrity
-checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
-one datom at a time, it takes longer time. Therefore, it is preferable to have
-batch transactions.
-
 See [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench)
 for a detailed analysis of the results.
+
+We also compared Datalevin and PostgreSQL in handling complex queries, using
+[Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark). On a
+MacBook Pro, Apple M3 chip with 12 cores, 30 GB memory and 1TB SSD drive, here's
+the average times:
+
+<p align="center">
+<img src="benchmarks/JOB-bench/means.png" alt="JOB benchmark averages" height="300"></img>
+</p>
+
+Datalevin is about 1.3X faster than PostgreSQL on average in running the complex
+queries in this benchmark. The gain is mainly in better query execution time due
+to higher quality of generated query plans.
+
+For more details, see [here](benchmarks/JOB-bench).
 
 ## :earth_americas: Roadmap
 

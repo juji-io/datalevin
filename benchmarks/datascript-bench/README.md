@@ -25,9 +25,10 @@ We ran this benchmark on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores, 64GB
 RAM, 1TB SSD, running Ubuntu 22.04 and OpenJDK 17, with Clojure 1.11.2.
 
 Datomic peer binary (licensed under Apache 2.0) 1.0.7075 and Datascript 1.6.3
-ran in memory only mode. Datalevin 0.9.0 does not have a memory only mode, so it
-ran in `:nosync` mode to better match the condition, i.e. the data were written,
-but `msync `was not called to force the flush to disk.
+ran in memory only mode, as they require another database for persistence.
+Datalevin 0.9.0 does not have a memory only mode, so it ran in `:nosync` mode to
+better match the condition, i.e. the data were written, but `msync `was not
+called to force the flush to disk.
 
 Clojure code for benchmarked tasks are given below in Datalevin syntax.
 
@@ -365,7 +366,6 @@ is not available.
 Using this benchmark, Datalevin query engine is found to be faster than Datomic
 and Datascript with a relatively large margin.
 
-However, the queries in this benchmark are fairly simple. To better test the systems, a
-benchmark with more complex queries and a larger data size need to be developed.
-The plan is to port join order benchmarks (JOB) from SQL to Datalog.
-Contributors are welcome and will be appreciated.
+However, the queries in this benchmark are fairly simple. To see Datalevin's
+ability to handle complex queries and a larger data size, please look at [JOB
+Benchmark](../JOB-bench).

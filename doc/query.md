@@ -239,22 +239,15 @@ relation.
 
 ### Join Order Benchmark (JOB)
 
-The join order benchmark (JOB) [5] from SQL contains 113 complex queries that
+The join order benchmark (JOB) [5] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
 PostgreSQL [here](https://github.com/juji-io/datalevin/tree/master/JOB-bench).
 
-While we are still working on the optimizer and there are still a lot of room
-for improvement, the results are already encouraging. For example, on my M3
-Macbook Pro, PostgreSQL took 231 seconds to run these queries, while Datalevin
-currently took 240 seconds.
-
 Datalevin's planning time is normally one or two order of magnitudes longer than
 that of PostgreSQL. This is expected, as our planner is written in idiomatic
-Clojure, and our planning algorithm is more sophisticated. However, the
+Clojure, and our planning algorithm is more complex. However, the
 execution time of Datalevin are more consistent and better on average, due to
-better plans produced. Hence the total query time of the two are close. We
-expect to beat or at least go even with PostgreSQL on total query time in the
-near future.
+better plans produced, resulting in Datalevin's smaller total query time.
 
 ## Remark
 
