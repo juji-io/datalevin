@@ -13,7 +13,7 @@
    [datalevin.storage Store]
    [datalevin.db DB]))
 
-(def like-cache (LRUCache. 512))
+(def like-cache (LRUCache. 256))
 
 (defn- like
   ([input pattern]

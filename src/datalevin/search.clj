@@ -810,7 +810,7 @@
                        terms     ;; term-id -> term
                        docs      ;; doc-id -> doc-ref
                        norms     ;; doc-id -> norm
-                       (LRUCache. 100000)
+                       (LRUCache. 10000)
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)
                        index-position?

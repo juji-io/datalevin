@@ -35,6 +35,8 @@
 
 (def ^:dynamic *query-cache* (LRUCache. 128))
 
+(def ^:dynamic *plan-cache* (LRUCache. 128))
+
 (def ^:dynamic *explain* nil)
 
 (def ^:dynamic *start-time* nil)

@@ -3255,32 +3255,21 @@
 (def warmup-times 5)
 (def bench-times 5)
 
-(def result-filename "datalevin_times.csv")
+(def result-filename "datalevin_onepass_time.csv")
 
 (defn -main [&opts]
-  (println "The Join Order Benchmark Test ...")
+  (println "The Join Order Benchmark 1Pass test ...")
 
   (with-open [w (io/writer result-filename)]
     (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
     (doseq [q queries]
-      (let [mid     (long (* 0.5 bench-times))
-            qname   (s/replace (name q) "q-" "")
-            _       (println "bench" qname)
-            query   (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
-            _       (dotimes [_ warmup-times] (d/q query db))
-            [pt et] (let [times (mapv
-                                  (fn [e]
-                                    [(Double/parseDouble (e :planning-time))
-                                     (Double/parseDouble (e :execution-time))])
-                                  (for [_ (range bench-times)]
-                                    (d/explain {:run? true} query db)))
-                          pts   (double-array (map first times))
-                          ets   (double-array (map peek times))]
-                      (Arrays/sort pts)
-                      (Arrays/sort ets)
-                      [(format "%.3f" (aget pts mid))
-                       (format "%.3f" (aget ets mid))])]
-        (d/write-csv w [[qname pt et]]))))
+      (let [qname  (s/replace (name q) "q-" "")
+            _      (println "run" qname)
+            query  (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
+            result (d/explain {:run? true} query db)]
+        (d/write-csv w [[qname
+                         (:planning-time result)
+                         (:execution-time result)]]))))
 
   (d/close conn)
 

@@ -384,8 +384,8 @@ above which, the same number of items will be sampled instead"}
   init-exec-size-threshold 1000)
 
 (def ^{:dynamic true
-       :doc     "The number of plans considered in each step initially, beyond which greedy search is performed"}
-  plan-space-reduction-threshold 20000)
+       :doc     "Max number of plans exhaustively enumerated in a step, beyond which greedy search is performed in later steps"}
+  plan-space-reduction-threshold 990) ;; P(11, 3)
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}
