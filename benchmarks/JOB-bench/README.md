@@ -119,7 +119,7 @@ Most queries in the benchmark are more complex than this example.
 ## Run Benchmark
 
 These software were tested on a MacBook Pro 16 inch Nov 2023, Apple M3 Pro chip,
-6 performance core and 6 efficiency core, 36GB memory, 1TB SSD disk:
+6 performance cores and 6 efficiency cores, 36GB memory, 1TB SSD disk:
 
 * Homebrew PostgreSQL@16
 * Datalevin latest in this repository
