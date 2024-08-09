@@ -178,7 +178,7 @@
 
 (defrecord Link [type tgt var attrs attr])
 
-(defrecord Clause [val var range count attrs attr pred])
+(defrecord Clause [val var range count pred])
 
 ;; rules
 
@@ -1449,10 +1449,10 @@
           (if (< s cap) s (reduced cap))))
       0 ranges)))
 
-(defn- count-k-datoms
-  [node db k]
-  (reduce-kv
-    (fn [{:keys [mcount] :as node} attr {:keys [val range]}]
+(defn- count-node-datoms
+  [db {:keys [free bound] :as node}]
+  (reduce
+    (fn [{:keys [mcount] :as node} [k attr {:keys [val range]}]]
       (let [^long c (cond
                       (some? val) (db/-count db [nil attr val] mcount)
                       range       (range-count db attr range mcount)
@@ -1463,13 +1463,10 @@
                                  (assoc-in [k attr :count] c)
                                  (assoc :mcount c :mpath [k attr]))
           :else              (assoc-in node [k attr :count] c))))
-    node (k node)))
-
-(defn- count-node-datoms
-  [db {:keys [free bound] :as node}]
-  (cond-> (assoc node :mcount Long/MAX_VALUE)
-    (< 0 (count bound)) (count-k-datoms db :bound)
-    (< 0 (count free))  (count-k-datoms db :free)))
+    (assoc node :mcount Long/MAX_VALUE)
+    (let [flat (fn [k m] (mapv (fn [[attr clause]] [k attr clause]) m))]
+      (sort-by (fn [[_ attr _]] (db/-count db [nil attr nil]))
+               (concat (flat :bound bound) (flat :free free) )))))
 
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
