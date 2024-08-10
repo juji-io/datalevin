@@ -1941,26 +1941,26 @@
   (if graph
     (reduce-kv
       (fn [c src nodes]
-        (let [db    (sources src)
-              nodes (update-nodes db nodes)
-              plans (if (< 1 (count nodes))
-                      (build-plan* db nodes)
-                      [[(base-plan db nodes (ffirst nodes) true)]])]
-          (if (some #(some nil? %) plans)
-            (reduced (assoc c :result-set #{}))
-            (assoc-in c [:plan src] plans)))
-        #_(let [^DB db (sources src)
-                k      [(.-store db) nodes]]
-            (if-let [cached (.get ^LRUCache *plan-cache* k)]
-              (assoc-in c [:plan src] cached)
-              (let [nodes (update-nodes db nodes)
-                    plans (if (< 1 (count nodes))
-                            (build-plan* db nodes)
-                            [[(base-plan db nodes (ffirst nodes) true)]])]
-                (if (some #(some nil? %) plans)
-                  (reduced (assoc c :result-set #{}))
-                  (do (.put ^LRUCache *plan-cache* k plans)
-                      (assoc-in c [:plan src] plans)))))))
+        #_(let [db    (sources src)
+                nodes (update-nodes db nodes)
+                plans (if (< 1 (count nodes))
+                        (build-plan* db nodes)
+                        [[(base-plan db nodes (ffirst nodes) true)]])]
+            (if (some #(some nil? %) plans)
+              (reduced (assoc c :result-set #{}))
+              (assoc-in c [:plan src] plans)))
+        (let [^DB db (sources src)
+              k      [(.-store db) nodes]]
+          (if-let [cached (.get ^LRUCache *plan-cache* k)]
+            (assoc-in c [:plan src] cached)
+            (let [nodes (update-nodes db nodes)
+                  plans (if (< 1 (count nodes))
+                          (build-plan* db nodes)
+                          [[(base-plan db nodes (ffirst nodes) true)]])]
+              (if (some #(some nil? %) plans)
+                (reduced (assoc c :result-set #{}))
+                (do (.put ^LRUCache *plan-cache* k plans)
+                    (assoc-in c [:plan src] plans)))))))
       context graph)
     context))
 
