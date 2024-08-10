@@ -44,6 +44,10 @@
       (is (= #{"a" "b" "c" "d"} (set (l/list-dbis lmdb))))
       (is (= (inc Long/BYTES) (:key-size (l/dbi-opts lmdb "c")))))
 
+    (testing "transacting nil will throw"
+      (is (thrown? Exception (l/transact-kv lmdb [[:put "a" nil 1]])))
+      (is (thrown? Exception (l/transact-kv lmdb [[:put "a" 1 nil]]))))
+
     (testing "transact-kv"
       (l/transact-kv lmdb
                      [[:put "a" 1 2]

@@ -3,8 +3,8 @@
 ## WIP
 
 ## Added
-- [Benchmark] ported Join Order Benchmark (JOB) from SQL
 - [Platform] native on arm64 Linux. [Thx @aldebogdanov]
+- [Benchmark] ported Join Order Benchmark (JOB) from SQL
 
 ## Fixed
 - [Datalog] Planner: nested logic predicates.
@@ -39,6 +39,7 @@
   entity ids for each attribute, processed periodically according to
   `sample-processing-interval`(default 3600 second).
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
+- [KV] throw exception when transacting `nil` #267
 
 ## 0.9.8 (2024-06-29)
 

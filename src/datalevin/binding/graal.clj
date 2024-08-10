@@ -155,7 +155,9 @@
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
-      (put-bufval kp x t)
+      (if (nil? x)
+        (raise "Key cannot be nil" {})
+        (put-bufval kp x t))
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -166,7 +168,9 @@
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
-      (put-bufval vp x t)
+      (if (nil? x)
+        (raise "Value cannot be nil" {})
+        (put-bufval vp x t))
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (.close vp)

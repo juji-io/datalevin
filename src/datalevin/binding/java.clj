@@ -153,7 +153,9 @@
         (b/valid-data? x t)
         (raise "Invalid data, expecting" t " got " x {:input x}))
     (try
-      (b/put-bf kb x t)
+      (if (nil? x)
+        (raise "Key cannot be nil" {})
+        (b/put-bf kb x t))
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -164,7 +166,9 @@
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
-      (b/put-bf vb x t)
+      (if (nil? x)
+        (raise "Value cannot be nil" {})
+        (b/put-bf vb x t))
       (catch BufferOverflowException _
         ;; TODO reset the val-size in kv-info
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
