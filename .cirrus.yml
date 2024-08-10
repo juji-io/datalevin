@@ -14,9 +14,9 @@ task:
     DTLV_PLATFORM: linux
   script: |
 
-    apt-get update
-    apt-get install -y curl git wget tar openjdk-11-jre-headless zlib1g-dev build-essential
-    
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar openjdk-11-jre-headless zlib1g-dev build-essential
+
     curl -O https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
     chmod a+x lein
     mv lein /usr/local/bin/
