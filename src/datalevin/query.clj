@@ -1413,18 +1413,18 @@
   "Split clauses, turn the group of clauses to be optimized into a query
   graph that looks like this:
   {$
-  {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
-                {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
-        :mpath [:bound :name]
-        :bound {:name {:val \"Tom\" :count 5}}
-        :free  {:age    {:var ?a :range [[:less-than 18]] :count 1089}
-                :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
-                :friend {:var ?e0 :count 2500}}}
-   ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
-        :mpath [:free :age]
-        :free  {:age {:var ?a :count 10890}}}
-   ...
-   }}
+    {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
+                  {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
+          :mpath [:bound :name]
+          :bound {:name {:val \"Tom\" :count 5}}
+          :free  {:age    {:var ?a :range [[:less-than 18]] :count 1089}
+                  :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
+                  :friend {:var ?e0 :count 2500}}}
+    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
+          :mpath [:free :age]
+          :free  {:age {:var ?a :count 10890}}}
+    ...
+    }}
 
   Remaining clauses are in :late-clauses.
   "
@@ -1930,7 +1930,7 @@
     :cols [?e]}
    {:op :merge-scan  :attrs [:age :friend] :preds [(< ?a 20) nil]
     :vars [?a ?f] :in #{?e} :index 0 :out #{?e} :cols [?e :age :friend]}
-   {:op :rev-ref :attr :friend :var ?e1 :in #{?e} :index 2
+   {:op :link :attr :friend :var ?e1 :in #{?e} :index 2
     :out #{?e ?e1} :cols [?e :age :friend ?e1]}
    {:op :merge-scan :attrs [:name] :preds [nil] :vars [?n] :index 3
     :in #{?e ?e1} :out #{?e ?e1} :cols [?e :age :friend ?e1 :name]}]
@@ -1948,7 +1948,19 @@
                       [[(base-plan db nodes (ffirst nodes) true)]])]
           (if (some #(some nil? %) plans)
             (reduced (assoc c :result-set #{}))
-            (assoc-in c [:plan src] plans))))
+            (assoc-in c [:plan src] plans)))
+        #_(let [^DB db (sources src)
+                k      [(.-store db) nodes]]
+            (if-let [cached (.get ^LRUCache *plan-cache* k)]
+              (assoc-in c [:plan src] cached)
+              (let [nodes (update-nodes db nodes)
+                    plans (if (< 1 (count nodes))
+                            (build-plan* db nodes)
+                            [[(base-plan db nodes (ffirst nodes) true)]])]
+                (if (some #(some nil? %) plans)
+                  (reduced (assoc c :result-set #{}))
+                  (do (.put ^LRUCache *plan-cache* k plans)
+                      (assoc-in c [:plan src] plans)))))))
       context graph)
     context))
 

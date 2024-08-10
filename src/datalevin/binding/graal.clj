@@ -280,8 +280,7 @@
                 (if forward? (init) (init-back)))]
         (reify
           Iterator
-          (hasNext [_]
-            (if (not @started?) (init-k) (advance)))
+          (hasNext [_] (if @started? (advance) (init-k) ))
           (next [_] (KV. k v)))))))
 
 (deftype ListIterable [^DBI db
@@ -402,9 +401,9 @@
         (reify
           Iterator
           (hasNext [_]
-            (if (not @started?)
-              (init-kv)
-              (if forward-val? (advance-val) (advance-val-back))))
+            (if @started?
+              (if forward-val? (advance-val) (advance-val-back))
+              (init-kv)))
           (next [_] (KV. k v)))))))
 
 (deftype ListRandKeyValIterable [^DBI db
@@ -704,15 +703,16 @@
     (try
       (or (when-let [^Rtx rtx (.poll pool)]
             (.renew rtx))
-          (Rtx. this
-                (Txn/createReadOnly env)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create 0)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (volatile! false)))
+          (locking env
+            (Rtx. this
+                  (Txn/createReadOnly env)
+                  (BufVal/create c/+max-key-size+)
+                  (BufVal/create 0)
+                  (BufVal/create c/+max-key-size+)
+                  (BufVal/create c/+max-key-size+)
+                  (BufVal/create c/+max-key-size+)
+                  (BufVal/create c/+max-key-size+)
+                  (volatile! false))))
       (catch Lib$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
