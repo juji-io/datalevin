@@ -32,7 +32,7 @@
   (println "java version" (System/getProperty "java.version"))
   (println
     "compiled for native?"
-    (= "true" (System/getenv "DTLV_COMPILE_NATIVE")))
+    (= (var-get #'clojure.core/map) (var-get #'datalevin.query/map+)))
   (println
     "running native?"
     (= "executable" (System/getProperty "org.graalvm.nativeimage.kind")))
