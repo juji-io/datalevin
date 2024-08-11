@@ -1,9 +1,12 @@
 # Change Log
 
-## 0.9.9 (2024-08-11)
+## WIP
+### Fixed
+- [Native] compile native image with UTF-8 encoding on Arm64 Linux and Windows.
 
+## 0.9.9 (2024-08-11)
 ## Added
-- [Platform] native on arm64 Linux. [Thx @aldebogdanov]
+- [Platform] native image on Arm64 Linux. [Thx @aldebogdanov]
 - [Benchmark] ported Join Order Benchmark (JOB) from SQL
 
 ## Fixed
