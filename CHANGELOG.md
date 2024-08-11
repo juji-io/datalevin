@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.10 (2024-08-11)
 ### Fixed
 - [Native] compile native image with UTF-8 encoding on Arm64 Linux and Windows.
 
