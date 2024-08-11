@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.9 (2024-08-11)
 
 ## Added
 - [Platform] native on arm64 Linux. [Thx @aldebogdanov]
