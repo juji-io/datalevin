@@ -1923,6 +1923,16 @@
       [(plan-component db nodes (first cc))]
       (pmap #(plan-component db nodes %) cc))))
 
+(defn- strip-result
+  [plans]
+  (mapv (fn [[f & r]]
+          (vec
+            (cons (update f :steps
+                          (fn [steps]
+                            (mapv #(assoc % :result nil :sample nil) steps)))
+                  r)))
+        plans))
+
 (defn- build-plan
   "Generate a query plan that looks like this:
 
@@ -1959,8 +1969,9 @@
                           [[(base-plan db nodes (ffirst nodes) true)]])]
               (if (some #(some nil? %) plans)
                 (reduced (assoc c :result-set #{}))
-                (do (.put ^LRUCache *plan-cache* k plans)
-                    (assoc-in c [:plan src] plans)))))))
+                (do
+                  (.put ^LRUCache *plan-cache* k (strip-result plans))
+                  (assoc-in c [:plan src] plans)))))))
       context graph)
     context))
 
