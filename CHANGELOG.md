@@ -31,7 +31,7 @@
   impact on performance. This provides a good balance between planning time and
   plan quality, while avoiding potential out of memory issue during planning.
 - [Datalog] Planner: do parallel processing whenever appropriate during planning
-  and execution.
+  and execution (JVM only).
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
 ## Changed
