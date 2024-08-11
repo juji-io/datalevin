@@ -2028,7 +2028,7 @@
                       (vswap! sinks conj res)
                       res))
                   fres r)]
-    (save-intermediates context steps nil tuples)
+    (save-intermediates context steps (object-array @sinks) tuples)
     (r/relation! attrs tuples)))
 
 (defn- execute-steps
@@ -2039,12 +2039,12 @@
         attrs (cols->attrs (:cols (peek steps)))]
     (condp = n
       1 (let [tuples (-execute (first steps) db nil)]
-          (save-intermediates context steps nil tuples)
-          (r/relation! attrs tuples))
+           (save-intermediates context steps nil tuples)
+           (r/relation! attrs tuples))
       2 (let [src    (-execute (first steps) db nil)
               tuples (-execute (peek steps) db src)]
-          (save-intermediates context steps (object-array [src]) tuples)
-          (r/relation! attrs tuples))
+           (save-intermediates context steps (object-array [src]) tuples)
+           (r/relation! attrs tuples))
       (if (u/graal?)
         (step-by-step context db attrs steps)
         (pipelining context db attrs steps n)))))
