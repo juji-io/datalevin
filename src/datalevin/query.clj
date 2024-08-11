@@ -1956,14 +1956,6 @@
   (if graph
     (reduce-kv
       (fn [c src nodes]
-        #_(let [db    (sources src)
-                nodes (update-nodes db nodes)
-                plans (if (< 1 (count nodes))
-                        (build-plan* db nodes)
-                        [[(base-plan db nodes (ffirst nodes) true)]])]
-            (if (some #(some nil? %) plans)
-              (reduced (assoc c :result-set #{}))
-              (assoc-in c [:plan src] plans)))
         (let [^DB db (sources src)
               k      [(.-store db) nodes]]
           (if-let [cached (.get ^LRUCache *plan-cache* k)]
@@ -2005,6 +1997,40 @@
         (assoc m v i)))
     {} cols))
 
+(defn- pipelining
+  [context db attrs steps n]
+  (let [n-1    (dec ^long n)
+        tuples (FastList.)
+        pipes  (object-array (repeatedly n-1 s/tuple-pipe))
+        work   (fn [step ^long i]
+                 (if (zero? i)
+                   (-execute-pipe step db nil (aget pipes 0))
+                   (let [src (aget pipes (dec i))]
+                     (if (= i n-1)
+                       (-execute-pipe step db src tuples)
+                       (-execute-pipe step db src (aget pipes i))))))
+        finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
+    (dorun ((if (writing? db) map pmap)
+            (fn [step i] (work step i) (finish i))
+            steps (range)))
+    (s/remove-end-scan tuples)
+    (save-intermediates context steps pipes tuples)
+    (r/relation! attrs tuples)))
+
+(defn- step-by-step
+  [context db attrs steps]
+  (let [[f & r] steps
+        fres    (-execute f db nil)
+        sinks   (volatile! [fres])
+        tuples  (reduce
+                  (fn [ts step]
+                    (let [res (-execute step db ts)]
+                      (vswap! sinks conj res)
+                      res))
+                  fres r)]
+    (save-intermediates context steps nil tuples)
+    (r/relation! attrs tuples)))
+
 (defn- execute-steps
   "execute all steps of a component's plan to obtain a relation"
   [context db steps]
@@ -2019,23 +2045,9 @@
               tuples (-execute (peek steps) db src)]
           (save-intermediates context steps (object-array [src]) tuples)
           (r/relation! attrs tuples))
-      (let [n-1    (dec n)
-            tuples (FastList.)
-            pipes  (object-array (repeatedly n-1 s/tuple-pipe))
-            work   (fn [step ^long i]
-                     (if (zero? i)
-                       (-execute-pipe step db nil (aget pipes 0))
-                       (let [src (aget pipes (dec i))]
-                         (if (= i n-1)
-                           (-execute-pipe step db src tuples)
-                           (-execute-pipe step db src (aget pipes i))))))
-            finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
-        (dorun ((if (writing? db) map map+)
-                (fn [step i] (work step i) (finish i))
-                steps (range)))
-        (s/remove-end-scan tuples)
-        (save-intermediates context steps pipes tuples)
-        (r/relation! attrs tuples)))))
+      (if (u/graal?)
+        (step-by-step context db attrs steps)
+        (pipelining context db attrs steps n)))))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
