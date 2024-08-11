@@ -9,7 +9,8 @@ task:
   arm_container:
     image: ubuntu:focal
     memory: 8G
-  only_if: $CIRRUS_TAG != ''
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
   env:
     DTLV_PLATFORM: linux
   script: |
