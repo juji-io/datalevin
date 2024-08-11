@@ -18,6 +18,7 @@ export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
+export DTLV_COMPILE_NATIVE=true
 
 MAIN_JAR="target/main.uberjar.jar"
 

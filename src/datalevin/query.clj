@@ -1638,7 +1638,7 @@
 (defn- writing? [db] (l/writing? (.-lmdb ^Store (.-store ^DB db))))
 
 ;; somehow graal has problem with pmap
-(def map+ (if (u/graal?) map pmap))
+(def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
 
 (defn- update-nodes
   [db nodes]
@@ -2010,7 +2010,7 @@
                        (-execute-pipe step db src tuples)
                        (-execute-pipe step db src (aget pipes i))))))
         finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
-    (dorun ((if (writing? db) map pmap)
+    (dorun ((if (writing? db) map map+)
             (fn [step i] (work step i) (finish i))
             steps (range)))
     (s/remove-end-scan tuples)
