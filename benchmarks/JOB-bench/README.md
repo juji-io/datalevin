@@ -59,12 +59,13 @@ Finally create foreign key indices: `psql -f data/fkindexes.sql`
 
 ### Datalevin
 
-We translated the SQL schema to equivalent Datalevin schema, as shown in
-`datalevin-bench.core` namespace. The attribute names follow Clojure convention.
+We translated the SQL schema to equivalent Datalevin
+[schema](https://github.com/juji-io/datalevin/blob/bce87e5afb5a3df1901988a2f750a86862a2e6a1/benchmarks/JOB-bench/src/datalevin_bench/core.clj#L9),
+as shown in `datalevin-bench.core` namespace. The attribute names follow Clojure
+convention.
 
 The same set of CSV files are transformed into datoms and loaded into
-Datalevin by uncommenting and running `(def db ...)`. This loads 277,878,514
-datoms into Datalevin.
+Datalevin by uncommenting and running `(def db ...)` at [this line](https://github.com/juji-io/datalevin/blob/bce87e5afb5a3df1901988a2f750a86862a2e6a1/benchmarks/JOB-bench/src/datalevin_bench/core.clj#L461). This loads 277,878,514 datoms into Datalevin.
 
 ## Queries
 
@@ -73,7 +74,7 @@ queries all involve more than 5 tables and often have 10 or more where clauses,
 
 We manually translated the SQL queries to equivalent Datalevin queries, and
 manually verified that PostgreSQL and Datalevin produce exactly the same results
-for the same query (note 1).
+for the same query (Note 1).
 
 For example, the query 1b of the benchmark:
 
@@ -215,7 +216,8 @@ the quality of the plans seems to be worse than that of Datalevin, as it
 routinely misses the best plans and occasionally come up with extremely bad
 plans that took a long time to run. On the other hand, Datalevin spend more time
 in query planning, and it manages to find some very good plans while fares
-better when the planning algorithm misses the mark.
+better when the planning algorithm misses the mark. For more details of
+Datalevin's query processing, please see [documentation](../../doc/query.md).
 
 PostgreSQL's planning algorithm is based on statistics collected by separate
 processes, so it is more expensive to maintain, at the same time, less
@@ -225,7 +227,9 @@ assumptions, and is based on counting and sampling at query time, while it is
 more expensive to plan, the generated plans are of higher quality, resulting in
 better overall query performance in handling complex queries.
 
-Note 1: Manual verification is needed because all the queries return `MIN` results,
+## Notes
+
+1. Manual verification is needed because all the queries return `MIN` results,
   but PostgreSQL version 16's `MIN` function result is not consistent with UTF-8
   encoding, and not even with its own `<` or `LEAST` function results. For
   example, for query 1b, Postgresql 16 `MIN(mc_note)` returns `"(as Grosvenor

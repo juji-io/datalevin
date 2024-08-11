@@ -5,24 +5,23 @@
 - [Native] compile native image with UTF-8 encoding on Arm64 Linux and Windows.
 
 ## 0.9.9 (2024-08-11)
-## Added
+### Added
 - [Platform] native image on Arm64 Linux. [Thx @aldebogdanov]
 - [Benchmark] ported Join Order Benchmark (JOB) from SQL
 
-## Fixed
+### Fixed
 - [Datalog] Planner: nested logic predicates.
 - [Datalog] Planner: multiple predicates turned ranges.
 - [Datalog] Planner: missing range turned predicates.
-- [Datalog] Planner: incorrect result columns for certain hash-join step.
 - [Datalog] Planner: need to first try target var to find index for :ref plan.
 - [Datalog] Planner: fail to unify with existing vars in certain cases. #263
 - [Datalog] Planner: skip initial attribute when it does not have a var.
 - [Datalog] Planner: target var may be already bound for link step.
 - [Datalog] Planner: missing bound var in merge scan.
 - [Datalog] `like` function failed to match in certain cases.
-- [Datalog] `clear` function also clear the meta dbi
+- [Datalog] `clear` function also clear the meta DBI
 
-## Improved
+### Improved
 - [Datalog] Planner: execute initial step if result size is small during
   planning, controlled by dynamic var `init-exec-size-threshold` (default 1000),
   above which, the same number of samples are collected instead. These
@@ -34,34 +33,34 @@
   impact on performance. This provides a good balance between planning time and
   plan quality, while avoiding potential out of memory issue during planning.
 - [Datalog] Planner: do parallel processing whenever appropriate during planning
-  and execution (JVM only).
+  and execution (regular JVM only).
 - [LMDB] Lock env when creating a read only txn to have safer concurrent reads.
 
-## Changed
+### Changed
 - [Datalog] maintain an estimated total size and a representative sample of
   entity ids for each attribute, processed periodically according to
-  `sample-processing-interval`(default 3600 second).
+  `sample-processing-interval`(default 3600 seconds).
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
-- [KV] throw exception when transacting `nil` #267
+- [KV] throw exception when transacting `nil`, #267
 
 ## 0.9.8 (2024-06-29)
 
-## Fixed
+### Fixed
 - [Datalog] Planner: column attributes should be a set of equivalent attribute
   and variable.
 - [Datalog] Planner: convert ranges back to correct predicates.
 - [Datalog] Handle `like`, `in` within complex logic expressions.
 
-## Improved
+### Improved
 - [Datalog] Optimize `not`, `and` and `or` logic functions that involve only
   one variable.
 
 ## 0.9.7 (2024-06-23)
 
-## Fixed
+### Fixed
 - [Datalog] Handle bounded entity IDs in reverse reference and value equality
   scans, #260
-## Improved
+### Improved
 - [Datalog] Added `:result` to `explain` result map.
 
 ## 0.9.6 (2024-06-21)
