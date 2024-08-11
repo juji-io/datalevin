@@ -15,6 +15,9 @@ task:
     DTLV_PLATFORM: linux
   script: |
 
+    locale-gen en_US en_US.UTF-8
+    dpkg-reconfigure locales
+
     DEBIAN_FRONTEND=noninteractive apt-get update -y
     DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar openjdk-11-jre-headless zlib1g-dev build-essential
 
