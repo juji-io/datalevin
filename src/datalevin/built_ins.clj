@@ -9,6 +9,7 @@
    [datalevin.entity :as de]
    [datalevin.util :as u :refer [raise]])
   (:import
+   [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.storage Store]
    [datalevin.db DB]))
@@ -24,11 +25,13 @@
    (let [matcher
          (let [k [pattern escape not?]]
            (or (.get ^LRUCache like-cache k)
-               (let [mf (let [pb  (.getBytes pattern)
+               (let [mf (let [pb  (.getBytes pattern StandardCharsets/UTF_8)
                               fsm (if escape
                                     (LikeFSM. pb escape)
                                     (LikeFSM. pb))
-                              f   #(.match fsm (.getBytes ^String %))]
+                              f   #(.match fsm
+                                           (.getBytes ^String %
+                                                      StandardCharsets/UTF_8))]
                           (if not? #(not (f %)) f))]
                  (.put ^LRUCache like-cache k mf)
                  mf)))]

@@ -15,11 +15,11 @@ task:
     DTLV_PLATFORM: linux
   script: |
 
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar openjdk-11-jre-headless zlib1g-dev build-essential locales
+
     locale-gen en_US en_US.UTF-8
     dpkg-reconfigure locales
-
-    DEBIAN_FRONTEND=noninteractive apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar openjdk-11-jre-headless zlib1g-dev build-essential
 
     curl -O https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
     chmod a+x lein
@@ -35,6 +35,11 @@ task:
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
     export STATIC_EXCEPT_LIBC=true
+
+    export LANGUAGE=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+    export LC_CTYPE=en_US.UTF-8
 
     script/compile
 
