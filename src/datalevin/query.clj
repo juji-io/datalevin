@@ -1637,18 +1637,20 @@
 
 (defn- writing? [db] (l/writing? (.-lmdb ^Store (.-store ^DB db))))
 
+;; somehow graal has problem with pmap
+(def map+ (if (u/graal?) map pmap))
+
 (defn- update-nodes
   [db nodes]
   (if (= 1 (count nodes))
     (let [[e node] (first nodes)] {e (count-datoms db e node)})
-    (into {} (pmap (fn [e] [e (count-datoms db e (get nodes e))]) (keys nodes)))))
+    (into {} (map+ (fn [e] [e (count-datoms db e (get nodes e))])
+                   (keys nodes)))))
 
 (defn- build-base-plans
   [db nodes component]
-  (into {}
-        ((if (u/graal?) map pmap) ;; somehow graal has problem here
-         (fn [e] [[e] (base-plan db nodes e)])
-         component)))
+  (into {} (map+ (fn [e] [[e] (base-plan db nodes e)])
+                 component)))
 
 (defn- find-index
   [a-or-v cols]
@@ -1829,7 +1831,7 @@
   [db nodes pairs base-plans prev-plans ratios]
   (apply u/merge-with
          (fn [p1 p2] (if (< ^long (:cost p2) ^long (:cost p1)) p2 p1))
-         (pmap
+         (map+
            (fn [[prev-key prev-plan]]
              (let [prev-key-set (set prev-key)]
                (persistent!
@@ -1924,7 +1926,7 @@
   (let [cc (connected-components nodes)]
     (if (= 1 (count cc))
       [(plan-component db nodes (first cc))]
-      (pmap #(plan-component db nodes %) cc))))
+      (map+ #(plan-component db nodes %) cc))))
 
 (defn- strip-result
   [plans]
@@ -2028,7 +2030,7 @@
                            (-execute-pipe step db src tuples)
                            (-execute-pipe step db src (aget pipes i))))))
             finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
-        (dorun ((if (writing? db) map pmap)
+        (dorun ((if (writing? db) map map+)
                 (fn [step i] (work step i) (finish i))
                 steps (range)))
         (s/remove-end-scan tuples)
@@ -2049,7 +2051,7 @@
                              (let [db (sources src)]
                                (for [plans components]
                                  [db (mapcat :steps plans)]))))
-                   (pmap #(apply execute-steps context %))
+                   (map+ #(apply execute-steps context %))
                    (sort-by #(count (:tuples %)))))))
 
 (defn- plan-explain
