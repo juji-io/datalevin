@@ -111,6 +111,9 @@
   (println "clojure version" (clojure-version))
   (println "java version" (System/getProperty "java.version"))
   (println
+    "compiled for native?"
+    (= "true" (System/getenv "DTLV_COMPILE_NATIVE")))
+  (println
     "running native?"
     (= "executable" (System/getProperty "org.graalvm.nativeimage.kind")))
   (test-clj))
