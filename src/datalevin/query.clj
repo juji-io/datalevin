@@ -1645,7 +1645,10 @@
 
 (defn- build-base-plans
   [db nodes component]
-  (into {} (pmap (fn [e] [[e] (base-plan db nodes e)]) component)))
+  (into {}
+        ((if (u/graal?) map pmap) ;; somehow graal has problem here
+         (fn [e] [[e] (base-plan db nodes e)])
+         component)))
 
 (defn- find-index
   [a-or-v cols]
