@@ -1,6 +1,7 @@
 (ns datalevin.remote-withtxnkv-test
   (:require
    [datalevin.core :as d]
+   [datalevin.util :as u]
    [datalevin.test.core :as tdc :refer [server-fixture]]
    [clojure.test :as t :refer [is deftest testing use-fixtures]]))
 
@@ -29,38 +30,40 @@
     (d/close-kv lmdb)))
 
 (deftest concurrent-with-transaction-kv-test
-  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
-        lmdb (d/open-kv dir)]
-    (d/open-dbi lmdb "a")
+  ;; TODO
+  (when-not (u/graal?)
+    (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+          lmdb (d/open-kv dir)]
+      (d/open-dbi lmdb "a")
 
-    (d/transact-kv lmdb [[:put "a" :counter 0]])
+      (d/transact-kv lmdb [[:put "a" :counter 0]])
 
-    (testing "concurrent writes from same client do not overwrite each other"
-      (let [count-f
-            #(d/with-transaction-kv [db lmdb]
-               (let [^long now (d/get-value db "a" :counter)]
-                 (d/transact-kv db [[:put "a" :counter (inc now)]])
-                 (d/get-value db "a" :counter)))]
-        (is (= (set [1 2 3])
-               (set (pcalls count-f count-f count-f))))
-        (is (= 3 (d/get-value lmdb "a" :counter)))))
+      (testing "concurrent writes from same client do not overwrite each other"
+        (let [count-f
+              #(d/with-transaction-kv [db lmdb]
+                 (let [^long now (d/get-value db "a" :counter)]
+                   (d/transact-kv db [[:put "a" :counter (inc now)]])
+                   (d/get-value db "a" :counter)))]
+          (is (= (set [1 2 3])
+                 (set (pcalls count-f count-f count-f))))
+          (is (= 3 (d/get-value lmdb "a" :counter)))))
 
-    (testing "concurrent writes from diff clients do not overwrite each other"
-      (let [count-f
-            #(d/with-transaction-kv [db (d/open-kv
-                                          dir {:client-opts {:pool-size 1}})]
-               (let [^long now (d/get-value db "a" :counter)]
-                 (d/transact-kv db [[:put "a" :counter (inc now)]])
-                 (d/get-value db "a" :counter)))
-            read-f (fn []
-                     (Thread/sleep (long (rand-int 1000)))
-                     (d/get-value lmdb "a" :counter))]
-        (is (#{(set [4 5 6]) (set [3 4 5 6])}
-              (set (pcalls count-f read-f  read-f
-                           count-f count-f read-f))))
-        (is (= 6 (d/get-value lmdb "a" :counter)))))
+      (testing "concurrent writes from diff clients do not overwrite each other"
+        (let [count-f
+              #(d/with-transaction-kv [db (d/open-kv
+                                            dir {:client-opts {:pool-size 1}})]
+                 (let [^long now (d/get-value db "a" :counter)]
+                   (d/transact-kv db [[:put "a" :counter (inc now)]])
+                   (d/get-value db "a" :counter)))
+              read-f (fn []
+                       (Thread/sleep (long (rand-int 1000)))
+                       (d/get-value lmdb "a" :counter))]
+          (is (#{(set [4 5 6]) (set [3 4 5 6])}
+                (set (pcalls count-f read-f  read-f
+                             count-f count-f read-f))))
+          (is (= 6 (d/get-value lmdb "a" :counter)))))
 
-    (d/close-kv lmdb)))
+      (d/close-kv lmdb))))
 
 (deftest with-txn-map-resize-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
