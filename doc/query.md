@@ -142,14 +142,12 @@ is a reference attribute in the clauses that connects these two classes of entit
 e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method will be considered.
 The forward ref method takes the list of `f?` in an existing relation, then
 merge scan values of `?f` entities. Reverse ref method has an extra step, it
-starts with `?f` relation and scan `:vae` index to obtain corresponding list of
-`?e`, then merge scan values of `?e` entities.
-
-The third case is the value equality case, where `e` and `f` are linked due to
-unification of attribute values, then `:ave` index is scanned to find the
-target's entity IDs. These methods are essentially scanning indices
-for a list of entity IDs. Other attribute values then need to be merge scanned
-to obtain a full relation.
+starts with `?f` relation and scan `:ave` index to obtain corresponding list of
+`?e`, then merge scan values of `?e` entities. The third case is the value
+equality case, where `e` and `f` are linked due to unification of attribute
+values, then `:ave` index is scanned to find the target's entity IDs. These
+methods are essentially scanning indices for a list of entity IDs. Other
+attribute values then need to be merge scanned to obtain a full relation.
 
 The choice of these methods is determined by the optimizer based on its cost
 estimation.
@@ -243,7 +241,7 @@ The join order benchmark (JOB) [5] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
 PostgreSQL [here](https://github.com/juji-io/datalevin/tree/master/JOB-bench).
 
-Datalevin's planning time is normally one or two order of magnitudes longer than
+Datalevin's planning time is normally one order of magnitudes longer than
 that of PostgreSQL. This is expected, as our planner is written in idiomatic
 Clojure, and our planning algorithm is more complex. However, the
 execution time of Datalevin are more consistent and better on average, due to
