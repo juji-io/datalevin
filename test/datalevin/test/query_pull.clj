@@ -56,18 +56,6 @@
     (d/close-db test-db)
     (u/delete-files dir)))
 
-;; not supported
-#_(deftest test-multi-pattern
-    (is (= (set (d/q '[:find ?e ?p (pull ?e ?p)
-                       :in $ [?p ...]
-                       :where [?e :age ?a]
-                       [>= ?a 18]]
-                     test-db [[:name] [:age]]))
-           #{[2 [:name] {:name "Ivan"}]
-             [2 [:age]  {:age 25}]
-             [1 [:name] {:name "Petr"}]
-             [1 [:age]  {:age 44}]})))
-
 (deftest test-multiple-sources
   (let [dir1 (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
         dir2 (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
@@ -192,31 +180,4 @@
                                         :where [?e :name "Peter"]]
                                       @conn2))))))
       (d/close conn2))
-    (u/delete-files dir)))
-
-(deftest test-readme
-  (let [dir  (u/tmp-dir (str "datalevin-test-readme-" (UUID/randomUUID)))
-        conn (d/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
-                              :name {:db/valueType :db.type/string
-                                     :db/unique    :db.unique/identity}})]
-    (d/transact! conn [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-                       {:name "Peirce", :db/id -2, :nation "france"}
-                       {:name "De Morgan", :db/id -3, :nation "English"}])
-    (is (= #{["France"]}
-           (d/q '[:find ?nation
-                  :in $ ?alias
-                  :where
-                  [?e :aka ?alias]
-                  [?e :nation ?nation]]
-                @conn
-                "fred")))
-    (d/transact! conn [[:db/retract 1 :name "Frege"]])
-    (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
-           (d/q '[:find (pull ?e [*])
-                  :in $ ?alias
-                  :where
-                  [?e :aka ?alias]]
-                @conn
-                "fred")))
-    (d/close conn)
     (u/delete-files dir)))

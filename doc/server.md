@@ -15,6 +15,26 @@ and accepts network connection on port 8898 (default).
 * `-v` option enables verbose server debug logs. Datalevin server writes logs to
   stdout.
 
+Although `dtlv` command line tool starts up fast and use less memory, it may not
+be suitable for highly concurrent and demanding use cases. The reason is that
+the community version of GraalVM that `dtlv` native command tool is built with
+uses only SerialGC, which limits the application throughout greatly. For such
+use cases, it is recommended to run the JVM version of Datalevin as the server,
+e.g. run this command:
+
+```
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.10-standalone.jar serv -v -r /data/dtlv
+```
+
+The JVM version of Datalevin may use more memory, but it supports much higher
+throughout, is more suitable as a long running process, and the usual JVM
+monitoring tools can also be leveraged.
+
+The user is recommended to run the server process as a daemon or service using
+the preferred operation system tools, e.g. systemd on Linux, Launch Daemon on
+MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
+on the preferred platforms.
+
 There is a default builtin user `datalevin` with a default password `datalevin`.
 This is a system account that can do everything on the server. It
 is recommended that the default password should be reset immediately after
@@ -39,11 +59,6 @@ nil
 
 It is suggested to create different users for access to the server (see below).
 Leave the `datalevin` user for server administration purpose only.
-
-The user is recommended to run the server process as a daemon or service using
-the preferred operation system tools, e.g. systemd on Linux, Launch Daemon on
-MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
-on the preferred platforms.
 
 For remote access, username and password is required on the connection URI. Make
 sure username and password are URL encoded strings on the URI.

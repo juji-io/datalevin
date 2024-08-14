@@ -3252,9 +3252,6 @@
                    (filter #(s/starts-with? (name %) "q-"))
                    (sort (keys (ns-publics 'datalevin-bench.core)))))
 
-(def warmup-times 5)
-(def bench-times 5)
-
 (def result-filename "datalevin_onepass_time.csv")
 
 (defn -main [&opts]
