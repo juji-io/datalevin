@@ -1465,8 +1465,7 @@
           :else              (assoc-in node [k attr :count] c))))
     (assoc node :mcount Long/MAX_VALUE)
     (let [flat (fn [k m] (mapv (fn [[attr clause]] [k attr clause]) m))]
-      (sort-by (fn [[_ attr _]] (db/-count db [nil attr nil]))
-               (concat (flat :bound bound) (flat :free free) )))))
+      (concat (flat :bound bound) (flat :free free)))))
 
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
