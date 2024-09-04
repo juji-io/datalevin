@@ -264,9 +264,11 @@
 
 (defn get-conn
   ([dir]
-   (get-conn dir nil))
+   (get-conn dir nil nil))
   ([dir schema]
-   (let [conn (d/get-conn dir schema)]
+   (get-conn dir schema nil))
+  ([dir schema opts
+   (let [conn (d/get-conn dir schema opts)]
      (if-let [id (some (fn [[id c]] (when (= conn c) id)) @dl-conns)]
        {::conn id}
        (let [id (UUID/randomUUID)]
