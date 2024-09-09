@@ -34,6 +34,14 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
+    ;; TODO fix this
+    (is (= #{[1] [2] [3]}
+           (d/q '[:find ?e
+                  :where
+                  [?e :aka ?a1]
+                  [?e :aka ?a2]
+                  [(not= ?a1 ?a2)]]
+                db)))
     (is (= #{} (d/q '[:find ?e
                       :in $
                       :where

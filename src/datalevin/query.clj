@@ -1537,8 +1537,7 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [
-              bound1  (->> (dissoc bound attr)
+        (let [bound1  (->> (dissoc bound attr)
                            (mapv (fn [[a {:keys [val] :as b}]]
                                    [a (-> b
                                           (update :pred add-pred #(= val %))
