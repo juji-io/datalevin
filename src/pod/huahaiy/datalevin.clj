@@ -267,7 +267,7 @@
    (get-conn dir nil nil))
   ([dir schema]
    (get-conn dir schema nil))
-  ([dir schema opts
+  ([dir schema opts]
    (let [conn (d/get-conn dir schema opts)]
      (if-let [id (some (fn [[id c]] (when (= conn c) id)) @dl-conns)]
        {::conn id}
@@ -275,6 +275,8 @@
          (swap! dl-dbs assoc id @conn)
          (swap! dl-conns assoc id conn)
          {::conn id})))))
+
+(defn clear [cn] (when-let [c (get-cn cn)] (d/clear c)))
 
 (defn open-kv
   ([dir]
@@ -729,6 +731,7 @@
    'schema                    schema
    'update-schema             update-schema
    'get-conn                  get-conn
+   'clear                     clear
    'q                         q
    'explain                   explain
    'open-kv                   open-kv

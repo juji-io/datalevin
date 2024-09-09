@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] empty results when querying different values for cardinality/many attributes
+- [Datalog] empty results after querying empty database before transact
+- [Server] potential concurrency conflicts when reconnect
+
+### Improved
+- [Pod] added `clear`, added missing arity in `get-conn` [Thx @aldebogdanov]
+
 ## 0.9.10 (2024-08-11)
 ### Fixed
 - [Native] compile native image with UTF-8 encoding on Arm64 Linux and Windows.
