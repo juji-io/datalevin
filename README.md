@@ -90,8 +90,11 @@ engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
 [competitive](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench)
 search performance.
 
-Presentation:
+Additional materials:
 
+* [Competing for the JOB with a Triplestore](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
+* [T-Wand: Beat Lucene in Less Than 600 Lines of Code](https://yyhh.org/blog/2021/11/t-wand-beat-lucene-in-less-than-600-lines-of-code/)
+* [Writing C code in Java/Clojure: GraalVM specific programming](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/)
 * [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
 
 ## :truck: [Installation](doc/install.md)
