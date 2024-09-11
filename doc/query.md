@@ -230,7 +230,7 @@ considered at the moment, future work may consider relations on a hypergraph
 
 An existing benchmark developed in Datascript is performed. The speedup compared
 with the original Datascript engine is substantial. The details can be found
-[here](https://github.com/juji-io/datalevin/tree/master/datascript-bench).
+[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench).
 
 Queries in this benchmarks are fairly simple and do not involve more than one
 relation.
@@ -239,7 +239,8 @@ relation.
 
 The join order benchmark (JOB) [5] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
-PostgreSQL [here](https://github.com/juji-io/datalevin/tree/master/JOB-bench).
+PostgreSQL
+[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/JOB-bench).
 
 Datalevin's planning time is normally one order of magnitudes longer than
 that of PostgreSQL. This is expected, as our planner is written in idiomatic
