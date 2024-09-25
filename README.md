@@ -346,7 +346,7 @@ significant ways than just the difference in data durability and running mode:
 * Entity and transaction integer ids are 64 bits long, instead of 32 bits.
 
 * Respects `:db/valueType`. Currently, most [Datomic® value
-  types](https://docs.datomic.com/on-prem/schema.html#value-types) are
+  types](https://docs.datomic.com/schema/schema-reference.html#db-valuetype) are
   supported, except uri. Values of the attributes that
   are not defined in the schema or have unspecified types are treated as
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
