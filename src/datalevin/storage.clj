@@ -667,8 +667,11 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [_ a]
-    (let [aid ((schema a) :db/aid)]
-      (or (lmdb/get-value lmdb c/meta aid :int :id)
+    (let [aid      ((schema a) :db/aid)
+          ^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
+      (or (when (and ms (not (zero? ms)))
+            ;; zero a-size in meta disrupts query, always actual count
+            ms)
           (let [as (lmdb/key-range-list-count
                      lmdb c/ave
                      [:closed

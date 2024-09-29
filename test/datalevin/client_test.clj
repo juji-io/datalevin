@@ -75,27 +75,27 @@
         (is (= (count (sut/list-user-roles client "juji")) 2))
         (is (= (count (sut/list-user-permissions client "juji")) 4)))
 
-      ;; TODO
-      #_(testing "a user created a db, then is forcibly disconnected by superuser"
-          (let [client2 (sut/new-client "dtlv://juji:new-secret@localhost")]
-            (is (= (count (sut/show-clients client)) 2))
+      (testing "a user created a db, then is forcibly disconnected by superuser"
+        (let [client2 (sut/new-client "dtlv://juji:new-secret@localhost")]
+          (is (= (count (sut/show-clients client)) 2))
 
-            (is (= (count (sut/list-user-roles client2 "juji")) 2))
+          (is (= (count (sut/list-user-roles client2 "juji")) 2))
 
-            (sut/create-database client2 "hr" c/dl-type)
-            (is (= (count (sut/list-databases client)) 2))
-            ;; (is (= (count (sut/list-role-permissions
-            ;;                 client2 :datalevin.role/juji)) 3))
-            ;; (is (= (count (sut/list-user-permissions client2 "juji")) 5))
+          (sut/create-database client2 "hr" c/dl-type)
+          (is (= (count (sut/list-databases client)) 2))
+          ;; TODO
+          ;; (is (= (count (sut/list-role-permissions
+          ;;                 client2 :datalevin.role/juji)) 3))
+          ;; (is (= (count (sut/list-user-permissions client2 "juji")) 5))
 
-            ;; (is (thrown? Exception (sut/list-databases client2)))
+          ;; (is (thrown? Exception (sut/list-databases client2)))
 
-            (let [client-id2 (sut/get-id ^Client client2)]
-              (sut/disconnect-client client client-id2)
-              (is (= (count (sut/show-clients client)) 1))
-              ;; auto reconnected
-              ;; (is (= (count (sut/list-user-roles client2 "juji")) 2))
-              )))
+          (let [client-id2 (sut/get-id ^Client client2)]
+            (sut/disconnect-client client client-id2)
+            (is (= (count (sut/show-clients client)) 1))
+            ;; auto reconnected
+            ;; (is (= (count (sut/list-user-roles client2 "juji")) 2))
+            )))
 
       (testing "db is forcibly closed by superuser, then dropped"
         (let [client3 (sut/new-client "dtlv://juji:new-secret@localhost")]
@@ -141,7 +141,6 @@
       (sut/reset-password client "datalevin" "nondefault")
       (sut/disconnect client))
 
-    ;; TODO: a-size somehow returns 0 and query will fail
-    #_(testing "reset default user's password"
-        (let [client5 (sut/new-client "dtlv://datalevin:nondefault@localhost")]
-          (is (= (sut/list-users client5) ["datalevin"]))))))
+    (testing "reset default user's password"
+      (let [client5 (sut/new-client "dtlv://datalevin:nondefault@localhost")]
+        (is (= (sut/list-users client5) ["datalevin"]))))))

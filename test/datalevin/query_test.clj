@@ -798,3 +798,31 @@
                 "fred")))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-issue-269
+  (let [dir  (u/tmp-dir (str "datalevin-test-269-" (UUID/randomUUID)))
+        conn (d/get-conn dir
+                         {:transaction/signature
+                          {:db/unique      :db.unique/identity
+                           :db/valueType   :db.type/string
+                           :db/cardinality :db.cardinality/one}
+                          :transaction/block-time
+                          {:db/valueType   :db.type/long
+                           :db/cardinality :db.cardinality/one}}
+                         {:validate-data?    true
+                          :closed-schema?    true
+                          :auto-entity-time? true})]
+    (d/q '[:find [?block-time ?signature]
+           :where
+           [?t :transaction/signature ?signature]
+           [?t :transaction/block-time ?block-time]]
+         @conn)
+    (d/transact! conn [{:transaction/signature  "foo"
+                        :transaction/block-time 234324324}])
+    (is (= [234324324]
+           (d/q '[:find [(max ?bt)]
+                  :where
+                  [?t :transaction/block-time ?bt]]
+                @conn)))
+    (d/close conn)
+    (u/delete-files dir)))

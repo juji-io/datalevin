@@ -14,7 +14,6 @@
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.13.0"]
    [me.lemire.integercompression/JavaFastPFOR "0.2.1"]
-   ;; [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [metosin/jsonista "0.3.11"]
    [nrepl/bencode "1.2.0"]
    [org.babashka/sci "0.8.43"]
