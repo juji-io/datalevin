@@ -75,6 +75,8 @@
                       [:put "d"  [:ok -0.687 "nice"] [2 4]
                        [:keyword :double :string] [:long]]]))
 
+    (l/sync lmdb)
+
     (testing "entries"
       (is (= 5 (:entries (l/stat lmdb))))
       (is (= 6 (:entries (l/stat lmdb "a"))))

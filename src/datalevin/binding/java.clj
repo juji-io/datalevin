@@ -801,6 +801,8 @@
                   (raise "DB resized" {:resized true}))))
           (catch Exception e (raise "Fail to transact to LMDB: " e {}))))))
 
+  (sync [_] (.sync env true))
+
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]

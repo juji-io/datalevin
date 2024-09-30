@@ -1260,7 +1260,7 @@ Only usable for debug output.
   of `v`. The allowed data types are described in [[put-buffer]].
 
   `:flags` is a set of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
-       Pass in `:append` when the data is sorted to gain better write performance.
+       Pass in `:append` when the data is already sorted to gain better write performance.
 
   Example:
 
@@ -1280,8 +1280,14 @@ Only usable for debug output.
               [:put \"a\" :long 1 :data :long]
               [:put \"a\" 2 3 :long :long]
               [:del \"a\" 1]
-              [:del \"a\" :non-exist] ])"}
+              [:del \"a\" :non-exist] ])
+
+See also: [[open-kv]], [[sync]]"}
   transact-kv l/transact-kv)
+
+(def ^{:arglists '([db])
+       :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}
+  sync l/sync)
 
 (def ^{:arglists '([db dbi-name k]
                    [db dbi-name k k-type]

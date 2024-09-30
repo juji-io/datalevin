@@ -1,13 +1,21 @@
 # Change Log
 
 ## WIP
+
 ### Fixed
-- [Datalog] empty results when querying different values for cardinality/many attributes
-- [Datalog] empty results after querying empty database before transact
-- [Server] potential concurrency conflicts when reconnect
+- [Datalog] empty results after querying empty database before transact. #269
+
+### Changed
+- [KV] Change default write option to be the safest, the same as LMDB
+  defaults, i.e. synchronous flush to disk when commit.
+
+### Added
+- [KV] Explose `sync` function to force a synchronous flush to disk, useful
+  when non-default flags for writes are used.
+- [Pod] added `clear`.
 
 ### Improved
-- [Pod] added `clear`, added missing arity in `get-conn` [Thx @aldebogdanov]
+- [Pod] Added missing arity in `get-conn` [Thx @aldebogdanov]
 
 ## 0.9.10 (2024-08-11)
 ### Fixed

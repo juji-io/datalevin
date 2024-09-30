@@ -179,6 +179,7 @@
     [db dbi-name txs k-type]
     [db dbi-name txs k-type v-type]
     "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
+  (sync [db] "force synchronous flush to disk")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]

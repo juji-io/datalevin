@@ -68,7 +68,7 @@
                                        {:client-opts {:pool-size 1}
                                         :kv-opts     {:flags
                                                       (conj c/default-env-flags
-                                                            :mapasync)}})]
+                                                            :nosync)}})]
                (let [^long now (d/q query @cn 1)]
                  (d/transact! cn [{:db/id 1 :counter (inc now)}])
                  (d/q query @cn 1)))]

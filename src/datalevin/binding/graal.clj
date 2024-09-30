@@ -829,6 +829,8 @@
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " e {}))))))
 
+  (sync [_] (.sync env))
+
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
