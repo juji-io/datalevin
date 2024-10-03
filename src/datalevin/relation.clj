@@ -35,6 +35,8 @@
 
 (defn typed-aget [a i] (aget ^objects a ^Long i))
 
+(defn tuple-array? [t] (.isArray (.getClass ^Object t)))
+
 (defn join-tuples
   ([^objects t1 ^objects t2]
    (let [l1  (alength t1)
@@ -45,15 +47,13 @@
      res))
   ([t1 ^objects idxs1
     t2 ^objects idxs2]
-   (let [l1  (alength idxs1)
-         l2  (alength idxs2)
-         res (object-array (+ l1 l2))]
-     (if (.isArray (.getClass ^Object t1))
-       (dotimes [i l1] (aset res i (typed-aget t1 (aget idxs1 i))))
-       (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
-     (if (.isArray (.getClass ^Object t2))
-       (dotimes [i l2] (aset res (+ l1 i) (typed-aget t2 (aget idxs2 i))))
-       (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
+   (let [l1     (alength idxs1)
+         l2     (alength idxs2)
+         res    (object-array (+ l1 l2))
+         get-t1 (if (tuple-array? t1) typed-aget get)
+         get-t2 (if (tuple-array? t2) typed-aget get)]
+     (dotimes [i l1] (aset res i (get-t1 t1 (aget idxs1 i))))
+     (dotimes [i l2] (aset res (+ l1 i) (get-t2 t2 (aget idxs2 i))))
      res)))
 
 (defn conj-tuple

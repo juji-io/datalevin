@@ -1502,8 +1502,6 @@
       pred range)
     pred))
 
-;; (defn- attr-pred [v clause] (add-back-range v clause))
-
 (defn- attrs-vec
   [attrs preds skips fidxs]
   (mapv (fn [a p f]
@@ -1540,8 +1538,7 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [k       (first mpath)
-              i       (peek mpath)
+        (let [[k i]   mpath
               bound1  (mapv (fn [{:keys [val] :as b}]
                               (-> b
                                   (update :pred add-pred #(= val %))
@@ -2180,19 +2177,20 @@
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
-(defn map* [f xs]
-  (persistent! (reduce #(conj! %1 (f %2)) (transient (empty xs)) xs)))
-
 (defn tuples->return-map
   [return-map tuples]
   (let [symbols (:symbols return-map)
         idxs    (range 0 (count symbols))]
-    (map* (fn [^objects tuple]
-            (persistent!
-              (reduce
-                (fn [m i] (assoc! m (nth symbols i) (aget tuple i)))
-                (transient {}) idxs)))
-          tuples)))
+    (persistent!
+      (reduce
+        (fn [coll tuple]
+          (conj! coll
+                 (let [get-i (if (r/tuple-array? tuple) r/typed-aget get)]
+                   (persistent!
+                     (reduce
+                       (fn [m i] (assoc! m (nth symbols i) (get-i tuple i)))
+                       (transient {}) idxs)))))
+        (transient #{}) tuples))))
 
 (defprotocol IPostProcess
   (-post-process [find return-map tuples]))

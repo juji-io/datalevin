@@ -559,7 +559,7 @@
         vset     (set vs)
         select   #(into #{}
                         (comp (map (fn [[[_ l] [_ r]]] (subvec vs l r)))
-                              cat)
+                           cat)
                         %)
         to-range #(mapv (fn [[l r]] [[:closed l] [:closed r]]) %)]
     (testing "range combinations"
@@ -798,7 +798,7 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest test-issue-269
+(deftest test-issue-269-273
   (let [dir  (u/tmp-dir (str "datalevin-test-269-" (UUID/randomUUID)))
         conn (d/get-conn dir
                          {:transaction/signature
@@ -811,7 +811,6 @@
                          {:validate-data?    true
                           :closed-schema?    true
                           :auto-entity-time? true})]
-
     (is (nil? (d/q '[:find ?c .
                      :in $ ?e
                      :where [?e :transaction/signature ?c]] @conn 1)))
@@ -821,7 +820,6 @@
                      [?t :transaction/signature ?signature]
                      [?t :transaction/block-time ?block-time]]
                    @conn)))
-
     (d/transact! conn [{:transaction/signature  "foo"
                         :transaction/block-time 234324324}])
     (is (= [234324324]
@@ -829,6 +827,23 @@
                   :where
                   [?t :transaction/block-time ?bt]]
                 @conn)))
-
+    (is (= #{{:btime 234324324}}
+           (d/q '[:find ?bt
+                  :keys btime
+                  :where
+                  [?t :transaction/block-time ?bt]]
+                @conn)))
+    (is (= #{{"btime" 234324324}}
+           (d/q '[:find ?bt
+                  :strs btime
+                  :where
+                  [?t :transaction/block-time ?bt]]
+                @conn)))
+    (is (= #{{'btime 234324324}}
+           (d/q '[:find ?bt
+                  :syms btime
+                  :where
+                  [?t :transaction/block-time ?bt]]
+                @conn)))
     (d/close conn)
     (u/delete-files dir)))

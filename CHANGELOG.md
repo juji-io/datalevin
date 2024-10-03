@@ -5,6 +5,7 @@
 ### Fixed
 - [Datalog] Empty results after querying empty database before transact. #269
 - [Datalog] Handle multiple variables assigned to the same cardinality many attribute. #272
+- [Datalog] Return maps regression. #273
 
 ### Changed
 - [KV] Change default write option to be the safest, the same as LMDB
