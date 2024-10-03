@@ -178,7 +178,7 @@
 
 (defrecord Link [type tgt var attrs attr])
 
-(defrecord Clause [val var range count pred])
+(defrecord Clause [attr val var range count pred])
 
 ;; rules
 
@@ -999,12 +999,13 @@
 (defn- make-node
   [[e patterns]]
   [e (reduce (fn [m pattern]
-               (let [attr (second pattern)]
+               (let [attr   (second pattern)
+                     clause (map->Clause {:attr attr})]
                  (if-let [v (get-v pattern)]
                    (if (qu/free-var? v)
-                     (assoc-in m [:free attr] (map->Clause {:var v}))
-                     (assoc-in m [:bound attr] (map->Clause {:val v})))
-                   (assoc-in m [:free attr] (map->Clause {})))))
+                     (update m :free conjv (assoc clause :var v))
+                     (update m :bound conjv (assoc clause :val v)))
+                   (update m :free conjv clause))))
              (map->Node {}) patterns)])
 
 (defn- link-refs
@@ -1012,12 +1013,12 @@
   (let [es (set (keys graph))]
     (reduce-kv
       (fn [g e {:keys [free]}]
-        (reduce-kv
-          (fn [g k {:keys [var]}]
+        (reduce
+          (fn [g {:keys [attr var]}]
             (if (es var)
               (-> g
-                  (update-in [e :links] conjv (Link. :ref var nil nil k))
-                  (update-in [var :links] conjv (Link. :_ref e nil nil k)))
+                  (update-in [e :links] conjv (Link. :ref var nil nil attr))
+                  (update-in [var :links] conjv (Link. :_ref e nil nil attr)))
               g))
           g free))
       graph graph)))
@@ -1038,8 +1039,8 @@
           g (u/combinations lst 2))
         g))
     graph (reduce-kv (fn [m e {:keys [free]}]
-                       (reduce (fn [m [k {:keys [var]}]]
-                                 (if var (update m var conjv [e k]) m))
+                       (reduce (fn [m {:keys [attr var]}]
+                                 (if var (update m var conjv [e attr]) m))
                                m free))
                      {} graph)))
 
@@ -1371,20 +1372,22 @@
   (walk/postwalk
     (fn [m]
       (if-let [free (:free m)]
-        (if-let [[k pstring]
-                 (some
-                   (fn [[k props]]
-                     (when (= v (:var props))
+        (if-let [[new k]
+                 (u/some-indexed
+                   (fn [{:keys [var] :as old}]
+                     (when (= v var)
                        (let [[f & args] (first clause)]
                          (when (= f 'like)
                            (let [[_ pattern opts] args]
                              (when-let [ps (wildcard-free-like-pattern
                                              pattern opts)]
-                               [k ps]))))))
+                               (-> old
+                                   (dissoc :var)
+                                   (assoc :val ps))))))))
                    free)]
           (-> m
-              (assoc-in [:bound k] {:val pstring})
-              (update :free dissoc k))
+              (update :bound conjv new)
+              (update :free u/vec-remove k))
           m)
         m))
     graph))
@@ -1407,7 +1410,7 @@
 
 (defn- estimate-round [x] (long (Math/ceil x)))
 
-(defn- attr-var [[_ {:keys [var]}]] (or var '_))
+(defn- attr-var [{:keys [var]}] (or var '_))
 
 (defn- build-graph
   "Split clauses, turn the group of clauses to be optimized into a query
@@ -1415,14 +1418,14 @@
   {$
     {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                   {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
-          :mpath [:bound :name]
-          :bound {:name {:val \"Tom\" :count 5}}
-          :free  {:age    {:var ?a :range [[:less-than 18]] :count 1089}
-                  :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
-                  :friend {:var ?e0 :count 2500}}}
+          :mpath [:bound 0]
+          :bound [{:attr :name :val \"Tom\" :count 5}]
+          :free  [{:attr :age :var ?a :range [[:less-than 18]] :count 1089}
+                  {:attr :school :var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
+                  {:attr :friend :var ?e0 :count 2500}]}
     ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
-          :mpath [:free :age]
-          :free  {:age {:var ?a :count 10890}}}
+         :mpath [:free 0]
+         :free  [{:attr :age :var ?a :count 10890}]}
     ...
     }}
 
@@ -1442,17 +1445,18 @@
   [db attr ranges ^long cap]
   (if (identical? ranges :empty-range)
     0
-    (reduce
-      (fn [^long sum range]
-        (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                         ^long (db/-index-range-size db attr lv hv)))]
-          (if (< s cap) s (reduced cap))))
-      0 ranges)))
+    (unreduced
+      (reduce
+        (fn [^long sum range]
+          (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                           ^long (db/-index-range-size db attr lv hv)))]
+            (if (< s cap) s (reduced cap))))
+        0 ranges))))
 
 (defn- count-node-datoms
   [db {:keys [free bound] :as node}]
   (reduce
-    (fn [{:keys [mcount] :as node} [k attr {:keys [val range]}]]
+    (fn [{:keys [mcount] :as node} [k i {:keys [attr val range]}]]
       (let [^long c (cond
                       (some? val) (db/-count db [nil attr val] mcount)
                       range       (range-count db attr range mcount)
@@ -1460,32 +1464,32 @@
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
           (< c ^long mcount) (-> node
-                                 (assoc-in [k attr :count] c)
-                                 (assoc :mcount c :mpath [k attr]))
-          :else              (assoc-in node [k attr :count] c))))
+                                 (assoc-in [k i :count] c)
+                                 (assoc :mcount c :mpath [k i]))
+          :else              (assoc-in node [k i :count] c))))
     (assoc node :mcount Long/MAX_VALUE)
-    (let [flat (fn [k m] (mapv (fn [[attr clause]] [k attr clause]) m))]
-      (sort-by (fn [[_ attr _]] (db/-count db [nil attr nil]))
+    (let [flat (fn [k m] (map-indexed (fn [i clause] [k i clause]) m))]
+      (sort-by (fn [[_ _ {:keys [attr]}]] (db/-count db [nil attr nil]))
                (concat (flat :bound bound) (flat :free free) )))))
 
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
-  (reduce-kv
-    (fn [{:keys [mcount] :as node} attr _]
+  (u/reduce-indexed
+    (fn [{:keys [mcount] :as node} {:keys [attr]} i]
       (let [^long c (db/-count db [e attr nil] mcount)]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
           (< c ^long mcount) (-> node
-                                 (assoc-in [:free attr :count] c)
-                                 (assoc :mcount c :mpath [:free attr]))
-          :else              (assoc-in node [:free attr :count] c))))
+                                 (assoc-in [:free i :count] c)
+                                 (assoc :mcount c :mpath [:free i]))
+          :else              (assoc-in node [:free i :count] c))))
     (assoc node :mcount Long/MAX_VALUE) free))
 
 (defn- count-datoms
   [db e node]
-  (if (int? e)
-    (count-known-e-datoms db e node)
-    (count-node-datoms db node)))
+  (unreduced (if (int? e)
+               (count-known-e-datoms db e node)
+               (count-node-datoms db node))))
 
 (defn- add-back-range
   [v {:keys [pred range]}]
@@ -1498,7 +1502,7 @@
       pred range)
     pred))
 
-(defn- attr-pred [v [_ clause]] (add-back-range v clause))
+;; (defn- attr-pred [v clause] (add-back-range v clause))
 
 (defn- attrs-vec
   [attrs preds skips fidxs]
@@ -1510,11 +1514,10 @@
 
 (defn- init-steps
   [db e node single?]
-  (let [{:keys [bound free mpath mcount]}       node
-        {:keys [var val range pred] :as clause} (get-in node mpath)
+  (let [{:keys [bound free mpath mcount]}            node
+        {:keys [attr var val range pred] :as clause} (get-in node mpath)
 
         schema  (db/-schema db)
-        attr    (peek mpath)
         know-e? (int? e)
         no-var? (or (not var) (qu/placeholder? var))
         init    (cond-> (map->InitStep
@@ -1537,14 +1540,17 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [bound1  (->> (dissoc bound attr)
-                           (mapv (fn [[a {:keys [val] :as b}]]
-                                   [a (-> b
-                                          (update :pred add-pred #(= val %))
-                                          (assoc :var (gensym "?bound")))])))
-              all     (->> (concatv bound1 (dissoc free attr))
-                           (sort-by (fn [[a _]] ((schema a) :db/aid))))
-              attrs   (mapv first all)
+        (let [k       (first mpath)
+              i       (peek mpath)
+              bound1  (mapv (fn [{:keys [val] :as b}]
+                              (-> b
+                                  (update :pred add-pred #(= val %))
+                                  (assoc :var (gensym "?bound"))))
+                            (if (= k :bound) (u/vec-remove bound i) bound))
+              all     (->> (concatv bound1
+                                    (if (= k :free) (u/vec-remove free i) free))
+                           (sort-by (fn [{:keys [attr]}] ((schema attr) :db/aid))))
+              attrs   (mapv :attr all)
               vars    (mapv attr-var all)
               vars-m  (zipmap attrs vars)
               skips   (cond-> (set (sequence
@@ -1555,7 +1561,7 @@
                                         (remove nil?))
                                      attrs vars))
                         no-var? (conj attr))
-              preds   (mapv attr-pred vars all)
+              preds   (mapv add-back-range vars all)
               attrs-v (attrs-vec attrs preds skips (repeat nil))
               cols    (into (:cols init)
                             (comp (remove skips)
@@ -1648,8 +1654,7 @@
 
 (defn- build-base-plans
   [db nodes component]
-  (into {} (map+ (fn [e] [[e] (base-plan db nodes e)])
-                 component)))
+  (into {} (map+ (fn [e] [[e] (base-plan db nodes e)]) component)))
 
 (defn- find-index
   [a-or-v cols]
@@ -1953,22 +1958,22 @@
   :result-set will be #{} if there is any clause that matches nothing."
   [{:keys [graph sources] :as context}]
   (if graph
-    (reduce-kv
-      (fn [c src nodes]
-        (let [^DB db (sources src)
-              k      [(.-store db) nodes]]
-          (if-let [cached (.get ^LRUCache *plan-cache* k)]
-            (assoc-in c [:plan src] cached)
-            (let [nodes (update-nodes db nodes)
-                  plans (if (< 1 (count nodes))
-                          (build-plan* db nodes)
-                          [[(base-plan db nodes (ffirst nodes) true)]])]
-              (if (some #(some nil? %) plans)
-                (reduced (assoc c :result-set #{}))
-                (do
-                  (.put ^LRUCache *plan-cache* k (strip-result plans))
-                  (assoc-in c [:plan src] plans)))))))
-      context graph)
+    (unreduced
+      (reduce-kv
+        (fn [c src nodes]
+          (let [^DB db (sources src)
+                k      [(.-store db) nodes]]
+            (if-let [cached (.get ^LRUCache *plan-cache* k)]
+              (assoc-in c [:plan src] cached)
+              (let [nodes (update-nodes db nodes)
+                    plans (if (< 1 (count nodes))
+                            (build-plan* db nodes)
+                            [[(base-plan db nodes (ffirst nodes) true)]])]
+                (if (some #(some nil? %) plans)
+                  (reduced (assoc c :result-set #{}))
+                  (do (.put ^LRUCache *plan-cache* k (strip-result plans))
+                      (assoc-in c [:plan src] plans)))))))
+        context graph))
     context))
 
 (defn- save-intermediates
@@ -2038,12 +2043,12 @@
         attrs (cols->attrs (:cols (peek steps)))]
     (condp = n
       1 (let [tuples (-execute (first steps) db nil)]
-           (save-intermediates context steps nil tuples)
-           (r/relation! attrs tuples))
+          (save-intermediates context steps nil tuples)
+          (r/relation! attrs tuples))
       2 (let [src    (-execute (first steps) db nil)
               tuples (-execute (peek steps) db src)]
-           (save-intermediates context steps (object-array [src]) tuples)
-           (r/relation! attrs tuples))
+          (save-intermediates context steps (object-array [src]) tuples)
+          (r/relation! attrs tuples))
       (if (u/graal?)
         (step-by-step context db attrs steps)
         (pipelining context db attrs steps n)))))
@@ -2070,6 +2075,7 @@
   (when *explain*
     (vswap! *explain* assoc :planning-time
             (- (System/nanoTime) ^long *start-time*))))
+
 
 (defn -q
   [context run?]
@@ -2230,12 +2236,14 @@
   "handle pathological cases of variable is already bound in where clauses"
   [{:keys [parsed-q] :as context}]
   (let [{:keys [qwhere]} parsed-q
-        get-v            #(nth (:pattern %) 2)]
+        get-v            #(nth (:pattern %) 2)
+        const-v          (fn [patterns]
+                           (some #(let [v (get-v %)]
+                                    (when (instance? Constant v) (:value v)))
+                                 patterns))]
     (reduce
       (fn [c [_ patterns]]
-        (let [v (some #(let [v (get-v %)]
-                         (when (instance? Constant v) (:value v)))
-                      patterns)]
+        (let [v (const-v patterns)]
           (reduce
             (fn [c pattern]
               (let [idx (u/index-of #(= pattern %) patterns)]
@@ -2253,7 +2261,8 @@
            (eduction (filter #(instance? Pattern %)))
            (group-by (fn [{:keys [source pattern]}]
                        [source (first pattern) (second pattern)]))
-           (eduction (filter #(< 1 (count (val %)))))))))
+           (eduction (filter #(let [ps (val %)]
+                                (and (< 1 (count ps)) (const-v ps)))))))))
 
 (defn- result-explain
   ([context result]

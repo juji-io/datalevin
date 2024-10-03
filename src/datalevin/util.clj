@@ -241,10 +241,15 @@
 
 (defn ensure-vec [x]
   (cond
-    (vector? x) x
-    (nil? x) []
+    (vector? x)     x
+    (nil? x)        []
     (sequential? x) (vec x)
-    :else [x]))
+    :else           [x]))
+
+(defn vec-remove
+  "Remove the ith element from a vector"
+  [v ^long i]
+  (into (subvec v 0 i) (subvec v (inc i) (count v))))
 
 (defn memoize-1
   "Like clojure.core/memoize but only caches the last invocation.
@@ -296,13 +301,24 @@
   "Same as reduce, but `f` takes [acc el idx]"
   [f init xs]
   (first
-    (reduce
-      (fn [[acc ^long idx] x]
-        (let [res (f acc x idx)]
-          (if (reduced? res)
-            (reduced [res idx])
-            [res (inc idx)])))
-      [init 0] xs)))
+    (unreduced
+      (reduce
+        (fn [[acc ^long idx] x]
+          (let [res (f acc x idx)]
+            (if (reduced? res)
+              (reduced [res idx])
+              [res (inc idx)])))
+        [init 0] xs))))
+
+(defn some-indexed
+  "Similar to some, but return [res idx]"
+  [pred coll]
+  (loop [idx 0 s coll]
+    (when (seq s)
+      (let [val (first s)]
+        (if-let [res (pred val)]
+          [res idx]
+          (recur (inc idx) (rest s)))))))
 
 (defn distinct-by
   [f coll]

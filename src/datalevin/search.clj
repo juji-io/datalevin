@@ -368,17 +368,18 @@
             (sequence
               (display-xf this doc-filter display tms)
               (persistent!
-                (reduce
-                  (fn [coll tao]
-                    (let [to-get (- ^long top (count coll))]
-                      (if (< 0 to-get)
-                        (let [^PriorityQueue pq (priority-queue to-get)]
-                          (scoring this pq tao to-get proximity-expansion
-                                   proximity-max-dist)
-                          (pouring coll pq result))
-                        (reduced coll))))
-                  (transient [])
-                  (range n 0 -1)))))))))
+                (unreduced
+                  (reduce
+                    (fn [coll tao]
+                      (let [to-get (- ^long top (count coll))]
+                        (if (< 0 to-get)
+                          (let [^PriorityQueue pq (priority-queue to-get)]
+                            (scoring this pq tao to-get proximity-expansion
+                                     proximity-max-dist)
+                            (pouring coll pq result))
+                          (reduced coll))))
+                    (transient [])
+                    (range n 0 -1))))))))))
 
   IAdmin
   (re-index [this opts]

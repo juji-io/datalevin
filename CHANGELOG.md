@@ -3,7 +3,8 @@
 ## WIP
 
 ### Fixed
-- [Datalog] empty results after querying empty database before transact. #269
+- [Datalog] Empty results after querying empty database before transact. #269
+- [Datalog] Handle multiple variables assigned to the same cardinality many attribute. #272
 
 ### Changed
 - [KV] Change default write option to be the safest, the same as LMDB
@@ -15,6 +16,7 @@
 - [Pod] added `clear`.
 
 ### Improved
+- [JVM] Support Java 8 in uberjar, following Clojure supported Java version.
 - [Pod] Added missing arity in `get-conn` [Thx @aldebogdanov]
 
 ## 0.9.10 (2024-08-11)

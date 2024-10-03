@@ -58,10 +58,11 @@
 
 (defn parse-seq [parse-el form]
   (when (sequential? form)
-    (reduce #(if-let [parsed (parse-el %2)]
-               (conj %1 parsed)
-               (reduced nil))
-            [] form)))
+    (unreduced
+      (reduce #(if-let [parsed (parse-el %2)]
+                 (conj %1 parsed)
+                 (reduced nil))
+              [] form))))
 
 (defn collect
   ([pred form] (collect pred form []))

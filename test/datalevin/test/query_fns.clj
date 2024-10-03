@@ -176,7 +176,8 @@
         "%好__oy"    [1]
         "is 好 boy"  [1]
         "好 boy"     nil
-        "好"         nil))
+        "好"         nil
+        ))
     (testing "not-like"
       (are [pattern ids] (= (set (d/q q-n db pattern)) (set ids))
         "testing%"   [1 2 3]

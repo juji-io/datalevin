@@ -71,12 +71,13 @@
 
 (defn- -get-some
   [db e & as]
-  (reduce
-    (fn [_ a]
-      (when-some [datom (db/-first db [(db/entid db e) a])]
-        (reduced [(:a datom) (:v datom)])))
-    nil
-    as))
+  (unreduced
+    (reduce
+      (fn [_ a]
+        (when-some [datom (db/-first db [(db/entid db e) a])]
+          (reduced [(:a datom) (:v datom)])))
+      nil
+      as)))
 
 (defn- -missing?
   [db e a]
@@ -84,11 +85,11 @@
 
 (defn- and-fn
   [& args]
-  (reduce (fn [_ b] (if b b (reduced b))) true args))
+  (unreduced (reduce (fn [_ b] (if b b (reduced b))) true args)))
 
 (defn- or-fn
   [& args]
-  (reduce (fn [_ b] (if b (reduced b) b)) nil args))
+  (unreduced (reduce (fn [_ b] (if b (reduced b) b)) nil args)))
 
 (defn- fulltext*
   [store lmdb engines query opts domain]

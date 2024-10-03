@@ -34,14 +34,13 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
-    ;; TODO fix this
-    #_(is (= #{[1] [2] [3]}
-             (d/q '[:find ?e
-                    :where
-                    [?e :aka ?a1]
-                    [?e :aka ?a2]
-                    [(not= ?a1 ?a2)]]
-                  db)))
+    (is (= #{[1] [2]}
+           (d/q '[:find ?e
+                  :where
+                  [?e :aka ?a1]
+                  [?e :aka ?a2]
+                  [(not= ?a1 ?a2)]]
+                db)))
     (is (= #{} (d/q '[:find ?e
                       :in $
                       :where
@@ -560,7 +559,7 @@
         vset     (set vs)
         select   #(into #{}
                         (comp (map (fn [[[_ l] [_ r]]] (subvec vs l r)))
-                           cat)
+                              cat)
                         %)
         to-range #(mapv (fn [[l r]] [[:closed l] [:closed r]]) %)]
     (testing "range combinations"
@@ -812,11 +811,17 @@
                          {:validate-data?    true
                           :closed-schema?    true
                           :auto-entity-time? true})]
-    (d/q '[:find [?block-time ?signature]
-           :where
-           [?t :transaction/signature ?signature]
-           [?t :transaction/block-time ?block-time]]
-         @conn)
+
+    (is (nil? (d/q '[:find ?c .
+                     :in $ ?e
+                     :where [?e :transaction/signature ?c]] @conn 1)))
+
+    (is (nil? (d/q '[:find [?block-time ?signature]
+                     :where
+                     [?t :transaction/signature ?signature]
+                     [?t :transaction/block-time ?block-time]]
+                   @conn)))
+
     (d/transact! conn [{:transaction/signature  "foo"
                         :transaction/block-time 234324324}])
     (is (= [234324324]
@@ -824,5 +829,6 @@
                   :where
                   [?t :transaction/block-time ?bt]]
                 @conn)))
+
     (d/close conn)
     (u/delete-files dir)))
