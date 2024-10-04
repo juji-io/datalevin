@@ -1,5 +1,6 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
+  (:refer-clojure :exclude [sync])
   (:require
    [clojure.pprint :as p]
    [clojure.edn :as edn]

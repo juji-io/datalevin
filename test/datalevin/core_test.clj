@@ -604,5 +604,10 @@
                     [?e :aka ?alias]]
                   (sut/db conn)
                   "fred")))
+    (is (= #{} (sut/q '[:find ?dummy
+                        :in $
+                        :where
+                        [?e :dummy ?dummy]] ;; non-existent attr
+                      (sut/db conn))))
     (sut/close conn)
     (u/delete-files dir)))

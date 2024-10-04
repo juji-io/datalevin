@@ -156,6 +156,11 @@
                    [?e :aka ?alias]]
                  (pd/db conn)
                  "fred")))
+    (is (= #{} (pd/q '[:find ?dummy
+                       :in $
+                       :where
+                       [?e :dummy ?dummy]] ;; non-existent attr
+                     (pd/db conn))))
     (pd/close conn)
     (u/delete-files dir)))
 

@@ -4,7 +4,8 @@
 
 ### Fixed
 - [Datalog] Empty results after querying empty database before transact. #269
-- [Datalog] Handle multiple variables assigned to the same cardinality many attribute. #272
+- [Datalog] Handle multiple variables assigned to the same cardinality many
+  attribute. #272
 - [Datalog] Return maps regression. #273
 
 ### Changed
@@ -14,7 +15,7 @@
 ### Added
 - [KV] Explose `sync` function to force a synchronous flush to disk, useful
   when non-default flags for writes are used.
-- [Pod] added `clear`.
+- [Pod] added `clear` to bb pod.
 
 ### Improved
 - [JVM] Support Java 8 in uberjar, following Clojure supported Java version.

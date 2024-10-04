@@ -667,18 +667,19 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [_ a]
-    (let [aid      ((schema a) :db/aid)
-          ^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
-      (or (when (and ms (not (zero? ms)))
-            ;; zero a-size in meta disrupts query, always actual count
-            ms)
-          (let [as (lmdb/key-range-list-count
-                     lmdb c/ave
-                     [:closed
-                      (datom->indexable schema (d/datom c/e0 a nil) false)
-                      (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
-            (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
-            as))))
+    (if-let [aid (get (schema a) :db/aid)]
+      (let [^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
+        (or (when (and ms (not (zero? ms)))
+              ;; zero a-size in meta disrupts query, always actual count
+              ms)
+            (let [as (lmdb/key-range-list-count
+                       lmdb c/ave
+                       [:closed
+                        (datom->indexable schema (d/datom c/e0 a nil) false)
+                        (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
+              (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
+              as)))
+      0))
 
   (e-sample [this a]
     (let [aid ((schema a) :db/aid)]
