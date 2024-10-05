@@ -798,7 +798,7 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest test-issue-269-273
+(deftest test-issue-269-273-277
   (let [dir  (u/tmp-dir (str "datalevin-test-269-" (UUID/randomUUID)))
         conn (d/get-conn dir
                          {:transaction/signature
@@ -827,6 +827,10 @@
                   :where
                   [?t :transaction/block-time ?bt]]
                 @conn)))
+    (is (= 1 (d/q '[:find ?t .
+                    :where
+                    [?t :transaction/block-time _]]
+                  @conn)))
     (is (= #{{:btime 234324324}}
            (d/q '[:find ?bt
                   :keys btime

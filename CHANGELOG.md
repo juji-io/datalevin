@@ -7,6 +7,7 @@
 - [Datalog] Handle multiple variables assigned to the same cardinality many
   attribute. #272
 - [Datalog] Return maps regression. #273
+- [Datalog] Regression in dealing with non-existent attributes. #274
 
 ### Changed
 - [KV] Change default write option to be the safest, the same as LMDB
