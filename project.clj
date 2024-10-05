@@ -64,13 +64,15 @@
   :profiles
   {:uberjar        {:main           datalevin.main
                     :aot            [datalevin.main]
-                    :jar-inclusions [#"graal" #"test"]}
+                    }
    :native-uberjar {:aot            [pod.huahaiy.datalevin],
-                    :jar-inclusions [#"test"]
+                    :jar-inclusions [#"graal"]
                     :uberjar-name   "main.uberjar.jar"}
    :test0-uberjar  {:main         datalevin.test0
+                    :jar-inclusions [#"graal" #"test"]
                     :uberjar-name "test0.uberjar.jar"}
    :test1-uberjar  {:main         datalevin.test1
+                    :jar-inclusions [#"graal" #"test"]
                     :uberjar-name "test1.uberjar.jar"}
    :dev            {:main              datalevin.test0
                     :source-paths      ["src" "test"]
