@@ -22,13 +22,20 @@
 
     (let [client (sut/new-client uri-str)]
       (testing "fresh server after the superuser connecting to a db"
+        (sut/show-clients client)
+        (sut/show-clients client)
+        (is (= (count (sut/show-clients client)) 1))
+        ;; #278
+        (is (= (count (sut/show-clients client)) 1))
+        (is (map? (sut/show-clients client)))
+
         (is (= (sut/list-users client) ["datalevin"]))
         (sut/open-database client "clientdb" "datalog")
         (is (= (sut/list-databases client)
                (sut/list-databases-in-use client)
                ["clientdb"]))
         (is (= (sut/list-roles client) [:datalevin.role/datalevin]))
-        (is (= (count (sut/show-clients client)) 1))
+
         (is (= (sut/query-system client
                                  '[:find [?rk ...]
                                    :in $ ?un
