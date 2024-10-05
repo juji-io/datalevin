@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.11 (2024-10-04)
 
 ### Fixed
 - [Datalog] Empty results after querying empty database before transact. #269
