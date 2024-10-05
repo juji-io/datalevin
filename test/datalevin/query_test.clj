@@ -814,7 +814,6 @@
     (is (nil? (d/q '[:find ?c .
                      :in $ ?e
                      :where [?e :transaction/signature ?c]] @conn 1)))
-
     (is (nil? (d/q '[:find [?block-time ?signature]
                      :where
                      [?t :transaction/signature ?signature]
@@ -830,6 +829,14 @@
     (is (= 1 (d/q '[:find ?t .
                     :where
                     [?t :transaction/block-time _]]
+                  @conn)))
+    (is (= 1 (d/q '[:find ?t .
+                    :where
+                    [?t :transaction/signature "foo"]]
+                  @conn)))
+    (is (= 1 (d/q '[:find ?t .
+                    :where
+                    [?t :transaction/signature _]]
                   @conn)))
     (is (= #{{:btime 234324324}}
            (d/q '[:find ?bt
