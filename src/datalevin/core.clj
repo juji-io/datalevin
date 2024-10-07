@@ -411,16 +411,19 @@ Only usable for debug output.
           [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
 
 (defn q
-  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+  "Executes a Datalog query, which supports [Datomic Query Format](https://docs.datomic.com/query/query-data-reference.html).
+
+  In addition, `:order-by` clause is supported, which can be followed by a single variable or a vector. The vector includes one or more variables, each optionally followed by a keyword `:asc` or `:desc`, specifying ascending or descending order, respectively. The default is `:asc`.
 
           Usage:
 
           ```
           (q '[:find ?value
                :where [_ :likes ?value]
+               :order-by [?value :desc]
                :timeout 5000]
              db)
-          ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
+          ; => #{[\"pizza\"] [\"pie\"] [\"fries\"] [\"candy\"]}
           ```"
   [query & inputs]
   (if-let [[store inputs'] (only-remote-db inputs)]

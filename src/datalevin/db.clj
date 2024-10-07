@@ -94,6 +94,14 @@
    (.put ^ConcurrentHashMap caches (s/dir store)
          (LRUCache. (:cache-limit (s/opts store)) target))))
 
+(defn cache-get
+  [store k]
+  (.get ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store)) k))
+
+(defn cache-put
+  [store k v]
+  (.put ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store)) k v))
+
 (defmacro wrap-cache
   [store pattern body]
   `(let [cache# (.get ^ConcurrentHashMap caches (s/dir ~store))]

@@ -37,4 +37,26 @@
 
     '[:find ?e :where (rule ?e)]
     "Missing rules var '%' in :in"
+
+    '[:find ?e :where [?e :book] :order-by "some"]
+    "Unsupported order-by format"
+
+    '[:find ?e :where [?e :book] :order-by [:asc ?e]]
+    "Incorrect order-by format"
+
+    '[:find ?e :where [?e :book] :order-by [?e :book]]
+    "Incorrect order-by format"
+
+    '[:find ?e :where [?e :book] :order-by ["some"]]
+    "Incorrect order-by format"
+
+    '[:find ?e ?b :where [?e :book ?b] :order-by [?e :asc :desc ?b]]
+    "Incorrect order-by format"
+
+    '[:find ?e :where [?e :book ?b] :order-by [?e :desc ?b]]
+    "There are :order-by variable that is not in :find spec"
+
+    '[:find ?e ?b :where [?e :book ?b] :order-by [?e :desc ?b ?e]]
+    "Repeated :order-by variables"
+
     ))

@@ -702,7 +702,8 @@
 
 ;; q* prefix because of https://dev.clojure.org/jira/browse/CLJS-2237
 (deftrecord Query
-  [qfind qorig-find qwith qreturn-map qin qwhere qorig-where qtimeout])
+  [qfind qorig-find qwith qreturn-map qin qwhere qorig-where qtimeout
+   qorder qlimit qoffset])
 
 (defn query->map [query]
   (loop [parsed {}, key nil, qs query]
@@ -739,6 +740,16 @@
     (when-not (empty? shared)
       (raise ":find and :with should not use same variables: " (mapv :symbol shared)
              {:error :parser/query, :vars shared, :form form})))
+
+  (when-some [order-spec (:qorder q)]
+    (let [find-vars  (set (map :symbol (collect-vars (:qfind q))))
+          order-vars (set (filter symbol? order-spec))]
+      (when (not= (count order-vars) (/ (count order-spec) 2))
+        (raise "Repeated :order-by variables"
+               {:error :parser/query, :form order-spec}))
+      (when-not (set/subset? order-vars find-vars)
+        (raise "There are :order-by variable that is not in :find spec"
+               {:error :parser/query, :form order-spec}))))
 
   (when-some [return-map (:qreturn-map q)]
     (when (instance? FindScalar (:qfind q))
@@ -794,10 +805,37 @@
 (defn parse-timeout [t]
   (cond
     (sequential? t) (recur (first t))
-    (number? t) t
-    (nil? t) nil
-    :else (raise "Unsupported timeout format"
-            {:error :parser/query :form t})))
+    (number? t)     t
+    (nil? t)        nil
+    :else           (raise "Unsupported timeout format"
+                           {:error :parser/query :form t})))
+
+(defn- parse-order-vec [ob]
+  (loop [res [] in? false vs ob]
+    (if (seq vs)
+      (let [cv (first vs)]
+        (cond
+          (symbol? cv)
+          (if in?
+            (recur (-> res (conj :asc) (conj cv)) true (rest vs))
+            (recur (conj res cv) true (rest vs)))
+          (#{:asc :desc} cv)
+          (if in?
+            (recur (conj res cv) false (rest vs))
+            (raise "Incorrect order-by format" {:error :parser/query :form ob}))
+          :else
+          (raise "Incorrect order-by format" {:error :parser/query :form ob})))
+      (if (symbol? (peek res))
+        (conj res :asc)
+        res))))
+
+(defn parse-order [[ob]]
+  (cond
+    (symbol? ob) [ob :asc]
+    (vector? ob) (parse-order-vec ob)
+    (nil? ob)    nil
+    :else        (raise "Unsupported order-by format"
+                        {:error :parser/query :form ob})))
 
 (defn parse-query [q]
   (let [qm     (cond
@@ -820,6 +858,7 @@
                                  (or (:in qm) (default-in qwhere)))
                   :qwhere      qwhere
                   :qorig-where where
-                  :qtimeout    (parse-timeout (:timeout qm))})]
+                  :qtimeout    (parse-timeout (:timeout qm))
+                  :qorder      (parse-order (:order-by qm))})]
     (validate-query res q qm)
     res))

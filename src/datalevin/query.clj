@@ -21,7 +21,7 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b])
   (:import
-   [java.util Arrays List Collection]
+   [java.util Arrays List Collection Comparator]
    [java.util.concurrent ConcurrentHashMap]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM LRUCache]
@@ -586,7 +586,7 @@
   [context sym]
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
-      (let [tg (if (u/array? tuple) r/typed-aget get)]
+      (let [tg (r/tuple-get tuple)]
         (tg tuple ((:attrs rel) sym))))))
 
 (defn- rel-contains-attrs? [rel attrs] (some #(contains? (:attrs rel) %) attrs))
@@ -659,11 +659,11 @@
             (aset tuples-args i (get attrs arg)))
           (aset static-args i arg))))
     (fn call-fn [tuple]
-      (dotimes [i len]
-        (when-some [tuple-idx (aget tuples-args i)]
-          (let [tg (if (u/array? tuple) r/typed-aget get)
-                v  (tg tuple tuple-idx)]
-            (aset static-args i v))))
+      (let [tg (r/tuple-get tuple)]
+        (dotimes [i len]
+          (when-some [tuple-idx (aget tuples-args i)]
+            (let [v (tg tuple tuple-idx)]
+              (aset static-args i v)))))
       (call static-args))))
 
 (defn -call-fn
@@ -2179,18 +2179,20 @@
 
 (defn tuples->return-map
   [return-map tuples]
-  (let [symbols (:symbols return-map)
-        idxs    (range 0 (count symbols))]
-    (persistent!
-      (reduce
-        (fn [coll tuple]
-          (conj! coll
-                 (let [get-i (if (r/tuple-array? tuple) r/typed-aget get)]
+  (if (seq tuples)
+    (let [symbols (:symbols return-map)
+          idxs    (range 0 (count symbols))
+          get-i   (r/tuple-get (first tuples))]
+      (persistent!
+        (reduce
+          (fn [coll tuple]
+            (conj! coll
                    (persistent!
                      (reduce
                        (fn [m i] (assoc! m (nth symbols i) (get-i tuple i)))
-                       (transient {}) idxs)))))
-        (transient #{}) tuples))))
+                       (transient {}) idxs))))
+          (transient #{}) tuples)))
+    #{}))
 
 (defprotocol IPostProcess
   (-post-process [find return-map tuples]))
@@ -2307,37 +2309,76 @@
         (.put ^LRUCache *query-cache* q res)
         res)))
 
+(defn- order-comp
+  [tg idx di]
+  (if (identical? di :asc)
+    (fn [t1 t2] (compare (tg t1 idx) (tg t2 idx)))
+    (fn [t1 t2] (compare (tg t2 idx) (tg t1 idx)))))
+
+(defn- order-comps
+  [tg find-vars order]
+  (let [pairs (partition-all 2 order)
+        idxs  (mapv (fn [v] (u/index-of #(= v %) find-vars))
+                    (into [] (map first) pairs))
+        comps (reverse (mapv #(order-comp tg %1 %2) idxs
+                             (into [] (map second) pairs)))]
+    (reify Comparator
+      (compare [_ t1 t2]
+        (loop [comps comps
+               res   (num 0)]
+          (if (not-empty comps)
+            (recur (next comps)
+                   (let [r ((first comps) t1 t2)]
+                     (if (= 0 r) res r)))
+            res))))))
+
+(defn- order-result
+  [find-vars result order]
+  (if (seq result)
+    (let [tg  (r/tuple-get (first result))
+          cmp (order-comps tg find-vars order)]
+      (sort cmp result))
+    result))
+
+(defn- q*
+  [parsed-q inputs]
+  (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
+    (let [find          (:qfind parsed-q)
+          find-elements (dp/find-elements find)
+          result-arity  (count find-elements)
+          with          (:qwith parsed-q)
+          find-vars     (dp/find-vars find)
+          all-vars      (concatv find-vars (map :symbol with))
+
+          [parsed-q inputs] (plugin-inputs parsed-q inputs)
+
+          context
+          (-> (Context. parsed-q [] {} {} [] nil nil nil
+                        (volatile! {}) true nil)
+              (resolve-ins inputs)
+              (resolve-redudants)
+              (-q true)
+              (collect all-vars))
+          result
+          (cond->> (:result-set context)
+            with (mapv #(subvec % 0 result-arity))
+
+            (some dp/aggregate? find-elements)
+            (aggregate find-elements context)
+
+            (some dp/pull? find-elements) (pull find-elements context)
+
+            true (-post-process find (:qreturn-map parsed-q)))]
+      (result-explain context result)
+      (if-let [order (:qorder parsed-q)]
+        (order-result find-vars result order)
+        result))))
+
 (defn q
   [q & inputs]
   (let [parsed-q (parsed-q q)]
-    (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
-      (let [find          (:qfind parsed-q)
-            find-elements (dp/find-elements find)
-            result-arity  (count find-elements)
-            with          (:qwith parsed-q)
-            all-vars      (concatv (dp/find-vars find) (map :symbol with))
-
-            [parsed-q inputs] (plugin-inputs parsed-q inputs)
-
-            context
-            (-> (Context. parsed-q [] {} {} [] nil nil nil
-                          (volatile! {}) true nil)
-                (resolve-ins inputs)
-                (resolve-redudants)
-                (-q true)
-                (collect all-vars))
-            result
-            (cond->> (:result-set context)
-              with (mapv #(subvec % 0 result-arity))
-
-              (some dp/aggregate? find-elements)
-              (aggregate find-elements context)
-
-              (some dp/pull? find-elements) (pull find-elements context)
-
-              true (-post-process find (:qreturn-map parsed-q)))]
-        (result-explain context result)
-        result))))
+    ;; search cache
+    (q* parsed-q inputs)))
 
 (defn- plan-only
   [q & inputs]

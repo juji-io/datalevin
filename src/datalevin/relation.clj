@@ -2,7 +2,7 @@
   (:require
    [clojure.pprint :as pp]
    [datalevin.parser :as dp]
-   [datalevin.util :as u :refer [raise]]
+   [datalevin.util :as u :refer [raise array?]]
    [datalevin.timeout :as timeout])
   (:import
    [java.util List]
@@ -35,7 +35,7 @@
 
 (defn typed-aget [a i] (aget ^objects a ^Long i))
 
-(defn tuple-array? [t] (.isArray (.getClass ^Object t)))
+(defn tuple-get [tuple] (if (array? tuple) typed-aget get))
 
 (defn join-tuples
   ([^objects t1 ^objects t2]
@@ -47,13 +47,13 @@
      res))
   ([t1 ^objects idxs1
     t2 ^objects idxs2]
-   (let [l1     (alength idxs1)
-         l2     (alength idxs2)
-         res    (object-array (+ l1 l2))
-         get-t1 (if (tuple-array? t1) typed-aget get)
-         get-t2 (if (tuple-array? t2) typed-aget get)]
-     (dotimes [i l1] (aset res i (get-t1 t1 (aget idxs1 i))))
-     (dotimes [i l2] (aset res (+ l1 i) (get-t2 t2 (aget idxs2 i))))
+   (let [l1    (alength idxs1)
+         l2    (alength idxs2)
+         res   (object-array (+ l1 l2))
+         get-1 (tuple-get t1)
+         get-2 (tuple-get t2)]
+     (dotimes [i l1] (aset res i (get-1 t1 (aget idxs1 i))))
+     (dotimes [i l2] (aset res (+ l1 i) (get-2 t2 (aget idxs2 i))))
      res)))
 
 (defn conj-tuple
@@ -75,17 +75,18 @@
   (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
                           [idx-b (attrs-a sym)]))
         tlen       (->> (vals attrs-a) ^long (reduce max) u/long-inc)]
-    (relation! attrs-a
-               (reduce
-                 (fn [acc tuple-b]
-                   (let [tuple' (make-array Object tlen)
-                         tg     (if (u/array? tuple-b) typed-aget get)]
-                     (doseq [[idx-b idx-a] idxb->idxa]
-                       (aset ^objects tuple' idx-a (tg tuple-b idx-b)))
-                     (.add ^List acc tuple')
-                     acc))
-                 tuples-a
-                 tuples-b))))
+    (if (seq tuples-b)
+      (let [tg (tuple-get (first tuples-b))]
+        (relation! attrs-a
+                   (reduce
+                     (fn [acc tuple-b]
+                       (let [tuple' (make-array Object tlen)]
+                         (doseq [[idx-b idx-a] idxb->idxa]
+                           (aset ^objects tuple' idx-a (tg tuple-b idx-b)))
+                         (.add ^List acc tuple')
+                         acc))
+                     tuples-a tuples-b)))
+      (relation! attrs-a tuples-a))))
 
 (defn sum-rel
   ([] (relation! {} (FastList.)))

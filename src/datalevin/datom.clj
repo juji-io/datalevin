@@ -2,10 +2,9 @@
   (:require
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
-   [datalevin.util :refer [combine-hashes combine-cmp]])
+   [datalevin.util :refer [combine-hashes combine-cmp defcomp]])
   (:import
    [datalevin.utl BitOps]
-   [clojure.lang IFn$OOL]
    [java.util Arrays]
    [java.io DataInput DataOutput]))
 
@@ -174,23 +173,6 @@
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))
 
 (defmacro long-compare [x y] `(Long/compare ^long ~x ^long ~y))
-
-(defmacro defcomp
-  [sym [arg1 arg2] & body]
-  (let [a1 (with-meta arg1 {})
-        a2 (with-meta arg2 {})]
-    `(def ~sym
-       (reify
-         java.util.Comparator
-         (compare [_# ~a1 ~a2]
-           (let [~arg1 ~arg1 ~arg2 ~arg2]
-             ~@body))
-         clojure.lang.IFn
-         (invoke [this# ~a1 ~a2]
-           (.compare this# ~a1 ~a2))
-         IFn$OOL
-         (invokePrim [this# ~a1 ~a2]
-           (.compare this# ~a1 ~a2))))))
 
 (defcomp cmp-datoms-eavt [^Datom d1, ^Datom d2]
   (combine-cmp

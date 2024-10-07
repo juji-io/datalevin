@@ -11,6 +11,7 @@
    [datalevin.core :as d]
    [datalevin.query :as sut]
    [datalevin.constants :as c]
+   [datalevin.interpret :as i]
    [datalevin.util :as u])
   (:import
    [java.util UUID]))
@@ -856,5 +857,26 @@
                   :where
                   [?t :transaction/block-time ?bt]]
                 @conn)))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest limit-offset-order-test
+  (let [dir    (u/tmp-dir (str "limit-offset-order-" (UUID/randomUUID)))
+        schema (i/load-edn "test/data/movie-schema.edn")
+        data   (i/load-edn "test/data/movie-data.edn")
+        conn   (d/get-conn dir schema)
+        q1     '[:find ?name
+                 :order-by [?name :desc]
+                 :timeout 1000
+                 :where
+                 [?e :person/name ?name]]
+        q2     '[:find ?name
+                 :order-by ?name
+                 :where
+                 [?e :person/name ?name]]
+        ]
+    (d/transact! conn data)
+    (is (= (first (d/q q1 (d/db conn))) ["Veronica Cartwright"]))
+    (is (= (first (d/q q2 (d/db conn))) ["Alan Rickman"]))
     (d/close conn)
     (u/delete-files dir)))

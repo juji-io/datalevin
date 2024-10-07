@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Datalog] `:offset` and `:limit` support, #126, #117
+- [Datalog] `:order-by` support, #116
+- [Datalog] `count-datoms` function to return the number of datoms of a pattern
+- [Datalog] `cardinality` function to return the number of unique values of an
+  attribute
+
 ## 0.9.11 (2024-10-04)
 
 ### Fixed

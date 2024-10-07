@@ -6,10 +6,10 @@
    [clojure.java.io :as io])
   (:import
    [datalevin.utl LRUCache]
-   [clojure.lang IEditableCollection IPersistentSet ITransientSet
-    Associative IKVReduce]
+   [clojure.lang IEditableCollection IPersistentSet ITransientSet IKVReduce
+    IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util Random Arrays Iterator List Collection Deque]
+   [java.util Random Arrays Iterator]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -222,6 +222,23 @@
              c#)))
       res)))
 
+(defmacro defcomp
+  [sym [arg1 arg2] & body]
+  (let [a1 (with-meta arg1 {})
+        a2 (with-meta arg2 {})]
+    `(def ~sym
+       (reify
+         java.util.Comparator
+         (compare [_# ~a1 ~a2]
+           (let [~arg1 ~arg1 ~arg2 ~arg2]
+             ~@body))
+         clojure.lang.IFn
+         (invoke [this# ~a1 ~a2]
+           (.compare this# ~a1 ~a2))
+         IFn$OOL
+         (invokePrim [this# ~a1 ~a2]
+           (.compare this# ~a1 ~a2))))))
+
 (defn combine-hashes [x y] (clojure.lang.Util/hashCombine x y))
 
 (defn- -case-tree [queries variants]
@@ -402,7 +419,6 @@
        `(let [amap# ~amap] (kvreduce ~f ~init amap#))))}
   [f init IKVReduce amap]
   (kvreduce amap f init))
-;;
 
 (defn merge-with
   [f & maps]
