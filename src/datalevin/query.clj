@@ -2324,20 +2324,16 @@
                              (into [] (map second) pairs)))]
     (reify Comparator
       (compare [_ t1 t2]
-        (loop [comps comps
-               res   (num 0)]
+        (loop [comps comps res (num 0)]
           (if (not-empty comps)
-            (recur (next comps)
-                   (let [r ((first comps) t1 t2)]
-                     (if (= 0 r) res r)))
+            (recur (next comps) (let [r ((first comps) t1 t2)]
+                                  (if (= 0 r) res r)))
             res))))))
 
 (defn- order-result
   [find-vars result order]
   (if (seq result)
-    (let [tg  (r/tuple-get (first result))
-          cmp (order-comps tg find-vars order)]
-      (sort cmp result))
+    (sort (order-comps (r/tuple-get (first result)) find-vars order) result)
     result))
 
 (defn- q*
@@ -2371,14 +2367,23 @@
             true (-post-process find (:qreturn-map parsed-q)))]
       (result-explain context result)
       (if-let [order (:qorder parsed-q)]
-        (order-result find-vars result order)
+        (if (instance? FindRel find)
+          (order-result find-vars result order)
+          result)
         result))))
 
 (defn q
   [q & inputs]
-  (let [parsed-q (parsed-q q)]
-    ;; search cache
-    (q* parsed-q inputs)))
+  (let [parsed-q (parsed-q q)
+        ;; TODO cache query
+        result   (q* parsed-q inputs)]
+    (if (instance? FindRel (:qfind parsed-q))
+      (let [limit  (:qlimit parsed-q)
+            offset (:qoffset parsed-q)]
+        (->> result
+             (drop offset)
+             (#(if (= limit -1) % (take limit %)))))
+      result)))
 
 (defn- plan-only
   [q & inputs]

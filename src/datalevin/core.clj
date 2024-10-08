@@ -1,6 +1,6 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
-  (:refer-clojure :exclude [sync])
+  (:refer-clojure :exclude [sync load])
   (:require
    [clojure.pprint :as p]
    [clojure.edn :as edn]
@@ -20,7 +20,6 @@
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.bits :as b])
-  (:refer-clojure :exclude [load])
   (:import
    [datalevin.entity Entity]
    [datalevin.storage Store]
@@ -413,7 +412,7 @@ Only usable for debug output.
 (defn q
   "Executes a Datalog query, which supports [Datomic Query Format](https://docs.datomic.com/query/query-data-reference.html).
 
-  In addition, `:order-by` clause is supported, which can be followed by a single variable or a vector. The vector includes one or more variables, each optionally followed by a keyword `:asc` or `:desc`, specifying ascending or descending order, respectively. The default is `:asc`.
+  In addition, when `:find` spec is a relation, `:order-by` clause is supported, which can be followed by a single variable or a vector. The vector includes one or more variables, each optionally followed by a keyword `:asc` or `:desc`, specifying ascending or descending order, respectively. The default is `:asc`.
 
           Usage:
 

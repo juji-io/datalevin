@@ -1,6 +1,6 @@
 (ns datalevin.test.parser-query
   (:require
-   [clojure.test :as t :refer        [is are deftest testing]]
+   [clojure.test :as t :refer [is are deftest testing]]
    [datalevin.parser :as dp]))
 
 (deftest validation
@@ -58,5 +58,8 @@
 
     '[:find ?e ?b :where [?e :book ?b] :order-by [?e :desc ?b ?e]]
     "Repeated :order-by variables"
+
+    '[:find ?e . :where [?e :book ?b] :limit "some"]
+    "Unsupported limit format"
 
     ))

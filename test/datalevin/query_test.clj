@@ -860,23 +860,36 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest limit-offset-order-test
-  (let [dir    (u/tmp-dir (str "limit-offset-order-" (UUID/randomUUID)))
+(deftest order-by-test
+  (let [dir    (u/tmp-dir (str "order-by-" (UUID/randomUUID)))
         schema (i/load-edn "test/data/movie-schema.edn")
         data   (i/load-edn "test/data/movie-data.edn")
         conn   (d/get-conn dir schema)
         q1     '[:find ?name
+                 :where
+                 [?e :person/name ?name]
                  :order-by [?name :desc]
-                 :timeout 1000
-                 :where
-                 [?e :person/name ?name]]
+                 :timeout 1000]
         q2     '[:find ?name
-                 :order-by ?name
                  :where
-                 [?e :person/name ?name]]
-        ]
+                 [?e :person/name ?name]
+                 :order-by ?name]
+        q3     '[:find ?name ?born
+                 :order-by [?born ?name]
+                 :where
+                 [?e :person/name ?name]
+                 [?e :person/born ?born]]
+        q4     '[:find ?name ?born
+                 :order-by [?name ?born :desc]
+                 :where
+                 [?e :person/name ?name]
+                 [?e :person/born ?born]]]
     (d/transact! conn data)
     (is (= (first (d/q q1 (d/db conn))) ["Veronica Cartwright"]))
     (is (= (first (d/q q2 (d/db conn))) ["Alan Rickman"]))
+    (is (= (first (d/q q3 (d/db conn)))
+           ["Richard Crenna" #inst "1926-11-30T00:00:00.000-00:00"]))
+    (is (= (first (d/q q4 (d/db conn)))
+           ["Alan Rickman" #inst "1946-02-21T00:00:00.000-00:00"]))
     (d/close conn)
     (u/delete-files dir)))
