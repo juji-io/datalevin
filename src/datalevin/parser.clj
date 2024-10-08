@@ -742,9 +742,6 @@
              {:error :parser/query, :vars shared, :form form})))
 
   (when-some [order-spec (:qorder q)]
-    (when-not (instance? FindRel (:qfind q))
-      (raise ":order-by requires :find spec to be a relation"
-             {:error :parser/query, :form order-spec}))
     (let [find-vars  (set (map :symbol (collect-vars (:qfind q))))
           order-vars (set (filter symbol? order-spec))]
       (when (not= (count order-vars) (/ (count order-spec) 2))
@@ -753,11 +750,6 @@
       (when-not (set/subset? order-vars find-vars)
         (raise "There are :order-by variable that is not in :find spec"
                {:error :parser/query, :form order-spec}))))
-
-  (when (or (:qlimit q) (:qoffset q))
-    (when-not (instance? FindRel (:qfind q))
-      (raise ":limit and :offset require :find spec to be a relation"
-             {:error :parser/query, :form q})))
 
   (when-some [return-map (:qreturn-map q)]
     (when (instance? FindScalar (:qfind q))
@@ -810,27 +802,30 @@
       (raise "Missing rules var '%' in :in"
              {:error :parser/query, :form form}))))
 
-(defn parse-timeout [[t]]
+(defn parse-timeout [t]
   (cond
-    (nil? t)     nil
-    (pos-int? t) t
-    :else        (raise "Unsupported timeout format"
-                        {:error :parser/query :form t})))
+    (nil? t)        nil
+    (pos-int? t)    t
+    (sequential? t) (recur (first t))
+    :else           (raise "Unsupported timeout format"
+                           {:error :parser/query :form t})))
 
-(defn parse-limit [[t]]
+(defn parse-limit [t]
   (cond
-    (nil? t)     -1
-    (pos-int? t) t
-    (neg-int? t) -1
-    :else        (raise "Unsupported limit format"
-                        {:error :parser/query :form t})))
+    (nil? t)        nil
+    (pos-int? t)    t
+    (sequential? t) (recur (first t))
+    (neg-int? t)    -1
+    :else           (raise "Unsupported limit format"
+                           {:error :parser/query :form t})))
 
-(defn parse-offset [[t]]
+(defn parse-offset [t]
   (cond
-    (nil? t)     0
-    (pos-int? t) t
-    :else        (raise "Unsupported offset format"
-                        {:error :parser/query :form t})))
+    (nil? t)        nil
+    (pos-int? t)    t
+    (sequential? t) (recur (first t))
+    :else           (raise "Unsupported offset format"
+                           {:error :parser/query :form t})))
 
 (defn- parse-order-vec [ob]
   (loop [res [] in? false vs ob]

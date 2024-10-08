@@ -39,6 +39,8 @@
 
 (def ^:dynamic *explain* nil)
 
+(def ^:dynamic *cache?* true)
+
 (def ^:dynamic *start-time* nil)
 
 (declare -collect -resolve-clause resolve-clause hash-join execute-steps)
@@ -2372,17 +2374,29 @@
           result)
         result))))
 
+(defn- q-result
+  [parsed-q inputs]
+  (if *cache?*
+    (if-let [store (some #(when (db/-searchable? %) (.-store^DB %)) inputs)]
+      (let [k [(dissoc parsed-q :limit :offset) inputs]]
+        (if-let [cached (db/cache-get store k)]
+          cached
+          (let [res (q* parsed-q inputs)]
+            (db/cache-put store k res)
+            res)))
+      (q* parsed-q inputs))
+    (q* parsed-q inputs)))
+
 (defn q
   [q & inputs]
   (let [parsed-q (parsed-q q)
-        ;; TODO cache query
-        result   (q* parsed-q inputs)]
+        result   (q-result parsed-q inputs)]
     (if (instance? FindRel (:qfind parsed-q))
       (let [limit  (:qlimit parsed-q)
             offset (:qoffset parsed-q)]
         (->> result
-             (drop offset)
-             (#(if (= limit -1) % (take limit %)))))
+             (#(if offset (drop offset %) %))
+             (#(if (or (nil? limit) (= limit -1)) % (take limit %)))))
       result)))
 
 (defn- plan-only
@@ -2400,6 +2414,7 @@
 (defn explain
   [{:keys [run?] :or {run? false}} & args]
   (binding [*explain*    (volatile! {})
+            *cache?*     false
             *start-time* (System/nanoTime)]
     (if run?
       (do (apply q args) @*explain*)

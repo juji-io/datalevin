@@ -893,3 +893,25 @@
            ["Alan Rickman" #inst "1946-02-21T00:00:00.000-00:00"]))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest limit-offset-test
+  (let [dir    (u/tmp-dir (str "limit-offset-" (UUID/randomUUID)))
+        schema (i/load-edn "test/data/movie-schema.edn")
+        data   (i/load-edn "test/data/movie-data.edn")
+        conn   (d/get-conn dir schema)
+        q1     '[:find ?name
+                 :where
+                 [?e :person/name ?name]
+                 :order-by ?name
+                 :limit 2]
+        q2     '[:find ?name
+                 :where
+                 [?e :person/name ?name]
+                 :order-by ?name
+                 :offset 1
+                 :limit 1]]
+    (d/transact! conn data)
+    (is (= (d/q q1 (d/db conn)) [["Alan Rickman"] ["Alexander Godunov"]]))
+    (is (= (d/q q2 (d/db conn)) [["Alexander Godunov"]]))
+    (d/close conn)
+    (u/delete-files dir)))

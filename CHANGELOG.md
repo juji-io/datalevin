@@ -9,6 +9,9 @@
 - [Datalog] `cardinality` function to return the number of unique values of an
   attribute
 
+### Improved
+- [KV] Added version number to kv-info, in preparation for auto-migration.
+
 ## 0.9.11 (2024-10-04)
 
 ### Fixed
