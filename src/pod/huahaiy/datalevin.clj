@@ -158,6 +158,14 @@
   (when-let [d (get-db dl)]
     (map dd/datom-eav (d/search-datoms d e a v))))
 
+(defn count-datoms
+  [dl e a v]
+  (when-let [d (get-db dl)] (d/count-datoms d e a v)))
+
+(defn cardinality
+  [dl a]
+  (when-let [d (get-db dl)] (d/cardinality d a)))
+
 (defn seek-datoms
   ([dl index]
    (when-let [d (get-db dl)] (map dd/datom-eav (d/seek-datoms d index))))
@@ -716,6 +724,8 @@
    'close-db                  close-db
    'datoms                    datoms
    'search-datoms             search-datoms
+   'count-datoms              count-datoms
+   'cardinality               cardinality
    'seek-datoms               seek-datoms
    'fulltext-datoms           fulltext-datoms
    'rseek-datoms              rseek-datoms

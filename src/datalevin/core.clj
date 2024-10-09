@@ -611,6 +611,35 @@ Only usable for debug output.
   [db e a v]             {:pre [(db/db? db)]}
   (db/-search db [e a v]))
 
+(defn count-datoms
+  "Count datoms in Datalog db that match the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function is more efficient than calling `count` on `search-datoms` results.
+
+   Usage:
+
+       ; count datoms for entity id == 1 (any attrs and values)
+       (count-datoms db 1 nil nil)
+       ; => 9
+
+       ; count datoms for entity id == 1 and attribute == :likes (any values)
+       (count-datoms db 1 :likes nil)
+       ; => 4
+
+       ; count datoms for entity id == 1, attribute == :likes and value == \"pizza\"
+       (count-datoms db 1 :likes \"pizza\")
+       ; => 2
+
+       ; count datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
+       (count-datoms db nil :likes \"pizza\")
+       ; => 10
+   "
+  [db e a v]             {:pre [(db/db? db)]}
+  (db/-count db [e a v] nil true))
+
+(defn cardinality
+  "Count the number of unique values of an attribute in a Datalog db. "
+  [db a]             {:pre [(db/db? db)]}
+  (db/-cardinality db a))
+
 (defn seek-datoms
   "Similar to [[datoms]], but will return datoms starting from specified components.
 

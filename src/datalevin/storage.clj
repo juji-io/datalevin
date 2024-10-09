@@ -236,6 +236,8 @@
     "Return the numbers of datoms with the given e value")
   (a-size [this a]
     "Return the number of datoms with the given attribute, an estimate")
+  (actual-a-size [this a]
+    "Return the number of datoms with the given attribute")
   (e-sample [this a]
     "Return a sample of eids sampled from full value range of an attribute")
   (v-size [this v]
@@ -666,19 +668,24 @@
 
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
-  (a-size [_ a]
+  (a-size [this a]
     (if-let [aid (get (schema a) :db/aid)]
       (let [^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
         (or (when (and ms (not (zero? ms)))
               ;; zero a-size in meta disrupts query, always actual count
               ms)
-            (let [as (lmdb/key-range-list-count
-                       lmdb c/ave
-                       [:closed
-                        (datom->indexable schema (d/datom c/e0 a nil) false)
-                        (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
-              (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
-              as)))
+            (.actual-a-size this a)))
+      0))
+
+  (actual-a-size [_ a]
+    (if-let [aid (get (schema a) :db/aid)]
+      (let [as (lmdb/key-range-list-count
+                 lmdb c/ave
+                 [:closed
+                  (datom->indexable schema (d/datom c/e0 a nil) false)
+                  (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
+        (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
+        as)
       0))
 
   (e-sample [this a]

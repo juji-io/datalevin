@@ -107,7 +107,7 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest test-search-datoms
+(deftest test-search-count-datoms
   (let [dir  (u/tmp-dir (str "search-datoms-test-" (UUID/randomUUID)))
         dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
@@ -118,6 +118,21 @@
                              [:db/add 2 :age 25]
                              [:db/add 3 :name "Sergey"]
                              [:db/add 3 :age 11]]))]
+
+    (testing "cardinality"
+      (is (= (d/cardinality db :age) 3)))
+
+    (testing "av size"
+      (is (= (d/count-datoms db nil :age 11) 1)))
+
+    (testing "a size"
+      (is (= (d/count-datoms db nil :name nil) 3)))
+
+    (testing "e size"
+      (is (= (d/count-datoms db 2 nil nil) 2)))
+
+    (testing "total size"
+      (is (= (d/count-datoms db nil nil nil) 6)))
 
     (testing "Non-termination"
       (is (= (map dvec (d/search-datoms db nil :age 11))
