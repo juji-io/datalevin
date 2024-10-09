@@ -11,6 +11,8 @@
 
 ### Improved
 - [KV] Added version number to kv-info, in preparation for auto-migration.
+- [Datalog] Cache query results by default, can use dynamic var `q/*cache?*` to
+  turn it off.
 
 ## 0.9.11 (2024-10-04)
 

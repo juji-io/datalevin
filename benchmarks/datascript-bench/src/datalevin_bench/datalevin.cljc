@@ -1,7 +1,7 @@
 (ns datalevin-bench.datalevin
   (:require
    [datalevin.core :as d]
-   [datalevin.constants :as c]
+   [datalevin.query :as q]
    [datalevin.util :as u]
    [datalevin-bench.core :as core])
   (:import
@@ -333,7 +333,9 @@
    (defn ^:export -main [& names]
      (doseq [n names]
        (if-some [benchmark (ns-resolve 'datalevin-bench.datalevin (symbol n))]
-         (let [perf (benchmark)]
+         (let [perf (if q/*cache?*
+                      (binding [q/*cache?* false] (benchmark))
+                      (benchmark))]
            (print (core/round perf) "\t")
            (flush))
          (do
