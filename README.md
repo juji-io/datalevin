@@ -17,7 +17,7 @@ alt="bb compatible"></img></a>
 </p>
 <p align="center">
 <a href="https://github.com/juji-io/datalevin/actions"><img
-src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.11"
+src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.12"
 alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img
 src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true"
