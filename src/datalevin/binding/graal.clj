@@ -1142,6 +1142,7 @@
            ^Env env (Env/create dir mapsize max-readers max-dbs
                                 (kv-flags flags))
            info     (merge opts {:dir         dir
+                                 :version     c/version
                                  :flags       flags
                                  :max-readers max-readers
                                  :max-dbs     max-dbs

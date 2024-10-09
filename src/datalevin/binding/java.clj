@@ -1114,6 +1114,7 @@
                         flags)
            ^Env env   (.open builder file (kv-flags :env flags))
            info       (merge opts {:dir         dir
+                                   :version     c/version
                                    :max-readers max-readers
                                    :max-dbs     max-dbs
                                    :flags       flags

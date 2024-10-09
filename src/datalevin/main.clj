@@ -24,12 +24,10 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.9.11")
-
 (def ^:private version-str
   (str
     "
-  Datalevin (version: " version ")"))
+  Datalevin (version: " c/version ")"))
 
 (defn- parse-version
   "return [major minor non-breaking] version numbers"

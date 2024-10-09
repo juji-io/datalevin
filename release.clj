@@ -49,7 +49,7 @@
     (update-file "test-jar/project.clj" old->new)
     (update-file "doc/install.md" old->new)
     (update-file "doc/dtlv.md" old->new)
-    (update-file "src/datalevin/main.clj" old->new)
+    (update-file "src/datalevin/constants.clj" old->new)
     (update-file "native/project.clj"  old->new)
     (update-file "native/test-jar/deps.edn"  old->new)
     (update-file "native/README.md" old->new)
