@@ -186,6 +186,28 @@
           form))
       body)))
 
+(defn array? [^Object x] (some-> x .getClass .isArray))
+
+(defn typed-aget [a i] (aget ^objects a ^Long i))
+
+(defn tuple-get [tuple] (if (array? tuple) typed-aget get))
+
+(defn opt-apply
+  [f args]
+  (if (seq args)
+    (let [g  (tuple-get args)
+          tg #(g args %)]
+      (case (count args)
+        1 (f (tg 0))
+        2 (f (tg 0) (tg 1))
+        3 (f (tg 0) (tg 1) (tg 2))
+        4 (f (tg 0) (tg 1) (tg 2) (tg 3))
+        5 (f (tg 0) (tg 1) (tg 2) (tg 3) (tg 4))
+        6 (f (tg 0) (tg 1) (tg 2) (tg 3) (tg 4) (tg 5))
+        7 (f (tg 0) (tg 1) (tg 2) (tg 3) (tg 4) (tg 5) (tg 6))
+        (apply f args)))
+    (f)))
+
 (defmacro defrecord-updatable [name fields & impls]
   (apply make-record-updatable-clj  name fields impls))
 
@@ -474,8 +496,6 @@
                 (recur out)
                 (recur (.disjoin out item))))
             out))))))
-
-(defn array? [^Object x] (some-> x .getClass .isArray))
 
 (defn same-sign?
   [^long x ^long y]

@@ -12,7 +12,7 @@
    [datalevin.relation :as r]
    [datalevin.storage :as s]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+ conjv concatv]]
+   [datalevin.util :as u :refer [raise cond+ conjv concatv opt-apply tuple-get]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -23,7 +23,7 @@
   (:import
    [java.util Arrays List Collection Comparator]
    [java.util.concurrent ConcurrentHashMap]
-   [clojure.lang ILookup LazilyPersistentVector]
+   [clojure.lang ILookup LazilyPersistentVector IFn]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.db DB]
    [datalevin.storage Store]
@@ -588,7 +588,7 @@
   [context sym]
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
-      (let [tg (r/tuple-get tuple)]
+      (let [tg (tuple-get tuple)]
         (tg tuple ((:attrs rel) sym))))))
 
 (defn- rel-contains-attrs? [rel attrs] (some #(contains? (:attrs rel) %) attrs))
@@ -618,7 +618,7 @@
   [f]
   (if (dot-form f)
     (let [fname (subs (name f) 1)] #(dot-call fname %))
-    #(apply f %)))
+    #(opt-apply f %)))
 
 (defn- resolve-sym
   [sym]
@@ -661,7 +661,7 @@
             (aset tuples-args i (get attrs arg)))
           (aset static-args i arg))))
     (fn call-fn [tuple]
-      (let [tg (r/tuple-get tuple)]
+      (let [tg (tuple-get tuple)]
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
             (let [v (tg tuple tuple-idx)]
@@ -679,10 +679,10 @@
                                    e))
                                (vec args))]
                    (fn [tuple]
-                     (apply (get built-ins/query-fns f)
-                            (walk/postwalk
-                              (fn [e] (if (fn? e) (e tuple) e))
-                              args'))))
+                     (opt-apply (get built-ins/query-fns f)
+                                (walk/postwalk
+                                  (fn [e] (if (fn? e) (e tuple) e))
+                                  args'))))
     (-call-fn* context rel f args)))
 
 (defn filter-by-pred
@@ -1334,10 +1334,10 @@
   [m f args v]
   (let [logic-f (fn [f args]
                   (fn logic [x]
-                    (apply (get built-ins/query-fns f)
-                           (walk/postwalk
-                             (fn [e] (if (fn? e) (e x) e))
-                             args))))
+                    (opt-apply (get built-ins/query-fns f)
+                               (walk/postwalk
+                                 (fn [e] (if (fn? e) (e x) e))
+                                 args))))
         args'   (walk/postwalk
                   (fn [e]
                     (if (list? e)
@@ -2165,7 +2165,7 @@
                   args (mapv #(-context-resolve % context)
                              (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
-              (apply f (conj args vals)))
+              (opt-apply f (conj args vals)))
             fixed-value))
         find-elements
         (first tuples)
@@ -2184,7 +2184,7 @@
   (if (seq tuples)
     (let [symbols (:symbols return-map)
           idxs    (range 0 (count symbols))
-          get-i   (r/tuple-get (first tuples))]
+          get-i   (tuple-get (first tuples))]
       (persistent!
         (reduce
           (fn [coll tuple]
@@ -2335,7 +2335,7 @@
 (defn- order-result
   [find-vars result order]
   (if (seq result)
-    (sort (order-comps (r/tuple-get (first result)) find-vars order) result)
+    (sort (order-comps (tuple-get (first result)) find-vars order) result)
     result))
 
 (defn- q*

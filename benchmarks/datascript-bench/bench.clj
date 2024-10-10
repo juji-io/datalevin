@@ -154,7 +154,7 @@
   [
    ["latest" "datomic"]
    ["latest" "datascript"]
-   ["0.9.11" "datalevin"]
+   ["0.9.12" "datalevin"]
    ["latest" "datalevin"]
    ])
 

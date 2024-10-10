@@ -2,7 +2,7 @@
   (:require
    [clojure.pprint :as pp]
    [datalevin.parser :as dp]
-   [datalevin.util :as u :refer [raise array?]]
+   [datalevin.util :as u :refer [raise tuple-get]]
    [datalevin.timeout :as timeout])
   (:import
    [java.util List]
@@ -32,10 +32,6 @@
   (let [vars (->> (dp/collect-vars-distinct binding)
                   (map :symbol))]
     (relation! (zipmap vars (range)) (FastList.))))
-
-(defn typed-aget [a i] (aget ^objects a ^Long i))
-
-(defn tuple-get [tuple] (if (array? tuple) typed-aget get))
 
 (defn join-tuples
   ([^objects t1 ^objects t2]
