@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.12 (2024-10-08)
 
 ### Added
 - [Datalog] `:offset` and `:limit` support, #126, #117
