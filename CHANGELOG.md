@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+
+### Fixed
+- [Datalog] cardinality many attributes as value. #284
+- [Pod] consistent `entity` behavior  in pod as in JVM. #283
+
+
 ## 0.9.12 (2024-10-08)
 
 ### Added

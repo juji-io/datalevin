@@ -1,4 +1,4 @@
-# Datalevin Rules Engine
+# Datalevin Rules Engine (WIP)
 
 Datalevin has an innovative rule engine that has more expressive powerful than
 normal Datalog, and implements an efficient rules evaluation strategy that
