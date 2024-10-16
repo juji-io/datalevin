@@ -823,6 +823,7 @@
   (cond
     (nil? t)        nil
     (pos-int? t)    t
+    (= t 0)         t
     (sequential? t) (recur (first t))
     :else           (raise "Unsupported offset format"
                            {:error :parser/query :form t})))

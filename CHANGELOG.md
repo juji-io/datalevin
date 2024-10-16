@@ -3,6 +3,8 @@
 ## WIP
 
 ### Fixed
+- [Datalog] allow `:offset 0`.
+- [Datalog] apply type coercion to ensure correct value storage. #285
 - [Datalog] cardinality many attributes as value. #284
 - [Pod] consistent `entity` behavior  in pod as in JVM. #283
 

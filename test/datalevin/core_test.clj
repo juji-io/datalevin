@@ -611,3 +611,25 @@
                       (sut/db conn))))
     (sut/close conn)
     (u/delete-files dir)))
+
+#_(deftest issue-285-test
+    (let [dir  (u/tmp-dir (str "int-test-" (UUID/randomUUID)))
+          conn (sut/get-conn dir {:user/id       {:db/valueType :db.type/long
+                                                  :db/unique    :db.unique/identity}
+                                  :user/username {:db/valueType :db.type/string
+                                                  :db/unique    :db.unique/value}
+                                  :user/ref-user {:db/valueType   :db.type/ref
+                                                  :db/cardinality :db.cardinality/many}}
+                             {:validate-data? true})]
+      (sut/transact! conn [{:db/id         "alice"
+                            ;; :user/id       2
+                            :user/id       (Integer. 2)
+                            :user/username "Alice"}
+                           {:user/id       1
+                            :user/username "Eve"
+                            :user/ref-user ["alice"]}])
+      (is (nil? (:user/ref-user (sut/entity (sut/db conn) [:user/id 2]))))
+      (is (= (sut/entity (sut/db conn) [:user/id 2])
+             (first (:user/ref-user (sut/entity (sut/db conn) [:user/id 1])))))
+      (sut/close conn)
+      (u/delete-files dir)))

@@ -1402,6 +1402,12 @@
              (props :db.fulltext/autoDomain) (conj (u/keyword->string attr)))
            op])))
 
+(defn- type-coercion
+  [vt v]
+  (case vt
+    (:db.type/long :db.type/ref) (long v)
+    v))
+
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
    ^IntLongHashMap counts ^IntObjectHashMap eids]
@@ -1422,6 +1428,7 @@
         _      (or (not (opts :validate-data?))
                    (b/valid-data? v vt)
                    (u/raise "Invalid data, expecting" vt " got " v {:input v}))
+        v      (type-coercion vt v)
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)
         old-c  (.getIfAbsent counts aid 0)

@@ -909,9 +909,16 @@
                  [?e :person/name ?name]
                  :order-by ?name
                  :offset 1
+                 :limit 1]
+        q3     '[:find ?name
+                 :where
+                 [?e :person/name ?name]
+                 :order-by ?name
+                 :offset 0
                  :limit 1]]
     (d/transact! conn data)
     (is (= (d/q q1 (d/db conn)) [["Alan Rickman"] ["Alexander Godunov"]]))
     (is (= (d/q q2 (d/db conn)) [["Alexander Godunov"]]))
+    (is (= (d/q q3 (d/db conn)) [["Alan Rickman"]]))
     (d/close conn)
     (u/delete-files dir)))

@@ -1,4 +1,4 @@
-# Data Compression in Datalevin
+# Data Compression in Datalevin (WIP)
 
 In addition to the obvious benefit of reducing storage space, data compression
 helps to increase data ingestion and query speed, due to faster key comparison,
