@@ -138,9 +138,9 @@
   (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
       c/tx0))
 
-(defn- value-type
+(defn  value-type
   [props]
-  (if-let [vt (props :db/valueType)]
+  (if-let [vt (:db/valueType props)]
     (if (identical? vt :db.type/tuple)
       (if-let [tts (props :db/tupleTypes)]
         tts
@@ -1402,12 +1402,6 @@
              (props :db.fulltext/autoDomain) (conj (u/keyword->string attr)))
            op])))
 
-(defn- type-coercion
-  [vt v]
-  (case vt
-    (:db.type/long :db.type/ref) (long v)
-    v))
-
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
    ^IntLongHashMap counts ^IntObjectHashMap eids]
@@ -1425,10 +1419,6 @@
         v      (.-v d)
         aid    (props :db/aid)
         max-gt (max-gt store)
-        _      (or (not (opts :validate-data?))
-                   (b/valid-data? v vt)
-                   (u/raise "Invalid data, expecting" vt " got " v {:input v}))
-        v      (type-coercion vt v)
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)
         old-c  (.getIfAbsent counts aid 0)

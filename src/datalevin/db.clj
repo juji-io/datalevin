@@ -11,6 +11,7 @@
     :refer [case-tree raise defrecord-updatable cond+ conjv concatv]]
    [datalevin.storage :as s]
    [datalevin.lmdb :as l]
+   [datalevin.bits :as b]
    [datalevin.remote :as r]
    [datalevin.inline :refer [update assoc]])
   (:import
@@ -18,7 +19,7 @@
    [datalevin.storage IStore Store]
    [datalevin.remote DatalogStore]
    [datalevin.utl LRUCache]
-   [java.util SortedSet Comparator]
+   [java.util SortedSet Comparator Date]
    [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
@@ -524,6 +525,71 @@
    (validate-schema schema)
    (new-db (open-store dir schema opts))))
 
+(defn- validate-type
+  [store a v]
+  (let [opts   (s/opts store)
+        schema (s/schema store)
+        vt     (s/value-type (schema a))]
+    (or (not (opts :validate-data?))
+        (b/valid-data? v vt)
+        (raise "Invalid data, expecting" vt " got " v {:input v}))
+    vt))
+
+(defn coerce-inst
+  [v]
+  (cond
+    (inst? v)    v
+    (integer? v) (Date. (long v))
+    :else        (raise "Expect java.util.Date" {:input v})))
+
+(defn coerce-uuid
+  [v]
+  (cond
+    (uuid? v)   v
+    (string? v) (if-let [u (parse-uuid v)]
+                  u
+                  (raise "Unable to parse string to UUID" {:input v}))
+    :else       (raise "Expect java.util.UUID" {:input v})))
+
+(defn- type-coercion
+  [vt v]
+  (case vt
+    :db.type/string              (str v)
+    :db.type/bigint              (biginteger v)
+    :db.type/bigdec              (bigdec v)
+    (:db.type/long :db.type/ref) (long v)
+    :db.type/float               (float v)
+    :db.type/double              (double v)
+    (:db.type/bytes :bytes)      (bytes v)
+    (:db.type/keyword :keyword)  (keyword v)
+    (:db.type/symbol :symbol)    (symbol v)
+    (:db.type/boolean :boolean)  (boolean v)
+    (:db.type/instant :instant)  (coerce-inst v)
+    (:db.type/uuid :uuid)        (coerce-uuid v)
+    :db.type/tuple               (vec v)
+    v))
+
+(defn- correct-datom*
+  [^Datom datom vt]
+  (d/datom (.-e datom) (.-a datom) (type-coercion vt (.-v datom))
+           (d/datom-tx datom) (d/datom-added datom)))
+
+(defn- correct-datom
+  [store ^Datom datom]
+  (correct-datom* datom (validate-type store (.-a datom) (.-v datom))))
+
+(defn- correct-value
+  [store a v]
+  (type-coercion (validate-type store a v) v))
+
+(defn- pour
+  [store datoms]
+  (doseq [batch (sequence (comp
+                            (map #(correct-datom store %))
+                            (partition-all c/*fill-db-batch-size*))
+                          datoms)]
+    (s/load-datoms store batch)))
+
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil nil))
   ([datoms dir] (init-db datoms dir nil nil))
@@ -535,15 +601,13 @@
             {:error :init-db}))
    (validate-schema schema)
    (let [store (open-store dir schema opts)]
-     (doseq [batch (sequence (partition-all c/*fill-db-batch-size*) datoms)]
-       (s/load-datoms store batch))
+     (pour store datoms)
      (new-db store))))
 
 (defn fill-db
   [db datoms]
   (let [store (.-store ^DB db)]
-    (doseq [batch (sequence (partition-all c/*fill-db-batch-size*) datoms)]
-      (s/load-datoms store batch))
+    (pour store datoms)
     (new-db store)))
 
 (defn close-db [^DB db]
@@ -635,20 +699,23 @@
 
 ;;;;;;;;;; Transacting
 
-(defn validate-datom [db ^Datom datom]
-  (when (and (-is-attr? db (.-a datom) :db/unique) (datom-added datom))
-    (when-some [found (let [a (.-a datom)
-                            v (.-v datom)]
-                        (or (not (.isEmpty
+(defn- validate-datom [^DB db ^Datom datom]
+  (let [store (.-store db)
+        a     (.-a datom)
+        v     (.-v datom)
+        vt    (validate-type store a v)
+        v     (correct-value store a v)]
+    (when (and (-is-attr? db a :db/unique) (datom-added datom))
+      (when-some [found (or (not (.isEmpty
                                    (.subSet ^TreeSortedSet (:avet db)
                                             (d/datom e0 a v tx0)
                                             (d/datom emax a v txmax))))
-                            (-populated? db :ave a v nil)))]
-      (raise "Cannot add " datom " because of unique constraint: " found
-             {:error     :transact/unique
-              :attribute (.-a datom)
-              :datom     datom})))
-  db)
+                            (-populated? db :ave a v nil))]
+        (raise "Cannot add " datom " because of unique constraint: " found
+               {:error     :transact/unique
+                :attribute a
+                :datom     datom})))
+    vt))
 
 (defn- validate-attr [attr at]
   (when-not (or (keyword? attr) (string? attr))
@@ -710,18 +777,17 @@
        true
        (update :db-after advance-max-eid eid)))))
 
-(defn- with-datom [db ^Datom datom]
-  (let [ref? (ref? db (.-a datom))
-        add  #(do (.add ^TreeSortedSet % datom) %)
-        del  #(do (.remove ^TreeSortedSet % datom) %)]
+(defn- with-datom [db datom]
+  (let [^Datom datom (correct-datom* datom (validate-datom db datom))
+        add          #(do (.add ^TreeSortedSet % datom) %)
+        del          #(do (.remove ^TreeSortedSet % datom) %)
+        ref?         (ref? db (.-a datom))]
     (if (datom-added datom)
-      (do
-        (validate-datom db datom)
-        (cond-> (-> db
-                    (update :eavt add)
-                    (update :avet add)
-                    (advance-max-eid (.-e datom)))
-          ref? (update :vaet add)))
+      (cond-> (-> db
+                  (update :eavt add)
+                  (update :avet add)
+                  (advance-max-eid (.-e datom)))
+        ref? (update :vaet add))
       (if (.isEmpty
             (.subSet ^TreeSortedSet (:eavt db)
                      (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
@@ -846,7 +912,7 @@
                  (not (empty? upsert)) (assoc a upsert))])
 
             :else
-            (if-some [e (resolve a v)]
+            (if-some [e (resolve a (correct-value (.-store ^DB db) a v))]
               [entity' (assoc upserts a {v e})]
               [(assoc entity' a v) upserts])))
         [{} {}]

@@ -1012,16 +1012,12 @@
   (if (or (c/datalog-value-types t) (c/kv-value-types t))
     (case t
       (:db.type/string :string)   (string? x)
-      (:db.type/bigint :bigint)   (and (instance? java.math.BigInteger x)
-                                       (<= c/min-bigint x c/max-bigint))
-      (:db.type/bigdec :bigdec)   (and (instance? java.math.BigDecimal x)
-                                       (<= c/min-bigdec x c/max-bigdec))
+      (:db.type/bigint :bigint)   (<= c/min-bigint x c/max-bigint)
+      (:db.type/bigdec :bigdec)   (<= c/min-bigdec x c/max-bigdec)
       (:db.type/long :db.type/ref
                      :long)       (int? x)
-      (:db.type/float :float)     (and (float? x)
-                                       (<= Float/MIN_VALUE x
-                                           Float/MAX_VALUE))
-      (:db.type/double :double)   (float? x)
+      (:db.type/float :float)     (<= Float/MIN_VALUE x Float/MAX_VALUE)
+      (:db.type/double :double)   (<= Double/MIN_VALUE x Double/MAX_VALUE)
       (:db.type/bytes :bytes)     (bytes? x)
       (:db.type/keyword :keyword) (keyword? x)
       (:db.type/symbol :symbol)   (symbol? x)
@@ -1030,7 +1026,7 @@
       (:db.type/uuid :uuid)       (uuid? x)
       :db.type/tuple              (vector? x)
       true)
-    false))
+    (if (identical? t :data) true false)))
 
 (defn valid-data?
   "validate data type"
@@ -1040,8 +1036,7 @@
          (not (some #(= % :data) t))
          (let [ct (count t)]
            (if (= 1 ct)
-             (let [t' (first t)]
-               (every? #(valid-data* % t') x))
+             (let [t' (first t)] (every? #(valid-data* % t') x))
              (and (= ct (count x))
                   (every? true? (map #(valid-data* %1 %2) x t))))))
     (valid-data* x t)))
