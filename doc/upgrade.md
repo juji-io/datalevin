@@ -36,6 +36,8 @@ existing databases when upgrading. Major version bumps may not require migration
 
 Now we know when a database upgrade is needed, here is how to do it.
 
+### Command line
+
 Upgrading a database from an old version to a new version requires the use of
 Datalevin command line tool, `dtlv`, or `datalevin-x.x.x-standalone.jar` uberjar
 if a native build does not exist on your platform. In fact, both the old and the
@@ -86,3 +88,17 @@ Now your new Datalog database is in `/dest/dir`. That's it.
 If the database is a key-value store instead of a Datalog one, the dump and
 load commands have different options, please consult the `dtlv help dump` and
 `dtlv help load` for details.
+
+### In Code
+
+Sometimes, you may have written some Java objects as data in the database, the
+command line method above would not work. This is because the Java classes
+needed for serialization of these Java objects would not be present in
+standalone Datalevin command line. In this case, you can call
+[`datalein.main/dump`](https://cljdoc.org/d/datalevin/datalevin/0.9.12/api/datalevin.main#dump)
+and
+[`datalevin.main/load`](https://cljdoc.org/d/datalevin/datalevin/0.9.12/api/datalevin.main#load)
+function in your code to dump and load the database, assuming your code has
+necessary dependencies. First dump the database with the old version of
+Datalevin library, then change the dependency to new version of Datalevin
+library to load the aatabase.

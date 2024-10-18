@@ -4,7 +4,8 @@
 
 ### Fixed
 - [Datalog] allow `:offset 0`.
-- [Datalog] apply type coercion to ensure correct value storage. #285
+- [Datalog] apply type coercion according to scheam to ensure correct storage of values. #285
+- [Datalog] implement `empty` on Datom so it can be walked. #286
 - [Datalog] cardinality many attributes as value. #284
 - [Pod] consistent `entity` behavior  in pod as in JVM. #283
 
