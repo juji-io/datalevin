@@ -940,11 +940,8 @@
     (d/transact! conn data)
     (is (= (d/q q1 (d/db conn))
            [["Alexander Godunov"] ["Arnold Schwarzenegger"]]))
-    ;; Change the function (can't be done in a redef) so
-    ;; we need to use alter-var-root
-    (alter-var-root #'datalevin.query-test/big-name?
-                    (constantly (fn [x] (> (count x) 20))))
-    (is (= (d/q q1 (d/db conn))
-           [["Arnold Schwarzenegger"]]))
+    (with-redefs [big-name? (fn [x] (> (count x) 20))]
+      (is (= (d/q q1 (d/db conn))
+           [["Arnold Schwarzenegger"]])))
     (d/close conn)
     (u/delete-files dir)))

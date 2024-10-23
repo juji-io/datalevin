@@ -479,9 +479,10 @@
 
 (defn resolve-fn-symbol-for-caching
   "Using function symbol alone does not detect changes to the function.
-  This can lead to the cache returning a stale result. By storing the resolved
-  function object the cache can be invalidated correctly when the function
-  implementation changes. This is only done for qualified functions."
+  This can lead to the cache returning a stale result. By storing the
+  resolved function object the cache can be invalidated correctly when
+  the function implementation changes. This is only done for qualified
+  functions."
   [fn*]
   (let [sym (-> fn* :symbol)]
     (when (qualified-symbol? sym)
