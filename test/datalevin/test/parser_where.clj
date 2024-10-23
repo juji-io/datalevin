@@ -45,16 +45,16 @@
   (are [clause res] (= (dp/parse-clause clause) res)
     '[(fn ?a 1) ?x]
     (dp/->Function (dp/->PlainSymbol 'fn) [(dp/->Variable '?a) (dp/->Constant 1)] (dp/->BindScalar (dp/->Variable '?x))
-                   (dp/resolve-fn-symbol-for-caching 'pred))
+                   (dp/resolve-fn-symbol-for-caching 'fn))
 
     '[(fn) ?x]
-    (dp/->Function (dp/->PlainSymbol 'fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'pred))
+    (dp/->Function (dp/->PlainSymbol 'fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))
 
     '[(?custom-fn) ?x]
-    (dp/->Function (dp/->Variable '?custom-fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'pred))
+    (dp/->Function (dp/->Variable '?custom-fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))
 
     '[(?custom-fn ?arg) ?x]
-    (dp/->Function (dp/->Variable '?custom-fn) [(dp/->Variable '?arg)] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'pred))))
+    (dp/->Function (dp/->Variable '?custom-fn) [(dp/->Variable '?arg)] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))))
 
 (deftest rule-expr
   (are [clause res] (= (dp/parse-clause clause) res)
