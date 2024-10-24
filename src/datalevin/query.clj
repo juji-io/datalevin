@@ -2304,6 +2304,13 @@
                            e)) plan)
                :late-clauses late-clauses)))))
 
+(defn- parsed-q
+  [q]
+  (or (.get ^LRUCache *query-cache* q)
+      (let [res (dp/parse-query q)]
+        (.put ^LRUCache *query-cache* q res)
+        res)))
+
 (defn- order-comp
   [tg idx di]
   (if (identical? di :asc)
@@ -2367,11 +2374,19 @@
           result)
         result))))
 
+(defn- resolve-qualified-fns
+  "Convert qualified fns to fn-objects so that function implementation
+  changes invalidate query result cache."
+  [qualified-fns]
+  (into #{} (map #(some-> % resolve deref)) qualified-fns))
+
 (defn- q-result
   [parsed-q inputs]
   (if *cache?*
     (if-let [store (some #(when (db/-searchable? %) (.-store^DB %)) inputs)]
-      (let [k [(dissoc parsed-q :limit :offset) inputs]]
+      (let [k [(-> (update parsed-q :qwhere-qualified-fns
+                           resolve-qualified-fns)
+                   (dissoc :limit :offset)) inputs]]
         (if-let [cached (db/cache-get store k)]
           cached
           (let [res (q* parsed-q inputs)]
@@ -2382,7 +2397,7 @@
 
 (defn q
   [q & inputs]
-  (let [parsed-q (dp/parse-query q) 
+  (let [parsed-q (parsed-q q) 
         result   (q-result parsed-q inputs)]
     (if (instance? FindRel (:qfind parsed-q))
       (let [limit  (:qlimit parsed-q)
@@ -2394,7 +2409,7 @@
 
 (defn- plan-only
   [q & inputs]
-  (let [parsed-q (dp/parse-query q)]
+  (let [parsed-q (parsed-q q)]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
         (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {})
