@@ -31,30 +31,27 @@
 (deftest test-pred
   (are [clause res] (= (dp/parse-clause clause) res)
     '[(pred ?a 1)]
-    (dp/->Predicate (dp/->PlainSymbol 'pred) [(dp/->Variable '?a) (dp/->Constant 1)] (dp/resolve-fn-symbol-for-caching 'pred))
+    (dp/->Predicate (dp/->PlainSymbol 'pred) [(dp/->Variable '?a) (dp/->Constant 1)])
 
     '[(pred)]
-    (dp/->Predicate (dp/->PlainSymbol 'pred) []
-                    (dp/resolve-fn-symbol-for-caching 'pred))
+    (dp/->Predicate (dp/->PlainSymbol 'pred) [])
 
     '[(?custom-pred ?a)]
-    (dp/->Predicate (dp/->Variable '?custom-pred) [(dp/->Variable '?a)]
-                    (dp/resolve-fn-symbol-for-caching 'pred))))
+    (dp/->Predicate (dp/->Variable '?custom-pred) [(dp/->Variable '?a)])))
 
 (deftest test-fn
   (are [clause res] (= (dp/parse-clause clause) res)
     '[(fn ?a 1) ?x]
-    (dp/->Function (dp/->PlainSymbol 'fn) [(dp/->Variable '?a) (dp/->Constant 1)] (dp/->BindScalar (dp/->Variable '?x))
-                   (dp/resolve-fn-symbol-for-caching 'fn))
+    (dp/->Function (dp/->PlainSymbol 'fn) [(dp/->Variable '?a) (dp/->Constant 1)] (dp/->BindScalar (dp/->Variable '?x)))
 
     '[(fn) ?x]
-    (dp/->Function (dp/->PlainSymbol 'fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))
+    (dp/->Function (dp/->PlainSymbol 'fn) [] (dp/->BindScalar (dp/->Variable '?x)))
 
     '[(?custom-fn) ?x]
-    (dp/->Function (dp/->Variable '?custom-fn) [] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))
+    (dp/->Function (dp/->Variable '?custom-fn) [] (dp/->BindScalar (dp/->Variable '?x)))
 
     '[(?custom-fn ?arg) ?x]
-    (dp/->Function (dp/->Variable '?custom-fn) [(dp/->Variable '?arg)] (dp/->BindScalar (dp/->Variable '?x)) (dp/resolve-fn-symbol-for-caching 'fn))))
+    (dp/->Function (dp/->Variable '?custom-fn) [(dp/->Variable '?arg)] (dp/->BindScalar (dp/->Variable '?x)))))
 
 (deftest rule-expr
   (are [clause res] (= (dp/parse-clause clause) res)

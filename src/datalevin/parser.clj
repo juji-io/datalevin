@@ -440,8 +440,8 @@
 ;; and-clause      = [ 'and' clause+ ]
 
 (deftrecord Pattern   [source pattern])
-(deftrecord Predicate [fn args fn-object])
-(deftrecord Function  [fn args binding fn-object])
+(deftrecord Predicate [fn args])
+(deftrecord Function  [fn args binding])
 (deftrecord RuleExpr  [source name args]) ;; TODO rule with constant or '_' as argument
 (deftrecord Not       [source vars clauses])
 (deftrecord Or        [source rule-vars clauses])
@@ -477,21 +477,10 @@
       (when (and fn* args*)
         [fn* args*]))))
 
-(defn resolve-fn-symbol-for-caching
-  "Using function symbol alone does not detect changes to the function.
-  This can lead to the cache returning a stale result. By storing the
-  resolved function object the cache can be invalidated correctly when
-  the function implementation changes. This is only done for qualified
-  functions."
-  [fn*]
-  (let [sym (-> fn* :symbol)]
-    (when (qualified-symbol? sym)
-      @(resolve sym))))
-
 (defn parse-pred [form]
   (when (of-size? form 1)
     (when-let [[fn* args*] (parse-call (first form))]
-      (-> (Predicate. fn* args* (resolve-fn-symbol-for-caching fn*))
+      (-> (Predicate. fn* args*)
           (with-source form)))))
 
 (defn parse-fn [form]
@@ -499,7 +488,7 @@
     (let [[call binding] form]
       (when-let [[fn* args*] (parse-call call)]
         (when-let [binding* (parse-binding binding)]
-          (-> (Function. fn* args* binding* (resolve-fn-symbol-for-caching fn*))
+          (-> (Function. fn* args* binding*)
               (with-source form)))))))
 
 (defn parse-rule-expr [form]
@@ -660,7 +649,6 @@
   (or (parse-clauses form)
       (raise "Cannot parse :where clause, expected [clause+]"
              {:error :parser/where, :form form})))
-
 
 ;; rule-branch = [rule-head clause+]
 ;; rule-head   = [rule-name rule-vars]
@@ -866,6 +854,13 @@
     :else        (raise "Unsupported order-by format"
                         {:error :parser/query :form ob})))
 
+(defn- qwhere-qualified-fns [qwhere]
+  (into #{}
+        (comp
+         (map #(-> % :fn :symbol))
+         (filter qualified-symbol?))
+        qwhere))
+
 (defn parse-query [q]
   (let [qm     (cond
                  (map? q)        q
@@ -890,6 +885,9 @@
                   :qtimeout    (parse-timeout (:timeout qm))
                   :qorder      (parse-order (:order-by qm))
                   :qoffset     (parse-offset (:offset qm))
-                  :qlimit      (parse-limit (:limit qm))})]
+                  :qlimit      (parse-limit (:limit qm))
+                  ;; These are for result cache invalidation when
+                  ;; function implementations change.
+                  :qwhere-qualified-fns (qwhere-qualified-fns qwhere)})]
     (validate-query res q qm)
     res))
