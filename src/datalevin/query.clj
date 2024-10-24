@@ -2304,13 +2304,6 @@
                            e)) plan)
                :late-clauses late-clauses)))))
 
-(defn- parsed-q
-  [q]
-  (or (.get ^LRUCache *query-cache* q)
-      (let [res (dp/parse-query q)]
-        (.put ^LRUCache *query-cache* q res)
-        res)))
-
 (defn- order-comp
   [tg idx di]
   (if (identical? di :asc)
@@ -2389,7 +2382,7 @@
 
 (defn q
   [q & inputs]
-  (let [parsed-q (parsed-q q)
+  (let [parsed-q (dp/parse-query q) 
         result   (q-result parsed-q inputs)]
     (if (instance? FindRel (:qfind parsed-q))
       (let [limit  (:qlimit parsed-q)
@@ -2401,7 +2394,7 @@
 
 (defn- plan-only
   [q & inputs]
-  (let [parsed-q (parsed-q q)]
+  (let [parsed-q (dp/parse-query q)]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
         (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {})

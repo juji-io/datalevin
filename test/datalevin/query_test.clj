@@ -922,3 +922,26 @@
     (is (= (d/q q3 (d/db conn)) [["Alan Rickman"]]))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-issue-288-cache-after-resolving-function-references
+  ;; function needs to be qualified
+  #_{:clj-kondo/ignore [:inline-def]}
+  (defn big-name? [x] (> (count x) 16))
+  (let [dir    (u/tmp-dir (str "limit-offset-" (UUID/randomUUID)))
+        schema (i/load-edn "test/data/movie-schema.edn")
+        data   (i/load-edn "test/data/movie-data.edn")
+        conn   (d/get-conn dir schema)
+        q1     '[:find ?name
+                 :where
+                 [?e :person/name ?name]
+                 [(datalevin.query-test/big-name? ?name)]
+                 :order-by ?name
+                 :limit 2]]
+    (d/transact! conn data)
+    (is (= (d/q q1 (d/db conn))
+           [["Alexander Godunov"] ["Arnold Schwarzenegger"]]))
+    (with-redefs [big-name? (fn [x] (> (count x) 20))]
+      (is (= (d/q q1 (d/db conn))
+           [["Arnold Schwarzenegger"]])))
+    (d/close conn)
+    (u/delete-files dir)))
