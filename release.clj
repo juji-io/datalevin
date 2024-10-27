@@ -65,7 +65,7 @@
       "test-jar/project.clj"
       "doc/install.md"
       "doc/dtlv.md"
-      "src/datalevin/main.clj"
+      "src/datalevin/constants.clj"
       "native/project.clj"
       "native/test-jar/deps.edn"
       "native/README.md"
