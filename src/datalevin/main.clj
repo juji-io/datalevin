@@ -155,13 +155,14 @@
 (defn- repl-help []
   (println "")
   (println "In addition to some Clojure core functions, the following functions are available:")
-  (doseq [ns   i/user-facing-ns
-          :let [fs (->> ns
-                        ns-publics
-                        (i/user-facing-map ns)
-                        keys
-                        (sort-by name)
-                        (partition 4 4 nil))]]
+  (doseq [ns    i/user-facing-ns
+          :when (not= ns 'datalevin.constants)
+          :let  [fs (->> ns
+                         ns-publics
+                         (i/user-facing-map ns)
+                         keys
+                         (sort-by name)
+                         (partition 4 4 nil))]]
     (println "")
     (println "In namespace" ns)
     (println "")
