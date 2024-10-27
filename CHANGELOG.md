@@ -8,6 +8,7 @@
 - [Datalog] implement `empty` on Datom so it can be walked. #286
 - [Datalog] cardinality many attributes as value. #284
 - [Pod] consistent `entity` behavior  in pod as in JVM. #283
+- [Native] remove `:aot` to avoid potential dependency conflict
 
 
 ## 0.9.12 (2024-10-08)

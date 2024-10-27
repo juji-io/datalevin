@@ -45,7 +45,6 @@
              "-Djdk.attach.allowAttachSelf"
              "-Dclojure.compiler.direct-linking=true"]
   :javac-options ["--release" "11"]
-  :aot [#"^datalevin.*"]
   :source-paths ["../src" "../test"]
   :java-source-paths ["src/java" "../src/java"]
   :test-paths ["../test"]
