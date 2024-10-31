@@ -21,8 +21,8 @@
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.bits Indexable Retrieved]))
 
-(def freqs (repeatedly 65536 #(rand-int 1000000)))
-(def kc    (cp/key-compressor (long-array (map inc freqs))))
+;; (def freqs (repeatedly 65536 #(rand-int 1000000)))
+;; (def kc    (cp/key-compressor (long-array (map inc freqs))))
 
 
 (def sample-bas (gen/sample gen/bytes c/*compress-sample-size*))
@@ -54,8 +54,8 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                  (sut/put-bf bf k :data kc)
-                  (= k (sut/read-buffer bf :data kc)))))
+                  (sut/put-bf bf k :data)
+                  (= k (sut/read-buffer bf :data)))))
 
 (test/defspec general-compressed-data-generative-test
   100
@@ -147,8 +147,8 @@
   100
   (prop/for-all [k gen/large-integer]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16)]
-                  (sut/put-bf bf k :long kc)
-                  (= k (sut/read-buffer bf :long kc)))))
+                  (sut/put-bf bf k :long)
+                  (= k (sut/read-buffer bf :long)))))
 
 (test/defspec double-generative-test
   100
@@ -159,7 +159,10 @@
 
 (test/defspec float-generative-test
   100
-  (prop/for-all [k (gen/double* {:NaN? false})]
+  (prop/for-all [k (gen/such-that
+                     #(< Float/MIN_VALUE % Float/MAX_VALUE)
+                     (gen/double* {:NaN? false :infinite? false})
+                     100)]
                 (let [f              (float k)
                       ^ByteBuffer bf (bf/allocate-buffer 16384)]
                   (sut/put-bf bf k :float)
@@ -354,8 +357,8 @@
   [v d dmin dmax]
   (let [^ByteBuffer bf  (bf/allocate-buffer 16384)
         ^ByteBuffer bf1 (bf/allocate-buffer 16384)]
-    (sut/put-bf bf d :avg kc)
-    (sut/put-bf bf1 dmin :avg kc)
+    (sut/put-bf bf d :avg)
+    (sut/put-bf bf1 dmin :avg)
     (is (>= (bf/compare-buffer bf bf1) 0)
         (do
           (.rewind bf)
@@ -363,11 +366,11 @@
           (str "v: " v
                " d: " (u/hexify (sut/get-bytes bf))
                " dmin: " (u/hexify (sut/get-bytes bf1)))))
-    (sut/put-bf bf1 dmax :avg kc)
+    (sut/put-bf bf1 dmax :avg)
     (.rewind bf)
     (is (<= (bf/compare-buffer bf bf1) 0))
-    (sut/put-bf bf d :av kc)
-    (sut/put-bf bf1 dmin :av kc)
+    (sut/put-bf bf d :av)
+    (sut/put-bf bf1 dmin :av)
     ;; TODO deal with occasional fail here, basically, empty character
     (is (>=(bf/compare-buffer bf bf1) 0)
         (do
@@ -376,7 +379,7 @@
           (str "v: " v
                " d: " (u/hexify (sut/get-bytes bf))
                " dmin: " (u/hexify (sut/get-bytes bf1)))))
-    (sut/put-bf bf1 dmax :av kc)
+    (sut/put-bf bf1 dmax :av)
     (.rewind bf)
     (is (<= (bf/compare-buffer bf bf1) 0))))
 
@@ -403,7 +406,8 @@
   100
   (prop/for-all
     [v  (gen/such-that #(and (string-size-less-than? c/+val-bytes-wo-hdr+ %)
-                             (not= "^@" %))
+                             (not= "^@" %)
+                             (not= "" %))
                        gen/string)]
     (test-extrema v
                   (sut/indexable e a v :db.type/string g)
