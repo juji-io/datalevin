@@ -2,7 +2,7 @@
   (:require
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
-   [datalevin.util :refer [combine-hashes combine-cmp defcomp]])
+   [datalevin.util :refer [combine-hashes combine-cmp defcomp opt-apply]])
   (:import
    [datalevin.utl BitOps]
    [java.util Arrays]
@@ -134,9 +134,8 @@
     (throw (IllegalArgumentException. (str "invalid key for #datalevin/Datom: " k)))))
 
 ;; printing and reading
-;; #datomic/DB {:schema <map>, :datoms <vector of [e a v tx]>}
 
-(defn datom-from-reader ^Datom [vec] (apply datom vec))
+(defn datom-from-reader ^Datom [vec] (opt-apply datom vec))
 
 (defmethod print-method Datom [^Datom d, ^java.io.Writer w]
   (.write w (str "#datalevin/Datom "))

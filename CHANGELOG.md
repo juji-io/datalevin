@@ -3,13 +3,15 @@
 ## WIP
 
 ### Fixed
-- [Datalog] allow `:offset 0`.
-- [Datalog] apply type coercion according to scheam to ensure correct storage of values. #285
-- [Datalog] implement `empty` on Datom so it can be walked. #286
+- [Datalog] Allow `:offset 0`.
 - [Datalog] cardinality many attributes as value. #284
-- [Pod] consistent `entity` behavior  in pod as in JVM. #283
-- [Native] remove `:aot` to avoid potential dependency conflict
+- [Datalog] Apply type coercion according to scheam to ensure correct storage of values. #285
+- [Native] Remove `:aot` to avoid potential dependency conflict
 
+### Improved
+- [Pod] Consistent `entity` behavior  in pod as in JVM. #283
+- [Datalog] Implement `empty` on Datom so it can be walked. #286
+- [Datalog] built-in query functions resolve their arguments. #287
 
 ## 0.9.12 (2024-10-08)
 

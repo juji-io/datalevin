@@ -1,7 +1,5 @@
 (ns pod.huahaiy.datalevin-test
   (:require [datalevin.util :as u]
-            [datalevin.bits :as b]
-            [datalevin.lmdb :as l]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
             [datalevin.test.core :as tdc :refer [db-fixture]]
@@ -429,4 +427,19 @@
                    "fred")))
       (is (= 1 (count (pd/fulltext-datoms (pd/db conn1) "peirce"))))
       (pd/close conn1))
+    (u/delete-files dir)))
+
+(deftest issue-283-test
+  (let [dir  (u/tmp-dir (str "pod-issue-283-test-" (UUID/randomUUID)))
+        conn (pd/create-conn
+               dir {:account/username {:db/valueType :db.type/string
+                                       :db/unique    :db.unique/identity}
+                    :account/name     {:db/valueType :db.type/string}})]
+    (pd/transact! conn [{:account/username "teodorlu"
+                         :account/name     "Teodor"}])
+
+    (is (= {:account/username "teodorlu", :account/name "Teodor"}
+           (select-keys (pd/entity (pd/db conn) [:account/username "teodorlu"])
+                        [:account/username :account/name])))
+    (pd/close conn)
     (u/delete-files dir)))

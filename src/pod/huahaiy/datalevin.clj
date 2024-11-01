@@ -90,7 +90,7 @@
 
 (defn entity [{:keys [::db] :as dl} eid]
   (when-let [^DB d (get-db dl)]
-    (let [^Entity e (d/entity d eid)]
+    (let [^Entity e (d/touch (d/entity d eid))]
       (assoc @(.-cache e) :db/id (.-eid e) :db-name db))))
 
 (defn touch [{:keys [db-name db/id]}]
