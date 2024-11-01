@@ -4,11 +4,12 @@
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
+   [datalevin.lmdb :as lmdb]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
    [clojure.test :refer [deftest testing is are]]
-   [datalevin.lmdb :as lmdb]
+   [clojure.walk :as w]
    [clojure.string :as s])
   (:import
    [java.util UUID Collection]
@@ -38,6 +39,7 @@
           b   :b/c
           p1  {:db/valueType :db.type/uuid}
           v1  (UUID/randomUUID)
+          d0  (d/datom c/e0 a v1)
           d1  (d/datom c/e0 b v1)
           s1  (assoc s b (merge p1 {:db/aid 4}))
           c   :c/d
@@ -47,6 +49,9 @@
           s2  (assoc s1 c (merge p2 {:db/aid 5}))
           dir (lmdb/dir (.-lmdb ^Store store))
           t1  (sut/last-modified store)]
+      (is (= d0 (assoc d :v v1)))
+      (is (= d0 (conj d [:v v1])))
+      (is (= d0 (w/postwalk #(if (d/datom? %) (assoc % :v v1) %) d)))
       (sut/load-datoms store [d])
       (is (= (inc c/tx0) (sut/max-tx store)))
       (is (<= t1 (sut/last-modified store)))

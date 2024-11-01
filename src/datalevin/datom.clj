@@ -9,7 +9,7 @@
    [java.io DataInput DataOutput]))
 
 (declare hash-datom equiv-datom seq-datom nth-datom assoc-datom
-         val-at-datom)
+         empty-datom val-at-datom)
 
 (defprotocol IDatom
   (datom-tx [this])
@@ -37,8 +37,7 @@
 
   clojure.lang.IPersistentCollection
   (equiv [d o] (and (instance? Datom o) (equiv-datom d o)))
-  (empty [d] (throw (UnsupportedOperationException.
-                      "empty is not supported on Datom")))
+  (empty [d] (empty-datom))
   (count [d] 5)
   (cons [d [k v]] (assoc-datom d k v))
 
@@ -78,7 +77,8 @@
        (= (.-v d) (.-v o))))
 
 (defn- seq-datom [^Datom d]
-  (list (.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)))
+  (list [:e (.-e d)] [:a (.-a d)] [:v (.-v d)] [:tx (datom-tx d)]
+        [:added (datom-added d)]))
 
 (defn- val-at-datom
   [^Datom d k not-found]
@@ -122,12 +122,14 @@
      4 (datom-added d)
      not-found)))
 
+(defn- ^Datom empty-datom [] (datom 0 nil nil 0 0))
+
 (defn- ^Datom assoc-datom [^Datom d k v]
   (case k
-    :e (datom v (.-a d) (.-v d) (datom-tx d) (datom-added d))
-    :a (datom (.-e d) v (.-v d) (datom-tx d) (datom-added d))
-    :v (datom (.-e d) (.-a d) v (datom-tx d) (datom-added d))
-    :tx (datom (.-e d) (.-a d) (.-v d) v (datom-added d))
+    :e     (datom v (.-a d) (.-v d) (datom-tx d) (datom-added d))
+    :a     (datom (.-e d) v (.-v d) (datom-tx d) (datom-added d))
+    :v     (datom (.-e d) (.-a d) v (datom-tx d) (datom-added d))
+    :tx    (datom (.-e d) (.-a d) (.-v d) v (datom-added d))
     :added (datom (.-e d) (.-a d) (.-v d) (datom-tx d) v)
     (throw (IllegalArgumentException. (str "invalid key for #datalevin/Datom: " k)))))
 

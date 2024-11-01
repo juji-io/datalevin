@@ -666,7 +666,10 @@
           (when-some [tuple-idx (aget tuples-args i)]
             (let [v (tg tuple tuple-idx)]
               (aset static-args i v)))))
-      (call static-args))))
+      (let [res (call static-args)]
+        (if (= f 'fulltext)
+          (mapv #(mapv peek %) res)
+          res)))))
 
 (defn -call-fn
   [context rel f args]
@@ -2397,7 +2400,7 @@
 
 (defn q
   [q & inputs]
-  (let [parsed-q (parsed-q q) 
+  (let [parsed-q (parsed-q q)
         result   (q-result parsed-q inputs)]
     (if (instance? FindRel (:qfind parsed-q))
       (let [limit  (:qlimit parsed-q)
