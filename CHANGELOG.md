@@ -5,7 +5,10 @@
 ### Fixed
 - [Datalog] Allow `:offset 0`.
 - [Datalog] cardinality many attributes as value. #284
-- [Datalog] Apply type coercion according to scheam to ensure correct storage of values. #285
+- [Datalog] Apply type coercion according to scheam to ensure correct storage of
+  values. #285
+- [Datalog] Correct query caching when referenced content may have changed. #288
+  [Thx @andersmurphy]
 - [Native] Remove `:aot` to avoid potential dependency conflict
 
 ### Improved
