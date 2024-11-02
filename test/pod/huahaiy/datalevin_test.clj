@@ -443,3 +443,20 @@
                         [:account/username :account/name])))
     (pd/close conn)
     (u/delete-files dir)))
+
+(deftest search-test
+  (let [dir    (u/tmp-dir (str "pod-search-test-" (UUID/randomUUID)))
+        lmdb   (pd/open-kv dir)
+        engine (pd/new-search-engine lmdb {:index-position? true})
+        docs   {1 "The quick red fox jumped over the lazy red dogs."
+                2 "Mary had a little lamb whose fleece was red as fire."
+                3 "Moby Dick is a story of a whale and a man obsessed."}]
+    (pd/add-doc engine 1 (docs 1))
+    (pd/add-doc engine 2 (docs 2))
+    (pd/add-doc engine 3 (docs 3))
+
+    (is (= [1 2] (pd/search engine "red")))
+    (is (= [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]
+           (pd/search engine "red" {:display :offsets})))
+    (pd/close-kv lmdb)
+    (u/delete-files dir)))

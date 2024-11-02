@@ -782,7 +782,7 @@
 (defn check-free-same
   [bound branches form]
   (let [free (mapv #(set/difference (qu/collect-vars %) bound) branches)]
-    (when-not (apply = free)
+    (when-not (opt-apply = free)
       (raise "All clauses in 'or' must use same set of free vars, had " free
              " in " form
              {:error :query/where :form form :vars free}))))
@@ -1170,7 +1170,7 @@
 (defn intersect-ranges
   [& ranges]
   (let [n         (count ranges)
-        ranges    (apply concatv ranges)
+        ranges    (opt-apply concatv ranges)
         orig-from (sort range-compare (map first ranges))
         res
         (loop [res  []

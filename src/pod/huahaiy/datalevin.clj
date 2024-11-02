@@ -659,10 +659,6 @@
    (new-search-engine db nil))
   ([db opts]
    (when-let [d (get-kv db)]
-     (let [db (d/open-kv dir opts)
-           id (UUID/randomUUID)]
-       (swap! kv-dbs assoc id db)
-       {::kv-db id})
      (let [engine (d/new-search-engine d opts)
            id     (UUID/randomUUID)]
        (swap! engines assoc id engine)
@@ -692,7 +688,7 @@
   (when-let [e (get-engine engine)] (d/doc-count e)))
 
 (defn search
-  ([engine query] (search engine query))
+  ([engine query] (search engine query {}))
   ([engine query opts]
    (when-let [e (get-engine engine)] (d/search e query opts))))
 
