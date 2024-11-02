@@ -9,6 +9,7 @@
   values. #285
 - [Datalog] Correct query caching when referenced content may have changed. #288
   [Thx @andersmurphy]
+- [Pod] Typos in search code. #291
 - [Native] Remove `:aot` to avoid potential dependency conflict
 
 ### Improved
