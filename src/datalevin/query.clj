@@ -1170,7 +1170,7 @@
 (defn intersect-ranges
   [& ranges]
   (let [n         (count ranges)
-        ranges    (opt-apply concatv ranges)
+        ranges    (apply concatv ranges)
         orig-from (sort range-compare (map first ranges))
         res
         (loop [res  []
