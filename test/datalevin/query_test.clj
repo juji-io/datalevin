@@ -424,6 +424,19 @@
                             {:db/id       7
                              :school/city "Fremont"
                              :school/name "Mission"}]))]
+    (is (= (set (d/q '[:find ?a2
+                       :in $
+                       :where
+                       [?e :person/friend ?e1]
+                       [?e :person/name ?n]
+                       [(clojure.string/starts-with? ?n "O")]
+                       [?e1 :person/friend ?e2]
+                       [?e1 :person/name ?n1]
+                       [(clojure.string/starts-with? ?n1 "I")]
+                       [?e2 :person/age ?a2]
+                       ]
+                     db))
+           #{[16]}))
     (is (= (set (d/q '[:find ?n1 ?n2
                        :in $ ?c
                        :where
@@ -929,7 +942,7 @@
   (defn big-name? [x] (> (count x) 16))
   #_{:clj-kondo/ignore [:inline-def]}
   (defn count-letters [[x]] (count x))
-  (let [dir    (u/tmp-dir (str "limit-offset-" (UUID/randomUUID)))
+  (let [dir    (u/tmp-dir (str "issue-288-" (UUID/randomUUID)))
         schema (i/load-edn "test/data/movie-schema.edn")
         data   (i/load-edn "test/data/movie-data.edn")
         conn   (d/get-conn dir schema)
@@ -942,9 +955,78 @@
     (d/transact! conn data)
     (is (= (d/q q1 (d/db conn))
            [["Alexander Godunov" 17] ["Arnold Schwarzenegger" 21]]))
-    (with-redefs [big-name? (fn [x] (> (count x) 20))
+    (with-redefs [big-name?     (fn [x] (> (count x) 20))
                   count-letters (fn [[x]] (count (remove #{\space} x)))]
       (is (= (d/q q1 (d/db conn))
-           [["Arnold Schwarzenegger" 20]])))
+             [["Arnold Schwarzenegger" 20]])))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest issue-284-test
+  (let [dir    (u/tmp-dir (str "issue-284-" (UUID/randomUUID)))
+        schema {:follows {:db/valueType   :db.type/ref
+                          :db/cardinality :db.cardinality/many}
+                :name    {:db/valueType :db.type/string
+                          :db/unique    :db.unique/identity}}
+        conn   (d/get-conn dir schema)
+        data   [{:db/id   1 :name "P1",
+                 :follows [{:db/id 2} {:db/id 3} {:db/id 4}]}
+                {:db/id 2 :name "P2" :follows [{:db/id 10}]}
+                {:db/id 3 :name "P3"}
+                {:db/id 4 :name "P4"}
+                {:db/id 10 :name "P10"}]]
+    (d/transact! conn data)
+    (is (= (d/q '[:find ?n
+                  :where
+                  [?p1 :follows ?p2]
+                  [?p2 :follows ?p3]
+                  [?p3 :name ?n]]
+                (d/db conn))
+           #{["P10"]}))
+    (is (= (d/q '[:find ?p3
+                  :where
+                  [?p1 :follows ?p2]
+                  [?p2 :follows ?p3]]
+                (d/db conn))
+           #{[10]}))
+    (is (= (d/q '[:find ?p1 ?p2 ?p3
+                  :where
+                  [?p1 :name "P1"]
+                  [?p1 :follows ?p2]
+                  [?p2 :name "P2"]
+                  [?p1 :follows ?p3]
+                  [?p3 :name "P3"]]
+                (d/db conn))
+           #{[1 2 3]}))
+    (is (= (d/q '[:find ?p1 ?p2 ?p3 ?p10
+                  :where
+                  [?p1 :name "P1"]
+                  [?p1 :follows ?p2]
+                  [?p1 :follows ?p3]
+                  [?p2 :name "P2"]
+                  [?p2 :follows ?p10]
+                  [?p3 :name "P3"]]
+                (d/db conn))
+           #{[1 2 3 10]}))
+    (is (= (d/q '[:find ?p1 ?p2 ?p3 ?p10
+                  :where
+                  [?p1 :name ?n1]
+                  [?p1 :follows ?p2]
+                  [?p1 :follows ?p3]
+                  [?p2 :name "P2"]
+                  [?p2 :follows ?p10]
+                  [?p3 :name "P3"]]
+                (d/db conn))
+           #{[1 2 3 10]}))
+    (is (= (d/q '[:find ?p1 ?p2 ?p3 ?p10
+                  :where
+                  [?p1 :name ?n1]
+                  [?p1 :follows ?p2]
+                  [?p1 :follows ?p3]
+                  [?p2 :name ?n2]
+                  [?p2 :follows ?p10]
+                  [?p3 :name "P3"]]
+                (d/db conn))
+           #{[1 2 3 10]}))
     (d/close conn)
     (u/delete-files dir)))

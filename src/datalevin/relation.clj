@@ -162,16 +162,7 @@
 
 (defn single-tuples [tuple] (doto (FastList.) (.add tuple)))
 
-(defn many-tuples
-  [values]
-  (transduce
-    (comp
-      (partition-by #(instance? FastList %))
-      (map #(if (instance? FastList (first %))
-              (reduce prod-tuples (mapv vertical-tuples %))
-              (horizontal-tuples %))))
-    prod-tuples
-    values))
+(defn many-tuples [values] (transduce (map vertical-tuples) prod-tuples values))
 
 (defn filter-rel
   [{:keys [attrs ^List tuples]} v pred]

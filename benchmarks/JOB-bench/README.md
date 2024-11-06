@@ -117,6 +117,15 @@ is translated into the equivalent Datalevin query:
 
 Most queries in the benchmark are more complex than this example.
 
+For Datalevin, both `lein` and `clj` build tools are needed, the former is for
+building the main project, and the later for running tests and benchmarks.
+
+Run tests to see results are correct.
+
+```bash
+clj -Xtest
+```
+
 ## Run Benchmark
 
 These software were tested on a MacBook Pro 16 inch Nov 2023, Apple M3 Pro chip,
@@ -139,9 +148,6 @@ impact of client/server communication and other unrelated factors.
 ./postgres-time
 ./postgres-time
 ```
-
-For Datalevin, both `lein` and `clj` build tools are needed, the former is for
-building the main project, and the later for running the benchmark.
 
 Same as the above, we run `clj -Xbench` once to warm up. Then run it again to report the
 results. The numbers were extracted from `explain` function results and written

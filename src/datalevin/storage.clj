@@ -490,6 +490,14 @@
                  (- ^long (aget ^objects a eid-idx)
                     ^long (aget ^objects b eid-idx))))))))
 
+(defn- group-counts
+  [aids]
+  (sequence (comp (partition-by identity) (map count)) aids))
+
+(defn- group-starts
+  [counts]
+  (int-array (->> counts (reductions +) butlast (into [0]))))
+
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
 (deftype Store [lmdb
@@ -889,25 +897,137 @@
     (let [attr->aid #((schema %) :db/aid)
           aids      (mapv (comp attr->aid first) attrs-v)]
       (when (and (seq aids) (not-any? nil? aids))
-        (let [na       (count aids)
-              maps     (mapv peek attrs-v)
-              skips    (boolean-array (map :skip? maps))
-              preds    (object-array (map :pred maps))
-              fidxs    (object-array (map :fidx maps))
-              manys    (mapv #(identical?
-                                (-> % attrs schema :db/cardinality)
-                                :db.cardinality/many) aids)
-              no-many? (every? false? manys)
-              manys    (boolean-array manys)
-              aids     (int-array aids)
-              seen     (LongObjectHashMap.)]
+        (let [na      (count aids)
+              maps    (mapv peek attrs-v)
+              skips   (boolean-array (map :skip? maps))
+              preds   (object-array (map :pred maps))
+              fidxs   (object-array (map :fidx maps))
+              single? (not-any? #(identical?
+                                   (-> % attrs schema :db/cardinality)
+                                   :db.cardinality/many) aids)
+              aids    (int-array aids)
+              seen    (LongObjectHashMap.)
+              operator
+              (if single?
+                (fn [iterable]
+                  (loop [tuple (produce in)]
+                    (when tuple
+                      (let [te ^long (aget ^objects tuple eid-idx)]
+                        (if-let [ts (.get seen te)]
+                          (.addAll ^Collection out
+                                   (r/prod-tuples (r/single-tuples tuple) ts))
+                          (let [iter (lmdb/val-iterator iterable)
+                                vs   (FastList. na)]
+                            (loop [next? (lmdb/seek-key iter te :id)
+                                   ai    0]
+                              (if next?
+                                (let [vb (lmdb/next-val iter)
+                                      a  (b/read-buffer vb :int)]
+                                  (if (== ^int a ^int (aget aids ai))
+                                    (let [v    (retrieved->v lmdb (b/avg->r vb))
+                                          pred (aget preds ai)
+                                          fidx (aget fidxs ai)]
+                                      (when (and (or (nil? pred) (pred v))
+                                                 (or (nil? fidx)
+                                                     (= v (aget ^objects tuple
+                                                                (int fidx)))))
+                                        (when-not (aget skips ai) (.add vs v))
+                                        (recur (lmdb/has-next-val iter)
+                                               (u/long-inc ai))))
+                                    (recur (lmdb/has-next-val iter) ai)))
+                                (when (== ai na)
+                                  (if (.isEmpty vs)
+                                    (do (.put seen te (r/single-tuples
+                                                        (object-array [])))
+                                        (.add ^Collection out tuple))
+                                    (let [vst (object-array vs)]
+                                      (.put seen te (r/single-tuples vst))
+                                      (.add ^Collection out
+                                            (r/join-tuples tuple vst)))))))))
+                        (recur (produce in))))))
+                (fn [iterable]
+                  (let [gcounts (group-counts aids)
+                        gstarts (group-starts gcounts)
+                        gcounts (int-array gcounts)]
+                    (loop [tuple (produce in)]
+                      (when tuple
+                        (let [te ^long (aget ^objects tuple eid-idx)]
+                          (if-let [ts (.get seen te)]
+                            (.addAll ^Collection out
+                                     (r/prod-tuples (r/single-tuples tuple) ts))
+                            (let [iter (lmdb/val-iterator iterable)
+                                  vs   (object-array na)]
+                              (dotimes [i na] (aset vs i (FastList.)))
+                              (loop [next? (lmdb/seek-key iter te :id)
+                                     gi    0
+                                     pa    (aget aids 0)
+                                     in?   false]
+                                (if next?
+                                  (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                        a  (b/read-buffer (.rewind vb) :int)
+                                        gi (if (== pa a)
+                                             gi
+                                             (if in? (inc gi) gi))
+                                        s  (aget gstarts gi)]
+                                    (if (== ^int a ^int (aget aids s))
+                                      (let [v (retrieved->v lmdb (b/avg->r vb))]
+                                        (dotimes [i (aget gcounts gi)]
+                                          (let [ai   (+ s i)
+                                                pred (aget preds ai)
+                                                fidx (aget fidxs ai)]
+                                            (when (and
+                                                    (or (nil? pred) (pred v))
+                                                    (or (nil? fidx)
+                                                        (= v
+                                                           (aget ^objects tuple
+                                                                 (int fidx)))))
+                                              (.add ^FastList (aget vs ai) v))))
+                                        (recur (lmdb/has-next-val iter)
+                                               gi a true))
+                                      (recur (lmdb/has-next-val iter)
+                                             gi pa false)))
+                                  (when-not (some #(.isEmpty ^FastList %) vs)
+                                    (let [vst (r/many-tuples
+                                                (->> (map (fn [v s]
+                                                            (when-not s v))
+                                                          vs skips)
+                                                     (remove nil?)))]
+                                      (.put seen te vst)
+                                      (.addAll ^Collection out
+                                               (r/prod-tuples
+                                                 (r/single-tuples tuple)
+                                                 vst))))))))
+                          (recur (produce in))))))))]
           (lmdb/operate-list-val-range
-            lmdb c/eav
-            (if no-many?
-              (fn [iterable]
-                (loop [tuple (produce in)]
-                  (when tuple
-                    (let [te ^long (aget ^objects tuple eid-idx)]
+            lmdb c/eav operator
+            [:closed
+             (b/indexable nil (aget aids 0) c/v0 nil c/g0)
+             (b/indexable nil (aget aids (dec (alength aids)))
+                          c/vmax nil c/gmax)] :avg)))))
+
+  (eav-scan-v-list [_ in eid-idx attrs-v]
+    (let [attr->aid #((schema %) :db/aid)
+          aids      (mapv (comp attr->aid first) attrs-v)]
+      (when (and (seq aids) (not-any? nil? aids))
+        (let [na      (count aids)
+              in      (sort-tuples-by-eid in eid-idx)
+              nt      (.size ^List in)
+              out     (FastList.)
+              maps    (mapv peek attrs-v)
+              skips   (boolean-array (map :skip? maps))
+              preds   (object-array (map :pred maps))
+              fidxs   (object-array (map :fidx maps))
+              single? (not-any? #(identical?
+                                   (-> % attrs schema :db/cardinality)
+                                   :db.cardinality/many) aids)
+              aids    (int-array aids)
+              seen    (LongObjectHashMap.)
+              operator
+              (if single?
+                (fn [iterable]
+                  (dotimes [i nt]
+                    (let [tuple (.get ^List in i)
+                          te    ^long (aget ^objects tuple eid-idx)]
                       (if-let [ts (.get seen te)]
                         (.addAll ^Collection out
                                  (r/prod-tuples (r/single-tuples tuple) ts))
@@ -940,180 +1060,60 @@
                                   (let [vst (object-array vs)]
                                     (.put seen te (r/single-tuples vst))
                                     (.add ^Collection out
-                                          (r/join-tuples tuple vst)))))))))
-                      (recur (produce in))))))
-              (fn [iterable]
-                (loop [tuple (produce in)]
-                  (when tuple
-                    (let [te ^long (aget ^objects tuple eid-idx)]
-                      (if-let [ts (.get seen te)]
-                        (.addAll ^Collection out
-                                 (r/prod-tuples (r/single-tuples tuple) ts))
-                        (let [iter (lmdb/val-iterator iterable)
-                              vs   (FastList. na)]
-                          (loop [next? (lmdb/seek-key iter te :id)
-                                 ai    0
-                                 dups  nil]
-                            (if next?
-                              (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                    a  (b/read-buffer (.rewind vb) :int)]
-                                (if (== ^int a ^int (aget aids ai))
-                                  (let [v    (retrieved->v
-                                               lmdb (b/avg->r vb))
-                                        pred (aget preds ai)
-                                        fidx (aget fidxs ai)
-                                        go?  (and (or (nil? pred) (pred v))
+                                          (r/join-tuples tuple vst))))))))))))
+                (fn [iterable]
+                  (let [gcounts (group-counts aids)
+                        gstarts (group-starts gcounts)
+                        gcounts (int-array gcounts)]
+                    (dotimes [i nt]
+                      (let [tuple (.get ^List in i)
+                            te    ^long (aget ^objects tuple eid-idx)]
+                        (if-let [ts (.get seen te)]
+                          (.addAll ^Collection out
+                                   (r/prod-tuples (r/single-tuples tuple) ts))
+                          (let [iter (lmdb/val-iterator iterable)
+                                vs   (object-array na)]
+                            (dotimes [i na] (aset vs i (FastList.)))
+                            (loop [next? (lmdb/seek-key iter te :id)
+                                   gi    0
+                                   pa    (aget aids 0)
+                                   in?   false]
+                              (if next?
+                                (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                      a  (b/read-buffer (.rewind vb) :int)
+                                      gi (if (== pa a)
+                                           gi
+                                           (if in? (inc gi) gi))
+                                      s  (aget gstarts gi)]
+                                  (if (== ^int a ^int (aget aids s))
+                                    (let [v (retrieved->v lmdb (b/avg->r vb))]
+                                      (dotimes [i (aget gcounts gi)]
+                                        (let [ai   (+ s i)
+                                              pred (aget preds ai)
+                                              fidx (aget fidxs ai)]
+                                          (when (and
+                                                  (or (nil? pred) (pred v))
                                                   (or (nil? fidx)
                                                       (= v
                                                          (aget ^objects tuple
-                                                               (int fidx)))))]
-                                    (if (aget manys ai)
+                                                               (int fidx)))))
+                                            (.add ^FastList (aget vs ai) v))))
                                       (recur (lmdb/has-next-val iter)
-                                             ai
-                                             (when go?
-                                               (if (aget skips ai)
-                                                 true
-                                                 ((fnil u/list-add
-                                                        (FastList.))
-                                                  dups v))))
-                                      (when go?
-                                        (when-not (aget skips ai) (.add vs v))
-                                        (recur (lmdb/has-next-val iter)
-                                               (u/long-inc ai) nil))))
-                                  (if dups
-                                    (do (when-not (true? dups) (.add vs dups))
-                                        (recur true (u/long-inc ai) nil))
+                                             gi a true))
                                     (recur (lmdb/has-next-val iter)
-                                           ai nil))))
-                              (let [ai (if dups (u/long-inc ai) ai)]
-                                (when (and dups (not (true? dups)))
-                                  (.add vs dups))
-                                (when (== ^long ai na)
-                                  (let [vst (r/many-tuples vs)]
+                                           gi a false)))
+                                (when-not (some #(.isEmpty ^FastList %) vs)
+                                  (let [vst (r/many-tuples
+                                              (->> (map (fn [v s] (when-not s v))
+                                                        vs skips)
+                                                   (remove nil?)))]
                                     (.put seen te vst)
                                     (.addAll ^Collection out
                                              (r/prod-tuples
                                                (r/single-tuples tuple)
-                                               vst)))))))))
-                      (recur (produce in)))))))
-            [:closed
-             (b/indexable nil (aget aids 0) c/v0 nil c/g0)
-             (b/indexable nil (aget aids (dec (alength aids)))
-                          c/vmax nil c/gmax)]
-            :avg)))))
-
-  (eav-scan-v-list [_ in eid-idx attrs-v]
-    (let [attr->aid #((schema %) :db/aid)
-          aids      (mapv (comp attr->aid first) attrs-v)]
-      (when (and (seq aids) (not-any? nil? aids))
-        (let [na       (count aids)
-              in       (sort-tuples-by-eid in eid-idx)
-              nt       (.size ^List in)
-              out      (FastList.)
-              maps     (mapv peek attrs-v)
-              skips    (boolean-array (map :skip? maps))
-              preds    (object-array (map :pred maps))
-              fidxs    (object-array (map :fidx maps))
-              manys    (mapv #(identical?
-                                (-> % attrs schema :db/cardinality)
-                                :db.cardinality/many) aids)
-              no-many? (every? false? manys)
-              manys    (boolean-array manys)
-              aids     (int-array aids)
-              seen     (LongObjectHashMap.)]
+                                               vst)))))))))))))]
           (lmdb/operate-list-val-range
-            lmdb c/eav
-            (if no-many?
-              (fn [iterable]
-                (dotimes [i nt]
-                  (let [tuple (.get ^List in i)
-                        te    ^long (aget ^objects tuple eid-idx)]
-                    (if-let [ts (.get seen te)]
-                      (.addAll ^Collection out
-                               (r/prod-tuples (r/single-tuples tuple) ts))
-                      (let [iter (lmdb/val-iterator iterable)
-                            vs   (FastList. na)]
-                        (loop [next? (lmdb/seek-key iter te :id)
-                               ai    0]
-                          (if next?
-                            (let [vb (lmdb/next-val iter)
-                                  a  (b/read-buffer vb :int)]
-                              (if (== ^int a ^int (aget aids ai))
-                                (let [v    (retrieved->v
-                                             lmdb (b/avg->r vb))
-                                      pred (aget preds ai)
-                                      fidx (aget fidxs ai)]
-                                  (when (and (or (nil? pred) (pred v))
-                                             (or (nil? fidx)
-                                                 (= v
-                                                    (aget ^objects tuple
-                                                          (int fidx)))))
-                                    (when-not (aget skips ai) (.add vs v))
-                                    (recur (lmdb/has-next-val iter)
-                                           (u/long-inc ai))))
-                                (recur (lmdb/has-next-val iter) ai)))
-                            (when (== ai na)
-                              (if (.isEmpty vs)
-                                (do (.put seen te (r/single-tuples
-                                                    (object-array [])))
-                                    (.add ^Collection out tuple))
-                                (let [vst (object-array vs)]
-                                  (.put seen te (r/single-tuples vst))
-                                  (.add ^Collection out
-                                        (r/join-tuples tuple vst))))))))))))
-              (fn [iterable]
-                (dotimes [i nt]
-                  (let [tuple (.get ^List in i)
-                        te    ^long (aget ^objects tuple eid-idx)]
-                    (if-let [ts (.get seen te)]
-                      (.addAll ^Collection out
-                               (r/prod-tuples (r/single-tuples tuple) ts))
-                      (let [iter (lmdb/val-iterator iterable)
-                            vs   (FastList. na)]
-                        (loop [next? (lmdb/seek-key iter te :id)
-                               ai    0
-                               dups  nil]
-                          (if next?
-                            (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                  a  (b/read-buffer (.rewind vb) :int)]
-                              (if (== ^int a ^int (aget aids ai))
-                                (let [v    (retrieved->v
-                                             lmdb (b/avg->r vb))
-                                      pred (aget preds ai)
-                                      fidx (aget fidxs ai)
-                                      go?  (and (or (nil? pred) (pred v))
-                                                (or (nil? fidx)
-                                                    (= v
-                                                       (aget ^objects tuple
-                                                             (int fidx)))))]
-                                  (if (aget manys ai)
-                                    (recur (lmdb/has-next-val iter)
-                                           ai
-                                           (when go?
-                                             (if (aget skips ai)
-                                               true
-                                               ((fnil u/list-add
-                                                      (FastList.))
-                                                dups v))))
-                                    (when go?
-                                      (when-not (aget skips ai) (.add vs v))
-                                      (recur (lmdb/has-next-val iter)
-                                             (u/long-inc ai) nil))))
-                                (if dups
-                                  (do (when-not (true? dups) (.add vs dups))
-                                      (recur true (u/long-inc ai) nil))
-                                  (recur (lmdb/has-next-val iter)
-                                         ai nil))))
-                            (let [ai (if dups (u/long-inc ai) ai)]
-                              (when (and dups (not (true? dups)))
-                                (.add vs dups))
-                              (when (== ^long ai na)
-                                (let [vst (r/many-tuples vs)]
-                                  (.put seen te vst)
-                                  (.addAll ^Collection out
-                                           (r/prod-tuples
-                                             (r/single-tuples tuple)
-                                             vst)))))))))))))
+            lmdb c/eav operator
             [:closed
              (b/indexable nil (aget aids 0) c/v0 nil c/g0)
              (b/indexable nil (aget aids (dec (alength aids)))

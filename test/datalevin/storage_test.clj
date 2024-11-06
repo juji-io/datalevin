@@ -416,6 +416,7 @@
         d10     (d/datom 10 :e "nice")
         d11     (d/datom 10 :e "good")
         d12     (d/datom 12 :f 2.2)
+        d13     (d/datom 5 :b "13b")
         tuples0 [(object-array [0]) (object-array [5]) (object-array [8])]
         tuples1 [(object-array [:none 0])
                  (object-array [:nada 8])
@@ -437,7 +438,7 @@
                            {:flags (conj c/default-env-flags :nosync)}})
         in      (sut/tuple-pipe)
         out     (FastList.)]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13])
 
     (are [tuples eid-idx attrs-v result]
         (do (.clear out)
@@ -445,7 +446,21 @@
             (.addAll ^Collection in tuples)
             (.add ^Collection in :datalevin/end-scan)
             (sut/eav-scan-v store in out eid-idx attrs-v)
-            (is (= result (mapv vec out))))
+            (is (= (set result) (set (mapv vec out)))))
+
+      tuples0 0 [[:b {:pred nil :skip? false}]]
+      [[5 "5b"] [5 "13b"] [8 "8b"]]
+
+      tuples0 0 [[:b {:pred nil :skip? false}] [:b {:pred nil :skip? false}]]
+      [[5 "5b" "5b"] [5 "13b" "5b"] [5 "13b" "13b"] [5 "5b" "13b"] [8 "8b" "8b"]]
+
+      tuples0 0 [[:b {:pred #(s/starts-with? % "1") :skip? false}]
+                 [:b {:pred nil :skip? false}]]
+      [ [5 "13b" "5b"] [5 "13b" "13b"]]
+
+      tuples0 0 [[:b {:pred nil :skip? false}] [:b {:pred nil :skip? true}]]
+      [[5 "5b"] [5 "13b"] [8 "8b"]]
+
       tuples0 0 [[:a {:pred #(< ^long % 5) :skip? false}]]
       [[5 1]]
 
@@ -466,25 +481,24 @@
 
       tuples0 0 [[:a {:pred (constantly true) :skip? false}]
                  [:b {:pred (constantly true) :skip? false}]]
-      [[5 1 "5b"] [8 7 "8b"]]
+      [[5 1 "5b"] [5 1 "13b"] [8 7 "8b"]]
 
       tuples0 0 [[:a {:skip? false}] [:b {:skip? false}]]
-      [[5 1 "5b"] [8 7 "8b"]]
+      [[5 1 "5b"] [5 1 "13b"] [8 7 "8b"]]
 
       tuples0 0 [[:a {:skip? false}] [:b {:skip? true}]]
       [[5 1] [8 7]]
 
       tuples0 0 [[:a {:pred odd? :skip? false}]
                  [:b {:pred #(s/ends-with? % "b") :skip? false}]]
-      [[5 1 "5b"] [8 7 "8b"]]
+      [[5 1 "5b"] [5 1 "13b"] [8 7 "8b"]]
 
       tuples0 0 [[:a {:pred odd? :skip? false}] [:b {:skip? false}]]
-      [[5 1 "5b"] [8 7 "8b"]]
-
+      [[5 1 "5b"] [5 1 "13b"] [8 7 "8b"]]
 
       tuples0 0 [[:a {:pred odd? :skip? false}]
                  [:b {:pred (constantly true) :skip? false}]]
-      [[5 1 "5b"] [8 7 "8b"]]
+      [[5 1 "5b"] [5 1 "13b"] [8 7 "8b"]]
 
       tuples0 0 [[:a {:pred even? :skip? false}]
                  [:b {:pred (constantly true) :skip? false}]]
@@ -520,7 +534,7 @@
       [[:zero 10 "Tom"]]
 
       tuples2 0 [[:a {:skip? false}] [:b {:skip? false}]]
-      [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
+      [[8 7 "8b"] [5 1 "5b"] [5 1 "13b"]]
 
       tuples3 0 [[:c {:skip? false}] [:d {:skip? false}]]
       [[10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]
