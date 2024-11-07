@@ -153,22 +153,19 @@
             (cmp-fn o1 o2)))))
 
 (defn compare-with-type [a b]
-  (if (identical? (class a) (class b))
-    (try
-      (compare a b)
-      (catch ClassCastException e
-        (cond
-          ;; using `compare` on colls throws when items at the same index of
-          ;; the coll are not of the same type, so we use `=`. since `a` and
-          ;; `b` are of identical type
-          ;; TODO change this when needs arise
-          (coll? a)  (if (= a b) 0 1)
-          (bytes? a) (if (Arrays/equals ^bytes a ^bytes b)
-                       0
-                       (BitOps/compareBytes a b))
-          :else      (throw e))))
-    ;; TODO change this when needs arise
-    -1))
+  (try
+    (compare a b)
+    (catch ClassCastException e
+      (cond
+        ;; using `compare` on colls throws when items at the same index of
+        ;; the coll are not of the same type, so we use `=`. since `a` and
+        ;; `b` are of identical type
+        (coll? a)  (if (= a b) 0 1)
+        (bytes? a) (if (Arrays/equals ^bytes a ^bytes b)
+                     0
+                     (BitOps/compareBytes a b))
+        ;; TODO change this when needs arise
+        :else      -1))))
 
 (def nil-cmp (nil-check-cmp-fn compare))
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))

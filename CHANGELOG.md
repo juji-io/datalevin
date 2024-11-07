@@ -3,19 +3,19 @@
 ## WIP
 
 ### Fixed
-- [Datalog] Allow `:offset 0`.
-- [Datalog] cardinality many attributes as value. #284
+- [Datalog] Repeated cardinality many attributes for the same entity. #284
 - [Datalog] Apply type coercion according to scheam to ensure correct storage of
   values. #285
 - [Datalog] Correct query caching when referenced content may have changed. #288
   [Thx @andersmurphy]
 - [Pod] Typos in search code. #291
-- [Native] Remove `:aot` to avoid potential dependency conflict
 
 ### Improved
-- [Pod] Consistent `entity` behavior  in pod as in JVM. #283
+- [Pod] Consistent `entity` behavior in pod as in JVM. #283
+- [Datalog] Allow `:offset 0`.
 - [Datalog] Implement `empty` on Datom so it can be walked. #286
-- [Datalog] built-in query functions resolve their arguments. #287
+- [Datalog] Query functions resolve their arguments recursively. #287
+- [Native] Remove `:aot` to avoid potential dependency conflict.
 
 ## 0.9.12 (2024-10-08)
 

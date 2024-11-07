@@ -801,3 +801,36 @@
                   [:name "Petr"]))))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest issue-287-test
+  (let [dir (u/tmp-dir (str "issue-287-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:message/content
+                                 {:db/valueType :db.type/string}})
+                (d/db-with [{:db/id 1 :message/content "
+两个黄鹂鸣翠柳， 一行白鹭上青天。
+窗含西岭千秋雪， 门泊东吴万里船。"}
+                            {:db/id 2 :message/content "
+红豆生南国，春来发几枝。
+愿君多采撷，此物最相思。"}]))]
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
+                  [(> (count ?content) 30)]]
+                db)))
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
+                  [(count ?content) ?n]
+                  [(> ?n 30)]]
+                db)))
+    (is (= #{[1 36]}
+           (d/q '[:find ?e ?n
+                  :where
+                  [?e :message/content ?content]
+                  [(count ?content) ?n]
+                  [(> ?n 30)]]
+                db)))
+    (d/close-db db)
+    (u/delete-files dir)))

@@ -138,8 +138,8 @@
          attrs2  (keys (:attrs rel2))
          tuples1 ^List (:tuples rel1)
          tuples2 ^List (:tuples rel2)
-         idxs1   (to-array (map (:attrs rel1) attrs1))
-         idxs2   (to-array (map (:attrs rel2) attrs2))]
+         idxs1   (to-array (->Eduction (map (:attrs rel1)) attrs1))
+         idxs2   (to-array (->Eduction (map (:attrs rel2)) attrs2))]
      (relation!
        (zipmap (u/concatv attrs1 attrs2) (range))
        (reduce

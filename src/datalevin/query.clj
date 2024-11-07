@@ -645,7 +645,7 @@
       (@pod-fns s)
       fun)))
 
-(defn- -call-fn*
+(defn -call-fn
   [context rel f args]
   (let [sources              (:sources context)
         attrs                (:attrs rel)
@@ -655,38 +655,70 @@
         call                 (make-call (resolve-pred f context))]
     (dotimes [i len]
       (let [arg (nth args i)]
-        (if (symbol? arg)
-          (if-some [source (get sources arg)]
-            (aset static-args i source)
-            (aset tuples-args i (get attrs arg)))
-          (aset static-args i arg))))
+        (cond
+          (symbol? arg) (if-some [source (get sources arg)]
+                          (aset static-args i source)
+                          (aset tuples-args i (get attrs arg)))
+          (list? arg)   (aset tuples-args i
+                              (-call-fn context rel (first arg) (rest arg)))
+          :else         (aset static-args i arg))))
     (fn call-fn [tuple]
       (let [tg (tuple-get tuple)]
         (dotimes [i len]
-          (when-some [tuple-idx (aget tuples-args i)]
-            (let [v (tg tuple tuple-idx)]
-              (aset static-args i v)))))
+          (when-some [tuple-arg (aget tuples-args i)]
+            (aset static-args i (if (fn? tuple-arg)
+                                  (tuple-arg tuple)
+                                  (tg tuple tuple-arg))))))
+      ;; (println "static args->"(vec static-args))
       (let [res (call static-args)]
+        ;; (println "call->" call "res->" res)
         (if (= f 'fulltext)
           (mapv #(mapv peek %) res)
           res)))))
 
-(defn -call-fn
-  [context rel f args]
-  (case f
-    (and or not) (let [args' (walk/postwalk
-                               (fn [e]
-                                 (if (list? e)
-                                   (let [[f & args] e]
-                                     (-call-fn context rel f args))
-                                   e))
-                               (vec args))]
-                   (fn [tuple]
-                     (apply (get built-ins/query-fns f)
-                            (walk/postwalk
-                              (fn [e] (if (fn? e) (e tuple) e))
-                              args'))))
-    (-call-fn* context rel f args)))
+#_(defn- -call-fn*
+    [context rel f args]
+    (let [sources              (:sources context)
+          attrs                (:attrs rel)
+          len                  (count args)
+          ^objects static-args (make-array Object len)
+          ^objects tuples-args (make-array Object len)
+          call                 (make-call (resolve-pred f context))]
+      (dotimes [i len]
+        (let [arg (nth args i)]
+          (if (symbol? arg)
+            (if-some [source (get sources arg)]
+              (aset static-args i source)
+              (aset tuples-args i (get attrs arg)))
+            (aset static-args i arg))))
+      (fn call-fn [tuple]
+        (let [tg (tuple-get tuple)]
+          (dotimes [i len]
+            (when-some [tuple-idx (aget tuples-args i)]
+              (let [v (tg tuple tuple-idx)]
+                (aset static-args i v)))))
+        (let [res (call static-args)]
+          (println "fn->" f "args->" args "res->" res)
+          (if (= f 'fulltext)
+            (mapv #(mapv peek %) res)
+            res)))))
+
+#_(defn -call-fn
+    [context rel f args]
+    #_(case f
+        (and or not) (let [args' (walk/postwalk
+                                   (fn [e]
+                                     (if (list? e)
+                                       (let [[f & args] e]
+                                         (-call-fn context rel f args))
+                                       e))
+                                   (vec args))]
+                       (fn [tuple]
+                         (apply (get built-ins/query-fns f)
+                                (walk/postwalk
+                                  (fn [e] (if (fn? e) (e tuple) e))
+                                  args'))))
+        (-call-fn* context rel f args)))
 
 (defn filter-by-pred
   [context clause]
@@ -2090,6 +2122,7 @@
     (let [{:keys [result-set] :as context} (-> context
                                                build-graph
                                                build-plan)]
+      ;; (println "context->" context)
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c
