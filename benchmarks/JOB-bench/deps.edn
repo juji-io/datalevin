@@ -18,7 +18,9 @@
            :test  {:extra-paths ["test"]
                    :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                                 "-Dclojure.compiler.direct-linking=true"]
+                                 "-Dclojure.compiler.direct-linking=true"
+                                 "-Xmx16g"
+                                 ]
                    :extra-deps  {io.github.cognitect-labs/test-runner
                                  {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
                    :main-opts   ["-m" "cognitect.test-runner"]

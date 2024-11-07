@@ -1645,7 +1645,6 @@
 
 ;; somehow graal has problem with pmap
 (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
-;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
 
 (defn- update-nodes
   [db nodes]
@@ -1664,100 +1663,50 @@
     (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols)))
 
 (defn- merge-scan-step
-  [db last-step index new-key new-steps skip-attr]
-  ;; (println "----")
-  ;; (println "index->" index)
-  ;; (println "skip-attr->" skip-attr)
-  ;; (println "lcols->" (:cols last-step))
-  ;; (println "ncols->" (:cols (peek new-steps)))
-  #_(let [in       (:out last-step)
-          out      (if (set? in) (set new-key) new-key)
-          lcols    (:cols last-step)
-          ncols    (:cols (peek new-steps))
-          [s1 s2]  new-steps
-          val1     (:val s1)
-          vars1    (:vars s1)
-          a1       (:attr s1)
-          v1       (when (< 1 (count vars1)) (peek vars1))
-          v1-init? (and v1 (find-index v1 ncols))
-          ip       (cond-> (add-back-range v1 s1)
-                     (some? val1) (add-pred #(= % val1)))
-          attrs-v2 (:attrs-v s2)
-          get-a    (fn [coll] (some #(when (keyword? %) %) coll))
-          aid      #(((db/-schema db) %) :db/aid)
-          [attrs-v vars cols]
-          (reduce
-            (fn [[attrs-v vars cols] col]
-              (let [v (some #(when (symbol? %) %) col)]
-                (if (and ip (= v v1))
-                  [attrs-v vars cols]
-                  (let [a (get-a col)
-                        p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
-                    (if-let [f (find-index v lcols)]
-                      [(conj attrs-v [a {:pred p :skip? true :fidx f}]) vars cols]
-                      [(conj attrs-v [a {:pred  p
-                                         :skip? (if (some #(when (= a (first %))
-                                                             (:skip? (peek %)))
-                                                          attrs-v2)
-                                                  true false)
-                                         :fidx  nil}])
-                       (conj vars v) (conj cols col)])))))
-            (if ip
-              [[[a1 {:pred  ip
-                     :skip? (if v1-init? false true)
-                     :fidx  nil}]]
-               (if v1 [v1] [])
-               (if v1 [#{a1 v1}] [])]
-              [[] [] []])
-            (rest ncols))
-          fcols    (into lcols (sort-by (comp aid get-a) cols))
-          attrs-v  (sort-by (comp aid first) attrs-v)]
-      ;; (println "fcols->" fcols)
-      ;; (println "vars->" vars)
-      ;; (println "attrs-v->" attrs-v)
-      (MergeScanStep. index attrs-v vars in out fcols nil nil))
-  (let [[s1 s2]  new-steps
-        attr1    (:attr s1)
-        val1     (:val s1)
-        bound?   (some? val1)
-        vars1    (:vars s1)
-        v1       (when (< 1 (count vars1)) (peek vars1))
-        attrs-v2 (:attrs-v s2)
-        attrs2   (mapv first attrs-v2)
-        vars-m   (cond-> (zipmap attrs2 (:vars s2))
-                   v1     (assoc attr1 v1)
-                   bound? (assoc attr1 (gensym "?bound")))
-        preds-m  (assoc (zipmap attrs2 (mapv (comp :pred peek) attrs-v2))
-                        attr1 (cond-> (add-back-range v1 s1)
-                                bound? (add-pred #(= % val1))))
-        schema   (db/-schema db)
-        attrs    (cond->> (conj attrs2 attr1)
-                   (and (seq attrs2) (not= :_ref (:type last-step)))
-                   (remove #{(:attr last-step)})
-                   true (sort-by #((schema %) :db/aid)))
-        preds    (replace preds-m attrs)
-        skips2   (reduce (fn [ss [a m]] (if (m :skip?) (conj ss a) ss))
-                         #{} attrs-v2)
-        skips    (cond-> (conj skips2 skip-attr)
-                   (or bound? (nil? v1)) (conj attr1))
-        vars'    (replace vars-m attrs)
-        lcols    (:cols last-step)
-        fidxs    (mapv #(find-index % lcols) vars')
-        attrs-v  (attrs-vec attrs preds skips fidxs)
-        skips    (into #{} (keep (fn [[a m]] (when (m :skip?) a))) attrs-v)
-        skip-vs  (set (mapv vars-m skips))
-        vars     (into [] (comp (remove keyword?) (remove skip-vs)) vars')
-        in       (:out last-step)
+  [db last-step index new-key new-steps]
+  (let [in       (:out last-step)
         out      (if (set? in) (set new-key) new-key)
-        cols     (into lcols
-                       (comp (remove skips)
-                          (map (fn [attr]
-                                 (if-let [v (vars-m attr)] #{attr v} attr))))
-                       attrs)]
-    ;; (println "fcols->" cols)
-    ;; (println "vars->" vars)
-    ;; (println "attrs-v->" attrs-v)
-    (MergeScanStep. index attrs-v vars in out cols nil nil)))
+        lcols    (:cols last-step)
+        ncols    (:cols (peek new-steps))
+        [s1 s2]  new-steps
+        val1     (:val s1)
+        vars1    (:vars s1)
+        a1       (:attr s1)
+        v1       (when (< 1 (count vars1)) (peek vars1))
+        v1-init? (and v1 (find-index v1 ncols))
+        ip       (cond-> (add-back-range v1 s1)
+                   (some? val1) (add-pred #(= % val1)))
+        attrs-v2 (:attrs-v s2)
+        get-a    (fn [coll] (some #(when (keyword? %) %) coll))
+        aid      #(((db/-schema db) %) :db/aid)
+        [attrs-v vars cols]
+        (reduce
+          (fn [[attrs-v vars cols] col]
+            (let [v (some #(when (symbol? %) %) col)]
+              (if (and ip (= v v1))
+                [attrs-v vars cols]
+                (let [a (get-a col)
+                      p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
+                  (if-let [f (find-index v lcols)]
+                    [(conj attrs-v [a {:pred p :skip? true :fidx f}]) vars cols]
+                    [(conj attrs-v [a {:pred  p
+                                       :skip? (if (some #(when (= a (first %))
+                                                           (:skip? (peek %)))
+                                                        attrs-v2)
+                                                true false)
+                                       :fidx  nil}])
+                     (conj vars v) (conj cols col)])))))
+          (if ip
+            [[[a1 {:pred  ip
+                   :skip? (if v1-init? false true)
+                   :fidx  nil}]]
+             (if v1 [v1] [])
+             (if v1 [#{a1 v1}] [])]
+            [[] [] []])
+          (rest ncols))
+        fcols    (into lcols (sort-by (comp aid get-a) cols))
+        attrs-v  (sort-by (comp aid first) attrs-v)]
+    (MergeScanStep. index attrs-v vars in out fcols nil nil)))
 
 (defn- index-by-link
   [cols link-e link]
@@ -1792,7 +1741,7 @@
   (let [[step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
-      [step (merge-scan-step db step n-index new-key new-steps attr)])))
+      [step (merge-scan-step db step n-index new-key new-steps)])))
 
 (defn- val-eq-plan
   [db last-step index {:keys [type attrs tgt]} new-key new-steps]
@@ -1800,7 +1749,7 @@
         [step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
-      [step (merge-scan-step db step n-index new-key new-steps attr)])))
+      [step (merge-scan-step db step n-index new-key new-steps)])))
 
 (defn- count-init-follows
   [db tuples attr index]
@@ -1863,7 +1812,7 @@
         last-step (peek steps)
         cur-steps
         (case (:type link)
-          :ref    [(merge-scan-step db last-step index new-key new-steps nil)]
+          :ref    [(merge-scan-step db last-step index new-key new-steps)]
           :_ref   (rev-ref-plan db last-step index link new-key new-steps)
           :val-eq (val-eq-plan db last-step index link new-key new-steps))]
     (Plan. cur-steps
@@ -2065,7 +2014,6 @@
         tuples (FastList.)
         pipes  (object-array (repeatedly n-1 s/tuple-pipe))
         work   (fn [step ^long i]
-                 ;; (println "step ->" step)
                  (if (zero? i)
                    (-execute-pipe step db nil (aget pipes 0))
                    (let [src (aget pipes (dec i))]
@@ -2142,7 +2090,6 @@
     (let [{:keys [result-set] :as context} (-> context
                                                build-graph
                                                build-plan)]
-      ;; (println "plan ->" (:plan context))
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c
