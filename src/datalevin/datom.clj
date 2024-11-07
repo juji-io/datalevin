@@ -2,7 +2,7 @@
   (:require
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
-   [datalevin.util :refer [combine-hashes combine-cmp defcomp opt-apply]])
+   [datalevin.util :refer [combine-hashes combine-cmp defcomp]])
   (:import
    [datalevin.utl BitOps]
    [java.util Arrays]
@@ -135,7 +135,7 @@
 
 ;; printing and reading
 
-(defn datom-from-reader ^Datom [vec] (opt-apply datom vec))
+(defn datom-from-reader ^Datom [vec] (apply datom vec))
 
 (defmethod print-method Datom [^Datom d, ^java.io.Writer w]
   (.write w (str "#datalevin/Datom "))

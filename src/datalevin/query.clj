@@ -12,7 +12,7 @@
    [datalevin.relation :as r]
    [datalevin.storage :as s]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+ conjv concatv opt-apply tuple-get]]
+   [datalevin.util :as u :refer [raise cond+ conjv concatv tuple-get]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -618,7 +618,7 @@
   [f]
   (if (dot-form f)
     (let [fname (subs (name f) 1)] #(dot-call fname %))
-    #(opt-apply f %)))
+    #(apply f %)))
 
 (defn- resolve-sym
   [sym]
@@ -682,10 +682,10 @@
                                    e))
                                (vec args))]
                    (fn [tuple]
-                     (opt-apply (get built-ins/query-fns f)
-                                (walk/postwalk
-                                  (fn [e] (if (fn? e) (e tuple) e))
-                                  args'))))
+                     (apply (get built-ins/query-fns f)
+                            (walk/postwalk
+                              (fn [e] (if (fn? e) (e tuple) e))
+                              args'))))
     (-call-fn* context rel f args)))
 
 (defn filter-by-pred
@@ -782,7 +782,7 @@
 (defn check-free-same
   [bound branches form]
   (let [free (mapv #(set/difference (qu/collect-vars %) bound) branches)]
-    (when-not (opt-apply = free)
+    (when-not (apply = free)
       (raise "All clauses in 'or' must use same set of free vars, had " free
              " in " form
              {:error :query/where :form form :vars free}))))
@@ -1337,10 +1337,10 @@
   [m f args v]
   (let [logic-f (fn [f args]
                   (fn logic [x]
-                    (opt-apply (get built-ins/query-fns f)
-                               (walk/postwalk
-                                 (fn [e] (if (fn? e) (e x) e))
-                                 args))))
+                    (apply (get built-ins/query-fns f)
+                           (walk/postwalk
+                             (fn [e] (if (fn? e) (e x) e))
+                             args))))
         args'   (walk/postwalk
                   (fn [e]
                     (if (list? e)
@@ -1644,7 +1644,7 @@
 (defn- writing? [db] (l/writing? (.-lmdb ^Store (.-store ^DB db))))
 
 ;; somehow graal has problem with pmap
-(def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map map))
+(def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
 ;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
 
 (defn- update-nodes
@@ -2065,7 +2065,7 @@
         tuples (FastList.)
         pipes  (object-array (repeatedly n-1 s/tuple-pipe))
         work   (fn [step ^long i]
-                 (println "step ->" step)
+                 ;; (println "step ->" step)
                  (if (zero? i)
                    (-execute-pipe step db nil (aget pipes 0))
                    (let [src (aget pipes (dec i))]
@@ -2226,7 +2226,7 @@
                   args (mapv #(-context-resolve % context)
                              (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
-              (opt-apply f (conj args vals)))
+              (apply f (conj args vals)))
             fixed-value))
         find-elements
         (first tuples)
