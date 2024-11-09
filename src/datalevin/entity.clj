@@ -26,8 +26,7 @@
 (defn entity
   [db eid]
   (when-let [e (entid db eid)]
-    (when (db/-populated? db :eav e nil nil)
-      (->Entity db e (volatile! false) (volatile! {}) {} {}))))
+    (->Entity db e (volatile! false) (volatile! {}) {} {})))
 
 (defn- entity-attr [db a datoms]
   (if (db/multival? db a)

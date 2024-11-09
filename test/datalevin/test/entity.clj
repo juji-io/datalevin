@@ -16,7 +16,6 @@
                             {:db/id 2, :name "Ivan", :sex "male", :aka ["Z"]}
                             [:db/add 3 :huh? false]]))
         e   (d/entity db 1)]
-    (is (nil? (d/entity db 100500)))
     (is (= (:db/id e) 1))
     (is (identical? (d/entity-db e) db))
     (is (= (:name e) "Ivan"))
@@ -167,6 +166,7 @@
     (is (nil? (d/entity db "abc")))
     (is (nil? (d/entity db :keyword)))
     (is (nil? (d/entity db [:name "Petr"])))
+    (is (= 777 (:db/id (d/entity db 777))))
     (is (thrown-msg? "Lookup ref attribute should be marked as :db/unique: [:not-an-attr 777]"
                      (d/entity db [:not-an-attr 777])))
     (d/close-db db)
