@@ -8,7 +8,7 @@
    [java.util UUID Arrays HashSet]
    [java.math BigInteger BigDecimal]))
 
-(def version "0.9.12")
+(def version "0.9.13")
 
 ;;---------------------------------------------
 ;; system constants, fixed

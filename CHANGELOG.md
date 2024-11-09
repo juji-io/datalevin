@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.13 (2024-11-09)
 
 ### Fixed
 - [Datalog] Repeated cardinality many attributes for the same entity. #284
