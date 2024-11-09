@@ -10,17 +10,14 @@
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          }
 
- :aliases {:dev   {
-                   :extra-paths ["target/classes"]
+ :aliases {:dev   {:extra-paths ["target/classes"]
                    :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
                                  "-Dclojure.compiler.direct-linking=true"]}
            :test  {:extra-paths ["test"]
                    :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                                 "-Dclojure.compiler.direct-linking=true"
-                                 "-Xmx16g"
-                                 ]
+                                 "-Dclojure.compiler.direct-linking=true"]
                    :extra-deps  {io.github.cognitect-labs/test-runner
                                  {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
                    :main-opts   ["-m" "cognitect.test-runner"]
@@ -29,4 +26,10 @@
                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
                                "-Dclojure.compiler.direct-linking=true"]
                    :main-opts ["-m" "datalevin-bench.core"]
-                   :exec-fn   datalevin-bench.core/-main}}}
+                   :exec-fn   datalevin-bench.core/-main}
+           :grid  {:jvm-opts  ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                               "-Dclojure.compiler.direct-linking=true"]
+                   :main-opts ["-m" "datalevin-bench.core"]
+                   :exec-fn   datalevin-bench.core/grid}
+           }}

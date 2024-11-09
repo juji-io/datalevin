@@ -1,6 +1,8 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
+   [datalevin.query :as q]
+   [datalevin.constants :as c]
    [clojure.java.io :as io]
    [clojure.string :as s])
   (:import
@@ -3268,14 +3270,32 @@
         (d/write-csv w [[qname
                          (:planning-time result)
                          (:execution-time result)]]))))
-
   (d/close conn)
-
   (println "Done. Results are in " result-filename))
+
+(defn grid [&opts]
+  (doseq [s [0.8 0.9]
+          v [2.8 2.9]]
+    (let [start (System/currentTimeMillis)]
+      (doseq [q queries]
+        (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
+          (binding [c/magic-cost-fidx          1.3
+                    c/magic-cost-var           v
+                    c/magic-cost-pred          1.8
+                    c/magic-cost-merge-scan-v  s
+                    c/magic-cost-val-eq-scan-e 1.3
+                    q/*cache?*                 false]
+            (d/q query db))))
+      (println "s" s "v" v "took"
+               (format
+                 "%.2f"
+                 (double (/ (- (System/currentTimeMillis) start) 1000))))))
+  (d/close conn))
 
 (comment
 
   (d/explain {:run? true} q-25c (d/db conn))
+
 
 
 

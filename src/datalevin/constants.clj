@@ -361,24 +361,24 @@
   magic-cost-pred 1.4)
 
 (def ^{:dynamic true
-       :doc     "Cost associated with adding attributes when estimating size"}
-  magic-cost-attr 1.3)
+       :doc     "Cost associated with adding variable during scan"}
+  magic-cost-var 2.4)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx 1.2)
+  magic-cost-fidx 1.3)
 
 (def ^{:dynamic true
        :doc     "Cost associated with scanning e based on a"}
-  magic-cost-init-scan-e 1.02)
+  magic-cost-init-scan-e 1.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 1.05)
+  magic-cost-merge-scan-v #_0.9 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
-  magic-cost-val-eq-scan-e 1.0)
+  magic-cost-val-eq-scan-e 1.3)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,

@@ -162,7 +162,7 @@
   (prop/for-all [k (gen/such-that
                      #(< Float/MIN_VALUE % Float/MAX_VALUE)
                      (gen/double* {:NaN? false :infinite? false})
-                     100)]
+                     1000)]
                 (let [f              (float k)
                       ^ByteBuffer bf (bf/allocate-buffer 16384)]
                   (sut/put-bf bf k :float)

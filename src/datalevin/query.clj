@@ -1581,26 +1581,23 @@
                                   (/ s (.size ^List sp1))
                                   default-ratio))))))))))
 
+(defn- n-items
+  [attrs-v k]
+  (reduce
+    (fn [^long c [_ m]] (if (k m) (inc c) c))
+    0 attrs-v))
+
+(defn- factor
+  [magic n]
+  (if (zero? n) 1 ^long (estimate-round (* ^double magic n))))
+
 (defn- estimate-scan-v-cost
-  [{:keys [attrs-v]} ^long size]
-  (let [^long n-preds (reduce
-                        (fn [^long c [_ {:keys [pred]}]] (if pred (inc c) c))
-                        0 attrs-v)
-        ^long n-fidx  (reduce
-                        (fn [^long c [_ {:keys [fidx]}]] (if fidx (inc c) c))
-                        0 attrs-v)
-        n-attrs       (count attrs-v)]
-    (* size
-       ^double c/magic-cost-merge-scan-v
-       (if (zero? n-attrs)
-         1
-         ^long (estimate-round (* ^double c/magic-cost-attr n-attrs)))
-       (if (zero? n-preds)
-         1
-         ^long (estimate-round (* ^double c/magic-cost-pred n-preds)))
-       (if (zero? n-fidx)
-         1
-         ^long (estimate-round (* ^double c/magic-cost-fidx n-fidx))))))
+  [{:keys [attrs-v vars]} ^long size]
+  (* size
+     ^double c/magic-cost-merge-scan-v
+     (factor c/magic-cost-var (count vars))
+     (factor c/magic-cost-pred (n-items attrs-v :pred))
+     (factor c/magic-cost-fidx (n-items attrs-v :fidx))))
 
 (defn- estimate-base-cost
   [{:keys [mcount]} steps]
@@ -1668,11 +1665,11 @@
         [attrs-v vars cols]
         (reduce
           (fn [[attrs-v vars cols] col]
-            (let [v (some #(when (symbol? %) %) col)]
+            (let [v (some #(when (symbol? %) %) col)
+                  a (get-a col)]
               (if (and ip (= v v1))
                 [attrs-v vars cols]
-                (let [a (get-a col)
-                      p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
+                (let [p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
                   (if-let [f (find-index v lcols)]
                     [(conj attrs-v [a {:pred p :skip? true :fidx f}]) vars cols]
                     [(conj attrs-v [a {:pred  p
