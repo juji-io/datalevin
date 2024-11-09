@@ -23,7 +23,7 @@
   (:import
    [java.util Arrays List Collection Comparator]
    [java.util.concurrent ConcurrentHashMap]
-   [clojure.lang ILookup LazilyPersistentVector IFn]
+   [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.db DB]
    [datalevin.storage Store]
@@ -1595,9 +1595,9 @@
   [{:keys [attrs-v vars]} ^long size]
   (* size
      ^double c/magic-cost-merge-scan-v
-     ^double (factor c/magic-cost-var (count vars))
-     ^double (factor c/magic-cost-pred (n-items attrs-v :pred))
-     ^double (factor c/magic-cost-fidx (n-items attrs-v :fidx))))
+     ^long (factor c/magic-cost-var (count vars))
+     ^long (factor c/magic-cost-pred (n-items attrs-v :pred))
+     ^long (factor c/magic-cost-fidx (n-items attrs-v :fidx))))
 
 (defn- estimate-base-cost
   [{:keys [mcount]} steps]
