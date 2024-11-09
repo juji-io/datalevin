@@ -1588,16 +1588,16 @@
     0 attrs-v))
 
 (defn- factor
-  [magic n]
+  [magic ^long n]
   (if (zero? n) 1 ^long (estimate-round (* ^double magic n))))
 
 (defn- estimate-scan-v-cost
   [{:keys [attrs-v vars]} ^long size]
   (* size
      ^double c/magic-cost-merge-scan-v
-     (factor c/magic-cost-var (count vars))
-     (factor c/magic-cost-pred (n-items attrs-v :pred))
-     (factor c/magic-cost-fidx (n-items attrs-v :fidx))))
+     ^double (factor c/magic-cost-var (count vars))
+     ^double (factor c/magic-cost-pred (n-items attrs-v :pred))
+     ^double (factor c/magic-cost-fidx (n-items attrs-v :fidx))))
 
 (defn- estimate-base-cost
   [{:keys [mcount]} steps]

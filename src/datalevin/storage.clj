@@ -947,7 +947,7 @@
                         (recur (produce in))))))
                 (fn [iterable]
                   (let [gcounts (group-counts aids)
-                        gstarts (group-starts gcounts)
+                        gstarts ^ints (group-starts gcounts)
                         gcounts (int-array gcounts)]
                     (loop [tuple (produce in)]
                       (when tuple
@@ -964,7 +964,7 @@
                                      in?   false]
                                 (if next?
                                   (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                        a  (b/read-buffer (.rewind vb) :int)
+                                        a  ^int (b/read-buffer (.rewind vb) :int)
                                         gi (if (== pa a)
                                              gi
                                              (if in? (inc gi) gi))
@@ -983,7 +983,7 @@
                                                                  (int fidx)))))
                                               (.add ^FastList (aget vs ai) v))))
                                         (recur (lmdb/has-next-val iter)
-                                               gi a true))
+                                               gi (int a) true))
                                       (recur (lmdb/has-next-val iter)
                                              gi pa false)))
                                   (when-not (some #(.isEmpty ^FastList %) vs)
@@ -1063,7 +1063,7 @@
                                           (r/join-tuples tuple vst))))))))))))
                 (fn [iterable]
                   (let [gcounts (group-counts aids)
-                        gstarts (group-starts gcounts)
+                        gstarts ^ints (group-starts gcounts)
                         gcounts (int-array gcounts)]
                     (dotimes [i nt]
                       (let [tuple (.get ^List in i)
@@ -1080,7 +1080,7 @@
                                    in?   false]
                               (if next?
                                 (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                      a  (b/read-buffer (.rewind vb) :int)
+                                      a  ^int (b/read-buffer (.rewind vb) :int)
                                       gi (if (== pa a)
                                            gi
                                            (if in? (inc gi) gi))
@@ -1099,9 +1099,9 @@
                                                                (int fidx)))))
                                             (.add ^FastList (aget vs ai) v))))
                                       (recur (lmdb/has-next-val iter)
-                                             gi a true))
+                                             gi (int a) true))
                                     (recur (lmdb/has-next-val iter)
-                                           gi a false)))
+                                           gi pa false)))
                                 (when-not (some #(.isEmpty ^FastList %) vs)
                                   (let [vst (r/many-tuples
                                               (->> (map (fn [v s] (when-not s v))
