@@ -3,6 +3,7 @@
 ## WIP
 
 ### Improved
+- [Datalog] Push down nested predicates.
 
 
 ## 0.9.13 (2024-11-09)
