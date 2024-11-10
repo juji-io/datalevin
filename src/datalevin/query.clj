@@ -662,7 +662,7 @@
           (list? arg)   (aset tuples-args i
                               (-call-fn context rel (first arg) (rest arg)))
           :else         (aset static-args i arg))))
-    (fn call-fn [tuple]
+    (fn [tuple]
       (let [tg (tuple-get tuple)]
         (dotimes [i len]
           (when-some [tuple-arg (aget tuples-args i)]
@@ -1064,20 +1064,12 @@
                                   (map make-nodes))
                                 (group-by get-src patterns)))))
 
-(defn- collect-pred-vars
-  [{:keys [fn args]}]
-  (case (:symbol fn)
-    (and not or) (qu/collect-vars args)
-    (into #{}
-          (comp (filter #(instance? Variable %))
-             (map :symbol))
-          args)))
-
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
-    (let [syms (collect-pred-vars where)]
+    (let [{:keys [args]} where
+          syms           (qu/collect-vars args)]
       (when (= (count syms) 1)
         (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
@@ -1240,18 +1232,20 @@
                (not (str/includes? pstring "_")))
       pstring)))
 
-(defn- activate-pred
+(defn- activate-var-pred
   [var clause]
   (when clause
     (if (fn? clause)
       clause
       (let [[f & args] clause
-            fun        (resolve-pred f nil)
-            i          (u/index-of #(= var %) args)
+            idxs       (u/idxs-of #(= var %) args) ;; may appear more than once
+            ni         (count idxs)
+            idxs-arr   (int-array idxs)
             args-arr   (object-array args)
-            call       (make-call fun)]
-        (fn pred [x]
-          (call (do (aset args-arr i x) args-arr)))))))
+            call       (make-call (resolve-pred f nil))]
+        (fn [x]
+          (dotimes [i ni] (aset args-arr (aget idxs-arr i) x))
+          (call args-arr))))))
 
 (defn- add-pred
   ([old-pred new-pred]
@@ -1268,7 +1262,7 @@
 (defn- optimize-like
   [m pred [_ ^String pattern {:keys [escape]}] v not?]
   (let [pstring (like-pattern-as-string pattern escape)
-        m'      (update m :pred add-pred (activate-pred v pred))]
+        m'      (update m :pred add-pred (activate-var-pred v pred))]
     (like-convert-range m' pstring not?)))
 
 (defn- inequality->range
@@ -1319,24 +1313,23 @@
          (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
            (if not? (flip-ranges ranges) ranges))))
 
-(defn- logic-pred
-  [m f args v]
-  (let [logic-f (fn [f args]
-                  (fn logic [x]
-                    (apply (get built-ins/query-fns f)
-                           (walk/postwalk
-                             (fn [e] (if (fn? e) (e x) e))
-                             args))))
-        args'   (walk/postwalk
-                  (fn [e]
-                    (if (list? e)
-                      (let [[f & args] e]
-                        (case f
-                          (and or not) (logic-f f args)
-                          (activate-pred v e)))
-                      e))
-                  (vec args))]
-    (update m :pred add-pred (logic-f f args'))))
+(defn- nested-pred
+  [f args v]
+  (let [len      (count args)
+        fn-arr   (object-array len)
+        args-arr (object-array args)
+        call     (make-call (resolve-pred f nil))]
+    (dotimes [i len]
+      (let [arg (aget args-arr i)]
+        (when (list? arg)
+          (aset fn-arr i (if (some #(= v %) arg)
+                           (activate-var-pred v arg)
+                           (nested-pred (first arg) (rest arg) v))))))
+    (fn [x]
+      (dotimes [i len]
+        (when-some [f (aget fn-arr i)]
+          (aset args-arr i (f x))))
+      (call args-arr))))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1344,15 +1337,16 @@
     (fn [m]
       (if (= (:var m) v)
         (let [[f & args :as pred] (first clause)]
-          (case f
-            (< <= > >=)  (inequality->range m f args v)
-            =            (equality->range m args)
-            like         (optimize-like m pred args v false)
-            not-like     (optimize-like m pred args v true)
-            in           (in-convert-range m args false)
-            not-in       (in-convert-range m args true)
-            (and not or) (logic-pred m f args v)
-            (update m :pred add-pred (activate-pred v pred))))
+          (if (some list? pred)
+            (update m :pred add-pred (nested-pred f args v))
+            (case f
+              (< <= > >=) (inequality->range m f args v)
+              =           (equality->range m args)
+              like        (optimize-like m pred args v false)
+              not-like    (optimize-like m pred args v true)
+              in          (in-convert-range m args false)
+              not-in      (in-convert-range m args true)
+              (update m :pred add-pred (activate-var-pred v pred)))))
         m))
     graph))
 
@@ -1488,7 +1482,7 @@
     (reduce
       (fn [p r]
         (if r
-          (add-pred p (activate-pred v (range->inequality v r)) true)
+          (add-pred p (activate-var-pred v (range->inequality v r)) true)
           p))
       pred range)
     pred))
@@ -2073,7 +2067,6 @@
     (let [{:keys [result-set] :as context} (-> context
                                                build-graph
                                                build-plan)]
-      ;; (println "context->" context)
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c

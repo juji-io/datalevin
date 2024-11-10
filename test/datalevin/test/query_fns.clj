@@ -347,12 +347,12 @@
           [1 2 3 4 5 6 7 9 10 11]   "_ook ||%"
           [1 2 3 4 8 9 10 11]       "home_value%"
           [1 2 3 4 6 8 9 10 11]     "%home|_value%"
-          [1 2 3 4 8 9 10 11]       "home|_value%"
-          [1 2 3 4 8 9 10 11]       "home|_value"
+          [1 2 3 4 6 8 9 10 11]     "home|_value%"
+          [1 2 3 4 5 6 8 9 10 11]   "home|_value"
           [1 2 3 4 5 7 8 9 10 11]   "home value"
-          [1 2 3 4 8 9 10 11]       "home_value"
+          [1 2 3 4 5 8 9 10 11]     "home_value"
           [1 2 3 4 5 8 9 10 11]     "%value"
-          [1 2 3 4 5 6 7 9 10 11]   "book |%"
+          [1 2 3 4 5 6 7 8 9 10 11] "book |%"
           [1 2 3 4 5 6 7 8 9 10 11] "home-value%"
           )
         (is (thrown-with-msg?
@@ -805,18 +805,53 @@
 (deftest issue-287-test
   (let [dir (u/tmp-dir (str "issue-287-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:message/content
-                                 {:db/valueType :db.type/string}})
-                (d/db-with [{:db/id 1 :message/content "
+                                 {:db/valueType :db.type/string}
+                                 :message/number
+                                 {:db/valueType :db.type/long}})
+                (d/db-with [
+                            {:db/id           1
+                             :message/number  7
+                             :message/content "
 两个黄鹂鸣翠柳， 一行白鹭上青天。
 窗含西岭千秋雪， 门泊东吴万里船。"}
-                            {:db/id 2 :message/content "
+                            {:db/id           2
+                             :message/number  5
+                             :message/content "
 红豆生南国，春来发几枝。
 愿君多采撷，此物最相思。"}]))]
     (is (= 1
            (d/q '[:find ?e .
                   :where
                   [?e :message/content ?content]
+                  [?e :message/number ?number]
+                  [(< (count ?content) (* ?number ?number))]]
+                db)))
+    (is (= #{[1 49]}
+           (d/q '[:find ?e ?n
+                  :where
+                  [?e :message/content ?content]
+                  [?e :message/number ?number]
+                  [(* ?number ?number) ?n]
+                  [(< (count ?content) ?n)]]
+                db)))
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
+                  [(< 10 (clojure.string/index-of ?content "门"))]]
+                db)))
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
                   [(> (count ?content) 30)]]
+                db)))
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
+                  [(and (< 10 (clojure.string/index-of ?content "门"))
+                        (> (count ?content) 30))]]
                 db)))
     (is (= 1
            (d/q '[:find ?e .
