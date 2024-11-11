@@ -220,8 +220,8 @@ threads on a single step was tried and abandoned due to worse performance).
 
 Currently, the query optimizer handles normal where clauses only: triple
 patterns and predicates. We will gradually extend the optimizer to consider
-more clause types in the future. In addition, only binary relations are
-considered at the moment, future work may consider relations on a hypergraph
+more clause types in the future. In addition, only binary joins are
+considered at the moment, future work may consider joins on a hypergraph
 [8].
 
 ## Benchmarks

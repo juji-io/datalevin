@@ -8,7 +8,9 @@
    [java.util UUID Arrays HashSet]
    [java.math BigInteger BigDecimal]))
 
-(def version "0.9.13")
+(def version
+  "Version number of Datalevin"
+  "0.9.13")
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -362,7 +364,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding variable during scan"}
-  magic-cost-var 2.4)
+  magic-cost-var 2.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
@@ -374,7 +376,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v #_0.9 1.2)
+  magic-cost-merge-scan-v 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
