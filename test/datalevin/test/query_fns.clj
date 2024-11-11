@@ -826,6 +826,13 @@
                   [?e :message/number ?number]
                   [(< (count ?content) (* ?number ?number))]]
                 db)))
+    (is (= 1
+           (d/q '[:find ?e .
+                  :where
+                  [?e :message/content ?content]
+                  [?e :message/number ?number]
+                  [(< 40 (* ?number ?number))]]
+                db)))
     (is (= #{[1 49]}
            (d/q '[:find ?e ?n
                   :where
