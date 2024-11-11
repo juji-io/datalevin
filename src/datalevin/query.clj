@@ -1322,9 +1322,9 @@
     (dotimes [i len]
       (let [arg (aget args-arr i)]
         (when (list? arg)
-          (aset fn-arr i (if (some #(= v %) arg)
-                           (activate-var-pred v arg)
-                           (nested-pred (first arg) (rest arg) v))))))
+          (aset fn-arr i (if (some #(list? %) arg)
+                           (nested-pred (first arg) (rest arg) v)
+                           (activate-var-pred v arg))))))
     (fn [x]
       (dotimes [i len]
         (when-some [f (aget fn-arr i)]
