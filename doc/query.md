@@ -211,7 +211,7 @@ sampling based query planning method does more work than traditional statistics
 based methods at query time. Fortunately, these work are amicable for parallel
 processing, so it is done whenever appropriate.
 
-Pipeling is used for plan execution, so multiple tuples in different execution
+Pipelining is used for plan execution, so multiple tuples in different execution
 steps are in flight at the same time. A tuple generated from one step becomes input
 of next step. Each step is processed by a dedicated thread (putting multiple
 threads on a single step was tried and abandoned due to worse performance).
@@ -222,7 +222,8 @@ Currently, the query optimizer handles normal where clauses only: triple
 patterns and predicates. We will gradually extend the optimizer to consider
 more clause types in the future. In addition, only binary joins are
 considered at the moment, future work may consider joins on a hypergraph
-[8].
+[8]. Particularly, we will consider three-way joins that has the potential to
+solve the so called diamond problem [11].
 
 ## Benchmarks
 
@@ -302,3 +303,7 @@ estimation for RDF queries with multiple joins." ICDE. 2011.
 
 [10] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
+
+[11] Birler, Altan, Alfons Kemper, and Thomas Neumann. "Robust Join Processing
+with Diamond Hardened Joins." Proceedings of the VLDB Endowment 17.11 (2024):
+3215-3228.
