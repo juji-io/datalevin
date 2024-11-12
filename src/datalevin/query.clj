@@ -1697,10 +1697,7 @@
 (defn- enrich-cols
   [cols index attr]
   (let [pa (cols index)]
-    (replace {pa (if (set? pa)
-                   (conj pa attr)
-                   pa
-                   #_(into #{} [pa attr]))} cols)))
+    (replace {pa (if (set? pa) (conj pa attr) pa)} cols)))
 
 (defn- link-step
   [type last-step index attr tgt new-key]
@@ -1878,12 +1875,13 @@
           (let [pairs  (connected-pairs nodes component)
                 tables (FastList. n)
                 ratios (ConcurrentHashMap.)
-                n-1    (dec n)]
+                n-1    (dec n)
+                pn     ^long (u/n-permutations n (if (= n 2) 2 3))]
             (.add tables base-plans)
             (dotimes [i n-1]
-              (let [plans (plans
-                            db nodes pairs base-plans (.get tables i) ratios)]
-                (if (< ^long c/plan-space-reduction-threshold (count plans))
+              (let [plans (plans db nodes pairs base-plans (.get tables i)
+                                 ratios)]
+                (if (<= pn (count plans))
                   (.add tables (shrink-space plans))
                   (.add tables plans))))
             (trace-steps tables n-1)))))))

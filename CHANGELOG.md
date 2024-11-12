@@ -3,7 +3,10 @@
 ## WIP
 
 ### Improved
-- [Datalog] Push down nested predicates.
+- [Datalog] Push down nested predicates as well.
+- [Datalog] Remove `c/plan-space-reduction-threshold`, always use `P(n, 3)`
+  instead, as only initial 2 joins have accurate size estimation, so larger plan
+  space for later steps is not really beneficial. This change improves JOB.
 
 
 ## 0.9.13 (2024-11-09)

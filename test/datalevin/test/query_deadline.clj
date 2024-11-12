@@ -27,7 +27,7 @@
 
 (defn a-fun
   [t]
-  (Thread/sleep t)
+  (Thread/sleep ^long t)
   1)
 
 (deftest deadline-no-cache

@@ -573,3 +573,14 @@
                   :else   nil)]
         (.put ^LRUCache sample-cache [m n] res)
         res)))
+
+(defn factorial
+  [^long n]
+  {:pre [(integer? n) (not (neg? n))]}
+  (loop [acc 1 n n]
+    (if (zero? n) acc (recur (* acc n) (dec n)))))
+
+(defn n-permutations
+  [^long n ^long r]
+  {:pre [(<= r n)]}
+  (/ ^long (factorial n) ^long (factorial (- n r))))

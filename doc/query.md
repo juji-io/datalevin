@@ -197,12 +197,14 @@ effective, so we stick with sampling base and 2-way join selectivity only.
 ### Dynamic plan search policy (new)
 
 The plan search space initially include all possible join orders as our joins
-are directional.  When the number of plans considered reaches a user
-configurable threshold, the planner turns the search policy from an exhaustive
-search to a greedy one. The shrinkage of plan search space in the later stages
+are directional.  When the number of plans considered reaches `P(n, 3)`, the
+planner turns the search policy from an exhaustive search to a greedy one. The
+reason is that size estimation of only the initial two joins are absolutely
+accurate, so a planning space larger than that afterwards does not need to be
+exhaustive to be useful. The shrinkage of plan search space in the later stages
 of planning has relatively little impact on quality of the final plan, while
-results in significant savings in memory consumption and planning time for those
-complex queries that reach the threshold.
+results in significant savings in memory consumption and planning time for
+complex queries.
 
 ### Parallel processing
 

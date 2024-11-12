@@ -3274,14 +3274,14 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [s [0.8 0.9]
-          v [2.8 2.9]]
+  (doseq [s [1.1 1.2]
+          v [2.4 2.5 2.6]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
           (binding [c/magic-cost-fidx          1.3
                     c/magic-cost-var           v
-                    c/magic-cost-pred          1.8
+                    c/magic-cost-pred          1.4
                     c/magic-cost-merge-scan-v  s
                     c/magic-cost-val-eq-scan-e 1.3
                     q/*cache?*                 false]

@@ -364,7 +364,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding variable during scan"}
-  magic-cost-var 2.5)
+  magic-cost-var 2.4)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
