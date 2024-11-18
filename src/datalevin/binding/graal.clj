@@ -14,9 +14,8 @@
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
     Lib$MDB_stat Lib$MapFullException]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator]
+   [java.util Iterator HashMap]
    [java.nio BufferOverflowException]
    [clojure.lang IObj]
    [datalevin.lmdb RangeContext KVTxData]
@@ -480,7 +479,7 @@
     (put-tx dbi txn (l/->kv-tx-data t kt vt))))
 
 (defn- transact*
-  [txs ^UnifiedMap dbis txn]
+  [txs ^HashMap dbis txn]
   (doseq [t txs]
     (let [^KVTxData tx (l/->kv-tx-data t)
           dbi-name     (.-dbi-name tx)
@@ -562,7 +561,7 @@
 (deftype LMDB [^Env env
                info
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis
+               ^HashMap dbis
                ^BufVal kp-w
                ^BufVal vp-w
                ^BufVal start-kp-w
@@ -1150,7 +1149,7 @@
            lmdb     (->LMDB env
                             (volatile! info)
                             (ConcurrentLinkedQueue.)
-                            (UnifiedMap.)
+                            (HashMap.)
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create 0)
                             (BufVal/create c/+max-key-size+)

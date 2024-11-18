@@ -5,8 +5,8 @@
   (:import
    [java.util LinkedList]
    [java.nio ByteBuffer]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
+   [org.eclipse.collections.impl.map.mutable.primitive ObjectLongHashMap]
    [datalevin.utl LeftistHeap BitOps]))
 
 (defprotocol INode
@@ -309,7 +309,7 @@
                   -9223372036854775808)))
 
 (defn- create-entry
-  [tree ^UnifiedMap ks ^DecodeNode node entries i]
+  [tree ^ObjectLongHashMap ks ^DecodeNode node entries i]
   (let [decoded   (volatile! nil)
         n         (+ 4 (.-len node))
         to-decode (bit-or (bit-shift-left (.-prefix node) 4) ^long i)]
@@ -326,7 +326,7 @@
 (defn create-decode-tables
   [^bytes lens ^ints codes]
   (let [tree   (build-decode-tree lens codes)
-        ks     (UnifiedMap.)
+        ks     (ObjectLongHashMap.)
         tables (LongObjectHashMap.)]
     (letfn [(create-key [^DecodeNode node]
               (.put ks node (-> 0

@@ -12,13 +12,12 @@
    [datalevin.datom :as d]
    [clojure.string :as str])
   (:import
-   [java.util UUID List Random Comparator Collection]
+   [java.util UUID List Random Comparator Collection HashMap]
    [java.util.concurrent ScheduledExecutorService Executors TimeUnit Callable
     LinkedBlockingQueue]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongIntHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
@@ -628,7 +627,7 @@
           ;; [:g d [gt v]] or [:r d gt]
           ft-ds  (FastList.)
           txs    (FastList. (* 3 (count datoms)))
-          giants (UnifiedMap.)]
+          giants (HashMap.)]
       (locking (lmdb/write-txn lmdb)
         (doseq [datom datoms]
           (if (d/datom-added datom)
@@ -1143,7 +1142,7 @@
       (when-let [props (schema attr)]
         (let [vt   (value-type props)
               aid  (props :db/aid)
-              seen (UnifiedMap.)]
+              seen (HashMap.)]
           (loop [tuple (produce in)]
             (when tuple
               (let [v (aget ^objects tuple v-idx)]
@@ -1167,7 +1166,7 @@
         (let [vt   (value-type props)
               aid  (props :db/aid)
               out  (FastList.)
-              seen (UnifiedMap.)]
+              seen (HashMap.)]
           (dotimes [i (.size ^List in)]
             (let [tuple (.get ^List in i)
                   v     (aget ^objects tuple v-idx)]
@@ -1403,7 +1402,7 @@
            op])))
 
 (defn- insert-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
    ^IntLongHashMap counts ^IntObjectHashMap eids]
   (let [attr   (.-a d)
         schema (schema store)
@@ -1442,7 +1441,7 @@
                           (if giant? [:g [max-gt v]] [:a [e aid v]]))))))
 
 (defn- delete-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
    ^IntLongHashMap counts ^IntObjectHashMap eids]
   (let [e      (.-e d)
         attr   (.-a d)

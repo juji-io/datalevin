@@ -1,15 +1,15 @@
 package datalevin.utl;
 
-import org.eclipse.collections.impl.map.mutable.UnifiedMap;
+import java.util.HashMap;
 
 public abstract class LeftistHeap<T> {
 
     Node root;
-    UnifiedMap<T, Node> nodes;
+    HashMap<T, Node> nodes;
 
     public LeftistHeap() {
         root = null;
-        nodes = new UnifiedMap<T, Node>();
+        nodes = new HashMap<T, Node>();
     }
 
     class Node {

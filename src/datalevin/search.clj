@@ -15,10 +15,9 @@
    [datalevin.spill SpillableMap]
    [datalevin.lmdb IAdmin]
    [datalevin.utl LRUCache]
-   [java.util ArrayList Map$Entry Arrays]
+   [java.util ArrayList Map$Entry Arrays HashMap]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
     IntDoubleHashMap]
    [org.eclipse.collections.impl.set.mutable.primitive IntHashSet]
@@ -33,7 +32,7 @@
 
 (defn- collect-terms
   [result]
-  (let [terms (UnifiedMap.)]
+  (let [terms (HashMap.)]
     (doseq [[term position offset] result]
       (when (< (count term) c/+max-term-length+)
         (.put terms term
@@ -386,7 +385,7 @@
     (if include-text?
       (try
         (let [d    (l/dir lmdb)
-              coll (UnifiedMap.)]
+              coll (HashMap.)]
           (doseq [[doc-id doc-ref] docs
                   :let             [doc-text (get-rawtext this doc-id)]]
             (.put coll doc-ref doc-text))
@@ -625,7 +624,7 @@
         index-position? (.-index-position? engine)
         include-text?   (.-include-text? engine)
         result          ((.-analyzer engine) doc-text)
-        new-terms       ^UnifiedMap (collect-terms result)
+        new-terms       ^HashMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
@@ -854,12 +853,12 @@
                       index-position?
                       include-text?
                       ^FastList txs
-                      ^UnifiedMap hit-terms]
+                      ^HashMap hit-terms]
   IIndexWriter
   (write [_ doc-ref doc-text]
     (when-not (s/blank? doc-text)
       (let [result    (analyzer doc-text)
-            new-terms ^UnifiedMap (collect-terms result)
+            new-terms ^HashMap (collect-terms result)
             unique    (.size new-terms)
             doc-id    (.incrementAndGet ^AtomicInteger max-doc)
             term-set  (IntHashSet.)
@@ -938,7 +937,7 @@
                     index-position?
                     include-text?
                     (FastList.)
-                    (UnifiedMap.)))))
+                    (HashMap.)))))
 
 (comment
   (def lmdb (time (l/open-kv "search-bench/data/wiki-datalevin-all")))

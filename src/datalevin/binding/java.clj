@@ -17,9 +17,8 @@
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator UUID]
+   [java.util Iterator UUID HashMap]
    [java.nio ByteBuffer BufferOverflowException]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
@@ -476,7 +475,7 @@
     (put-tx dbi txn (l/->kv-tx-data t kt vt))))
 
 (defn- transact*
-  [txs ^UnifiedMap dbis txn]
+  [txs ^HashMap dbis txn]
   (doseq [t txs]
     (let [^KVTxData tx (l/->kv-tx-data t)
           dbi-name     (.-dbi-name tx)
@@ -549,7 +548,7 @@
 (deftype LMDB [^Env env
                info
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis
+               ^HashMap dbis
                ^ByteBuffer kb-w
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
@@ -1123,7 +1122,7 @@
            lmdb       (->LMDB env
                               (volatile! info)
                               (ConcurrentLinkedQueue.)
-                              (UnifiedMap.)
+                              (HashMap.)
                               (bf/allocate-buffer c/+max-key-size+)
                               (bf/allocate-buffer c/+max-key-size+)
                               (bf/allocate-buffer c/+max-key-size+)
