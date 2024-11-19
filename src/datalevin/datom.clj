@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.datom
+  "Datom object"
   (:require
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]

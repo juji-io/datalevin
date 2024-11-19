@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.pull-api
+  "API for pull syntax"
   (:require
    [datalevin.pull-parser :as dpp]
    [datalevin.db :as db]

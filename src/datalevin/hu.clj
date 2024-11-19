@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.hu
-  "Fast encoder and decoder for Hu-Tucker codes. Used for keys."
+  "Fast encoder and decoder for Hu-Tucker codes. Used for key compression."
   (:require
    [datalevin.util :as u])
   (:import

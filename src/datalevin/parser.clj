@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.parser
+  "Datalog parser"
   (:refer-clojure :exclude [distinct?])
   (:require
    [clojure.set :as set]

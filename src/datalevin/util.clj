@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.util
+  "Utility functions"
   (:refer-clojure :exclude [seqable? merge-with])
   (:require
    [clojure.walk :as walk]

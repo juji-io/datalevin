@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.db
+  "Datalog DB abstraction"
   (:refer-clojure :exclude [update assoc])
   (:require
    [clojure.walk]

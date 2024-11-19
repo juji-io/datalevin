@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.relation
+  "Functions for relational algebra"
   (:require
    [clojure.pprint :as pp]
    [datalevin.parser :as dp]

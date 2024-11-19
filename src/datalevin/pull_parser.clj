@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.pull-parser
+  "Parser for pull syntax"
   (:require
    [datalevin.built-ins :as built-ins]
    [datalevin.db :as db]

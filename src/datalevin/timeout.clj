@@ -1,4 +1,5 @@
-(ns ^:no-doc datalevin.timeout)
+(ns ^:no-doc datalevin.timeout
+  "Timeout for Datalog query processing")
 
 (def ^:dynamic *deadline*
   "When non nil, query pr pull will throw if its not done before *deadline*

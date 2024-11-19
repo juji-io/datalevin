@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.analyzer
-  "See `datalevin.search-utils` for public API"
+  "Analyzers for fulltext search. See `datalevin.search-utils` for public API"
   (:require
    [clojure.string :as str]
    [datalevin.stem :as s]

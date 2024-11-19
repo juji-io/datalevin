@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.entity
+  "Entity object"
   (:refer-clojure :exclude [keys get])
   (:require
    [clojure.core :as c]

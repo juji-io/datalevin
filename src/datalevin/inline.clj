@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.inline
+  "Inlined versions of common functions"
   (:refer-clojure :exclude [assoc update]))
 
 (defn assoc
