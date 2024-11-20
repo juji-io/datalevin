@@ -7,7 +7,7 @@
 - [Datalog] Remove `c/plan-space-reduction-threshold`, always use `P(n, 3)`
   instead, as only initial 2 joins have accurate size estimation, so larger plan
   space for later steps is not really beneficial. This change improves JOB.
-- [Datalog] Choose appropriate hashmap implementations to gain a little speed up.
+- [Datalog] A number of small optimizations to improve query speed about 10%.
 
 
 ## 0.9.13 (2024-11-09)
