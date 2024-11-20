@@ -122,14 +122,13 @@
   ([] (doto (FastList.) (.add (object-array []))))
   ([tuples] tuples)
   ([tuples1 tuples2]
-   (reduce
-     (fn [acc t1]
-       (reduce (fn [^FastList acc t2]
-                 (.add acc (join-tuples t1 t2))
-                 acc)
-               acc tuples2))
-     (FastList. (* (.size ^List tuples1) (.size ^List tuples2)))
-     tuples1)))
+   (let [l1  (.size ^List tuples1)
+         l2  (.size ^List tuples2)
+         acc (FastList. (* l1 l2))]
+     (dotimes [i l1]
+       (dotimes [j l2]
+         (.add acc (join-tuples (.get ^List tuples1 i) (.get ^List tuples2 j)))))
+     acc)))
 
 (defn prod-rel
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))

@@ -17,7 +17,6 @@
     LinkedBlockingQueue]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongIntHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
@@ -702,8 +701,8 @@
                                            [:closed-open [aid 0]
                                             [aid c/init-exec-size-threshold]]
                                            :int-int :id))]
-            (r/vertical-tuples
-              (sequence (comp (map peek) (remove #(= -1 %))) res)))
+            (r/vertical-tuples (sequence
+                                 (comp (map peek) (remove #(= -1 %))) res)))
           (let [as  (.a-size this a)
                 ts  (FastList.)
                 _   (sample-ave-tuples
@@ -894,7 +893,9 @@
   (eav-scan-v
     [_ in out eid-idx attrs-v]
     (let [attr->aid #((schema %) :db/aid)
-          aids      (mapv (comp attr->aid first) attrs-v)]
+          get-aid   (comp attr->aid first)
+          attrs-v   (sort-by get-aid attrs-v)
+          aids      (mapv get-aid attrs-v)]
       (when (and (seq aids) (not-any? nil? aids))
         (let [na      (count aids)
               maps    (mapv peek attrs-v)
@@ -1006,7 +1007,9 @@
 
   (eav-scan-v-list [_ in eid-idx attrs-v]
     (let [attr->aid #((schema %) :db/aid)
-          aids      (mapv (comp attr->aid first) attrs-v)]
+          get-aid   (comp attr->aid first)
+          attrs-v   (sort-by get-aid attrs-v)
+          aids      (mapv get-aid attrs-v)]
       (when (and (seq aids) (not-any? nil? aids))
         (let [na      (count aids)
               in      (sort-tuples-by-eid in eid-idx)
@@ -1149,15 +1152,15 @@
                 (if-let [ts (not-empty (.get seen v))]
                   (.addAll ^Collection out
                            (r/prod-tuples (r/single-tuples tuple) ts))
-                  (let [es (LongArrayList.)]
+                  (let [ts (FastList.)]
                     (lmdb/visit-list
                       lmdb c/ave
-                      (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
+                      (fn [kv] (.add ts (object-array
+                                          [(b/read-buffer (lmdb/v kv) :id)])))
                       (b/indexable nil aid v vt nil) :av)
-                    (let [ts (r/vertical-tuples (.toArray es))]
-                      (.put seen v ts)
-                      (.addAll ^Collection out
-                               (r/prod-tuples (r/single-tuples tuple) ts)))))
+                    (.put seen v ts)
+                    (.addAll ^Collection out
+                             (r/prod-tuples (r/single-tuples tuple) ts))))
                 (recur (produce in)))))))))
 
   (val-eq-scan-e-list [_ in v-idx attr]
@@ -1172,15 +1175,14 @@
                   v     (aget ^objects tuple v-idx)]
               (if-let [ts (not-empty (.get seen v))]
                 (.addAll out (r/prod-tuples (r/single-tuples tuple) ts))
-                (let [es (LongArrayList.)]
+                (let [ts (FastList.)]
                   (lmdb/visit-list
                     lmdb c/ave
-                    (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
+                    (fn [kv] (.add ts (object-array
+                                        [(b/read-buffer (lmdb/v kv) :id)])))
                     (b/indexable nil aid v vt nil) :av)
-                  (let [ts (r/vertical-tuples (.toArray es))]
-                    (.put seen v ts)
-                    (.addAll out (r/prod-tuples (r/single-tuples tuple)
-                                                ts)))))))
+                  (.put seen v ts)
+                  (.addAll out (r/prod-tuples (r/single-tuples tuple) ts))))))
           out))))
 
   (val-eq-scan-e-list [_ in v-idx attr bound]
@@ -1196,7 +1198,7 @@
               (lmdb/visit-list
                 lmdb c/ave (fn [kv]
                              (let [e (b/read-buffer (lmdb/v kv) :id)]
-                               (when (= ^long e ^long bound)
+                               (when (== ^long e ^long bound)
                                  (.add out (r/conj-tuple tuple e)))))
                 (b/indexable nil aid v vt nil) :av)))
           out))))
@@ -1213,7 +1215,7 @@
                 (lmdb/visit-list
                   lmdb c/ave (fn [kv]
                                (let [e (b/read-buffer (lmdb/v kv) :id)]
-                                 (when (= ^long e ^long old-e)
+                                 (when (== ^long e ^long old-e)
                                    (.add ^Collection out tuple))))
                   (b/indexable nil aid v vt nil) :av)
                 (recur (produce in)))))))))

@@ -1495,12 +1495,13 @@
                f         (assoc :fidx f :skip? true))])
         attrs preds fidxs))
 
+(defn- aid [db] #(((db/-schema db) %) :db/aid))
+
 (defn- init-steps
   [db e node single?]
   (let [{:keys [bound free mpath mcount]}            node
         {:keys [attr var val range pred] :as clause} (get-in node mpath)
 
-        aid     #(((db/-schema db) %) :db/aid)
         know-e? (int? e)
         no-var? (or (not var) (qu/placeholder? var))
         init    (cond-> (map->InitStep
@@ -1530,7 +1531,7 @@
                             (if (= k :bound) (u/vec-remove bound i) bound))
               all     (->> (concatv bound1
                                     (if (= k :free) (u/vec-remove free i) free))
-                           (sort-by (fn [{:keys [attr]}] (aid attr))))
+                           (sort-by (fn [{:keys [attr]}] ((aid db) attr))))
               attrs   (mapv :attr all)
               vars    (mapv attr-var all)
               skips   (cond-> (set (sequence
@@ -1578,7 +1579,7 @@
 (defn- n-items
   [attrs-v k]
   (reduce
-    (fn [^long c [_ m]] (if (k m) (inc c) c))
+    (fn [^long c [_ m]] (if (m k) (inc c) c))
     0 attrs-v))
 
 (defn- factor
@@ -1650,20 +1651,18 @@
         vars1    (:vars s1)
         a1       (:attr s1)
         v1       (when (< 1 (count vars1)) (peek vars1))
-        v1-init? (and v1 (find-index v1 ncols))
         ip       (cond-> (add-back-range v1 s1)
                    (some? val1) (add-pred #(= % val1)))
         attrs-v2 (:attrs-v s2)
         get-a    (fn [coll] (some #(when (keyword? %) %) coll))
-        aid      #(((db/-schema db) %) :db/aid)
         [attrs-v vars cols]
         (reduce
           (fn [[attrs-v vars cols] col]
-            (let [v (some #(when (symbol? %) %) col)
-                  a (get-a col)]
+            (let [v (some #(when (symbol? %) %) col)]
               (if (and ip (= v v1))
                 [attrs-v vars cols]
-                (let [p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
+                (let [a (get-a col)
+                      p (some #(when (= a (first %)) (:pred (peek %))) attrs-v2)]
                   (if-let [f (find-index v lcols)]
                     [(conj attrs-v [a {:pred p :skip? true :fidx f}]) vars cols]
                     [(conj attrs-v [a {:pred  p
@@ -1675,14 +1674,13 @@
                      (conj vars v) (conj cols col)])))))
           (if ip
             [[[a1 {:pred  ip
-                   :skip? (if v1-init? false true)
+                   :skip? (if (and v1 (find-index v1 ncols)) false true)
                    :fidx  nil}]]
              (if v1 [v1] [])
              (if v1 [#{a1 v1}] [])]
             [[] [] []])
           (rest ncols))
-        fcols    (into lcols (sort-by (comp aid get-a) cols))
-        attrs-v  (sort-by (comp aid first) attrs-v)]
+        fcols    (into lcols (sort-by (comp (aid db) get-a) cols))]
     (MergeScanStep. index attrs-v vars in out fcols nil nil)))
 
 (defn- index-by-link
