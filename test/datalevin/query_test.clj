@@ -1030,3 +1030,26 @@
            #{[1 2 3 10]}))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest issue-295-test
+  (let [dir    (u/tmp-dir (str "issue-295-" (UUID/randomUUID)))
+        schema {:release/artists {:db/valueType   :db.type/ref
+                                  :db/cardinality :db.cardinality/many}}
+        conn   (d/get-conn dir schema)
+        data   [{:db/id           -1
+                 :release/name    "foo"
+                 :release/artists [{:artist/name    "bar"
+                                    :artist/country :country/CA}]}]]
+    (d/transact! conn data)
+    (is (= (d/q '[:find ?release
+                  :where
+                  [?release :release/name]
+                  (or-join [?release]
+                           (and [?release :release/artists ?artist]
+                                [?artist :artist/name ?n]
+                                [(clojure.string/includes? ?n "bar")])
+                           [?release :release/year 1970])]
+                (d/db conn))
+           #{[1]}))
+    (d/close conn)
+    (u/delete-files dir)))

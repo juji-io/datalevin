@@ -94,7 +94,7 @@
 
      (cond
        (= attrs-a attrs-b)
-       (relation! attrs-a (if (vector? tuples-a)
+       (relation! attrs-a (if (sequential? tuples-a)
                             (into tuples-a tuples-b)
                             (do (.addAll ^List tuples-a tuples-b)
                                 tuples-a)))
