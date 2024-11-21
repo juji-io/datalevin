@@ -1596,11 +1596,11 @@
 
 (defn- estimate-base-cost
   [{:keys [mcount]} steps]
-  (let [{:keys [vars pred]} (first steps)
-        init-cost           (estimate-round
-                              (cond-> (* ^double c/magic-cost-init-scan-e
-                                         ^long mcount (count vars))
-                                pred (* ^double c/magic-cost-pred)))]
+  (let [{:keys [pred]} (first steps)
+        init-cost      (estimate-round
+                         (cond-> (* ^double c/magic-cost-init-scan-e
+                                    ^long mcount)
+                           pred (* ^double c/magic-cost-pred)))]
     (if (< 1 (count steps))
       (+ ^long init-cost ^long (estimate-scan-v-cost (peek steps) mcount))
       init-cost)))

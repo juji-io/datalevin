@@ -2,6 +2,14 @@
 
 ## WIP
 
+### Changed
+- [Datalog] `transact-async` function flushes data to disk in batch to increase write
+  throughput. The batch size is automatically adjusted according to load.
+  [#256](https://github.com/juji-io/datalevin/issues/256)
+
+### Fixed
+- [Datalog] Exception in or-join. [#295](https://github.com/juji-io/datalevin/issues/295)
+
 ### Improved
 - [Datalog] Push down nested predicates as well.
 - [Datalog] Remove `c/plan-space-reduction-threshold`, always use `P(n, 3)`
