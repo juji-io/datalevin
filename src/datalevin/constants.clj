@@ -380,7 +380,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
-  magic-cost-val-eq-scan-e 1.3)
+  magic-cost-val-eq-scan-e 1.4)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,

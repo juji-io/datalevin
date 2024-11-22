@@ -3274,8 +3274,8 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [s [1.0 1.4 2.0]
-          ;; v [1.2 1.3]
+  (doseq [s [1.1]
+          v [1.3 1.4]
           ]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
@@ -3283,12 +3283,12 @@
           (binding [c/magic-cost-fidx          1.3
                     c/magic-cost-var           2.4
                     c/magic-cost-pred          1.4
-                    c/magic-cost-merge-scan-v  1.1
-                    c/magic-cost-val-eq-scan-e 1.3
-                    c/magic-cost-init-scan-e   s
+                    c/magic-cost-merge-scan-v  s
+                    c/magic-cost-val-eq-scan-e v
+                    c/magic-cost-init-scan-e   1.0
                     q/*cache?*                 false]
             (d/q query db))))
-      (println "s" s ;; "v" v
+      (println "s" s  "v" v
                (format
                  "%.2f"
                  (double (/ (- (System/currentTimeMillis) start) 1000))))))
