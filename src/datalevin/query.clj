@@ -614,11 +614,31 @@
                  (invoke obj (into-array Object as))))]
     (when (not= res false) res)))
 
+(defn- opt-apply
+  [f args]
+  (if (u/array? args)
+    (let [args ^objects args
+          len  (alength args)]
+      (case len
+        0 (f)
+        1 (f (aget args 0))
+        2 (f (aget args 0) (aget args 1))
+        3 (f (aget args 0) (aget args 1) (aget args 2))
+        4 (f (aget args 0) (aget args 1) (aget args 2) (aget args 3))
+        5 (f (aget args 0) (aget args 1) (aget args 2) (aget args 3)
+             (aget args 4))
+        6 (f (aget args 0) (aget args 1) (aget args 2) (aget args 3)
+             (aget args 4) (aget args 5))
+        7 (f (aget args 0) (aget args 1) (aget args 2) (aget args 3)
+             (aget args 4) (aget args 5) (aget args 6))
+        (apply f args)))
+    (apply f args)))
+
 (defn- make-call
   [f]
   (if (dot-form f)
     (let [fname (subs (name f) 1)] #(dot-call fname %))
-    #(apply f %)))
+    #(opt-apply f %)))
 
 (defn- resolve-sym
   [sym]
@@ -1695,7 +1715,7 @@
 (defn- enrich-cols
   [cols index attr]
   (let [pa (cols index)]
-    (replace {pa (if (set? pa) (conj pa attr) pa)} cols)))
+    (mapv (fn [e] (if (and (= e pa) (set? e)) (conj e attr) e)) cols)))
 
 (defn- link-step
   [type last-step index attr tgt new-key]

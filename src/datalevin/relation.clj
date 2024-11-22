@@ -42,8 +42,7 @@
      (System/arraycopy t1 0 res 0 l1)
      (System/arraycopy t2 0 res l1 l2)
      res))
-  ([t1 ^objects idxs1
-    t2 ^objects idxs2]
+  ([t1 ^objects idxs1 t2 ^objects idxs2]
    (let [l1    (alength idxs1)
          l2    (alength idxs2)
          res   (object-array (+ l1 l2))

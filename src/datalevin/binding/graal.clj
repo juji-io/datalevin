@@ -500,7 +500,7 @@
         (.cons holder (b/read-buffer (.outBuf (.val cur)) vt)))
       holder)))
 
-(defn- visit-list*
+(defn visit-list*
   [^Rtx rtx ^Cursor cur visitor raw-pred? k kt vt]
   (let [kv (reify IKV
              (k [_] (.outBuf (.key cur)))

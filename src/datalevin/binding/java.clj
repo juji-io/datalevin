@@ -495,7 +495,7 @@
         (.seek cur SeekOp/MDB_NEXT_DUP))
       holder)))
 
-(defn- visit-list*
+(defn visit-list*
   [^Rtx rtx ^Cursor cur visitor raw-pred? k kt vt]
   (let [kv (reify IKV
              (k [_] (.key cur))
@@ -506,10 +506,11 @@
                        (when vt (b/read-buffer (l/v kv) vt))))]
     (.put-key rtx k kt)
     (when (.get cur (.-kb rtx) GetOp/MDB_SET)
-      (.seek cur SeekOp/MDB_FIRST_DUP)
-      (dotimes [_ (.count cur)]
-        (vs)
-        (.seek cur SeekOp/MDB_NEXT_DUP)))))
+      (let [n (.count cur)]
+        (.seek cur SeekOp/MDB_FIRST_DUP)
+        (dotimes [_ n]
+          (vs)
+          (.seek cur SeekOp/MDB_NEXT_DUP))))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]

@@ -89,8 +89,10 @@
 (defn serialize ^bytes
   [x]
   (binding [nippy/*freeze-serializable-allowlist*
-            (into nippy/*thaw-serializable-allowlist*
-                  c/*data-serializable-classes*)]
+            (if (seq c/*data-serializable-classes*)
+              (into nippy/*thaw-serializable-allowlist*
+                    c/*data-serializable-classes*)
+              nippy/*thaw-serializable-allowlist*)]
     (if (instance? java.lang.Class x)
       (u/raise "Unfreezable type: java.lang.Class" {})
       (nippy/fast-freeze x))))
@@ -99,8 +101,10 @@
   "Deserialize from bytes. "
   [^bytes bs]
   (binding [nippy/*thaw-serializable-allowlist*
-            (into nippy/*thaw-serializable-allowlist*
-                  c/*data-serializable-classes*)]
+            (if (seq c/*data-serializable-classes*)
+              (into nippy/*thaw-serializable-allowlist*
+                    c/*data-serializable-classes*)
+              nippy/*thaw-serializable-allowlist*)]
     (nippy/fast-thaw bs)))
 
 ;; bitmap
