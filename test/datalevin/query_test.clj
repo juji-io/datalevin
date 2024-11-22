@@ -1053,3 +1053,40 @@
            #{[1]}))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest issue-296-test
+  (let [dir    (u/tmp-dir (str "issue-296-" (UUID/randomUUID)))
+        schema {:question/answers {:db/cardinality :db.cardinality/many
+                                   :db/isComponent true
+                                   :db/valueType   :db.type/ref}
+                :question/title   {:db/cardinality :db.cardinality/one
+                                   :db/valueType   :db.type/string}
+                :answer/value     {:db/valueType   :db.type/string
+                                   :db/cardinality :db.cardinality/one}
+                :answer/category  {:db/valueType   :db.type/string
+                                   :db/cardinality :db.cardinality/one}}
+        conn   (d/get-conn dir schema)
+        data   [{:question/answers
+                 [{:answer/value    "1"
+                   :answer/category "strongly agree"}
+                  {:answer/value    "2"
+                   :answer/category "agree"}
+                  {:answer/value    "3"
+                   :answer/category "disagree"}
+                  {:answer/value    "4"
+                   :answer/category "strongly disagree"}]
+                 :question/title "Datalog is awesome"}]]
+    (d/transact! conn data)
+    (is (= (d/q '[:find ?t ?av ?ac
+                  :where
+                  [?e :question/title ?t]
+                  [?e :question/answers ?a]
+                  [?a :answer/value ?av]
+                  [?a :answer/category ?ac]]
+                (d/db conn))
+           #{["Datalog is awesome" "1" "strongly agree"]
+             ["Datalog is awesome" "3" "disagree"]
+             ["Datalog is awesome" "2" "agree"]
+             ["Datalog is awesome" "4" "strongly disagree"]}))
+    (d/close conn)
+    (u/delete-files dir)))
