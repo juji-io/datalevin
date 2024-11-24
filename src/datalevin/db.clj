@@ -591,6 +591,21 @@
                           datoms)]
     (s/load-datoms store batch)))
 
+(defn close-db [^DB db]
+  (let [store ^IStore (.-store db)]
+    (.remove ^ConcurrentHashMap caches (s/dir store))
+    (swap! dbs dissoc (s/db-name store))
+    (s/close store)
+    nil))
+
+(defn- quick-fill
+  [dir schema opts datoms]
+  (let [store (open-store dir schema
+                          (update-in opts [:kv-opts :flags] conj :nosync))]
+    (pour store datoms)
+    (l/sync (.-lmdb ^Store store))
+    (s/close store)))
+
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil nil))
   ([datoms dir] (init-db datoms dir nil nil))
@@ -601,22 +616,17 @@
      (raise "init-db expects list of Datoms, got " (type not-datom)
             {:error :init-db}))
    (validate-schema schema)
-   (let [store (open-store dir schema opts)]
-     (pour store datoms)
-     (new-db store))))
+   (quick-fill dir schema opts datoms)
+   (new-db (open-store dir schema opts))))
 
 (defn fill-db
   [db datoms]
-  (let [store (.-store ^DB db)]
-    (pour store datoms)
-    (new-db store)))
-
-(defn close-db [^DB db]
-  (let [store ^IStore (.-store db)]
-    (.remove ^ConcurrentHashMap caches (s/dir store))
-    (swap! dbs dissoc (s/db-name store))
-    (s/close store)
-    nil))
+  (let [store  (.-store ^DB db)
+        dir    (s/dir store)
+        schema (s/schema store)
+        opts   (s/opts store)]
+    (quick-fill dir schema opts datoms)
+    (new-db (open-store dir schema opts))))
 
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))

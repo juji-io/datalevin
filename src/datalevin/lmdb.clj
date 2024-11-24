@@ -557,9 +557,11 @@ values;")
       (dump db dumpfile)
       (clear db)
       (close-kv db)
-      (let [db (open-kv d opts)]
+      (let [db (open-kv d (update opts :flags conj :nosync))]
         (load db dumpfile)
-        db))
+        (sync db)
+        (close-kv db))
+      (open-kv d opts))
     (catch Exception e
       (u/raise "Unable to re-index" e {:dir (dir db)}))))
 

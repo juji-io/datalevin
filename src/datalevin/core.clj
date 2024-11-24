@@ -1880,9 +1880,8 @@ This function is eager and attempts to load all matching data in range into memo
              new-opts                     (merge old-opts opts)
              new-schema                   (merge old-schema schema)]
 
-         (db/init-db
-           (for [d datoms] (apply dd/datom d))
-           dir new-schema new-opts))
+         (db/init-db (for [d datoms] (apply dd/datom d))
+                     dir new-schema new-opts))
        (catch Exception e
          (u/raise "Error loading nippy file into Datalog DB: " e {})))
      (load-datalog dir in schema opts)))

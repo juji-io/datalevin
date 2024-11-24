@@ -517,6 +517,7 @@
        [:put "misc" 42 {:saying "So Long, and thanks for all the fish"
                         :source "The Hitchhiker's Guide to the Galaxy"}]])
     (let [lmdb1 (sut/re-index lmdb {})]
+      (sut/open-dbi lmdb1 "misc")
       (is (= [[42
                {:saying "So Long, and thanks for all the fish",
                 :source "The Hitchhiker's Guide to the Galaxy"}]
