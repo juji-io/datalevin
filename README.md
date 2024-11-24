@@ -127,6 +127,10 @@ Here is a simple code example using Datalevin:
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
 ;; However, attributes requiring special handling need to be defined in schema,
 ;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
+;; Similar to Datascript, Datalevin schemas differ from Datomic®: 
+;; - The schema must be a map of maps, not a vector of maps.
+;; - It is not `transact`ed into the db but passed when acquiring connections.
+;; - Use `update-schema` to update the schema of an open connection to a database.
 (def schema {:aka  {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
              ;; treated as EDN blobs, and may not be optimal for range queries
