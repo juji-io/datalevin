@@ -1110,7 +1110,7 @@ Only usable for debug output.
        (isRealized [_] true)))))
 
 (defn transact-async
-  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits. The flush to disk is batched, so the write throughput can be higher than [[transact!]]. The batch size is determined by load, the higher the load, the larger is the batch."
+  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
