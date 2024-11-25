@@ -559,7 +559,6 @@ values;")
       (close-kv db)
       (let [db (open-kv d (update opts :flags conj :nosync))]
         (load db dumpfile)
-        (sync db)
         (close-kv db))
       (open-kv d opts))
     (catch Exception e

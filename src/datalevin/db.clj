@@ -603,7 +603,6 @@
   (let [store (open-store dir schema
                           (update-in opts [:kv-opts :flags] conj :nosync))]
     (pour store datoms)
-    (l/sync (.-lmdb ^Store store))
     (s/close store)))
 
 (defn ^DB init-db
