@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.14 (2024-11-25)
 
 ### Added
 - [KV] `get-first-n` to return first `n` key-values in a key range.
