@@ -17,7 +17,7 @@ alt="bb compatible"></img></a>
 </p>
 <p align="center">
 <a href="https://github.com/juji-io/datalevin/actions"><img
-src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.14"
+src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg"
 alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img
 src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true"
@@ -127,7 +127,7 @@ Here is a simple code example using Datalevin:
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
 ;; However, attributes requiring special handling need to be defined in schema,
 ;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
-;; Similar to Datascript, Datalevin schemas differ from Datomic®: 
+;; Similar to Datascript, Datalevin schemas differ from Datomic®:
 ;; - The schema must be a map of maps, not a vector of maps.
 ;; - It is not `transact`ed into the db but passed when acquiring connections.
 ;; - Use `update-schema` to update the schema of an open connection to a database.
