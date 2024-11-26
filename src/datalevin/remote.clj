@@ -371,6 +371,17 @@
       client :get-first
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
 
+  (get-first-n [this dbi-name n k-range]
+    (.get-first-n this dbi-name n k-range :data :data false))
+  (get-first-n [this dbi-name n k-range k-type]
+    (.get-first-n this dbi-name n k-range k-type :data false))
+  (get-first-n [this dbi-name n k-range k-type v-type]
+    (.get-first-n this dbi-name n k-range k-type v-type false))
+  (get-first-n [_ dbi-name n k-range k-type v-type ignore-key?]
+    (cl/normal-request
+      client :get-first-n
+      [db-name dbi-name n k-range k-type v-type ignore-key?] writing?))
+
   (get-range [db dbi-name k-range]
     (l/get-range db dbi-name k-range :data :data false))
   (get-range [db dbi-name k-range k-type]
@@ -568,6 +579,10 @@
   (list-range-first [_ dbi-name k-range kt v-range vt]
     (cl/normal-request client :list-range-first
                        [db-name dbi-name k-range kt v-range vt] writing?))
+
+  (list-range-first-n [_ dbi-name n k-range kt v-range vt]
+    (cl/normal-request client :list-range-first-n
+                       [db-name dbi-name n k-range kt v-range vt] writing?))
 
   (list-range-filter [db list-name pred k-range k-type v-range v-type]
     (.list-range-filter db list-name pred k-range k-type v-range v-type true))

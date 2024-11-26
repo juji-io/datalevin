@@ -336,6 +336,11 @@
 
     (is (= ["a" 1]
            (pd/get-first lmdb "list" [:closed "a" "a"] :string :long)))
+    (is (= [["a" 1] ["a" 2]]
+           (pd/get-first-n lmdb "list" 2 [:closed "a" "c"] :string :long)))
+    (is (= [["a" 1] ["a" 2]]
+           (pd/list-range-first-n lmdb "list" 2 [:closed "a" "c"] :string
+                                  [:closed 1 5]:long)))
 
     (is (= [3 6 9]
            (pd/get-list lmdb "list" "c" :string :long)))

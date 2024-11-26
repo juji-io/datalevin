@@ -87,6 +87,11 @@
       (is (= "nice year"
              (l/get-value store "d" #inst "1969-01-01" :instant :string))))
 
+    (testing "get-first and get-first-n"
+      (is (= [1 2] (l/get-first store "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n store "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n store "a" 3 [:closed 1 10] :data))))
+
     (testing "delete"
       (l/transact-kv store [[:del "a" 1]
                             [:del "a" :non-exist]
@@ -128,8 +133,8 @@
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)
               pred (i/inter-fn [kv]
-                     (let [^long k (dc/read-buffer (dc/k kv) :long)]
-                       (< 10 k 20)))
+                               (let [^long k (dc/read-buffer (dc/k kv) :long)]
+                                 (< 10 k 20)))
               fks  (range 11 20)
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)
@@ -176,7 +181,11 @@
 
     (is (= ["a" 1]
            (l/get-first lmdb "l" [:closed "a" "a"] :string :long)))
-
+    (is (= [["a" 1] ["a" 2]]
+           (l/get-first-n lmdb "l" 2 [:closed "a" "c"] :string :long)))
+    (is (= [["a" 1] ["a" 2]]
+           (l/list-range-first-n lmdb "l" 2 [:closed "a" "c"] :string
+                                 [:closed 1 5] :long)))
     (is (= [3 6 9]
            (l/get-list lmdb "l" "c" :string :long)))
 

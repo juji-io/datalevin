@@ -1387,6 +1387,35 @@ See also: [[open-kv]], [[sync]]"}
               ;;==> true"}
   get-first l/get-first)
 
+(def ^{:arglists '([db dbi-name n k-range]
+                   [db dbi-name n k-range k-type]
+                   [db dbi-name n k-range k-type v-type]
+                   [db dbi-name n k-range k-type v-type ignore-key?])
+       :doc      "Return the first `n` kv pairs in the specified key range in the key-value store;
+
+     `n` is a positive natural number.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`
+     (default if `false`);
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     See also [[get-first]]
+
+     Examples:
+
+
+              (get-first-n lmdb \"c\" 2 [:all] :long :long)
+              ;;==> [[0 1] [2 9]]"}
+  get-first-n l/get-first-n)
+
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
@@ -1795,6 +1824,15 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
   list-range-first l/list-range-first)
+
+(def ^{:arglists '([db list-name n k-range k-type v-range v-type])
+       :doc      "Return the first n key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-first-n l/list-range-first-n)
 
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
                    [db list-name pred k-range k-type v-range v-type raw-pred?])

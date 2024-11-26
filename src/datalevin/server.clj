@@ -1119,6 +1119,7 @@
    'transact-kv
    'get-value
    'get-first
+   'get-first-n
    'key-range
    'key-range-count
    'key-range-list-count
@@ -1138,6 +1139,7 @@
    'list-range
    'list-range-count
    'list-range-first
+   'list-range-first-n
    'list-range-filter
    'list-range-some
    'list-range-keep
@@ -1956,6 +1958,10 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler get-first)))
 
+(defn- get-first-n
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler get-first-n)))
+
 (defn- get-range
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
@@ -2095,6 +2101,10 @@
 (defn- list-range-first
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler list-range-first)))
+
+(defn- list-range-first-n
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-range-first-n)))
 
 (defn- list-range-filter
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

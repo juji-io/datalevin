@@ -30,8 +30,10 @@
           txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
       (l/transact-kv lmdb txs)
       (is (= [0 1] (l/get-first lmdb "c" [:all] :long :long)))
+      (is (= [[0 1] [1 2]] (l/get-first-n lmdb "c" 2 [:all] :long :long)))
       (is (= [0 nil] (l/get-first lmdb "c" [:all] :long :ignore)))
       (is (= [999 1000] (l/get-first lmdb "c" [:all-back] :long :long)))
+      (is (= [[999 1000] [998 999]] (l/get-first-n lmdb "c" 2 [:all-back] :long :long)))
       (is (= [9 10] (l/get-first lmdb "c" [:at-least 9] :long :long)))
       (is (= [10 11] (l/get-first lmdb "c" [:greater-than 9] :long :long)))
       (is (= true (l/get-first lmdb "c" [:greater-than 9] :long :ignore true)))
@@ -556,6 +558,12 @@
     (is (= [5 30]
            (l/list-range-first lmdb "a" [:greater-than 3] :long
                                [:greater-than 20] :long)))
+    (is (= [[5 30]]
+           (l/list-range-first-n lmdb "a" 2 [:greater-than 3] :long
+                                 [:greater-than 20] :long)))
+    (is (= [[4 13][4 14]]
+           (l/list-range-first-n lmdb "a" 2 [:greater-than 3] :long
+                                 [:greater-than 10] :long)))
     (is (= [[2 2] [2 4]]
            (l/list-range-filter lmdb "a" pred [:closed 2 2] :long
                                 [:all] :long)))

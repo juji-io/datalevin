@@ -116,6 +116,11 @@
       (is (= "nice year"
              (l/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
 
+    (testing "get-first and get-first-n"
+      (is (= [1 2] (l/get-first lmdb "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
+
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]
                            [:del "a" :non-exist]
@@ -370,6 +375,12 @@
 
     (is (= ["a" 1]
            (l/get-first lmdb "list" [:closed "a" "a"] :string :long)))
+    (is (= [["a" 1] ["a" 2]]
+           (l/get-first-n lmdb "list" 2 [:closed "a" "c"] :string :long)))
+    (is (= [["a" 1] ["a" 2]]
+           (l/list-range-first-n lmdb "list" 2 [:closed "a" "c"] :string
+                                 [:closed 1 5] :long)))
+
 
     (is (= [3 6 9]
            (l/get-list lmdb "list" "c" :string :long)))
@@ -460,8 +471,8 @@
            (l/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
                               [:all] :string)))
     (is (= "nice"
-          (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
-                             [:all] :string)))
+           (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
+                              [:all] :string)))
 
     (is (= ["a" "abc"]
            (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))

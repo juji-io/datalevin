@@ -848,6 +848,15 @@
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
 
+  (get-first-n [this dbi-name n k-range]
+    (.get-first-n this dbi-name n k-range :data :data false))
+  (get-first-n [this dbi-name n k-range k-type]
+    (.get-first-n this dbi-name n k-range k-type :data false))
+  (get-first-n [this dbi-name n k-range k-type v-type]
+    (.get-first-n this dbi-name n k-range k-type v-type false))
+  (get-first-n [this dbi-name n k-range k-type v-type ignore-key?]
+    (scan/get-first-n this dbi-name n k-range k-type v-type ignore-key?))
+
   (get-range [this dbi-name k-range]
     (.get-range this dbi-name k-range :data :data false))
   (get-range [this dbi-name k-range k-type]
@@ -1031,6 +1040,9 @@
 
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))
+
+  (list-range-first-n [this dbi-name n k-range kt v-range vt]
+    (scan/list-range-first-n this dbi-name n k-range kt v-range vt))
 
   (list-range-filter [this dbi-name pred k-range kt v-range vt]
     (.list-range-filter this dbi-name pred k-range kt v-range vt true))

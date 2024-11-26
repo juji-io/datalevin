@@ -61,6 +61,27 @@
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
 
+(defn get-first-n
+  [lmdb dbi-name n k-range k-type v-type ignore-key?]
+  (scan
+    (let [iterable       (l/iterate-kv dbi rtx cur k-range k-type v-type)
+          ^Iterator iter (.iterator ^Iterable iterable)
+          ^SpillableVector holder
+          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+      (loop [i 0]
+        (if (and (< i ^long n) (.hasNext iter))
+          (let [kv (.next iter)
+                v  (when (not= v-type :ignore)
+                     (b/read-buffer (l/v kv) v-type))]
+            (.cons holder (if ignore-key?
+                            v
+                            [(b/read-buffer (l/k kv) k-type) v]))
+            (recur (inc i)))
+          holder)))
+    (raise "Fail to get-first-n: " e
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})))
+
 (defn get-range
   [lmdb dbi-name k-range k-type v-type ignore-key?]
   (scan
@@ -421,7 +442,25 @@
         (let [kv (.next iter)]
           [(b/read-buffer (l/k kv) k-type)
            (b/read-buffer (l/v kv) v-type)])))
-    (raise "Fail to get list range: " e
+    (raise "Fail to get first of list range: " e
+           {:dbi dbi-name :key-range k-range :val-range v-range})) )
+
+(defn list-range-first-n
+  [lmdb dbi-name n k-range k-type v-range v-type]
+  (scan
+    (let [^SpillableVector holder
+          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+          iterable       (l/iterate-list dbi rtx cur k-range k-type
+                                         v-range v-type)
+          ^Iterator iter (.iterator ^Iterable iterable)]
+      (loop [i 0]
+        (if (and (< i ^long n) (.hasNext iter))
+          (let [kv (.next iter)]
+            (.cons holder [(b/read-buffer (l/k kv) k-type)
+                           (b/read-buffer (l/v kv) v-type)])
+            (recur (inc i)))
+          holder)))
+    (raise "Fail to get first n of list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 
 (defn list-range-count

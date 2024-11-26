@@ -88,6 +88,10 @@
     [db list-name k-range k-type v-range v-type]
     "Return the first key-value pair in the specified value range of the
      specified key range")
+  (list-range-first-n
+    [db list-name n k-range k-type v-range v-type]
+    "Return the first n key-value pairs in the specified value range of the
+     specified key range")
   (list-range-count
     [db list-name k-range k-type v-range v-type]
     [db list-name k-range k-type v-range v-type cap]
@@ -192,6 +196,12 @@
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;")
+  (get-first-n
+    [db dbi-name n k-range]
+    [db dbi-name n k-range k-type]
+    [db dbi-name n k-range k-type v-type]
+    [db dbi-name n k-range k-type v-type ignore-key?]
+    "Return the first n kv pairs in the specified key range;")
   (range-seq
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

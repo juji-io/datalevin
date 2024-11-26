@@ -2,6 +2,11 @@
 
 ## WIP
 
+### Added
+- [KV] `get-first-n` to return first `n` key-values in a key range.
+- [KV] `list-range-first-n` to return first `n` key-values in a key-value range
+  of a list DBI. [#298](https://github.com/juji-io/datalevin/issues/298)
+
 ### Fixed
 - [Datalog] Exception in or-join. [#295](https://github.com/juji-io/datalevin/issues/295)
 

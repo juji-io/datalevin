@@ -404,6 +404,20 @@
    (when-let [d (get-kv db)]
      (d/get-first d dbi-name k-range k-type v-type ignore-key?))))
 
+(defn get-first-n
+  ([db dbi-name n k-range]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-first-n d dbi-name n k-range))))
+  ([db dbi-name n k-range k-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-first-n d dbi-name n k-range k-type))))
+  ([db dbi-name n k-range k-type v-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-first-n d dbi-name n k-range k-type v-type))))
+  ([db dbi-name n k-range k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-first-n d dbi-name n k-range k-type v-type ignore-key?)))))
+
 (defn get-range
   ([db dbi-name k-range]
    (when-let [d (get-kv db)]
@@ -609,6 +623,11 @@
   (when-let [d (get-kv db)]
     (d/list-range-first d dbi-name k-range kt v-range vt)))
 
+(defn list-range-first-n
+  [db dbi-name n k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (into [] (d/list-range-first-n d dbi-name n k-range kt v-range vt))))
+
 (defn list-range-filter
   ([db dbi-name pred k-range kt v-range vt]
    (when-let [d (get-kv db)]
@@ -760,6 +779,7 @@
    'transact-kv               transact-kv
    'get-value                 get-value
    'get-first                 get-first
+   'get-first-n               get-first-n
    'get-range                 get-range
    'key-range                 key-range
    'key-range-count           key-range-count
@@ -781,6 +801,7 @@
    'list-range                list-range
    'list-range-count          list-range-count
    'list-range-first          list-range-first
+   'list-range-first-n        list-range-first-n
    'list-range-filter         list-range-filter
    'list-range-keep           list-range-keep
    'list-range-some           list-range-some
