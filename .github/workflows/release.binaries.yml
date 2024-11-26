@@ -79,7 +79,7 @@ jobs:
       # END DEBUG
 
       - name: Upload Uberjar
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         # with:
         #   name: datalevin-standalone.jar
         #   path: target/*-standalone.jar
@@ -129,13 +129,13 @@ jobs:
       #     overwrite: true
 
       - name: Upload Binary as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
           path: native/dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
 
       # for Forked
-          
+
       - name: Upload Uberjar to Release
         uses: shogo82148/actions-upload-release-asset@v1
         if: github.event_name == 'release'
