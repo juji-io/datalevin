@@ -3,6 +3,7 @@
   (:refer-clojure :exclude [update assoc])
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
+   [datalevin.binding.cpp :refer [visit-list*]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.util :as u :refer [conjs]]
    [datalevin.relation :as r]
@@ -25,11 +26,11 @@
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
-(if (u/graal?)
-  (do (require 'datalevin.binding.graal)
-      (def visit-list* (resolve 'datalevin.binding.graal/visit-list*)))
-  (do (require 'datalevin.binding.java)
-      (def visit-list* (resolve 'datalevin.binding.java/visit-list*))))
+#_(if (u/graal?)
+    (do (require 'datalevin.binding.graal)
+        (def visit-list* (resolve 'datalevin.binding.graal/visit-list*)))
+    (do (require 'datalevin.binding.java)
+        (def visit-list* (resolve 'datalevin.binding.java/visit-list*))))
 
 (defn- attr->properties [k v]
   (case v

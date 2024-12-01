@@ -86,12 +86,13 @@
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.6\"}
+                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.10.2\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
-                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.9.1\"}
-                  org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu {:mvn/version \"0.9.1\"}
-                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.9.1\"}
-                  org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu {:mvn/version \"0.9.1\"}
-                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.9.1\"}
+                  ;; org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.9.1\"}
+                  ;; org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu {:mvn/version \"0.9.1\"}
+                  ;; org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.9.1\"}
+                  ;; org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu {:mvn/version \"0.9.1\"}
+                  ;; org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.9.1\"}
                   }}"
                   )
 
@@ -152,8 +153,8 @@
 
 (def default-versions
   [
-   ["latest" "datomic"]
-   ["latest" "datascript"]
+   ;;["latest" "datomic"]
+   ;;["latest" "datascript"]
    ["0.9.13" "datalevin"]
    ["latest" "datalevin"]
    ])

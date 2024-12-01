@@ -19,9 +19,9 @@
    [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
-(if (u/graal?)
-  (require 'datalevin.binding.graal)
-  (require 'datalevin.binding.java))
+#_(if (u/graal?)
+    (require 'datalevin.binding.graal)
+    (require 'datalevin.binding.java))
 
 (use-fixtures :each db-fixture)
 
@@ -293,19 +293,19 @@
         lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         sum     (volatile! 0)
         visitor (i/inter-fn
-                    [kv]
+                  [kv]
                   (let [^long v (b/read-buffer (l/v kv) :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))
         joins   (volatile! "")
         kvisit  (i/inter-fn
-                    [bf]
+                  [bf]
                   (let [k (b/read-buffer bf :string)]
                     (vswap! joins #(s/join " " [% k]))))
         values  (volatile! [])
         op-gen  (i/inter-fn
-                    [k kt]
+                  [k kt]
                   (i/inter-fn
-                      [^IListRandKeyValIterable iterable]
+                    [^IListRandKeyValIterable iterable]
                     (let [^IListRandKeyValIterator iter
                           (l/val-iterator iterable)]
                       (loop [next? (l/seek-key iter k kt)]
@@ -441,11 +441,11 @@
   (let [dir   (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         pred  (i/inter-fn [kv]
-                (let [^String v (b/read-buffer (l/v kv) :string)]
-                  (< (count v) 5)))
+                          (let [^String v (b/read-buffer (l/v kv) :string)]
+                            (< (count v) 5)))
         pred1 (i/inter-fn [kv]
-                (let [^String v (b/read-buffer (l/v kv) :string)]
-                  (when (< (count v) 5) v)))]
+                          (let [^String v (b/read-buffer (l/v kv) :string)]
+                            (when (< (count v) 5) v)))]
     (l/open-list-dbi lmdb "str")
     (is (l/list-dbi? lmdb "str"))
 

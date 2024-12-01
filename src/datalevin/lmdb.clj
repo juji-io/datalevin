@@ -291,7 +291,8 @@ values;")
     "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
 
-(defn- pick-binding [] (if (u/graal?) :graal :java))
+(defn- pick-binding [] :cpp
+  #_(if (u/graal?) :graal :java))
 
 (defmulti open-kv (constantly (pick-binding)))
 

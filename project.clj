@@ -21,15 +21,16 @@
    [org.clojure/clojure "1.12.0"]
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
-   [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-aarch64 "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-amd64-shared "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-macos-amd64-shared "0.9.8"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.10.2"]
+   ;; [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64 "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-amd64-shared "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared "0.9.8"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.9.8"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
    [org.graalvm.sdk/graal-sdk "22.3.1"]
@@ -39,12 +40,13 @@
    [org.roaringbitmap/RoaringBitmap "1.3.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
-   [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
-   [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared]
-   [org.clojars.huahaiy/dtlvnative-linux-aarch64]
-   [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]
-   [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64]
+   ;; [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]
+   ;; [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu]
    [com.github.jnr/jnr-ffi]
    [com.taoensso/nippy]
    [com.taoensso/timbre]
@@ -79,10 +81,11 @@
                     :source-paths      ["src" "test"]
                     :java-source-paths ["native/src/java"]
                     :jvm-opts
-                    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                     "--add-opens=java.base/java.lang=ALL-UNNAMED"
-                     "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
+                    [
+                     ;; "--add-opens=java.base/java.nio=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/java.lang=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
                      "-Djdk.attach.allowAttachSelf"]
                     :dependencies
                     [[org.clojure/test.check]

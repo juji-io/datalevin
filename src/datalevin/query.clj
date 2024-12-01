@@ -1643,6 +1643,7 @@
 
 ;; somehow graal has problem with pmap
 (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
+;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map map))
 
 (defn- update-nodes
   [db nodes]
@@ -2041,6 +2042,7 @@
   (let [steps (vec steps)
         n     (count steps)
         attrs (cols->attrs (:cols (peek steps)))]
+    ;; (println n "steps ->" steps)
     (condp = n
       1 (let [tuples (-execute (first steps) db nil)]
           (save-intermediates context steps nil tuples)

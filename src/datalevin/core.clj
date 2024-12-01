@@ -19,6 +19,7 @@
    [datalevin.query :as dq]
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
+   [datalevin.binding.cpp]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
@@ -30,9 +31,9 @@
     DataInputStream IOException]
    [java.util UUID]))
 
-(if (u/graal?)
-  (require 'datalevin.binding.graal)
-  (require 'datalevin.binding.java))
+#_(if (u/graal?)
+    (require 'datalevin.binding.graal)
+    (require 'datalevin.binding.java))
 
 ;; Entities
 
