@@ -89,7 +89,4 @@ public class Dbi {
         Util.checkRc(DTLV.mdb_del(txn.get(), get(), k.ptr(), vp));
     }
 
-    public int cmpBuf(Txn txn, BufVal a, BufVal b) {
-        return DTLV.mdb_cmp(txn.get(), ptr.get(), a.ptr(), b.ptr());
-    }
 }

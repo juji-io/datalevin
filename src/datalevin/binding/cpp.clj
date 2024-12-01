@@ -14,12 +14,18 @@
    [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
-   [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator HashMap]
+   [java.util Iterator HashMap ArrayDeque]
+   [java.util.function Supplier]
    [java.nio BufferOverflowException]
    [clojure.lang IObj]
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.spill SpillableVector]))
+
+(defn- new-pools
+  []
+  (ThreadLocal/withInitial
+    (reify Supplier
+      (get [_] (ArrayDeque.)))))
 
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
@@ -136,7 +142,7 @@
 (declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable)
 
 (deftype DBI [^Dbi db
-              ^ConcurrentLinkedQueue curs
+              ^ThreadLocal curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
               ^boolean dupsort?
@@ -206,12 +212,12 @@
       (let [^Rtx rtx rtx
             ^Txn txn (.-txn rtx)]
         (or (when (.isReadOnly txn)
-              (when-let [^Cursor cur (.poll curs)]
+              (when-let [^Cursor cur (.poll ^ArrayDeque (.get curs))]
                 (.renew cur txn)
                 cur))
             (Cursor/create txn db (.-kp rtx) (.-vp rtx))))))
   (close-cursor [_ cur] (.close ^Cursor cur))
-  (return-cursor [_ cur] (.add curs cur)))
+  (return-cursor [_ cur] (.add ^ArrayDeque (.get curs) cur)))
 
 (deftype KeyIterable [^DBI db
                       ^Cursor cur
@@ -226,16 +232,13 @@
           ^BufVal ek     (.-stop-bf ctx)
           started?       (volatile! false)
           ^BufVal k      (.key cur)
-          ^BufVal v      (.val cur)
-          ^Dbi db        (.-db db)
-          ^Txn txn       (.-txn rtx)
-          ]
+          ^BufVal v      (.val cur)]
       (letfn [(init []
                 (if sk
                   (if (.get cur sk DTLV/MDB_SET_RANGE)
                     (if include-start?
                       (continue?)
-                      (if (zero? (.cmpBuf db txn k sk))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (check DTLV/MDB_NEXT_NODUP)
                         (continue?)))
                     false)
@@ -244,7 +247,7 @@
                 (if sk
                   (if (.get cur sk DTLV/MDB_SET_RANGE)
                     (if include-start?
-                      (if (zero? (.cmpBuf db txn k sk))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (continue-back?)
                         (check-back DTLV/MDB_PREV_NODUP))
                       (check-back DTLV/MDB_PREV_NODUP))
@@ -252,14 +255,14 @@
                   (check-back DTLV/MDB_LAST)))
               (continue? []
                 (if ek
-                  (let [r (.cmpBuf db txn k ek)]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) false true)))
                   true))
               (continue-back? []
                 (if ek
-                  (let [r (.cmpBuf db txn k ek)]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) true false)))
@@ -299,16 +302,13 @@
           key-ended?         (volatile! false)
           started?           (volatile! false)
           k                  (.key cur)
-          v                  (.val cur)
-          ^Dbi db            (.-db db)
-          ^Txn txn           (.-txn rtx)
-          ]
+          v                  (.val cur)]
       (letfn [(init-key []
                 (if sk
                   (if (.get cur sk DTLV/MDB_SET_RANGE)
                     (if include-start-key?
                       (key-continue?)
-                      (if (zero? (.cmpBuf db txn k sk))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (check-key DTLV/MDB_NEXT_NODUP)
                         (key-continue?)))
                     false)
@@ -317,7 +317,7 @@
                 (if sk
                   (if (.get cur sk DTLV/MDB_SET_RANGE)
                     (if include-start-key?
-                      (if (zero? (.cmpBuf db txn k sk))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (key-continue-back?)
                         (check-key-back DTLV/MDB_PREV_NODUP))
                       (check-key-back DTLV/MDB_PREV_NODUP))
@@ -328,7 +328,7 @@
                   (if (.get cur k sv DTLV/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
-                      (if (zero? (.cmpBuf db txn v sv))
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
                         (check-val DTLV/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
@@ -337,7 +337,7 @@
                 (if sv
                   (if (.get cur k sv DTLV/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
-                      (if (zero? (.cmpBuf db txn v sv))
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
                         (val-continue-back?)
                         (check-val-back DTLV/MDB_PREV_DUP))
                       (check-val-back DTLV/MDB_PREV_DUP))
@@ -347,14 +347,14 @@
               (val-end [] (if @key-ended? false (advance-key)))
               (key-continue? []
                 (if ek
-                  (let [r (.cmpBuf db txn k ek)]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) (key-end) true)))
                   true))
               (key-continue-back? []
                 (if ek
-                  (let [r (.cmpBuf db txn k ek)]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) true (key-end))))
@@ -376,14 +376,14 @@
                     (advance-key)))
               (val-continue? []
                 (if ev
-                  (let [r (.cmpBuf db txn v ev)]
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) (val-end) true)))
                   true))
               (val-continue-back? []
                 (if ev
-                  (let [r (.cmpBuf db txn v ev)]
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev)) ]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) true (val-end))))
@@ -415,10 +415,7 @@
           include-stop-val?  (.-include-stop? ctx)
           ^BufVal sv         (.-start-bf ctx)
           ^BufVal ev         (.-stop-bf ctx)
-          v                  (.val cur)
-          ^Dbi db            (.-db db)
-          ^Txn txn           (.-txn rtx)
-          ]
+          v                  (.val cur)]
       (assert forward-val?
               "Backward iterate is not supported in ListRandKeyValIterable")
       (letfn [(init-val []
@@ -427,7 +424,7 @@
                             DTLV/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
-                      (if (zero? (.cmpBuf db txn v sv))
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
                         (check-val DTLV/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
@@ -436,7 +433,7 @@
                     false)))
               (val-continue? []
                 (if ev
-                  (let [r (.cmpBuf db txn v ev)]
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
                     (if (= r 0)
                       (if include-stop-val? true false)
                       (if (> r 0) false true)))
@@ -562,7 +559,8 @@
 
 (deftype CppLMDB [^Env env
                   info
-                  ^ConcurrentLinkedQueue pool
+                  ;; ^ConcurrentLinkedQueue pool
+                  ^ThreadLocal pools
                   ^HashMap dbis
                   ^BufVal kp-w
                   ^BufVal vp-w
@@ -581,7 +579,7 @@
 
   (mark-write [_]
     (->CppLMDB
-      env info pool dbis kp-w vp-w start-kp-w
+      env info pools dbis kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
@@ -591,14 +589,15 @@
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
-      (let [^Iterator iter (.iterator pool)]
+      (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
         (loop []
           (when (.hasNext iter)
             (.close-rtx ^Rtx (.next iter))
             (.remove iter)
             (recur))))
       (doseq [^DBI dbi (.values dbis)]
-        (let [^Iterator iter (.iterator ^ConcurrentLinkedQueue (.-curs dbi))]
+        (let [^Iterator iter (.iterator
+                               ^ArrayDeque (.get ^ThreadLocal (.-curs dbi)))]
           (loop []
             (when (.hasNext iter)
               (.close ^Cursor (.next iter))
@@ -643,7 +642,7 @@
               vp   (BufVal/create val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (ConcurrentLinkedQueue.) kp vp
+              db   (DBI. dbi (new-pools)#_(ConcurrentLinkedQueue.) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -702,28 +701,28 @@
 
   (get-rtx [this]
     (locking this
-      (try
-        (or (when-let [^Rtx rtx (.poll pool)]
-              (.renew rtx))
-            (Rtx. this
-                  (Txn/createReadOnly env)
-                  (BufVal/create c/+max-key-size+)
-                  (BufVal/create 0)
-                  (BufVal/create c/+max-key-size+)
-                  (BufVal/create c/+max-key-size+)
-                  (BufVal/create c/+max-key-size+)
-                  (BufVal/create c/+max-key-size+)
-                  (volatile! false)))
-        (catch Util$BadReaderLockException _
-          (raise
-            "Please do not open multiple LMDB connections to the same DB
+      (or (when-let [^Rtx rtx (.poll ^ArrayDeque (.get pools))]
+            (try
+              (.renew rtx)
+              (catch Util$BadReaderLockException _
+                (raise
+                  "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.core/open-kv` for more details." {})))))
+           `datalevin.core/open-kv` for more details." {}))))
+          (Rtx. this
+                (Txn/createReadOnly env)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create 0)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (volatile! false)))))
 
   (return-rtx [_ rtx]
     (.reset ^Rtx rtx)
-    (.add pool rtx))
+    (.add ^ArrayDeque (.get pools) rtx))
 
   (stat [this]
     (try
@@ -1162,7 +1161,8 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               (ConcurrentLinkedQueue.)
+                               ;; (ConcurrentLinkedQueue.)
+                               (new-pools)
                                (HashMap.)
                                (BufVal/create c/+max-key-size+)
                                (BufVal/create 0)
