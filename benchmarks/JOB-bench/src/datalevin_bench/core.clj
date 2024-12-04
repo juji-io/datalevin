@@ -3274,7 +3274,7 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [s [1.1]
+  (doseq [s [1.1 1.2]
           v [1.3 1.4 1.5]
           ]
     (let [start (System/currentTimeMillis)]

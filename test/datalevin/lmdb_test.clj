@@ -293,8 +293,8 @@
         lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         sum     (volatile! 0)
         visitor (i/inter-fn
-                  [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                  [vb]
+                  (let [^long v (b/read-buffer vb :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))
         joins   (volatile! "")
         kvisit  (i/inter-fn
@@ -418,7 +418,7 @@
 
     (is (= (l/list-count lmdb "list" "a" :string) 0))
     (is (not (l/in-list? lmdb "list" "a" 1 :string :long)))
-    (is (nil? (l/get-list lmdb "list" "a" :string :long)))
+    (is (empty? (l/get-list lmdb "list" "a" :string :long)))
 
     (l/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
 
@@ -490,7 +490,7 @@
 
     (is (= (l/list-count lmdb "str" "a" :string) 0))
     (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+    (is (empty? (l/get-list lmdb "str" "a" :string :string)))
 
     (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 

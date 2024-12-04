@@ -378,7 +378,7 @@
 
     (is (= (pd/list-count lmdb "list" "a" :string) 0))
     (is (not (pd/in-list? lmdb "list" "a" 1 :string :long)))
-    (is (nil? (pd/get-list lmdb "list" "a" :string :long)))
+    (is (empty? (pd/get-list lmdb "list" "a" :string :long)))
 
     (pd/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
 

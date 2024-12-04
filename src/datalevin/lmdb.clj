@@ -55,7 +55,12 @@
     "Return a IListRandKeyValIterable given the value range,
      which allows randomly seek key and iterate its values forwardly,
      applicable only to list dbi")
+  (iterate-list-val-full [this rtx cur]
+    "Return a IListRandKeyValIterable,
+     which allows randomly seek key and iterate all its values forwardly,
+     applicable only to list dbi")
   (get-cursor [this rtx] "Get a reusable read-only cursor")
+  (cursor-count [this cur] "get number of list items under the cursor")
   (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
 

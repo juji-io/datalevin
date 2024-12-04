@@ -2,7 +2,6 @@
   "Native binding using JavaCPP"
   (:require
    [datalevin.bits :as b]
-   [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
@@ -11,7 +10,8 @@
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
-    DTLV$dtlv_list_iter DTLV$dtlv_list_val_iter DTLV$MDB_val]
+    DTLV$dtlv_list_iter DTLV$dtlv_list_val_iter
+    DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [java.lang AutoCloseable]
@@ -19,8 +19,7 @@
    [java.util.function Supplier]
    [java.nio BufferOverflowException]
    [clojure.lang IObj]
-   [datalevin.lmdb RangeContext KVTxData]
-   [datalevin.spill SpillableVector]))
+   [datalevin.lmdb RangeContext KVTxData]))
 
 (defn- new-pools
   []
@@ -139,7 +138,8 @@
    :overflow-pages (.ms_overflow_pages ^DTLV$MDB_stat (.get stat))
    :entries        (.ms_entries ^DTLV$MDB_stat (.get stat))})
 
-(declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable)
+(declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable
+         ->ListFullValIterable)
 
 (deftype DBI [^Dbi db
               ^ThreadLocal curs
@@ -203,6 +203,8 @@
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
     (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
+  (iterate-list-val-full [this rtx cur]
+    (->ListFullValIterable this cur rtx))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -215,6 +217,7 @@
               (.renew cur txn)
               cur))
           (Cursor/create txn db (.-kp rtx) (.-vp rtx)))))
+  (cursor-count [_ cur] (.count ^Cursor cur))
   (close-cursor [_ cur] (.close ^Cursor cur))
   (return-cursor [_ cur] (.add ^ArrayDeque (.get curs) cur)))
 
@@ -320,6 +323,30 @@
         AutoCloseable
         (close [_] (DTLV/dtlv_list_val_iter_destroy iter))))))
 
+(deftype ListFullValIterable [^DBI db
+                              ^Cursor cur
+                              ^Rtx rtx]
+  IListRandKeyValIterable
+  (val-iterator [_]
+    (let [^BufVal k (.key cur)
+          ^BufVal v (.val cur)
+          iter      (DTLV$dtlv_list_val_full_iter.)]
+      (Util/checkRc
+        (DTLV/dtlv_list_val_full_iter_create
+          iter (.ptr cur) (.ptr k) (.ptr v)))
+      (reify
+        IListRandKeyValIterator
+        (seek-key [_ x t]
+          (l/put-key rtx x t)
+          (dtlv-rc
+            (DTLV/dtlv_list_val_full_iter_seek iter (.ptr ^BufVal (.-kp rtx)))))
+        (has-next-val [_]
+          (dtlv-rc (DTLV/dtlv_list_val_full_iter_has_next iter)))
+        (next-val [_] (.outBuf v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_list_val_full_iter_destroy iter))))))
+
 (defn- put-tx
   [^DBI dbi txn ^KVTxData tx]
   (case (.-op tx)
@@ -355,36 +382,6 @@
           ^DBI dbi     (or (.get dbis dbi-name)
                            (raise dbi-name " is not open" {}))]
       (put-tx dbi txn tx))))
-
-(defn- get-list*
-  [lmdb ^Rtx rtx ^Cursor cur k kt vt]
-  (.put-key rtx k kt)
-  (when (.get cur ^BufVal (.-kp rtx) DTLV/MDB_SET)
-    (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-      (.seek cur DTLV/MDB_FIRST_DUP)
-      (.cons holder (b/read-buffer (.outBuf (.val cur)) vt))
-      (dotimes [_ (dec (.count cur))]
-        (.seek cur DTLV/MDB_NEXT_DUP)
-        (.cons holder (b/read-buffer (.outBuf (.val cur)) vt)))
-      holder)))
-
-(defn visit-list*
-  [^Rtx rtx ^Cursor cur visitor raw-pred? k kt vt]
-  (let [kv (reify IKV
-             (k [_] (.outBuf (.key cur)))
-             (v [_] (.outBuf (.val cur))))
-        vs #(if raw-pred?
-              (visitor kv)
-              (visitor (b/read-buffer (l/k kv) kt)
-                       (when vt (b/read-buffer (l/v kv) vt))))]
-    (.put-key rtx k kt)
-    (when (.get cur ^BufVal (.-kp rtx) DTLV/MDB_SET)
-      (.seek cur DTLV/MDB_FIRST_DUP)
-      (vs)
-      (dotimes [_ (dec (.count cur))]
-        (.seek cur DTLV/MDB_NEXT_DUP)
-        (vs)))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
@@ -832,24 +829,14 @@
     (.transact-kv this [(l/kv-tx :del-list dbi-name k vs kt vt)]))
 
   (get-list [this dbi-name k kt vt]
-    (.check-ready this)
-    (when k
-      (let [lmdb this]
-        (scan/scan
-          (get-list* this rtx cur k kt vt)
-          (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
+    (scan/get-list this dbi-name k kt vt))
 
   (visit-list [this dbi-name visitor k kt]
     (.visit-list this dbi-name visitor k kt :data true))
   (visit-list [this dbi-name visitor k kt vt]
     (.visit-list this dbi-name visitor k kt vt true))
   (visit-list [this dbi-name visitor k kt vt raw-pred?]
-    (.check-ready this)
-    (when k
-      (let [lmdb this]
-        (scan/scan
-          (visit-list* rtx cur visitor raw-pred? k kt vt)
-          (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
+    (scan/visit-list this dbi-name visitor k kt vt raw-pred?))
 
   (list-count [this dbi-name k kt]
     (.check-ready this)

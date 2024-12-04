@@ -565,6 +565,7 @@
         d5      (d/datom 8 :a 2)
         d6      (d/datom 8 :a 1)
         d7      (d/datom 9 :b "AI")
+        d8      (d/datom 10 :b "AI")
         tuples0 [(object-array [1]) (object-array [2])]
         tuples1 [(object-array [:none "GPT"])
                  (object-array [:zero "AI"])]
@@ -578,7 +579,8 @@
                            {:flags (conj c/default-env-flags :nosync)}})
         in      (sut/tuple-pipe)
         out     (FastList.)]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7])
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8])
+
     (are [tuples veid-idx attr result]
         (do (.clear out)
             (sut/reset in)
@@ -594,7 +596,7 @@
       [[1 5] [1 8] [2 8]]
 
       tuples1 1 :b
-      [[:none "GPT" 0] [:zero "AI" 5] [:zero "AI" 9]]
+      [[:none "GPT" 0] [:zero "AI" 5] [:zero "AI" 9] [:zero "AI" 10]]
 
       tuples2 0 :a
       [[1 5] [1 8] [2 8][1 5] [1 8]]

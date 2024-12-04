@@ -582,15 +582,53 @@
           (if (<= ^long cap c)
             c
             (if (.hasNext ^Iterator iter)
-              (let [n (.count cur)]
+              (let [^long n (l/cursor-count dbi cur)]
                 (.next ^Iterator iter)
                 (recur (+ c n)))
               c)))
         (loop [c 0]
           (if (.hasNext ^Iterator iter)
-            (let [n (.count cur)]
+            (let [^long n (l/cursor-count dbi cur)]
               (.next ^Iterator iter)
               (recur (+ c n)))
             c))))
     (raise "Fail to count list in key range: " e
            {:dbi dbi-name :k-range k-range})))
+
+(defn visit-list*
+  [iter visitor k kt vt raw-pred?]
+  (loop [next? (l/seek-key iter k kt)]
+    (when next?
+      (let [vb (l/next-val iter)]
+        (if raw-pred?
+          (visitor vb)
+          (visitor (b/read-buffer vb vt))))
+      (recur (l/has-next-val iter)))))
+
+(defn visit-list
+  [lmdb dbi-name visitor k kt vt raw-pred?]
+  (when k
+    (scan
+      (with-open [^AutoCloseable iter
+                  (l/val-iterator (l/iterate-list-val-full dbi rtx cur))]
+        (visit-list* iter visitor k kt vt raw-pred?))
+      (raise "Fail to visit list: " e {:dbi dbi-name :k k}))))
+
+(defn get-list*
+  [lmdb iter k kt vt]
+  (let [^SpillableVector holder
+        (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+    (loop [next? (l/seek-key iter k kt)]
+      (when next?
+        (.cons holder (b/read-buffer (l/next-val iter) vt))
+        (recur (l/has-next-val iter))))
+    holder))
+
+(defn get-list
+  [lmdb dbi-name k kt vt]
+  (when k
+    (scan
+      (with-open [^AutoCloseable iter
+                  (l/val-iterator (l/iterate-list-val-full dbi rtx cur))]
+        (get-list* lmdb iter k kt vt))
+      (raise "Fail to get a list: " e {:dbi dbi-name :key k}))))
