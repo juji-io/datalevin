@@ -2,7 +2,6 @@
   "Native binding using JavaCPP"
   (:require
    [datalevin.bits :as b]
-   [datalevin.buffer :as bf]
    [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
@@ -11,9 +10,11 @@
     :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
-   [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat]
+   [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
+    DTLV$dtlv_list_iter DTLV$dtlv_list_val_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
+   [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException]
@@ -76,8 +77,7 @@
   (if (seq flags)
     (let [flag (Flag.)]
       (reduce (fn [r f] (bit-or ^int r ^int f))
-              0
-              (map #(value ^Flag flag %) flags)))
+              0 (map #(value ^Flag flag %) flags)))
     (int 0)))
 
 (defn- put-bufval
@@ -208,16 +208,25 @@
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
       (.iterate-key this rtx cur k-range k-type)))
   (get-cursor [_ rtx]
-    (locking rtx
-      (let [^Rtx rtx rtx
-            ^Txn txn (.-txn rtx)]
-        (or (when (.isReadOnly txn)
-              (when-let [^Cursor cur (.poll ^ArrayDeque (.get curs))]
-                (.renew cur txn)
-                cur))
-            (Cursor/create txn db (.-kp rtx) (.-vp rtx))))))
+    (let [^Rtx rtx rtx
+          ^Txn txn (.-txn rtx)]
+      (or (when (.isReadOnly txn)
+            (when-let [^Cursor cur (.poll ^ArrayDeque (.get curs))]
+              (.renew cur txn)
+              cur))
+          (Cursor/create txn db (.-kp rtx) (.-vp rtx)))))
   (close-cursor [_ cur] (.close ^Cursor cur))
   (return-cursor [_ cur] (.add ^ArrayDeque (.get curs) cur)))
+
+(defn- dtlv-bool [x] (if x DTLV/DTLV_TRUE DTLV/DTLV_FALSE))
+
+(defn- dtlv-val ^DTLV$MDB_val [x] (when x (.ptr ^BufVal x)))
+
+(defn- dtlv-rc [x]
+  (condp = x
+    DTLV/DTLV_TRUE  true
+    DTLV/DTLV_FALSE false
+    (u/raise "Native iterator returns error code" x {})))
 
 (deftype KeyIterable [^DBI db
                       ^Cursor cur
@@ -225,61 +234,26 @@
                       ^RangeContext ctx]
   Iterable
   (iterator [_]
-    (let [forward?       (.-forward? ctx)
-          include-start? (.-include-start? ctx)
-          include-stop?  (.-include-stop? ctx)
+    (let [forward?       (dtlv-bool (.-forward? ctx))
+          include-start? (dtlv-bool (.-include-start? ctx))
+          include-stop?  (dtlv-bool (.-include-stop? ctx))
           ^BufVal sk     (.-start-bf ctx)
           ^BufVal ek     (.-stop-bf ctx)
-          started?       (volatile! false)
           ^BufVal k      (.key cur)
-          ^BufVal v      (.val cur)]
-      (letfn [(init []
-                (if sk
-                  (if (.get cur sk DTLV/MDB_SET_RANGE)
-                    (if include-start?
-                      (continue?)
-                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
-                        (check DTLV/MDB_NEXT_NODUP)
-                        (continue?)))
-                    false)
-                  (check DTLV/MDB_FIRST)))
-              (init-back []
-                (if sk
-                  (if (.get cur sk DTLV/MDB_SET_RANGE)
-                    (if include-start?
-                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
-                        (continue-back?)
-                        (check-back DTLV/MDB_PREV_NODUP))
-                      (check-back DTLV/MDB_PREV_NODUP))
-                    (check-back DTLV/MDB_LAST))
-                  (check-back DTLV/MDB_LAST)))
-              (continue? []
-                (if ek
-                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
-                    (if (= r 0)
-                      include-stop?
-                      (if (> r 0) false true)))
-                  true))
-              (continue-back? []
-                (if ek
-                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
-                    (if (= r 0)
-                      include-stop?
-                      (if (> r 0) true false)))
-                  true))
-              (check [op] (if (.seek cur op) (continue?) false))
-              (check-back [op] (if (.seek cur op) (continue-back?) false))
-              (advance []
-                (if forward?
-                  (check DTLV/MDB_NEXT_NODUP)
-                  (check-back DTLV/MDB_PREV_NODUP)))
-              (init-k []
-                (vreset! started? true)
-                (if forward? (init) (init-back)))]
-        (reify
-          Iterator
-          (hasNext [_] (if @started? (advance) (init-k) ))
-          (next [_] (KV. k v)))))))
+          ^BufVal v      (.val cur)
+          iter           (DTLV$dtlv_key_iter.)]
+      (Util/checkRc
+        (DTLV/dtlv_key_iter_create
+          iter (.ptr cur) (.ptr k) (.ptr v)
+          ^int forward? ^int include-start? ^int include-stop?
+          (dtlv-val sk) (dtlv-val ek)))
+      (reify
+        Iterator
+        (hasNext [_] (dtlv-rc (DTLV/dtlv_key_iter_has_next iter)))
+        (next [_] (KV. k v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_key_iter_destroy iter))))))
 
 (deftype ListIterable [^DBI db
                        ^Cursor cur
@@ -289,120 +263,33 @@
   (iterator [_]
     (let [[^RangeContext kctx ^RangeContext vctx]
           ctx
-          forward-key?       (.-forward? kctx)
-          include-start-key? (.-include-start? kctx)
-          include-stop-key?  (.-include-stop? kctx)
+          forward-key?       (dtlv-bool (.-forward? kctx))
+          include-start-key? (dtlv-bool (.-include-start? kctx))
+          include-stop-key?  (dtlv-bool (.-include-stop? kctx))
           ^BufVal sk         (.-start-bf kctx)
           ^BufVal ek         (.-stop-bf kctx)
-          forward-val?       (.-forward? vctx)
-          include-start-val? (.-include-start? vctx)
-          include-stop-val?  (.-include-stop? vctx)
+          forward-val?       (dtlv-bool (.-forward? vctx))
+          include-start-val? (dtlv-bool (.-include-start? vctx))
+          include-stop-val?  (dtlv-bool (.-include-stop? vctx))
           ^BufVal sv         (.-start-bf vctx)
           ^BufVal ev         (.-stop-bf vctx)
-          key-ended?         (volatile! false)
-          started?           (volatile! false)
           k                  (.key cur)
-          v                  (.val cur)]
-      (letfn [(init-key []
-                (if sk
-                  (if (.get cur sk DTLV/MDB_SET_RANGE)
-                    (if include-start-key?
-                      (key-continue?)
-                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
-                        (check-key DTLV/MDB_NEXT_NODUP)
-                        (key-continue?)))
-                    false)
-                  (check-key DTLV/MDB_FIRST)))
-              (init-key-back []
-                (if sk
-                  (if (.get cur sk DTLV/MDB_SET_RANGE)
-                    (if include-start-key?
-                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
-                        (key-continue-back?)
-                        (check-key-back DTLV/MDB_PREV_NODUP))
-                      (check-key-back DTLV/MDB_PREV_NODUP))
-                    (check-key-back DTLV/MDB_LAST))
-                  (check-key-back DTLV/MDB_LAST)))
-              (init-val []
-                (if sv
-                  (if (.get cur k sv DTLV/MDB_GET_BOTH_RANGE)
-                    (if include-start-val?
-                      (val-continue?)
-                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
-                        (check-val DTLV/MDB_NEXT_DUP)
-                        (val-continue?)))
-                    false)
-                  (check-val DTLV/MDB_FIRST_DUP)))
-              (init-val-back []
-                (if sv
-                  (if (.get cur k sv DTLV/MDB_GET_BOTH_RANGE)
-                    (if include-start-val?
-                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
-                        (val-continue-back?)
-                        (check-val-back DTLV/MDB_PREV_DUP))
-                      (check-val-back DTLV/MDB_PREV_DUP))
-                    (check-val-back DTLV/MDB_LAST_DUP))
-                  (check-val-back DTLV/MDB_LAST_DUP)))
-              (key-end [] (vreset! key-ended? true) false)
-              (val-end [] (if @key-ended? false (advance-key)))
-              (key-continue? []
-                (if ek
-                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
-                    (if (= r 0)
-                      (do (vreset! key-ended? true) include-stop-key?)
-                      (if (> r 0) (key-end) true)))
-                  true))
-              (key-continue-back? []
-                (if ek
-                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
-                    (if (= r 0)
-                      (do (vreset! key-ended? true) include-stop-key?)
-                      (if (> r 0) true (key-end))))
-                  true))
-              (check-key [op]
-                (if (.seek cur op) (key-continue?) (key-end)))
-              (check-key-back [op]
-                (if (.seek cur op) (key-continue-back?) (key-end)))
-              (advance-key []
-                (or (and (if forward-key?
-                           (check-key DTLV/MDB_NEXT_NODUP)
-                           (check-key-back DTLV/MDB_PREV_NODUP))
-                         (if forward-val? (init-val) (init-val-back)))
-                    (if @key-ended? false (recur))))
-              (init-kv []
-                (vreset! started? true)
-                (or (and (if forward-key? (init-key) (init-key-back))
-                         (if forward-val? (init-val) (init-val-back)))
-                    (advance-key)))
-              (val-continue? []
-                (if ev
-                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
-                    (if (= r 0)
-                      (if include-stop-val? true (val-end))
-                      (if (> r 0) (val-end) true)))
-                  true))
-              (val-continue-back? []
-                (if ev
-                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev)) ]
-                    (if (= r 0)
-                      (if include-stop-val? true (val-end))
-                      (if (> r 0) true (val-end))))
-                  true))
-              (check-val [op]
-                (if (.seek cur op) (val-continue?) (val-end)))
-              (check-val-back [op]
-                (if (.seek cur op) (val-continue-back?) (val-end)))
-              (advance-val []
-                (check-val DTLV/MDB_NEXT_DUP))
-              (advance-val-back []
-                (check-val-back DTLV/MDB_PREV_DUP))]
-        (reify
-          Iterator
-          (hasNext [_]
-            (if @started?
-              (if forward-val? (advance-val) (advance-val-back))
-              (init-kv)))
-          (next [_] (KV. k v)))))))
+          v                  (.val cur)
+          iter               (DTLV$dtlv_list_iter.)]
+      (Util/checkRc
+        (DTLV/dtlv_list_iter_create
+          iter (.ptr cur) (.ptr k) (.ptr v)
+          ^int forward-key? ^int include-start-key? ^int include-stop-key?
+          (dtlv-val sk) (dtlv-val ek)
+          ^int forward-val? ^int include-start-val? ^int include-stop-val?
+          (dtlv-val sv) (dtlv-val ev)))
+      (reify
+        Iterator
+        (hasNext [_] (dtlv-rc (DTLV/dtlv_list_iter_has_next iter)))
+        (next [_] (KV. k v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_list_iter_destroy iter))))))
 
 (deftype ListRandKeyValIterable [^DBI db
                                  ^Cursor cur
@@ -410,45 +297,28 @@
                                  ^RangeContext ctx]
   IListRandKeyValIterable
   (val-iterator [_]
-    (let [forward-val?       (.-forward? ctx)
-          include-start-val? (.-include-start? ctx)
-          include-stop-val?  (.-include-stop? ctx)
+    (let [include-start-val? (dtlv-bool (.-include-start? ctx))
+          include-stop-val?  (dtlv-bool (.-include-stop? ctx))
           ^BufVal sv         (.-start-bf ctx)
           ^BufVal ev         (.-stop-bf ctx)
-          v                  (.val cur)]
-      (assert forward-val?
-              "Backward iterate is not supported in ListRandKeyValIterable")
-      (letfn [(init-val []
-                (if sv
-                  (if (.get cur (.-kp rtx) sv
-                            DTLV/MDB_GET_BOTH_RANGE)
-                    (if include-start-val?
-                      (val-continue?)
-                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
-                        (check-val DTLV/MDB_NEXT_DUP)
-                        (val-continue?)))
-                    false)
-                  (if (.get cur (.-kp rtx) DTLV/MDB_SET_RANGE)
-                    (check-val DTLV/MDB_FIRST_DUP)
-                    false)))
-              (val-continue? []
-                (if ev
-                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
-                    (if (= r 0)
-                      (if include-stop-val? true false)
-                      (if (> r 0) false true)))
-                  true))
-              (check-val [op]
-                (if (.seek cur op) (val-continue?) false))
-              (advance-val []
-                (check-val DTLV/MDB_NEXT_DUP))]
-        (reify
-          IListRandKeyValIterator
-          (seek-key [_ k kt]
-            (l/put-key rtx k kt)
-            (init-val))
-          (has-next-val [_] (advance-val))
-          (next-val [_] (.outBuf v)))))))
+          ^BufVal k          (.key cur)
+          ^BufVal v          (.val cur)
+          iter               (DTLV$dtlv_list_val_iter.)]
+      (Util/checkRc
+        (DTLV/dtlv_list_val_iter_create
+          iter (.ptr cur) (.ptr k) (.ptr v)
+          ^int include-start-val? ^int include-stop-val?
+          (dtlv-val sv) (dtlv-val ev)))
+      (reify
+        IListRandKeyValIterator
+        (seek-key [_ x t]
+          (l/put-key rtx x t)
+          (dtlv-rc (DTLV/dtlv_list_val_iter_seek iter (.ptr ^BufVal (.-kp rtx)))))
+        (has-next-val [_] (dtlv-rc (DTLV/dtlv_list_val_iter_has_next iter)))
+        (next-val [_] (.outBuf v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_list_val_iter_destroy iter))))))
 
 (defn- put-tx
   [^DBI dbi txn ^KVTxData tx]
@@ -523,26 +393,6 @@
     (.count cur)
     0))
 
-(defn- key-range-list-count*
-  [^DBI dbi ^Rtx rtx ^Cursor cur k-range k-type cap]
-  (let [^Iterable iterable (.iterate-key dbi rtx cur k-range k-type)
-        ^Iterator iter     (.iterator iterable)]
-    (if cap
-      (loop [c 0]
-        (if (<= ^long cap c)
-          c
-          (if (.hasNext iter)
-            (let [n (.count cur)]
-              (.next iter)
-              (recur (+ c n)))
-            c)))
-      (loop [c 0]
-        (if (.hasNext iter)
-          (let [n (.count cur)]
-            (.next iter)
-            (recur (+ c n)))
-          c)))))
-
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
   (l/list-range-info rtx :at-least k nil kt :at-least v nil vt)
@@ -559,7 +409,6 @@
 
 (deftype CppLMDB [^Env env
                   info
-                  ;; ^ConcurrentLinkedQueue pool
                   ^ThreadLocal pools
                   ^HashMap dbis
                   ^BufVal kp-w
@@ -700,25 +549,24 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
-    (locking this
-      (or (when-let [^Rtx rtx (.poll ^ArrayDeque (.get pools))]
-            (try
-              (.renew rtx)
-              (catch Util$BadReaderLockException _
-                (raise
-                  "Please do not open multiple LMDB connections to the same DB
+    (or (when-let [^Rtx rtx (.poll ^ArrayDeque (.get pools))]
+          (try
+            (.renew rtx)
+            (catch Util$BadReaderLockException _
+              (raise
+                "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.core/open-kv` for more details." {}))))
-          (Rtx. this
-                (Txn/createReadOnly env)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create 0)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (volatile! false)))))
+        (Rtx. this
+              (Txn/createReadOnly env)
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create 0)
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create c/+max-key-size+)
+              (volatile! false))))
 
   (return-rtx [_ rtx]
     (.reset ^Rtx rtx)
@@ -1012,15 +860,6 @@
           (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
 
-  (key-range-list-count [lmdb dbi-name k-range k-type]
-    (.key-range-list-count lmdb dbi-name k-range k-type nil))
-  (key-range-list-count [lmdb dbi-name k-range k-type cap]
-    (.check-ready lmdb)
-    (scan/scan
-      (key-range-list-count* dbi rtx cur k-range k-type cap)
-      (raise "Fail to count list in key range: " e
-             {:dbi dbi-name :k-range k-range})))
-
   (in-list? [this dbi-name k v kt vt]
     (.check-ready this)
     (if (and k v)
@@ -1030,6 +869,11 @@
           (raise "Fail to test if an item is in list: "
                  e {:dbi dbi-name :k k :v v})))
       false))
+
+  (key-range-list-count [lmdb dbi-name k-range k-type]
+    (.key-range-list-count lmdb dbi-name k-range k-type nil))
+  (key-range-list-count [lmdb dbi-name k-range k-type cap]
+    (scan/key-range-list-count lmdb dbi-name k-range k-type cap))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))

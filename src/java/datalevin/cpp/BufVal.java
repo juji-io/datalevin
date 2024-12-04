@@ -6,7 +6,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Wrap DTLV MDB_val to look like a ByteBuffer at the Java side
+ * Wrap a Java ByteBuffer to work as a MDB_val for data input/output to LMDB
  */
 public class BufVal {
 
@@ -45,8 +45,7 @@ public class BufVal {
      */
     public void clear() {
         inBuf.clear();
-        ptr.mv_data(data);
-        ptr.mv_size(size);
+        ptr.mv_size(inBuf.limit());
     }
 
     public long size() {
@@ -61,7 +60,8 @@ public class BufVal {
      * Return a ByteBuffer for getting data out of MDB_val
      */
     public ByteBuffer outBuf() {
-        ByteBuffer buf = ptr.mv_data().position(0).limit(ptr.mv_size()).asByteBuffer();
+        ByteBuffer buf
+            = ptr.mv_data().position(0).limit(ptr.mv_size()).asByteBuffer();
         buf.order(ByteOrder.BIG_ENDIAN);
         return buf;
     }

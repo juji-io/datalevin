@@ -129,7 +129,7 @@
 (defprotocol IListRandKeyValIterable
   (val-iterator [this]
     "Return an IListRandKeyValIterator that can seek random key and iterate
-     its values forwardly"))
+     its values forwardly. Use with `with-open`."))
 
 (defprotocol IListRandKeyValIterator
   (seek-key [this k-value k-type])
@@ -299,8 +299,8 @@ values;")
 (deftype RangeContext [^boolean forward?
                        ^boolean include-start?
                        ^boolean include-stop?
-                       ^ByteBuffer start-bf
-                       ^ByteBuffer stop-bf])
+                       start-bf
+                       stop-bf])
 
 (defn range-table
   "Provide context for range iterators"

@@ -38,7 +38,7 @@ public class Cursor {
     /**
      * Return the MDB_cursor pointer to be used in DTLV calls
      */
-    private DTLV.MDB_cursor ptr() {
+    public DTLV.MDB_cursor ptr() {
         return ptr;
     }
 
