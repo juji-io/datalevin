@@ -610,3 +610,5 @@ values;")
                  condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
+
+(defonce lmdb-dirs (atom #{}))

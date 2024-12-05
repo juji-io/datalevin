@@ -12,7 +12,7 @@
    [datalevin.relation :as r]
    [datalevin.storage :as s]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+ conjv concatv tuple-get]]
+   [datalevin.util :as u :refer [raise cond+ conjv concatv tuple-get map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -1642,7 +1642,7 @@
 (defn- writing? [db] (l/writing? (.-lmdb ^Store (.-store ^DB db))))
 
 ;; somehow graal has problem with pmap
-(def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
+;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
 ;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map map))
 
 (defn- update-nodes

@@ -15,6 +15,7 @@
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [java.lang AutoCloseable]
+   [java.util.concurrent Executors ExecutorService]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException]
@@ -433,7 +434,7 @@
   (meta [_] meta)
 
   ILMDB
-  (close-kv [_]
+  (close-kv [this]
     (when-not (.isClosed env)
       (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
         (loop []
@@ -452,6 +453,9 @@
         (.close ^Dbi (.-db dbi)))
       (.sync env)
       (.close env)
+      (swap! l/lmdb-dirs disj (l/dir this))
+      (when (zero? (count @l/lmdb-dirs))
+        (.shutdownNow ^ExecutorService @u/query-thread-pool))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
@@ -1004,6 +1008,11 @@
                                (volatile! nil)
                                false
                                nil)]
+       (when (.isShutdown ^ExecutorService @u/query-thread-pool)
+         (reset! u/query-thread-pool
+                 (Executors/newFixedThreadPool
+                   (.availableProcessors (Runtime/getRuntime)))))
+       (swap! l/lmdb-dirs conj dir)
        (l/open-dbi lmdb c/kv-info)
        (if temp?
          (u/delete-on-exit file)

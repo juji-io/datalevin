@@ -19,7 +19,8 @@
    [datalevin.query :as dq]
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
-   [datalevin.binding.cpp]
+   ;; [datalevin.binding.cpp]
+   [datalevin.binding.java]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]

@@ -11,6 +11,7 @@
     IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays Iterator]
+   [java.util.concurrent Executors ExecutorService Future]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -585,3 +586,17 @@
   [^long n ^long r]
   {:pre [(<= r n)]}
   (/ ^long (factorial n) ^long (factorial (- n r))))
+
+(defonce query-thread-pool
+  (atom (Executors/newFixedThreadPool
+          (.availableProcessors (Runtime/getRuntime)))))
+
+(defn map+
+  ([f coll]
+   (let [futs (.invokeAll ^ExecutorService @query-thread-pool
+                          (mapv (fn [e] #(f e)) coll))]
+     (mapv #(.get ^Future %) futs)))
+  ([f c1 c2]
+   (let [futs (.invokeAll ^ExecutorService @query-thread-pool
+                          (mapv (fn [e1 e2] #(f e1 e2)) c1 c2))]
+     (mapv #(.get ^Future %) futs))))
