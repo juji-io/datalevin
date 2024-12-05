@@ -1,5 +1,22 @@
 # Change Log
 
+## WIP
+
+### Added
+- [KV] `transanct-kv-async` function to return a future immediately and
+  transact in batches to enhance write throughput. Batch size is adaptive to the
+  write workload: the higher the load, the larger the batch (similar to Rama).
+  [#256](https://github.com/juji-io/datalevin/issues/256)
+- [Platform] Support for freebsd on amd64.
+
+### Improved
+- [Datalog] `transact-async` is changed to use the above adaptive batching
+  transaction mechanism.
+- [KV, Native] Consolidated LMDB binding to be only based on JavaCPP. Removed
+  both LMDBJava and Graalvm native image specific bindings, to reduce release
+  artifact sizes and maintenance workload.
+  [#35](https://github.com/juji-io/datalevin/issues/35).
+
 ## 0.9.14 (2024-11-25)
 
 ### Added

@@ -476,7 +476,7 @@
             (vreset! c 1)
             true))
         (has-next-val [_]
-          (when (< @c @n)
+          (when (< ^long @c ^long @n)
             (.seek cur SeekOp/MDB_NEXT_DUP)
             (vswap! c u/long-inc)
             true))

@@ -98,6 +98,7 @@
                      *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal" #"datalevin.ni"]
   :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
+             "-Xlint:all"
              "-Dclojure.compiler.direct-linking=true"]
   :javac-options ["-target" "1.8" "-source" "1.8"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
