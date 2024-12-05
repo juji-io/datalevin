@@ -16,6 +16,8 @@
   both LMDBJava and Graalvm native image specific bindings, to reduce release
   artifact sizes and maintenance workload.
   [#35](https://github.com/juji-io/datalevin/issues/35).
+- [KV] Pushed down all LMDB iterator and comparator implementations down to C.
+  [#279](https://github.com/juji-io/datalevin/issues/279).
 
 ## 0.9.14 (2024-11-25)
 
