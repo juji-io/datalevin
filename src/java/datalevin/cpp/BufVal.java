@@ -88,6 +88,24 @@ public class BufVal {
     }
 
     /**
+     * Reset MDB_val pointer back to internal ByteBuffer, and return it
+     * for putting data into MDB_val
+     */
+    public ByteBuffer inBuf() {
+        ptr.mv_data(data);
+        ptr.mv_size(size);
+        return inBuf;
+    }
+
+    /**
+     * Set MDB_val to that of the passed-in BufVal
+     */
+    public void in(final BufVal ib) {
+        ptr.mv_size(ib.size());
+        ptr.mv_data(ib.data());
+    }
+
+    /**
      * Set the limit of internal ByteBuffer to the current position, and update
      * the MDB_val size to be the same, so no unnecessary bytes are written
      */
@@ -103,6 +121,13 @@ public class BufVal {
     public void clear() {
         inBuf.clear();
         ptr.mv_size(inBuf.limit());
+    }
+
+    /**
+     * Return the MDB_val pointer to be used in DTLV calls
+     */
+    public DTLV.MDB_val ptr() {
+        return (DTLV.MDB_val)ptr;
     }
 
     public long size() {
@@ -133,31 +158,6 @@ public class BufVal {
             buf.order(ByteOrder.BIG_ENDIAN);
             return buf;
         }
-    }
-
-    /**
-     * Reset MDB_val pointer back to internal ByteBuffer, and return it
-     * for putting data into MDB_val
-     */
-    public ByteBuffer inBuf() {
-        ptr.mv_data(data);
-        ptr.mv_size(size);
-        return inBuf;
-    }
-
-    /**
-     * Set MDB_val to that of the passed-in BufVal
-     */
-    public void in(final BufVal ib) {
-        ptr.mv_size(ib.size());
-        ptr.mv_data(ib.data());
-    }
-
-    /**
-     * Return the MDB_val pointer to be used in DTLV calls
-     */
-    public DTLV.MDB_val ptr() {
-        return (DTLV.MDB_val)ptr;
     }
 
     /**
