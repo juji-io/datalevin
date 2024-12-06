@@ -9,7 +9,7 @@
   [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
-   [com.github.jnr/jnr-ffi "2.2.16"]
+   ;; [com.github.jnr/jnr-ffi "2.2.16"]
    [com.taoensso/nippy "3.4.2"]
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.13.0"]
@@ -31,26 +31,26 @@
    ;; [org.clojars.huahaiy/dtlvnative-linux-amd64-shared "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared "0.9.8"]
-   [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.9.8"]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.9.8"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
    ;; [org.graalvm.sdk/graal-sdk "22.3.1"]
    ;; [org.graalvm.nativeimage/svm "22.3.1"]
    ;; [org.graalvm.nativeimage/library-support "22.3.1"]
-   [org.lmdbjava/lmdbjava "0.9.0"]
+   ;; [org.lmdbjava/lmdbjava "0.9.0"]
    [org.roaringbitmap/RoaringBitmap "1.3.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64]
-   [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
+   ;; [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64]
    ;; [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu]
-   [com.github.jnr/jnr-ffi]
+   ;; [com.github.jnr/jnr-ffi]
    [com.taoensso/nippy]
    [com.taoensso/timbre]
-   [org.lmdbjava/lmdbjava]
+   ;; [org.lmdbjava/lmdbjava]
    [org.babashka/sci]
    [nrepl/bencode]
    [org.clojure/tools.cli]
@@ -84,8 +84,8 @@
                     [
                      "--add-opens=java.base/java.nio=ALL-UNNAMED"
                      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                     "--add-opens=java.base/java.lang=ALL-UNNAMED"
-                     "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/java.lang=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
                      "-Djdk.attach.allowAttachSelf"]
                     :dependencies
                     [[org.clojure/test.check]

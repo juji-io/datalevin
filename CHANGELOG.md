@@ -5,19 +5,27 @@
 ### Added
 - [KV] `transanct-kv-async` function to return a future immediately and
   transact in batches to enhance write throughput. Batch size is adaptive to the
-  write workload: the higher the load, the larger the batch (similar to Rama).
+  write workload: the higher the load, the larger the batch.
   [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Platform] Support for freebsd on amd64.
 
 ### Improved
-- [Datalog] `transact-async` is changed to use the above adaptive batching
-  transaction mechanism.
-- [KV, Native] Consolidated LMDB binding to be only based on JavaCPP. Removed
-  both LMDBJava and Graalvm native image specific bindings, to reduce release
-  artifact sizes and maintenance workload.
+- [Datalog] `transact-async` is changed to use the above adaptive batch
+  transaction mechanism to improve write throughout.
+- [KV] Consolidated LMDB bindings to a single binding based on JavaCPP.
+  Removed both LMDBJava and Graalvm native image specific bindings. This reduces
+  release artifact sizes and ease maintenance.
   [#35](https://github.com/juji-io/datalevin/issues/35).
-- [KV] Pushed down all LMDB iterator and comparator implementations down to C.
-  [#279](https://github.com/juji-io/datalevin/issues/279).
+- [KV] Pushed down all LMDB iterators and comparator implementation down to C
+  code. [#279](https://github.com/juji-io/datalevin/issues/279).
+- [KV] Adding `--add-opens` JVM options is optional. If these JVM options
+  are not set, Datalevin will choose the safe option to work with byte buffers,
+  instead of using the faster Unsafe mechanism. However, it is still
+  recommended to add these JVM options to get optimal performance.
+- [Native] Datalevin library jar can be directly included in applications
+  that want to be compiled into a GraalVM native image. There's no longer a need
+  for GraalVM specific Datalevin library version, nor any GraalVM version
+  restriction.
 
 ## 0.9.14 (2024-11-25)
 
@@ -37,7 +45,6 @@
   instead, as only initial 2 joins have accurate size estimation, so larger plan
   space for later steps is not really beneficial. This change improves JOB.
 - [Datalog] Many small code optimizations to improve query speed about 10%.
-
 
 ## 0.9.13 (2024-11-09)
 

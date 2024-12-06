@@ -20,9 +20,9 @@
     InputStreamReader])
   (:gen-class))
 
-(if (u/graal?)
-  (require 'datalevin.binding.graal)
-  (require 'datalevin.binding.java))
+;; (if (u/graal?)
+;;   (require 'datalevin.binding.graal)
+;;   (require 'datalevin.binding.java))
 
 (def ^:private version-str
   (str

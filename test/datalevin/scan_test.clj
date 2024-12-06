@@ -14,9 +14,9 @@
    [java.util UUID HashMap]
    [java.lang Long AutoCloseable]))
 
-(if (u/graal?)
-  (require 'datalevin.binding.graal)
-  (require 'datalevin.binding.java))
+;; (if (u/graal?)
+;;   (require 'datalevin.binding.graal)
+;;   (require 'datalevin.binding.java))
 
 (use-fixtures :each db-fixture)
 

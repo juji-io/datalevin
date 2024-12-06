@@ -2,13 +2,14 @@ package datalevin.cpp;
 
 import dtlvnative.DTLV;
 
+import static datalevin.cpp.UnsafeAccess.UNSAFE;
+import java.lang.reflect.Field;
+
 import org.bytedeco.javacpp.*;
+
 import java.nio.*;
 
 import static java.lang.Long.BYTES;
-
-import java.lang.reflect.Field;
-import static datalevin.cpp.UnsafeAccess.UNSAFE;
 
 /**
  * Wrap a Java ByteBuffer to work as a MDB_val for data input/output to LMDB
@@ -16,14 +17,19 @@ import static datalevin.cpp.UnsafeAccess.UNSAFE;
 @SuppressWarnings("removal")
 public class BufVal {
 
+    // for unsafe access
+
+    // MDB_val field offsets
     static final int STRUCT_FIELD_OFFSET_DATA = BYTES;
     static final int STRUCT_FIELD_OFFSET_SIZE = 0;
 
     static final String FIELD_NAME_ADDRESS = "address";
     static final String FIELD_NAME_CAPACITY = "capacity";
 
-    static final long ADDRESS_OFFSET;
-    static final long CAPACITY_OFFSET;
+    static long ADDRESS_OFFSET = 0;
+    static long CAPACITY_OFFSET = 0;
+
+    static boolean canAccessUnsafe = false;
 
     static Field findField(final Class<?> c, final String name) {
         Class<?> clazz = c;
@@ -36,19 +42,25 @@ public class BufVal {
                 clazz = clazz.getSuperclass();
             }
         } while (clazz != null);
-        throw new RuntimeException(name + " not found");
+        throw new RuntimeException("Field name: " + name + " not found");
     }
 
     static {
-      try {
-        final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
-        final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
-        ADDRESS_OFFSET = UNSAFE.objectFieldOffset(address);
-        CAPACITY_OFFSET = UNSAFE.objectFieldOffset(capacity);
-      } catch (final SecurityException e) {
-        throw new RuntimeException("Field access error", e);
-      }
+        if (UnsafeAccess.isAvailable()) {
+            try {
+                final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
+                final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
+                ADDRESS_OFFSET = UNSAFE.objectFieldOffset(address);
+                CAPACITY_OFFSET = UNSAFE.objectFieldOffset(capacity);
+                canAccessUnsafe = true;
+            } catch (final SecurityException e) {
+                // don't throw, as unsafe access is optional
+                canAccessUnsafe = false;
+            }
+        }
     }
+
+    // instance fields
 
     private long size;
 
@@ -101,20 +113,20 @@ public class BufVal {
         return ptr.mv_data();
     }
 
-    ByteBuffer out(final ByteBuffer buffer, final long ptrAddr) {
-      final long addr = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_DATA);
-      final long size = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_SIZE);
-      UNSAFE.putLong(buffer, ADDRESS_OFFSET, addr);
-      UNSAFE.putInt(buffer, CAPACITY_OFFSET, (int) size);
-      buffer.clear();
-      return buffer;
+    protected ByteBuffer unsafeOut(final ByteBuffer buffer, final long ptrAddr) {
+        final long addr = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_DATA);
+        final long size = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_SIZE);
+        UNSAFE.putLong(buffer, ADDRESS_OFFSET, addr);
+        UNSAFE.putInt(buffer, CAPACITY_OFFSET, (int) size);
+        buffer.clear();
+        return buffer;
     }
 
     /**
      * Return a ByteBuffer for getting data out of MDB_val
      */
     public ByteBuffer outBuf() {
-        if (UnsafeAccess.isAvailable()) return out(outBuf, ptr.address());
+        if (canAccessUnsafe) return unsafeOut(outBuf, ptr.address());
         else {
             ByteBuffer buf
                 = ptr.mv_data().position(0).limit(ptr.mv_size()).asByteBuffer();
@@ -136,7 +148,7 @@ public class BufVal {
     /**
      * Set MDB_val to that of the passed-in BufVal
      */
-    public void in(BufVal ib) {
+    public void in(final BufVal ib) {
         ptr.mv_size(ib.size());
         ptr.mv_data(ib.data());
     }
@@ -151,7 +163,7 @@ public class BufVal {
     /**
      * factory method to create an instance
      */
-    public static BufVal create(long size) {
+    public static BufVal create(final long size) {
         return new BufVal(size);
     }
 }

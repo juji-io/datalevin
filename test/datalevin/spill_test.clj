@@ -10,9 +10,9 @@
   (:import
    [datalevin.spill SpillableVector SpillableMap SpillableSet]))
 
-(if (u/graal?)
-  (require 'datalevin.binding.graal)
-  (require 'datalevin.binding.java))
+;; (if (u/graal?)
+;;   (require 'datalevin.binding.graal)
+;;   (require 'datalevin.binding.java))
 
 (deftest vec-before-spill-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
