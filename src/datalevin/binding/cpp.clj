@@ -18,7 +18,7 @@
    [java.util.concurrent Executors ExecutorService]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
-   [java.nio BufferOverflowException]
+   [java.nio BufferOverflowException ByteBuffer]
    [clojure.lang IObj]
    [datalevin.lmdb RangeContext KVTxData]))
 
@@ -27,6 +27,8 @@
   (ThreadLocal/withInitial
     (reify Supplier
       (get [_] (ArrayDeque.)))))
+
+(defn- new-bufval [size] (BufVal. size))
 
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
@@ -83,10 +85,11 @@
 (defn- put-bufval
   [^BufVal vp k kt]
   (when-some [x k]
-    (let [bf (.inBuf vp)]
-      (.clear vp)
+    (let [^ByteBuffer bf (.inBuf vp)]
+      (.clear bf)
       (b/put-buffer bf x kt)
-      (.flip vp))))
+      (.flip bf)
+      (.reset vp))))
 
 (deftype Rtx [lmdb
               ^Txn txn
@@ -172,7 +175,7 @@
         (put-bufval vp x t))
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
-          (set! vp (BufVal/create size))
+          (set! vp (new-bufval size))
           (put-bufval vp x t)))
       (catch Exception e
         (raise "Error putting r/w value buffer of "
@@ -488,11 +491,11 @@
                            :flags          flags
                            :dupsort?       dupsort?
                            :validate-data? validate-data?})
-              kp   (BufVal/create key-size)
-              vp   (BufVal/create val-size)
+              kp   (new-bufval key-size)
+              vp   (new-bufval val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools)#_(ConcurrentLinkedQueue.) kp vp
+              db   (DBI. dbi (new-pools) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -561,12 +564,12 @@
            `datalevin.core/open-kv` for more details." {}))))
         (Rtx. this
               (Txn/createReadOnly env)
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create 0)
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create c/+max-key-size+)
+              (new-bufval c/+max-key-size+)
+              (new-bufval 0)
+              (new-bufval c/+max-key-size+)
+              (new-bufval c/+max-key-size+)
+              (new-bufval c/+max-key-size+)
+              (new-bufval c/+max-key-size+)
               (volatile! false))))
 
   (return-rtx [_ rtx]
@@ -996,15 +999,14 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               ;; (ConcurrentLinkedQueue.)
                                (new-pools)
                                (HashMap.)
-                               (BufVal/create c/+max-key-size+)
-                               (BufVal/create 0)
-                               (BufVal/create c/+max-key-size+)
-                               (BufVal/create c/+max-key-size+)
-                               (BufVal/create c/+max-key-size+)
-                               (BufVal/create c/+max-key-size+)
+                               (new-bufval c/+max-key-size+)
+                               (new-bufval 0)
+                               (new-bufval c/+max-key-size+)
+                               (new-bufval c/+max-key-size+)
+                               (new-bufval c/+max-key-size+)
+                               (new-bufval c/+max-key-size+)
                                (volatile! nil)
                                false
                                nil)]

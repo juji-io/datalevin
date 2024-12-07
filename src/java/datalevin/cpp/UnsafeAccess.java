@@ -1,23 +1,30 @@
 package datalevin.cpp;
 
 import java.lang.reflect.Field;
-
 import sun.misc.Unsafe;
+import java.nio.Buffer;
 
-@SuppressWarnings("sunapi")
+@SuppressWarnings("removal")
 final class UnsafeAccess {
 
     static Unsafe UNSAFE = null;
 
     static boolean available = false;
 
-    private static final String FIELD_NAME_THE_UNSAFE = "theUnsafe";
-
     static {
         try {
-            final Field field = Unsafe.class.getDeclaredField(FIELD_NAME_THE_UNSAFE);
-            field.setAccessible(true);
-            UNSAFE = (Unsafe) field.get(null);
+            final Field u = Unsafe.class.getDeclaredField("theUnsafe");
+            u.setAccessible(true);
+            UNSAFE = (Unsafe) u.get(null);
+
+            final Field c = Buffer.class.getDeclaredField("capacity");
+            c.setAccessible(true);
+            UNSAFE.objectFieldOffset(c);
+
+            final Field a = Buffer.class.getDeclaredField("address");
+            a.setAccessible(true);
+            UNSAFE.objectFieldOffset(a);
+
             available = true;
         } catch (final NoSuchFieldException | SecurityException
                 | IllegalArgumentException | IllegalAccessException e) {

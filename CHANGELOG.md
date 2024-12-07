@@ -10,22 +10,23 @@
 - [Platform] Support for freebsd on amd64.
 
 ### Improved
-- [Datalog] `transact-async` is changed to use the above adaptive batch
-  transaction mechanism to improve write throughout.
+- [Datalog] Both `transact` and `transact-async` are changed to use the above
+  adaptive batch transaction mechanism to improve write throughout, whereas
+  `transact!` remains the same.
 - [KV] Consolidated LMDB bindings to a single binding based on JavaCPP.
   Removed both LMDBJava and Graalvm native image specific bindings. This reduces
-  release artifact sizes and ease maintenance.
+  release artifact sizes, eases maintenance and enhances performance.
   [#35](https://github.com/juji-io/datalevin/issues/35).
-- [KV] Pushed down all LMDB iterators and comparator implementation down to C
-  code. [#279](https://github.com/juji-io/datalevin/issues/279).
-- [KV] Adding `--add-opens` JVM options is optional. If these JVM options
-  are not set, Datalevin will choose the safe option to work with byte buffers,
-  instead of using the faster Unsafe mechanism. However, it is still
-  recommended to add these JVM options to get optimal performance.
-- [Native] Datalevin library jar can be directly included in applications
-  that want to be compiled into a GraalVM native image. There's no longer a need
-  for GraalVM specific Datalevin library version, nor any GraalVM version
-  restriction.
+- [KV] Pushed down all LMDB iterators, comparator and counters implementation
+  down to C code. [#279](https://github.com/juji-io/datalevin/issues/279).
+- [KV] Adding `--add-opens` JVM options is now optional. If these JVM options
+  are not set, Datalevin will use a slower default option instead of throwing
+  exceptions. However, it is still recommended to add these JVM options to get
+  optimal performance.
+- [Native] Datalevin library jar can now be directly used to compile GraalVM
+  native image. There's no longer a need for GraalVM specific Datalevin library,
+  nor any GraalVM version restriction.
+- [Native] Upgrade to the latest version of GraalVM native image.
 
 ## 0.9.14 (2024-11-25)
 

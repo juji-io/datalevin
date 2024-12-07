@@ -12,12 +12,13 @@ import java.nio.*;
 import static java.lang.Long.BYTES;
 
 /**
- * Wrap a Java ByteBuffer to work as a MDB_val for data input/output to LMDB
+ * Provide a Java ByteBuffer view for a LMDB MDB_val struct.
+ * This is the primary method of getting data in/out of LMDB.
  */
 @SuppressWarnings("removal")
 public class BufVal {
 
-    // for unsafe access
+    static final boolean canAccessUnsafe = UnsafeAccess.isAvailable();
 
     // MDB_val field offsets
     static final int STRUCT_FIELD_OFFSET_DATA = BYTES;
@@ -28,8 +29,6 @@ public class BufVal {
 
     static long ADDRESS_OFFSET = 0;
     static long CAPACITY_OFFSET = 0;
-
-    static boolean canAccessUnsafe = false;
 
     static Field findField(final Class<?> c, final String name) {
         Class<?> clazz = c;
@@ -46,72 +45,38 @@ public class BufVal {
     }
 
     static {
-        if (UnsafeAccess.isAvailable()) {
-            try {
-                final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
-                final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
-                ADDRESS_OFFSET = UNSAFE.objectFieldOffset(address);
-                CAPACITY_OFFSET = UNSAFE.objectFieldOffset(capacity);
-                canAccessUnsafe = true;
-            } catch (final SecurityException e) {
-                // don't throw, as unsafe access is optional
-                canAccessUnsafe = false;
-            }
+        try {
+            final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
+            final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
+            ADDRESS_OFFSET = UNSAFE.objectFieldOffset(address);
+            CAPACITY_OFFSET = UNSAFE.objectFieldOffset(capacity);
+        } catch (final SecurityException e) {
+            // don't throw, as unsafe access is optional
         }
     }
 
-    // instance fields
-
-    private long size;
+    private Pointer data;
 
     private ByteBuffer inBuf;
+
+    private long inAddr;
+
     private ByteBuffer outBuf;
 
-    private Pointer data;
     private DTLV.MDB_val ptr;
 
     public BufVal(long size) {
 
-        this.size = size;
-
         inBuf = ByteBuffer.allocateDirect((int) size);
         inBuf.order(ByteOrder.BIG_ENDIAN);
+        data = new Pointer(inBuf);
+        inAddr = data.address();
 
         outBuf = ByteBuffer.allocateDirect((int) 0);
         outBuf.order(ByteOrder.BIG_ENDIAN);
 
-        data = new Pointer(inBuf);
-
         ptr = new DTLV.MDB_val();
-        ptr.mv_size(size);
-        ptr.mv_data(data);
-    }
-
-    /**
-     * Reset MDB_val pointer back to internal ByteBuffer, and return it
-     * for putting data into MDB_val
-     */
-    public ByteBuffer inBuf() {
-        ptr.mv_data(data);
-        ptr.mv_size(size);
-        return inBuf;
-    }
-
-    /**
-     * Set MDB_val to that of the passed-in BufVal
-     */
-    public void in(final BufVal ib) {
-        ptr.mv_size(ib.size());
-        ptr.mv_data(ib.data());
-    }
-
-    /**
-     * Set the limit of internal ByteBuffer to the current position, and update
-     * the MDB_val size to be the same, so no unnecessary bytes are written
-     */
-    public void flip() {
-        inBuf.flip();
-        ptr.mv_size(inBuf.limit());
+        reset();
     }
 
     /**
@@ -120,22 +85,27 @@ public class BufVal {
      */
     public void clear() {
         inBuf.clear();
-        ptr.mv_size(inBuf.limit());
+        if (canAccessUnsafe)
+            UNSAFE.putInt(ptr, CAPACITY_OFFSET, (int)inBuf.limit());
+        else ptr.mv_size(inBuf.limit());
     }
 
     /**
-     * Return the MDB_val pointer to be used in DTLV calls
+     * Access the size of the MDB_val
      */
-    public DTLV.MDB_val ptr() {
-        return (DTLV.MDB_val)ptr;
-    }
-
     public long size() {
-        return (long) ptr.mv_size();
+        if (canAccessUnsafe)
+            return UNSAFE.getLong(ptr.address() + STRUCT_FIELD_OFFSET_SIZE);
+        else
+            return (long) ptr.mv_size();
     }
 
-    public Pointer data() {
+    protected Pointer data() {
         return ptr.mv_data();
+    }
+
+    protected long inAddr() {
+        return inAddr;
     }
 
     protected ByteBuffer unsafeOut(final ByteBuffer buffer, final long ptrAddr) {
@@ -148,7 +118,7 @@ public class BufVal {
     }
 
     /**
-     * Return a ByteBuffer for getting data out of MDB_val
+     * Return a ByteBuffer for getting data out of MDB_val.
      */
     public ByteBuffer outBuf() {
         if (canAccessUnsafe) return unsafeOut(outBuf, ptr.address());
@@ -159,11 +129,48 @@ public class BufVal {
             return buf;
         }
     }
+    /**
+     * Access the allocated internal data in-take ByteBuffer
+     */
+    public ByteBuffer inBuf() {
+        return inBuf;
+    }
+
+    protected void unsafeIn(final long ptrAddr, final long address,
+                            final long size) {
+      UNSAFE.putLong(ptrAddr + STRUCT_FIELD_OFFSET_SIZE, size);
+      UNSAFE.putLong(ptrAddr + STRUCT_FIELD_OFFSET_DATA, address);
+    }
 
     /**
-     * factory method to create an instance
+     * Reset the MDB_val to point back to the internal ByteBuffer.
      */
-    public static BufVal create(final long size) {
-        return new BufVal(size);
+    public void reset() {
+        if (canAccessUnsafe)
+            unsafeIn(ptr.address(), inAddr, inBuf.limit());
+        else {
+            ptr.mv_size(inBuf.limit());
+            ptr.mv_data(data);
+        }
     }
+
+    /**
+     * Set MDB_val to that of the passed-in BufVal
+     */
+    public void in(final BufVal ib) {
+        if (canAccessUnsafe)
+            unsafeIn(ptr.address(), ib.inAddr(), ib.size());
+        else {
+            ptr.mv_size(ib.size());
+            ptr.mv_data(ib.data());
+        }
+    }
+
+    /**
+     * Return the MDB_val pointer to be used in DTLV calls
+     */
+    public DTLV.MDB_val ptr() {
+        return (DTLV.MDB_val)ptr;
+    }
+
 }

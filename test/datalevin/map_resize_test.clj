@@ -3,8 +3,6 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.datom :as dd]
-   [datalevin.interpret :as i]
    [datalevin.util :as u]
    [datalevin.constants :as c :refer [tx0]])
   (:import

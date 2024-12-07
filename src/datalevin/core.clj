@@ -1096,9 +1096,7 @@ Only usable for debug output.
        (finally (close conn#)))))
 
 (defn transact
-  "Same as [[transact!]], but returns an immediately realized future.
-
-  Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
+  "Datalog transaction that returns an already realized future that contains the transaction report. It uses the same adaptive batch transaction as [[transact-async]], but will block until the future is realized, i.e. when the transaction commits."
   ([conn tx-data] (transact conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
@@ -1112,7 +1110,7 @@ Only usable for debug output.
        (isRealized [_] true)))))
 
 (defn transact-async
-  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits."
+  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits. Use an adaptive batch transaction algorithm that adjust batch size according to workload: the higher the load, the larger the batch size."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
