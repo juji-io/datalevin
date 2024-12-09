@@ -1,15 +1,13 @@
 package datalevin.cpp;
 
-import dtlvnative.DTLV;
-
+import static java.lang.Long.BYTES;
 import static datalevin.cpp.UnsafeAccess.UNSAFE;
+
+import dtlvnative.DTLV;
 import java.lang.reflect.Field;
 
 import org.bytedeco.javacpp.*;
-
 import java.nio.*;
-
-import static java.lang.Long.BYTES;
 
 /**
  * Provide a Java ByteBuffer view for a LMDB MDB_val struct.
@@ -18,17 +16,16 @@ import static java.lang.Long.BYTES;
 @SuppressWarnings("removal")
 public class BufVal {
 
-    static final boolean canAccessUnsafe = UnsafeAccess.isAvailable();
+    static final boolean UNSAFE_AVAILABLE = UnsafeAccess.isAvailable();
 
-    // MDB_val field offsets
     static final int STRUCT_FIELD_OFFSET_DATA = BYTES;
     static final int STRUCT_FIELD_OFFSET_SIZE = 0;
 
     static final String FIELD_NAME_ADDRESS = "address";
     static final String FIELD_NAME_CAPACITY = "capacity";
 
-    static long ADDRESS_OFFSET = 0;
-    static long CAPACITY_OFFSET = 0;
+    static long addressOffset = 0;
+    static long capacityOffset = 0;
 
     static Field findField(final Class<?> c, final String name) {
         Class<?> clazz = c;
@@ -48,21 +45,17 @@ public class BufVal {
         try {
             final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
             final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
-            ADDRESS_OFFSET = UNSAFE.objectFieldOffset(address);
-            CAPACITY_OFFSET = UNSAFE.objectFieldOffset(capacity);
+            addressOffset = UNSAFE.objectFieldOffset(address);
+            capacityOffset = UNSAFE.objectFieldOffset(capacity);
         } catch (final SecurityException e) {
             // don't throw, as unsafe access is optional
         }
     }
 
     private Pointer data;
-
     private ByteBuffer inBuf;
-
     private long inAddr;
-
     private ByteBuffer outBuf;
-
     private DTLV.MDB_val ptr;
 
     public BufVal(long size) {
@@ -85,8 +78,8 @@ public class BufVal {
      */
     public void clear() {
         inBuf.clear();
-        if (canAccessUnsafe)
-            UNSAFE.putInt(ptr, CAPACITY_OFFSET, (int)inBuf.limit());
+        if (UNSAFE_AVAILABLE)
+            UNSAFE.putInt(ptr, capacityOffset, (int) inBuf.limit());
         else ptr.mv_size(inBuf.limit());
     }
 
@@ -94,7 +87,7 @@ public class BufVal {
      * Access the size of the MDB_val
      */
     public long size() {
-        if (canAccessUnsafe)
+        if (UNSAFE_AVAILABLE)
             return UNSAFE.getLong(ptr.address() + STRUCT_FIELD_OFFSET_SIZE);
         else
             return (long) ptr.mv_size();
@@ -111,8 +104,8 @@ public class BufVal {
     protected ByteBuffer unsafeOut(final ByteBuffer buffer, final long ptrAddr) {
         final long addr = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_DATA);
         final long size = UNSAFE.getLong(ptrAddr + STRUCT_FIELD_OFFSET_SIZE);
-        UNSAFE.putLong(buffer, ADDRESS_OFFSET, addr);
-        UNSAFE.putInt(buffer, CAPACITY_OFFSET, (int) size);
+        UNSAFE.putLong(buffer, addressOffset, addr);
+        UNSAFE.putInt(buffer, capacityOffset, (int) size);
         buffer.clear();
         return buffer;
     }
@@ -121,7 +114,7 @@ public class BufVal {
      * Return a ByteBuffer for getting data out of MDB_val.
      */
     public ByteBuffer outBuf() {
-        if (canAccessUnsafe) return unsafeOut(outBuf, ptr.address());
+        if (UNSAFE_AVAILABLE) return unsafeOut(outBuf, ptr.address());
         else {
             ByteBuffer buf
                 = ptr.mv_data().position(0).limit(ptr.mv_size()).asByteBuffer();
@@ -146,7 +139,7 @@ public class BufVal {
      * Reset the MDB_val to point back to the internal ByteBuffer.
      */
     public void reset() {
-        if (canAccessUnsafe)
+        if (UNSAFE_AVAILABLE)
             unsafeIn(ptr.address(), inAddr, inBuf.limit());
         else {
             ptr.mv_size(inBuf.limit());
@@ -158,7 +151,7 @@ public class BufVal {
      * Set MDB_val to that of the passed-in BufVal
      */
     public void in(final BufVal ib) {
-        if (canAccessUnsafe)
+        if (UNSAFE_AVAILABLE)
             unsafeIn(ptr.address(), ib.inAddr(), ib.size());
         else {
             ptr.mv_size(ib.size());

@@ -3,9 +3,9 @@
 ## WIP
 
 ### Added
-- [KV] `transanct-kv-async` function to return a future immediately and
-  transact in batches to enhance write throughput. Batch size is adaptive to the
-  write workload: the higher the load, the larger the batch.
+- [KV] `transanct-kv-async` function to return a future immediately and transact
+  in batches to enhance write throughput. Batch size is adaptive to the write
+  workload: the higher the load, the larger the batch.
   [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Platform] Support for freebsd on amd64.
 
@@ -17,13 +17,14 @@
   Removed both LMDBJava and Graalvm native image specific bindings. This reduces
   release artifact sizes, eases maintenance and enhances performance.
   [#35](https://github.com/juji-io/datalevin/issues/35).
-- [KV] Pushed down all LMDB iterators, comparator and counters implementation
-  down to C code. [#279](https://github.com/juji-io/datalevin/issues/279).
+- [KV] Pushed all LMDB iterators, counters, sampler, and comparator
+  implementation down to C.
+  [#279](https://github.com/juji-io/datalevin/issues/279).
 - [KV] Adding `--add-opens` JVM options is now optional. If these JVM options
   are not set, Datalevin will use a slower default option instead of throwing
   exceptions. However, it is still recommended to add these JVM options to get
   optimal performance.
-- [Native] Datalevin library jar can now be directly used to compile GraalVM
+- [Native] Datalevin library jar can now be used directly to compile GraalVM
   native image. There's no longer a need for GraalVM specific Datalevin library,
   nor any GraalVM version restriction.
 - [Native] Upgrade to the latest version of GraalVM native image.

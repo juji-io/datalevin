@@ -110,7 +110,7 @@
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
                e {:value x :type t}))))
-  (put-val [_ x t]
+  (put-val [_ _ _]
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
@@ -235,6 +235,11 @@
     DTLV/DTLV_FALSE false
     (u/raise "Native iterator returns error code" x {})))
 
+(defn- dtlv-c [^long x]
+  (if (< x 0)
+    (u/raise "Native counter returns error code" x {})
+    x))
+
 (deftype KeyIterable [^DBI db
                       ^Cursor cur
                       ^Rtx rtx
@@ -244,16 +249,15 @@
     (let [forward?       (dtlv-bool (.-forward? ctx))
           include-start? (dtlv-bool (.-include-start? ctx))
           include-stop?  (dtlv-bool (.-include-stop? ctx))
-          ^BufVal sk     (.-start-bf ctx)
-          ^BufVal ek     (.-stop-bf ctx)
-          ^BufVal k      (.key cur)
-          ^BufVal v      (.val cur)
+          sk             (dtlv-val (.-start-bf ctx))
+          ek             (dtlv-val (.-stop-bf ctx))
+          k              (.key cur)
+          v              (.val cur)
           iter           (DTLV$dtlv_key_iter.)]
       (Util/checkRc
         (DTLV/dtlv_key_iter_create
           iter (.ptr cur) (.ptr k) (.ptr v)
-          ^int forward? ^int include-start? ^int include-stop?
-          (dtlv-val sk) (dtlv-val ek)))
+          ^int forward? ^int include-start? ^int include-stop? sk ek))
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_key_iter_has_next iter)))
@@ -268,28 +272,27 @@
                        ctx]
   Iterable
   (iterator [_]
-    (let [[^RangeContext kctx ^RangeContext vctx]
-          ctx
+    (let [[^RangeContext kctx ^RangeContext vctx] ctx
+
           forward-key?       (dtlv-bool (.-forward? kctx))
           include-start-key? (dtlv-bool (.-include-start? kctx))
           include-stop-key?  (dtlv-bool (.-include-stop? kctx))
-          ^BufVal sk         (.-start-bf kctx)
-          ^BufVal ek         (.-stop-bf kctx)
+          sk                 (dtlv-val (.-start-bf kctx))
+          ek                 (dtlv-val (.-stop-bf kctx))
           forward-val?       (dtlv-bool (.-forward? vctx))
           include-start-val? (dtlv-bool (.-include-start? vctx))
           include-stop-val?  (dtlv-bool (.-include-stop? vctx))
-          ^BufVal sv         (.-start-bf vctx)
-          ^BufVal ev         (.-stop-bf vctx)
+          sv                 (dtlv-val (.-start-bf vctx))
+          ev                 (dtlv-val (.-stop-bf vctx))
           k                  (.key cur)
           v                  (.val cur)
           iter               (DTLV$dtlv_list_iter.)]
       (Util/checkRc
         (DTLV/dtlv_list_iter_create
           iter (.ptr cur) (.ptr k) (.ptr v)
-          ^int forward-key? ^int include-start-key? ^int include-stop-key?
-          (dtlv-val sk) (dtlv-val ek)
+          ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
           ^int forward-val? ^int include-start-val? ^int include-stop-val?
-          (dtlv-val sv) (dtlv-val ev)))
+          sv ev))
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_list_iter_has_next iter)))
@@ -306,16 +309,15 @@
   (val-iterator [_]
     (let [include-start-val? (dtlv-bool (.-include-start? ctx))
           include-stop-val?  (dtlv-bool (.-include-stop? ctx))
-          ^BufVal sv         (.-start-bf ctx)
-          ^BufVal ev         (.-stop-bf ctx)
+          sv                 (dtlv-val (.-start-bf ctx))
+          ev                 (dtlv-val (.-stop-bf ctx))
           ^BufVal k          (.key cur)
           ^BufVal v          (.val cur)
           iter               (DTLV$dtlv_list_val_iter.)]
       (Util/checkRc
         (DTLV/dtlv_list_val_iter_create
           iter (.ptr cur) (.ptr k) (.ptr v)
-          ^int include-start-val? ^int include-stop-val?
-          (dtlv-val sv) (dtlv-val ev)))
+          ^int include-start-val? ^int include-stop-val? sv ev))
       (reify
         IListRandKeyValIterator
         (seek-key [_ x t]
@@ -336,8 +338,7 @@
           ^BufVal v (.val cur)
           iter      (DTLV$dtlv_list_val_full_iter.)]
       (Util/checkRc
-        (DTLV/dtlv_list_val_full_iter_create
-          iter (.ptr cur) (.ptr k) (.ptr v)))
+        (DTLV/dtlv_list_val_full_iter_create iter (.ptr cur) (.ptr k) (.ptr v)))
       (reify
         IListRandKeyValIterator
         (seek-key [_ x t]
@@ -390,9 +391,8 @@
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
   (.put-key rtx k kt)
-  (if (.get cur ^BufVal (.-kp rtx) DTLV/MDB_SET)
-    (.count cur)
-    0))
+  (dtlv-c (DTLV/dtlv_list_val_count
+            (.ptr cur) (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx)))))
 
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
@@ -576,7 +576,7 @@
     (.reset ^Rtx rtx)
     (.add ^ArrayDeque (.get pools) rtx))
 
-  (stat [this]
+  (stat [_]
     (try
       (let [stat ^Stat (Stat/create env)
             m    (stat-map stat)]
@@ -731,12 +731,27 @@
   (visit-key-range [this dbi-name visitor k-range k-type raw-pred?]
     (scan/visit-key-range this dbi-name visitor k-range k-type raw-pred?))
 
-  (key-range-count [this dbi-name k-range]
-    (.key-range-count this dbi-name k-range :data))
-  (key-range-count [this dbi-name k-range k-type]
-    (.key-range-count this dbi-name k-range k-type nil))
-  (key-range-count [this dbi-name k-range k-type cap]
-    (scan/key-range-count this dbi-name k-range k-type cap))
+  (key-range-count [lmdb dbi-name k-range]
+    (.key-range-count lmdb dbi-name k-range :data))
+  (key-range-count [lmdb dbi-name k-range k-type]
+    (.key-range-count lmdb dbi-name k-range k-type nil))
+  (key-range-count [lmdb dbi-name [range-type k1 k2] k-type cap]
+    (scan/scan
+      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+            forward           (dtlv-bool (.-forward? ctx))
+            start             (dtlv-bool (.-include-start? ctx))
+            end               (dtlv-bool (.-include-stop? ctx))
+            sk                (dtlv-val (.-start-bf ctx))
+            ek                (dtlv-val (.-stop-bf ctx))]
+        (dtlv-c
+          (if cap
+            (DTLV/dtlv_key_range_count_cap
+              (.ptr cur) cap (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              forward start end sk ek)
+            (DTLV/dtlv_key_range_count
+              (.ptr cur) (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              forward start end sk ek))))
+      (raise "Fail to count list range: " e {:dbi dbi-name})))
 
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
@@ -845,23 +860,21 @@
   (visit-list [this dbi-name visitor k kt vt raw-pred?]
     (scan/visit-list this dbi-name visitor k kt vt raw-pred?))
 
-  (list-count [this dbi-name k kt]
-    (.check-ready this)
+  (list-count [lmdb dbi-name k kt]
+    (.check-ready lmdb)
     (if k
-      (let [lmdb this]
-        (scan/scan
-          (list-count* rtx cur k kt)
-          (raise "Fail to count list: " e {:dbi dbi-name :k k})))
+      (scan/scan
+        (list-count* rtx cur k kt)
+        (raise "Fail to count list: " e {:dbi dbi-name :k k}))
       0))
 
-  (in-list? [this dbi-name k v kt vt]
-    (.check-ready this)
+  (in-list? [lmdb dbi-name k v kt vt]
+    (.check-ready lmdb)
     (if (and k v)
-      (let [lmdb this]
-        (scan/scan
-          (in-list?* rtx cur k kt v vt)
-          (raise "Fail to test if an item is in list: "
-                 e {:dbi dbi-name :k k :v v})))
+      (scan/scan
+        (in-list?* rtx cur k kt v vt)
+        (raise "Fail to test if an item is in list: "
+               e {:dbi dbi-name :k k :v v}))
       false))
 
   (key-range-list-count [lmdb dbi-name k-range k-type]
@@ -872,10 +885,33 @@
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
 
-  (list-range-count [this dbi-name k-range kt v-range vt]
-    (.list-range-count this dbi-name k-range kt v-range vt nil))
-  (list-range-count [this dbi-name k-range kt v-range vt cap]
-    (scan/list-range-count this dbi-name k-range kt v-range vt cap))
+  (list-range-count [lmdb dbi-name k-range kt v-range vt]
+    (.list-range-count lmdb dbi-name k-range kt v-range vt nil))
+  (list-range-count [lmdb dbi-name [k-range-type k1 k2] k-type
+                     [v-range-type v1 v2] v-type cap]
+    (scan/scan
+      (let [[^RangeContext kctx ^RangeContext vctx]
+            (l/list-range-info rtx k-range-type k1 k2 k-type
+                               v-range-type v1 v2 v-type)
+            kforward (dtlv-bool (.-forward? kctx))
+            kstart   (dtlv-bool (.-include-start? kctx))
+            kend     (dtlv-bool (.-include-stop? kctx))
+            sk       (dtlv-val (.-start-bf kctx))
+            ek       (dtlv-val (.-stop-bf kctx))
+            vforward (dtlv-bool (.-forward? vctx))
+            vstart   (dtlv-bool (.-include-start? vctx))
+            vend     (dtlv-bool (.-include-stop? vctx))
+            sv       (dtlv-val (.-start-bf vctx))
+            ev       (dtlv-val (.-stop-bf vctx))]
+        (dtlv-c
+          (if cap
+            (DTLV/dtlv_list_range_count_cap
+              (.ptr cur) cap (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              kforward kstart kend sk ek vforward vstart vend sv ev)
+            (DTLV/dtlv_list_range_count
+              (.ptr cur) (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              kforward kstart kend sk ek vforward vstart vend sv ev))))
+      (raise "Fail to count list range: " e {:dbi dbi-name})))
 
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))

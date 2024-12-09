@@ -389,7 +389,7 @@
 (extend-type nil ITuplePipe (pipe? [_] false))
 
 (deftype TuplePipe [^LinkedBlockingQueue queue
-                    ^:volatile-mutable total]
+                    ^:unsynchronized-mutable total]
   ITuplePipe
   (pipe? [_] true)
   (produce [_]

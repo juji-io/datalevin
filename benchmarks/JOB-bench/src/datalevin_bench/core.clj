@@ -3274,8 +3274,8 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [s [0.9 1.0 1.1]
-          v [1.4 1.5 1.6]
+  (doseq [s [1.5]
+          v [2.5]
           ]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]

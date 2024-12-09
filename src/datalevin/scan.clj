@@ -233,16 +233,6 @@
     (raise "Fail to visit key range: " e
            {:dbi dbi-name :k-range k-range :k-type k-type })))
 
-(defn key-range-count
-  [lmdb dbi-name k-range k-type cap]
-  (scan
-    (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)]
-      (if cap
-        (range-count* iterable cap)
-        (range-count* iterable)))
-    (raise "Fail to get key-range-count: " e
-           {:dbi dbi-name :k-range k-range :k-type k-type })))
-
 (defn get-some
   [lmdb dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
   (assert (not (and (= v-type :ignore) ignore-key?))
@@ -468,17 +458,6 @@
               (recur (inc i)))
             holder))))
     (raise "Fail to get first n of list range: " e
-           {:dbi dbi-name :key-range k-range :val-range v-range})) )
-
-(defn list-range-count
-  [lmdb dbi-name k-range k-type v-range v-type cap]
-  (scan
-    (let [iterable (l/iterate-list dbi rtx cur k-range k-type
-                                   v-range v-type)]
-      (if cap
-        (range-count* iterable cap)
-        (range-count* iterable)))
-    (raise "Fail to get list range count: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 
 (defn list-range-filter
