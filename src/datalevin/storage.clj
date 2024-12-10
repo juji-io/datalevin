@@ -27,12 +27,6 @@
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
-#_(if (u/graal?)
-    (do (require 'datalevin.binding.graal)
-        (def visit-list* (resolve 'datalevin.binding.graal/visit-list*)))
-    (do (require 'datalevin.binding.java)
-        (def visit-list* (resolve 'datalevin.binding.java/visit-list*))))
-
 (defn- attr->properties [k v]
   (case v
     :db.unique/identity  [:db/unique :db.unique/identity]
@@ -423,30 +417,16 @@
             (recur tuples))
         tuples))))
 
-(defn- sampling
-  [i j ^longs sample-indices work]
-  (let [len (alength sample-indices)]
-    (fn [kv]
-      (let [^long vi @i]
-        (if (== vi len)
-          :datalevin/terminate-visit
-          (do (when (== ^long @j (aget sample-indices vi))
-                (work kv)
-                (vswap! i u/long-inc))
-              (vswap! j u/long-inc)))))))
-
 (defn- ave-tuples-scan*
   [lmdb aid vt val-ranges sample-indices work]
-  (let [i     (volatile! 0)
-        j     (volatile! 0)
-        len   (when sample-indices (alength ^longs sample-indices))
-        visit (if sample-indices
-                (sampling i j sample-indices work)
-                work)]
+  (if sample-indices
     (doseq [val-range val-ranges]
-      (when (or (nil? len) (< ^long @i ^long len))
-        (lmdb/visit-list-range
-          lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg)))))
+      (lmdb/visit-list-sample
+        lmdb c/ave sample-indices work (ave-key-range aid vt val-range) :av
+        [:all] :eg))
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave work (ave-key-range aid vt val-range) :av [:all] :eg))))
 
 (defn- ave-tuples-scan-need-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]

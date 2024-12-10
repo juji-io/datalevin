@@ -10,7 +10,7 @@
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
-    DTLV$dtlv_list_iter DTLV$dtlv_list_val_iter
+    DTLV$dtlv_list_iter DTLV$dtlv_list_sample_iter DTLV$dtlv_list_val_iter
     DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
@@ -19,6 +19,7 @@
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
+   [org.bytedeco.javacpp SizeTPointer]
    [clojure.lang IObj]
    [datalevin.lmdb RangeContext KVTxData]))
 
@@ -143,7 +144,7 @@
    :entries        (.ms_entries ^DTLV$MDB_stat (.get stat))})
 
 (declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable
-         ->ListFullValIterable)
+         ->ListFullValIterable ->ListSampleIterable)
 
 (deftype DBI [^Dbi db
               ^ThreadLocal curs
@@ -204,6 +205,11 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
+  (iterate-list-sample [this rtx cur indices [k-range-type k1 k2] k-type
+                        [v-range-type v1 v2] v-type]
+    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+                                 v-range-type v1 v2 v-type)]
+      (->ListSampleIterable this indices cur rtx ctx)))
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
     (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
@@ -300,6 +306,45 @@
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_iter_destroy iter))))))
+
+(deftype ListSampleIterable [^DBI db
+                             ^longs indices
+                             ^Cursor cur
+                             ^Rtx rtx
+                             ctx]
+  Iterable
+  (iterator [_]
+    (let [[^RangeContext kctx ^RangeContext vctx] ctx
+
+          forward-key?       (dtlv-bool (.-forward? kctx))
+          include-start-key? (dtlv-bool (.-include-start? kctx))
+          include-stop-key?  (dtlv-bool (.-include-stop? kctx))
+          sk                 (dtlv-val (.-start-bf kctx))
+          ek                 (dtlv-val (.-stop-bf kctx))
+          forward-val?       (dtlv-bool (.-forward? vctx))
+          include-start-val? (dtlv-bool (.-include-start? vctx))
+          include-stop-val?  (dtlv-bool (.-include-stop? vctx))
+          sv                 (dtlv-val (.-start-bf vctx))
+          ev                 (dtlv-val (.-stop-bf vctx))
+          k                  (.key cur)
+          v                  (.val cur)
+          iter               (DTLV$dtlv_list_sample_iter.)
+          samples            (alength indices)
+          sizets             (SizeTPointer. samples)]
+      (dotimes [i samples] (.put sizets i (aget indices i)))
+      (Util/checkRc
+        (DTLV/dtlv_list_sample_iter_create
+          iter sizets samples (.ptr cur) (.ptr k) (.ptr v)
+          ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
+          ^int forward-val? ^int include-start-val? ^int include-stop-val?
+          sv ev))
+      (reify
+        Iterator
+        (hasNext [_] (dtlv-rc (DTLV/dtlv_list_sample_iter_has_next iter)))
+        (next [_] (KV. k v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_list_sample_iter_destroy iter))))))
 
 (deftype ListRandKeyValIterable [^DBI db
                                  ^Cursor cur
@@ -746,12 +791,14 @@
         (dtlv-c
           (if cap
             (DTLV/dtlv_key_range_count_cap
-              (.ptr cur) cap (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              (.ptr ^Cursor cur) cap
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
               forward start end sk ek)
             (DTLV/dtlv_key_range_count
-              (.ptr cur) (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              (.ptr ^Cursor cur)
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
               forward start end sk ek))))
-      (raise "Fail to count list range: " e {:dbi dbi-name})))
+      (raise "Fail to count key range: " e {:dbi dbi-name})))
 
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
@@ -766,8 +813,11 @@
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
-  (range-count [this dbi-name k-range k-type]
-    (scan/range-count this dbi-name k-range k-type))
+  (range-count [lmdb dbi-name k-range k-type]
+    (let [dupsort? (.-dupsort? ^DBI (.get dbis dbi-name))]
+      (if dupsort?
+        (.list-range-count lmdb dbi-name k-range k-type [:all] nil)
+        (.key-range-count lmdb dbi-name k-range k-type))))
 
   (get-some [this dbi-name pred k-range]
     (.get-some this dbi-name pred k-range :data :data false true))
@@ -879,8 +929,25 @@
 
   (key-range-list-count [lmdb dbi-name k-range k-type]
     (.key-range-list-count lmdb dbi-name k-range k-type nil))
-  (key-range-list-count [lmdb dbi-name k-range k-type cap]
-    (scan/key-range-list-count lmdb dbi-name k-range k-type cap))
+  (key-range-list-count [lmdb dbi-name [range-type k1 k2] k-type cap]
+    (scan/scan
+      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+            forward           (dtlv-bool (.-forward? ctx))
+            start             (dtlv-bool (.-include-start? ctx))
+            end               (dtlv-bool (.-include-stop? ctx))
+            sk                (dtlv-val (.-start-bf ctx))
+            ek                (dtlv-val (.-stop-bf ctx))]
+        (dtlv-c
+          (if cap
+            (DTLV/dtlv_key_range_list_count_cap
+              (.ptr ^Cursor cur) cap
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              forward start end sk ek)
+            (DTLV/dtlv_key_range_list_count
+              (.ptr ^Cursor cur)
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              forward start end sk ek))))
+      (raise "Fail to count list in key range: " e {:dbi dbi-name})))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
@@ -906,10 +973,12 @@
         (dtlv-c
           (if cap
             (DTLV/dtlv_list_range_count_cap
-              (.ptr cur) cap (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              (.ptr ^Cursor cur) cap
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
               kforward kstart kend sk ek vforward vstart vend sv ev)
             (DTLV/dtlv_list_range_count
-              (.ptr cur) (.ptr ^BufVal (.-kp rtx)) (.ptr ^BufVal (.-vp rtx))
+              (.ptr ^Cursor cur)
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
               kforward kstart kend sk ek vforward vstart vend sv ev))))
       (raise "Fail to count list range: " e {:dbi dbi-name})))
 
@@ -956,6 +1025,15 @@
     [this dbi-name visitor k-range kt v-range vt raw-pred?]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range
                            vt raw-pred?))
+
+  (visit-list-sample
+    [this list-name indices visitor k-range k-type v-range v-type]
+    (.visit-list-sample this list-name indices visitor k-range k-type v-range
+                        v-type true))
+  (visit-list-sample
+    [this dbi-name indices visitor k-range kt v-range vt raw-pred?]
+    (scan/visit-list-sample this dbi-name indices visitor k-range kt v-range
+                            vt raw-pred?))
 
   (operate-list-val-range
     [this dbi-name operator v-range vt]

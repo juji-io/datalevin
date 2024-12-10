@@ -1,12 +1,13 @@
 {:paths ["src"]
  :deps  {
          datalevin/datalevin                         {:local/root "../.."}
+         ;; datalevin/datalevin                         {:mvn/version "0.9.14"}
          org.clojure/clojure                         {:mvn/version "1.11.3"}
          com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
          com.taoensso/nippy                          {:mvn/version "3.4.2"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
          org.lmdbjava/lmdbjava                       {:mvn/version "0.9.0"}
-         org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version "0.10.9"}
+         org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version "0.10.12"}
          org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.6"}
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          }

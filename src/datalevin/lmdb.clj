@@ -51,6 +51,9 @@
   (iterate-list [this rtx cur k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
      applicable only to list dbi")
+  (iterate-list-sample [this rtx cur indices k-range k-type v-range v-type]
+    "Return an Iterable of a sample of key-values given key range and value range,
+     and an array of indices, applicable only to list dbi")
   (iterate-list-val [this rtx cur v-range v-type]
     "Return a IListRandKeyValIterable given the value range,
      which allows randomly seek key and iterate its values forwardly,
@@ -126,6 +129,10 @@
   (visit-list-range
     [db list-name visitor k-range k-type v-range v-type]
     [db list-name visitor k-range k-type v-range v-type raw-pred?]
+    "visit a list range, presumably for side effects of vistor call")
+  (visit-list-sample
+    [db list-name indices visitor k-range k-type v-range v-type]
+    [db list-name indices visitor k-range k-type v-range v-type raw-pred?]
     "visit a list range, presumably for side effects of vistor call")
   (operate-list-val-range
     [db list-name operator v-range v-type]

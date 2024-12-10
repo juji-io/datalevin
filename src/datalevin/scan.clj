@@ -176,30 +176,6 @@
              :k-type k-type   :v-type  v-type})
      true)))
 
-(defn range-count*
-  ([iterable]
-   (with-open [^AutoCloseable iter (.iterator ^Iterable iterable)]
-     (loop [c 0]
-       (if (.hasNext ^Iterator iter)
-         (do (.next ^Iterator iter) (recur (unchecked-inc c)))
-         c))))
-  ([iterable cap]
-   (with-open [^AutoCloseable iter (.iterator ^Iterable iterable)]
-     (loop [c 0]
-       (if (= c cap)
-         c
-         (if (.hasNext ^Iterator iter)
-           (do (.next ^Iterator iter) (recur (unchecked-inc c)))
-           c))))))
-
-(defn range-count
-  [lmdb dbi-name k-range k-type]
-  (scan
-    (let [iterable (l/iterate-kv dbi rtx cur k-range k-type nil)]
-      (range-count* iterable))
-    (raise "Fail to range-count: " e
-           {:dbi dbi-name :k-range k-range :k-type k-type})))
-
 (defn key-range
   [lmdb dbi-name k-range k-type]
   (scan
@@ -542,6 +518,15 @@
     (raise "Fail to visit list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})))
 
+(defn visit-list-sample
+  [lmdb dbi-name indices visitor k-range k-type v-range v-type raw-pred?]
+  (scan
+    (let [iterable (l/iterate-list-sample dbi rtx cur indices k-range k-type
+                                          v-range v-type)]
+      (visit* iterable visitor raw-pred? k-type v-type))
+    (raise "Fail to visit list sample: " e
+           {:dbi dbi-name :key-range k-range :val-range v-range})))
+
 (defn operate-list-val-range
   [lmdb dbi-name operator v-range v-type]
   (scan
@@ -549,30 +534,6 @@
       (operator iterable))
     (raise "Fail to operate list val range: " e
            {:dbi dbi-name :val-range v-range})))
-
-(defn key-range-list-count
-  [lmdb dbi-name k-range k-type cap]
-  (scan
-    (with-open [^AutoCloseable iter
-                (.iterator
-                  ^Iterable (l/iterate-key dbi rtx cur k-range k-type))]
-      (if cap
-        (loop [c 0]
-          (if (<= ^long cap c)
-            c
-            (if (.hasNext ^Iterator iter)
-              (let [^long n (l/cursor-count dbi cur)]
-                (.next ^Iterator iter)
-                (recur (+ c n)))
-              c)))
-        (loop [c 0]
-          (if (.hasNext ^Iterator iter)
-            (let [^long n (l/cursor-count dbi cur)]
-              (.next ^Iterator iter)
-              (recur (+ c n)))
-            c))))
-    (raise "Fail to count list in key range: " e
-           {:dbi dbi-name :k-range k-range})))
 
 (defn visit-list*
   [iter visitor k kt vt raw-pred?]

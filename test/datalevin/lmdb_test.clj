@@ -293,19 +293,19 @@
         lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         sum     (volatile! 0)
         visitor (i/inter-fn
-                  [vb]
+                    [vb]
                   (let [^long v (b/read-buffer vb :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))
         joins   (volatile! "")
         kvisit  (i/inter-fn
-                  [bf]
+                    [bf]
                   (let [k (b/read-buffer bf :string)]
                     (vswap! joins #(s/join " " [% k]))))
         values  (volatile! [])
         op-gen  (i/inter-fn
-                  [k kt]
+                    [k kt]
                   (i/inter-fn
-                    [^IListRandKeyValIterable iterable]
+                      [^IListRandKeyValIterable iterable]
                     (let [^IListRandKeyValIterator iter
                           (l/val-iterator iterable)]
                       (loop [next? (l/seek-key iter k kt)]

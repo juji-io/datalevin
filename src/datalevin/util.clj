@@ -589,9 +589,9 @@
 
 (defonce query-thread-pool
   (atom (Executors/newFixedThreadPool
-          (.availableProcessors (Runtime/getRuntime)))))
+          (* 2 (.availableProcessors (Runtime/getRuntime))))))
 
-;; (def map+ map)
+#_(def map+ map)
 (defn map+
   ([f coll]
    (let [futs (.invokeAll ^ExecutorService @query-thread-pool

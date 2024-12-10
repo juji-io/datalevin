@@ -60,11 +60,13 @@ public class BufVal {
 
     public BufVal(long size) {
 
+        // internal fixed BF
         inBuf = ByteBuffer.allocateDirect((int) size);
         inBuf.order(ByteOrder.BIG_ENDIAN);
         data = new Pointer(inBuf);
         inAddr = data.address();
 
+        // external floating BF
         outBuf = ByteBuffer.allocateDirect((int) 0);
         outBuf.order(ByteOrder.BIG_ENDIAN);
 
