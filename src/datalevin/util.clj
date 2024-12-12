@@ -36,36 +36,6 @@
   (when-let [pool @query-thread-pool-atom]
     (.shutdown ^ExecutorService pool)))
 
-(defonce async-event-dispatcher-atom (atom nil))
-
-(defn get-async-event-dispatcher
-  "access the async event dispatcher"
-  []
-  (let [pool @async-event-dispatcher-atom]
-    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
-      (reset! async-event-dispatcher-atom (Executors/newSingleThreadExecutor))
-      pool)))
-
-(defn shutdown-async-event-dispatcher
-  []
-  (when-let [pool @async-event-dispatcher-atom]
-    (.shutdown ^ExecutorService pool)))
-
-(defonce async-worker-pool-atom (atom nil))
-
-(defn get-async-worker-pool
-  "access the async worker thread pool"
-  []
-  (let [pool @async-worker-pool-atom]
-    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
-      (reset! async-worker-pool-atom (Executors/newWorkStealingPool))
-      pool)))
-
-(defn shutdown-async-worker-pool
-  []
-  (when-let [pool @async-event-dispatcher-atom]
-    (.shutdown ^ExecutorService pool)))
-
 (defn seqable?
   ^Boolean [x]
   (and (not (string? x))

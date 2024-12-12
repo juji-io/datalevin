@@ -5,7 +5,7 @@
    [datalevin.util :as u])
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
-   [java.util.concurrent ExecutorService LinkedBlockingQueue
+   [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
     ConcurrentLinkedQueue ConcurrentHashMap Callable]))
 
 (defprotocol IAsyncWork
@@ -15,14 +15,19 @@
     "Return a keyword representing this type of work, workloads of the same
     type will be batched")
   (do-work [_]
-    "Actually do the work, result will be in the future returned by exec")
-  (pre-batch [_] "Preparation before the batch")
-  (post-batch [_] "Cleanup after the batch")
-  (batch-size [_] "The batch limit for this type of work"))
+    "Actually do the work, result will be in the future returned by exec.
+    If there's an exception, it will be thrown when deref the future.")
+  (pre-batch [_]
+    "Preparation before the batch. Should handle its own exception, for
+    the system will ignore it.")
+  (post-batch [_]
+    "Cleanup after the batch. Should handle its own exception.")
+  (batch-limit [_] "The batch limit for this type of work"))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
   (stop [_] "Stop the async event loop")
+  (running? [_] "Return true if this is running")
   (exec [_ work] "Submit a work, get back a future"))
 
 (deftype WorkItem [work promise])
@@ -30,8 +35,10 @@
 (defn- setup-work
   [^ConcurrentHashMap works ^ConcurrentHashMap limits
    ^LinkedBlockingQueue queue p k work]
-  (let [item (->WorkItem work p)]
-    (.putIfAbsent limits k (batch-size work))
+  (let [item  (->WorkItem work p)
+        limit (batch-limit work)]
+    (assert (pos-int? limit) "batch-limit should return a positive integer")
+    (.putIfAbsent limits k limit)
     (.putIfAbsent works k (ConcurrentLinkedQueue.))
     (let [^ConcurrentLinkedQueue q (.get works k)]
       (locking q
@@ -43,11 +50,21 @@
   (let [n (alength items)]
     (when (< 0 n)
       (let [fw (.-work ^WorkItem (aget items 0))]
-        (pre-batch fw)
+        (try (pre-batch fw) (catch Exception _))
         (dotimes [i n]
           (let [item ^WorkItem (aget items i)]
-            (deliver (.-promise item) (do-work (.-work item)))))
-        (post-batch fw)))))
+            (deliver (.-promise item)
+                     (try [:ok (do-work (.-work item))]
+                          (catch Exception e
+                            [:err e])))))
+        (try (post-batch fw) (catch Exception _))))))
+
+(defn- handle-result
+  [p]
+  (let [[status payload] @p]
+    (if (identical? status :ok)
+      payload
+      (throw payload))))
 
 (defn- event-handler
   [^ExecutorService executor ^LinkedBlockingQueue queue ^ConcurrentLinkedQueue q
@@ -86,6 +103,7 @@
       (when-not (.get running)
         (.submit dispatcher ^Callable init)
         (.set running true))))
+  (running? [_] (.get running))
   (stop [_]
     (.set running false)
     (.shutdown dispatcher)
@@ -95,13 +113,28 @@
       (assert (keyword? k) "work-key should return a keyword")
       (let [p (promise)]
         (setup-work works limits queue p k work)
-        (future @p)))))
+        (future (handle-result p))))))
 
-(defn new-async-executor
+(defn- new-async-executor
   []
-  (->AsyncExecutor (u/get-async-event-dispatcher)
-                   (u/get-async-worker-pool)
+  (->AsyncExecutor (Executors/newSingleThreadExecutor)
+                   (Executors/newWorkStealingPool)
                    (LinkedBlockingQueue.)
                    (ConcurrentHashMap.)
                    (ConcurrentHashMap.)
                    (AtomicBoolean. false)))
+
+(defonce executor-atom (atom nil))
+
+(defn get-executor
+  "access the async executor"
+  []
+  (let [e @executor-atom]
+    (if (or (nil? e) (not (running? e)))
+      (let [new-e (new-async-executor)]
+        (reset! executor-atom new-e)
+        (start new-e)
+        new-e)
+      e)))
+
+(defn shutdown-executor [] (when-let [e @executor-atom] (stop e)))

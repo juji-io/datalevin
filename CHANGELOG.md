@@ -5,14 +5,16 @@
 ### Added
 - [KV] `transanct-kv-async` function to return a future immediately and transact
   in batches to enhance write throughput. Batch size is adaptive to the write
-  workload: the higher the load, the larger the batch.
+  workload: the higher the load, the larger the batch, up to a batch limit,
+  controlled by a dynamic var `*transact-kv-async-batch-limit*`.
   [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Platform] Support for freebsd on amd64.
 
 ### Improved
 - [Datalog] Both `transact` and `transact-async` are changed to use the above
-  adaptive batch transaction mechanism to improve write throughout, whereas
-  `transact!` remains the same.
+  adaptive batch transaction mechanism to improve write throughout, controlled
+  by `*transact-async-batch-limit*`. `transact` is thus recommended as the
+  default transaction method, in place of `transact!`.
 - [KV] Consolidated LMDB bindings to a single binding based on JavaCPP.
   Removed both LMDBJava and Graalvm native image specific bindings. This reduces
   release artifact sizes, eases maintenance and enhances performance.

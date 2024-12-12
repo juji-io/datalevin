@@ -4,6 +4,7 @@
    [datalevin.bits :as b]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
+   [datalevin.async :as a]
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
@@ -505,8 +506,7 @@
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
         (u/shutdown-query-thread-pool)
-        (u/shutdown-async-event-dispatcher)
-        (u/shutdown-async-worker-pool))
+        (a/shutdown-executor))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
