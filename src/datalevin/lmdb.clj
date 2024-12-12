@@ -186,6 +186,8 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
+  (turn-off-sync [db] "write in nosync mode")
+  (turn-on-sync [db] "write in sync mode")
   (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
   (abort-transact-kv [db] "abort the explicit read/write rtx")

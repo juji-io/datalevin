@@ -503,6 +503,7 @@
                  ^ServerSocketChannel server-socket
                  ^Selector selector
                  ^ConcurrentLinkedQueue register-queue
+                 ^ExecutorService dispatcher
                  ^ExecutorService work-executor
                  sys-conn
                  ;; client session data, a map of
@@ -520,11 +521,15 @@
                  dbs]
   IServer
   (start [server]
-    (.set running true)
-    (.start (Thread.
-              (fn []
-                (log/info "Datalevin server started on port" port)
-                (event-loop server)))))
+    (letfn [(init []
+              (log/info "Datalevin server started on port" port)
+              (try (event-loop server)
+                   (catch Exception e
+                     (when (.get running)
+                       (.submit dispatcher ^Callable init)))))]
+      (when-not (.get running)
+        (.submit dispatcher ^Callable init)
+        (.set running true))))
 
   (stop [server]
     (.set running false)
@@ -532,6 +537,7 @@
     (doseq [skey (.keys selector)] (close-conn skey))
     (.close server-socket)
     (when (.isOpen selector) (.close selector))
+    (.shutdown dispatcher)
     (.shutdown work-executor)
     (doseq [db-name (keys dbs)] (remove-store server db-name))
     (d/close sys-conn)
@@ -2409,6 +2415,7 @@
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)
+                (Executors/newSingleThreadExecutor)
                 (Executors/newCachedThreadPool) ; with-txn may be many
                 sys-conn
                 clients

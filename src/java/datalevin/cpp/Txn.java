@@ -30,6 +30,13 @@ public class Txn {
         return create(env, 0);
     }
 
+    /**
+     * Factory method to create a nosync read/write transaction instance
+     */
+    public static Txn createNoSync(Env env) {
+        return create(env, DTLV.MDB_NOSYNC);
+    }
+
     public static Txn create(Env env, int flags) {
         DTLV.MDB_txn ptr = new DTLV.MDB_txn();
         Util.checkRc(DTLV.mdb_txn_begin(env.get(), null, flags, ptr));

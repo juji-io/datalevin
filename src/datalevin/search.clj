@@ -26,10 +26,6 @@
    [org.roaringbitmap RoaringBitmap FastAggregation FastRankRoaringBitmap
     PeekableIntIterator]))
 
-;; (if (u/graal?)
-;;   (require 'datalevin.binding.graal)
-;;   (require 'datalevin.binding.java))
-
 (defn- collect-terms
   [result]
   (let [terms (HashMap.)]

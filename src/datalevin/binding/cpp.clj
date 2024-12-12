@@ -464,6 +464,7 @@
                   ^BufVal start-vp-w
                   ^BufVal stop-vp-w
                   write-txn
+                  sync?
                   writing?
                   ^:unsynchronized-mutable meta]
 
@@ -475,7 +476,7 @@
   (mark-write [_]
     (->CppLMDB
       env info pools dbis kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w write-txn true meta))
+      stop-kp-w start-vp-w stop-vp-w write-txn sync? true meta))
 
   IObj
   (withMeta [this m] (set! meta m) this)
@@ -658,6 +659,9 @@
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
+
+  (turn-off-sync [_] (vreset! sync? false))
+  (turn-on-sync [_] (vreset! sync? true))
 
   (open-transact-kv [this]
     (.check-ready this)
@@ -1056,15 +1060,18 @@
     (.clear stop-kp-w)
     (.clear start-vp-w)
     (.clear stop-vp-w)
-    (vreset! (.-write-txn lmdb) (Rtx. lmdb
-                                      (Txn/create (.-env lmdb))
-                                      kp-w
-                                      vp-w
-                                      start-kp-w
-                                      stop-kp-w
-                                      start-vp-w
-                                      stop-vp-w
-                                      (volatile! false)))))
+    (vreset! (.-write-txn lmdb)
+             (Rtx. lmdb
+                   (if @(.-sync? lmdb)
+                     (Txn/create (.-env lmdb))
+                     (Txn/createNoSync (.-env lmdb)))
+                   kp-w
+                   vp-w
+                   start-kp-w
+                   stop-kp-w
+                   start-vp-w
+                   stop-vp-w
+                   (volatile! false)))))
 
 (defn- init-info
   [^CppLMDB lmdb new-info]
@@ -1122,6 +1129,7 @@
                                (new-bufval c/+max-key-size+)
                                (new-bufval c/+max-key-size+)
                                (volatile! nil)
+                               (volatile! true)
                                false
                                nil)]
        (when (.isShutdown ^ExecutorService @u/query-thread-pool)

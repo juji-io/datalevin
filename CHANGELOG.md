@@ -28,6 +28,7 @@
   native image. There's no longer a need for GraalVM specific Datalevin library,
   nor any GraalVM version restriction.
 - [Native] Upgrade to the latest version of GraalVM native image.
+- [Server] Handle exceptions in event loop.
 
 ## 0.9.14 (2024-11-25)
 
