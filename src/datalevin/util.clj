@@ -16,8 +16,55 @@
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
 
-;; For when we need to use datalevin specific print method
+;; for when we need to use datalevin specific print method
 (def ^:dynamic *datalevin-print* false)
+
+(defonce query-thread-pool-atom (atom nil))
+
+(defn get-query-thread-pool
+  "access the thread pool for parallel query processing"
+  []
+  (let [pool @query-thread-pool-atom]
+    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+      (reset! query-thread-pool-atom
+              (Executors/newFixedThreadPool
+                (* 2 (.availableProcessors (Runtime/getRuntime)))))
+      pool)))
+
+(defn shutdown-query-thread-pool
+  []
+  (when-let [pool @query-thread-pool-atom]
+    (.shutdown ^ExecutorService pool)))
+
+(defonce async-event-dispatcher-atom (atom nil))
+
+(defn get-async-event-dispatcher
+  "access the async event dispatcher"
+  []
+  (let [pool @async-event-dispatcher-atom]
+    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+      (reset! async-event-dispatcher-atom (Executors/newSingleThreadExecutor))
+      pool)))
+
+(defn shutdown-async-event-dispatcher
+  []
+  (when-let [pool @async-event-dispatcher-atom]
+    (.shutdown ^ExecutorService pool)))
+
+(defonce async-worker-pool-atom (atom nil))
+
+(defn get-async-worker-pool
+  "access the async worker thread pool"
+  []
+  (let [pool @async-worker-pool-atom]
+    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+      (reset! async-worker-pool-atom (Executors/newWorkStealingPool))
+      pool)))
+
+(defn shutdown-async-worker-pool
+  []
+  (when-let [pool @async-event-dispatcher-atom]
+    (.shutdown ^ExecutorService pool)))
 
 (defn seqable?
   ^Boolean [x]
@@ -551,7 +598,7 @@
         (link-vars ~vr (var ~n))
         ~vr))))
 
-(def sample-cache (LRUCache. 256))
+(defonce sample-cache (LRUCache. 256))
 
 (defn reservoir-sampling
   "optimized reservoir sampling, random sample n out of m items, returns a
@@ -587,17 +634,14 @@
   {:pre [(<= r n)]}
   (/ ^long (factorial n) ^long (factorial (- n r))))
 
-(defonce query-thread-pool
-  (atom (Executors/newFixedThreadPool
-          (* 2 (.availableProcessors (Runtime/getRuntime))))))
-
 #_(def map+ map)
 (defn map+
+  "parallel map using query-thread-pool"
   ([f coll]
-   (let [futs (.invokeAll ^ExecutorService @query-thread-pool
-                          (mapv (fn [e] #(f e)) coll))]
+   (let [pool ^ExecutorService (get-query-thread-pool)
+         futs (.invokeAll pool (mapv (fn [e] #(f e)) coll))]
      (mapv #(.get ^Future %) futs)))
   ([f c1 c2]
-   (let [futs (.invokeAll ^ExecutorService @query-thread-pool
-                          (mapv (fn [e1 e2] #(f e1 e2)) c1 c2))]
+   (let [pool ^ExecutorService (get-query-thread-pool)
+         futs (.invokeAll pool (mapv (fn [e1 e2] #(f e1 e2)) c1 c2))]
      (mapv #(.get ^Future %) futs))))

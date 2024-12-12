@@ -504,7 +504,9 @@
       (.close env)
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
-        (.shutdownNow ^ExecutorService @u/query-thread-pool))
+        (u/shutdown-query-thread-pool)
+        (u/shutdown-async-event-dispatcher)
+        (u/shutdown-async-worker-pool))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
@@ -1132,10 +1134,6 @@
                                (volatile! true)
                                false
                                nil)]
-       (when (.isShutdown ^ExecutorService @u/query-thread-pool)
-         (reset! u/query-thread-pool
-                 (Executors/newFixedThreadPool
-                   (.availableProcessors (Runtime/getRuntime)))))
        (swap! l/lmdb-dirs conj dir)
        (l/open-dbi lmdb c/kv-info)
        (if temp?
