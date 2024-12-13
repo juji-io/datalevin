@@ -2023,6 +2023,7 @@
     (r/relation! attrs tuples)))
 
 (defn- step-by-step
+  "for debugging"
   [context db attrs steps]
   (let [[f & r] steps
         fres    (-execute f db nil)
@@ -2042,7 +2043,6 @@
   (let [steps (vec steps)
         n     (count steps)
         attrs (cols->attrs (:cols (peek steps)))]
-    ;; (println n "steps ->" steps)
     (condp = n
       1 (let [tuples (-execute (first steps) db nil)]
           (save-intermediates context steps nil tuples)
@@ -2051,9 +2051,8 @@
               tuples (-execute (peek steps) db src)]
           (save-intermediates context steps (object-array [src]) tuples)
           (r/relation! attrs tuples))
-      (if (u/graal?)
-        (step-by-step context db attrs steps)
-        (pipelining context db attrs steps n)))))
+      ;; (step-by-step context db attrs steps)
+      (pipelining context db attrs steps n))))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]

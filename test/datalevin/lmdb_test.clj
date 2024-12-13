@@ -19,10 +19,6 @@
    [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
-#_(if (u/graal?)
-    (require 'datalevin.binding.graal)
-    (require 'datalevin.binding.java))
-
 (use-fixtures :each db-fixture)
 
 (deftest basic-ops-test

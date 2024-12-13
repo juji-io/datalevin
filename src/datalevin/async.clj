@@ -1,8 +1,6 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
   the load, the bigger the batch, up to batch limit"
-  (:require
-   [datalevin.util :as u])
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
@@ -22,7 +20,9 @@
     the system will ignore it.")
   (post-batch [_]
     "Cleanup after the batch. Should handle its own exception.")
-  (batch-limit [_] "The batch limit for this type of work"))
+  (batch-limit [_] "The batch limit for this type of work")
+  (last-only? [_]
+    "Return true if this type of work cares only about the last one"))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
@@ -32,32 +32,31 @@
 
 (deftype WorkItem [work promise])
 
-(defn- setup-work
-  [^ConcurrentHashMap works ^ConcurrentHashMap limits
-   ^LinkedBlockingQueue queue p k work]
-  (let [item  (->WorkItem work p)
-        limit (batch-limit work)]
-    (assert (pos-int? limit) "batch-limit should return a positive integer")
-    (.putIfAbsent limits k limit)
-    (.putIfAbsent works k (ConcurrentLinkedQueue.))
-    (let [^ConcurrentLinkedQueue q (.get works k)]
-      (locking q
-        (.offer q item)
-        (.offer queue k)))))
+(deftype WorkQueue [^ConcurrentLinkedQueue items ; [WorkItem ...]
+                    limit
+                    last?])
+
+(defn- do-work*
+  [work]
+  (try [:ok (do-work work)]
+       (catch Exception e
+         [:err e])))
 
 (defn- execute-works
-  [^"[Ldatalevin.async.WorkItem;" items]
+  [^"[Ldatalevin.async.WorkItem;" items last?]
   (let [n (alength items)]
     (when (< 0 n)
-      (let [fw (.-work ^WorkItem (aget items 0))]
-        (try (pre-batch fw) (catch Exception _))
-        (dotimes [i n]
-          (let [item ^WorkItem (aget items i)]
-            (deliver (.-promise item)
-                     (try [:ok (do-work (.-work item))]
-                          (catch Exception e
-                            [:err e])))))
-        (try (post-batch fw) (catch Exception _))))))
+      (let [lw (.-work ^WorkItem (aget items (dec n)))]
+        (try (pre-batch lw) (catch Exception _))
+        (if last?
+          (let [res (do-work* lw)]
+            (dotimes [i n]
+              (let [item ^WorkItem (aget items i)]
+                (deliver (.-promise item) res))))
+          (dotimes [i n]
+            (let [item ^WorkItem (aget items i)]
+              (deliver (.-promise item) (do-work* (.-work item))))))
+        (try (post-batch lw) (catch Exception _))))))
 
 (defn- handle-result
   [p]
@@ -67,33 +66,36 @@
       (throw payload))))
 
 (defn- event-handler
-  [^ExecutorService executor ^LinkedBlockingQueue queue ^ConcurrentLinkedQueue q
-   k limit]
+  [^ExecutorService workers ^LinkedBlockingQueue event-queue
+   ^ConcurrentLinkedQueue q k limit last?]
   (locking q
     (let [size (.size q)]
       (when (and (< 0 size)
-                 (or (not (.contains queue k)) ; do nothing when busy
+                 (or (not (.contains event-queue k)) ; do nothing when busy
                      (<= ^long limit size)))
         ;; copy into an array, for iterator is only weakly consistent
         (let [items (.toArray q)]
-          (.submit executor ^Callable #(execute-works items))
+          (.submit workers ^Callable #(execute-works items last?))
           (.clear q))))))
 
-(deftype AsyncExecutor [^ExecutorService dispatcher ; event dispatcher
-                        ^ExecutorService executor   ; workers
-                        ^LinkedBlockingQueue queue  ; event queue
-                        ^ConcurrentHashMap works  ; work-key -> WorkItem queue
-                        ^ConcurrentHashMap limits ; work-key -> batch size limit
+(deftype AsyncExecutor [^ExecutorService dispatcher
+                        ^ExecutorService workers
+                        ^LinkedBlockingQueue event-queue
+                        ^ConcurrentHashMap work-queues ; work-key -> WorkQueue
                         ^AtomicBoolean running]
   IAsyncExecutor
   (start [_]
     (letfn [(event-loop []
               (when (.get running)
-                (let [k (.take queue)
-                      q (.get works k)
-                      l (.get limits k)]
-                  (.submit executor
-                           ^Callable (event-handler executor queue q k l)))
+                (let [k            (.take event-queue)
+                      ^WorkQueue q (.get work-queues k)
+                      limit        (.-limit q)
+                      last?        (.-last? q)
+                      items        (.-items q)]
+                  (.submit workers
+                           ^Callable
+                           (event-handler
+                             workers event-queue items k limit last?)))
                 (recur)))
             (init []
               (try (event-loop)
@@ -107,12 +109,23 @@
   (stop [_]
     (.set running false)
     (.shutdown dispatcher)
-    (.shutdown executor))
+    (.shutdown workers))
   (exec [_ work]
-    (when-let [k (work-key work)]
+    (let [k (work-key work)]
       (assert (keyword? k) "work-key should return a keyword")
-      (let [p (promise)]
-        (setup-work works limits queue p k work)
+      (.putIfAbsent work-queues k
+                    (let [limit (batch-limit work)
+                          last? (last-only? work)]
+                      (assert (pos-int? limit)
+                              "batch-limit should return a positive integer")
+                      (assert (boolean? last?)
+                              "last-only? should return a boolean")
+                      (->WorkQueue (ConcurrentLinkedQueue.) limit last?)))
+      (let [p                        (promise)
+            item                     (->WorkItem work p)
+            ^ConcurrentLinkedQueue q (.-items ^WorkQueue (.get work-queues k))]
+        (locking q (.offer q item))
+        (.offer event-queue k)
         (future (handle-result p))))))
 
 (defn- new-async-executor
@@ -120,7 +133,6 @@
   (->AsyncExecutor (Executors/newSingleThreadExecutor)
                    (Executors/newWorkStealingPool)
                    (LinkedBlockingQueue.)
-                   (ConcurrentHashMap.)
                    (ConcurrentHashMap.)
                    (AtomicBoolean. false)))
 

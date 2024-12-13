@@ -32,10 +32,6 @@
     DataInputStream IOException]
    [java.util UUID]))
 
-#_(if (u/graal?)
-    (require 'datalevin.binding.graal)
-    (require 'datalevin.binding.java))
-
 ;; Entities
 
 (defn entity

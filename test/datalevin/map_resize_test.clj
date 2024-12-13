@@ -10,23 +10,22 @@
 
 (use-fixtures :each db-fixture)
 
-(deftest million-txns-map-resize-test
-  (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
+(deftest large-txns-map-resize-test
+  (let [dir  (u/tmp-dir (str "large-txns-test-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts {:flags   (conj c/default-env-flags :nosync)
+                          :mapsize 10}})]
 
-    (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
-    (is (= 1000000 (count (d/datoms @conn :eav))))
+    (dotimes [i 100000] (d/transact! conn [{:foo i}]))
+    (is (= 100000 (count (d/datoms @conn :eav))))
 
-    ;; TODO this will segfault in native when close db in graalvm
-    (when-not (u/graal?)
-      ;; this will blow through 100 MiB boundary
-      (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
-      (is (= 2000000 (count (d/datoms @conn :eav)))))
+    ;; this will blow through 10 MiB boundary
+    (dotimes [i 100000] (d/transact! conn [{:foo i}]))
+    (is (= 200000 (count (d/datoms @conn :eav))))
 
     (d/close conn)
-    (u/delete-files dir)))
+    #_(u/delete-files dir)))
 
 (deftest map-resize-clear-test
   (let [dir (u/tmp-dir (str "clear-test-" (UUID/randomUUID)))]

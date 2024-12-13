@@ -664,6 +664,7 @@
 
   (turn-off-sync [_] (vreset! sync? false))
   (turn-on-sync [_] (vreset! sync? true))
+  (sync? [_] @sync?)
 
   (open-transact-kv [this]
     (.check-ready this)

@@ -23,10 +23,6 @@
    [java.text Normalizer Normalizer$Form]
    [java.io DataInput DataOutput Writer]))
 
-;; (if (u/graal?)
-;;   (require 'datalevin.binding.graal)
-;;   (require 'datalevin.binding.java))
-
 (def ^:no-doc user-facing-ns
   #{'datalevin.core 'datalevin.client 'datalevin.interpret
     'datalevin.constants})

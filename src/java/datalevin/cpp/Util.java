@@ -23,6 +23,24 @@ public class Util {
         }
     }
 
+    public static class NotReadyException extends DTLVException {
+        public NotReadyException(String msg) {
+            super(msg);
+        }
+    }
+
+    public static class NotResetException extends DTLVException {
+        public NotResetException(String msg) {
+            super(msg);
+        }
+    }
+
+    public static class ResetException extends DTLVException {
+        public ResetException(String msg) {
+            super(msg);
+        }
+    }
+
     /**
      * Handle some return codes that we care about
      */

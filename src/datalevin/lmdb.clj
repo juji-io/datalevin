@@ -188,6 +188,7 @@
   (return-rtx [db rtx])
   (turn-off-sync [db] "write in nosync mode")
   (turn-on-sync [db] "write in sync mode")
+  (sync? [db] "return false if in nosync mode")
   (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
   (abort-transact-kv [db] "abort the explicit read/write rtx")
@@ -305,8 +306,8 @@ values;")
     "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
 
-(defn- pick-binding [] :cpp
-  #_(if (u/graal?) :graal :java))
+;; We have consolidated bindings to JavaCPP
+(defn- pick-binding [] :cpp)
 
 (defmulti open-kv (constantly (pick-binding)))
 

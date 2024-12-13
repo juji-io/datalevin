@@ -12,11 +12,11 @@
    [datalevin.search :as s]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
+   [datalevin.async :as a]
    [clojure.string :as str])
   (:import
-   [java.util UUID List Random Comparator Collection HashMap]
-   [java.util.concurrent ScheduledExecutorService Executors TimeUnit Callable
-    LinkedBlockingQueue]
+   [java.util List Random Comparator Collection HashMap UUID]
+   [java.util.concurrent LinkedBlockingQueue]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -25,6 +25,7 @@
    [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
    [datalevin.datom Datom]
+   [datalevin.async IAsyncWork]
    [datalevin.bits Retrieved Indexable]))
 
 (defn- attr->properties [k v]
@@ -590,14 +591,15 @@
   (not-any? #(identical? (-> % schema :db/cardinality) :db.cardinality/many)
             (mapv first attrs-v)))
 
-(declare insert-datom delete-datom fulltext-index check transact-opts)
+(declare insert-datom delete-datom fulltext-index check transact-opts
+         ->SamplingWork)
 
 (deftype Store [lmdb
                 search-engines
                 ^IntLongHashMap counts
                 ^IntObjectHashMap i-eids
                 ^IntObjectHashMap d-eids
-                ^ScheduledExecutorService scheduler
+                ;; ^ScheduledExecutorService scheduler
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
@@ -624,7 +626,7 @@
 
   (dir [_] (lmdb/dir lmdb))
 
-  (close [_] (.shutdownNow scheduler) (lmdb/close-kv lmdb))
+  (close [_] #_(.shutdownNow scheduler) (lmdb/close-kv lmdb))
 
   (closed? [_] (lmdb/closed-kv? lmdb))
 
@@ -730,8 +732,10 @@
                               (advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
                               (System/currentTimeMillis) :attr :long))
-        (fulltext-index search-engines ft-ds)
-        (lmdb/transact-kv lmdb txs))))
+        (let [res (lmdb/transact-kv lmdb txs)]
+          (fulltext-index search-engines ft-ds)
+          ;; (a/exec (a/get-executor) (->SamplingWork this (lmdb/sync? lmdb)))
+          res))))
 
   (fetch [_ datom]
     (mapv #(retrieved->datom lmdb attrs %)
@@ -1193,16 +1197,16 @@
       :g (s/add-doc engine [:g (nth d 0)] (peek d) false)
       :r (s/remove-doc engine [:g d]))))
 
-(defn collect-samples
+(defn- sampling
   [^Store store]
-  (let [^IntLongHashMap counts   (.-counts store)
-        ^IntObjectHashMap i-eids (.-i-eids store)
-        ^IntObjectHashMap d-eids (.-d-eids store)
-        ^FastList txs            (FastList.)
-        lmdb                     (.-lmdb store)
-        attrs                    (attrs store)
-        r                        (Random.)]
-    (locking (.-write-txn store)
+  (locking (.-write-txn store)
+    (let [^IntLongHashMap counts   (.-counts store)
+          ^IntObjectHashMap i-eids (.-i-eids store)
+          ^IntObjectHashMap d-eids (.-d-eids store)
+          ^FastList txs            (FastList.)
+          lmdb                     (.-lmdb store)
+          attrs                    (attrs store)
+          r                        (Random.)]
       (doseq [^int aid (.toArray (.keySet counts))]
         (let [^LongIntHashMap is (.getIfAbsentPut i-eids aid (LongIntHashMap.))
               ^LongIntHashMap ds (.get d-eids aid)
@@ -1274,6 +1278,15 @@
       (.clear counts)
       (.clear i-eids)
       (.clear d-eids))))
+
+(deftype SamplingWork [^Store store prev-sync]
+  IAsyncWork
+  (work-key [_] (->> (db-name store) hash (str "store-sample") keyword))
+  (do-work [_] (sampling store))
+  (pre-batch [_] (lmdb/turn-off-sync (.-lmdb store)))
+  (post-batch [_] (when prev-sync (lmdb/turn-on-sync (.-lmdb store))))
+  (batch-limit [_] Long/MAX_VALUE)
+  (last-only? [_] true))
 
 (defn- check-cardinality
   [^Store store attr old new]
@@ -1514,26 +1527,27 @@
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (let [opts0     (load-opts lmdb)
-           opts1     (if (empty opts0)
-                       {:validate-data?    false
-                        :auto-entity-time? false
-                        :closed-schema?    false
-                        :db-name           (str (UUID/randomUUID))
-                        :cache-limit       512}
-                       opts0)
-           opts2     (merge opts1 opts)
-           schema    (init-schema lmdb schema)
-           domains   (init-domains (:search-domains opts2)
-                                   schema search-opts search-domains)
-           scheduler (Executors/newScheduledThreadPool 1)]
+     (let [opts0   (load-opts lmdb)
+           opts1   (if (empty opts0)
+                     {:validate-data?    false
+                      :auto-entity-time? false
+                      :closed-schema?    false
+                      :db-name           (str (UUID/randomUUID))
+                      :cache-limit       512}
+                     opts0)
+           opts2   (merge opts1 opts)
+           schema  (init-schema lmdb schema)
+           domains (init-domains (:search-domains opts2)
+                                 schema search-opts search-domains)
+           ;; scheduler (Executors/newScheduledThreadPool 1)
+           ]
        (transact-opts lmdb opts2)
        (let [store (->Store lmdb
                             (init-engines lmdb domains)
                             (IntLongHashMap.)
                             (IntObjectHashMap.)
                             (IntObjectHashMap.)
-                            scheduler
+                            ;; scheduler
                             (load-opts lmdb)
                             schema
                             (schema->rschema schema)
@@ -1542,8 +1556,8 @@
                             (init-max-gt lmdb)
                             (init-max-tx lmdb)
                             (volatile! :storage-mutex))]
-         (.schedule scheduler ^Callable #(collect-samples store)
-                    ^long c/sample-processing-interval TimeUnit/SECONDS)
+         ;; (.schedule scheduler ^Callable #(collect-samples store)
+         ;;            ^long c/sample-processing-interval TimeUnit/SECONDS)
          store)))))
 
 (defn- transfer-engines
@@ -1559,7 +1573,7 @@
            (.-counts old)
            (.-i-eids old)
            (.-d-eids old)
-           (.-scheduler old)
+           ;; (.-scheduler old)
            (opts old)
            (schema old)
            (rschema old)

@@ -55,27 +55,25 @@
     (d/close conn)))
 
 (deftest diff-clients-concurrent-test
-  ;; TODO
-  (when-not (u/graal?)
-    (let [dir  "dtlv://datalevin:datalevin@localhost/diff-client"
-          conn (d/create-conn
-                 dir nil
-                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-      (d/transact! conn [{:db/id 1 :counter 4}])
-      (let [count-f
-            #(d/with-transaction [cn (d/create-conn
-                                       dir nil
-                                       {:client-opts {:pool-size 1}
-                                        :kv-opts     {:flags
-                                                      (conj c/default-env-flags
-                                                            :nosync)}})]
-               (let [^long now (d/q query @cn 1)]
-                 (d/transact! cn [{:db/id 1 :counter (inc now)}])
-                 (d/q query @cn 1)))]
-        (is (= (set [5 6 7 8 9])
-               (set (pcalls count-f count-f count-f count-f count-f)))))
-      (is (= 9 (d/q query @conn 1)))
-      (d/close conn))))
+  (let [dir  "dtlv://datalevin:datalevin@localhost/diff-client"
+        conn (d/create-conn
+               dir nil
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (d/transact! conn [{:db/id 1 :counter 4}])
+    (let [count-f
+          #(d/with-transaction [cn (d/create-conn
+                                     dir nil
+                                     {:client-opts {:pool-size 1}
+                                      :kv-opts     {:flags
+                                                    (conj c/default-env-flags
+                                                          :nosync)}})]
+             (let [^long now (d/q query @cn 1)]
+               (d/transact! cn [{:db/id 1 :counter (inc now)}])
+               (d/q query @cn 1)))]
+      (is (= (set [5 6 7 8 9])
+             (set (pcalls count-f count-f count-f count-f count-f)))))
+    (is (= 9 (d/q query @conn 1)))
+    (d/close conn)))
 
 (deftest with-txn-map-resize-test
   (let [dir    "dtlv://datalevin:datalevin@localhost/map-resize"

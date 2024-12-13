@@ -20,7 +20,8 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 3))
+  (batch-limit [_] 3)
+  (last-only? [_] false))
 
 (defrecord Work2 [num]
   IAsyncWork
@@ -28,7 +29,8 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 5))
+  (batch-limit [_] 5)
+  (last-only? [_] false))
 
 (defrecord Work3 [num]
   IAsyncWork
@@ -36,7 +38,8 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 10))
+  (batch-limit [_] 10)
+  (last-only? [_] false))
 
 (deftest basic-async-setup-test
   (let [executor (a/get-executor)
@@ -57,7 +60,8 @@
   (do-work [_]  (/ 1 0))
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 10))
+  (batch-limit [_] 10)
+  (last-only? [_] false))
 
 (defrecord ErrPreWork []
   IAsyncWork
@@ -65,7 +69,8 @@
   (do-work [_] :something)
   (pre-batch [_] (/ 1 0))
   (post-batch [_])
-  (batch-limit [_] 10))
+  (batch-limit [_] 10)
+  (last-only? [_] false))
 
 (deftest exception-test
   (let [executor (a/get-executor)
@@ -73,4 +78,24 @@
         fut2     (a/exec executor (ErrPreWork.))]
     (is (thrown? Exception (deref fut1)))
     (is (= :something (deref fut2)))
+    (a/shutdown-executor)))
+
+(defrecord LastWork [num]
+  IAsyncWork
+  (work-key [_] :last-work)
+  (do-work [_] num)
+  (pre-batch [_])
+  (post-batch [_])
+  (batch-limit [_] 10)
+  (last-only? [_] true))
+
+(deftest last-work-test
+  (let [executor   (a/get-executor)
+        input      (shuffle (range 10))
+        last-input (last input)
+        futs       (mapv #(a/exec executor (LastWork. %)) input)
+        res        (mapv #(deref %) futs)]
+    (is (not= input res))
+    (is (< (count (distinct res)) (count (distinct input))))
+    (is (= last-input (peek res)))
     (a/shutdown-executor)))
