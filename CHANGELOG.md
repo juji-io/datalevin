@@ -15,6 +15,11 @@
   adaptive batch transaction mechanism to improve write throughout, controlled
   by `*transact-async-batch-limit*`. `transact` is thus recommended as the
   default transaction method, in place of `transact!`.
+- [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
+  samples are more update to date. Each invocation will do less work, or no work
+  at all, based on if the changed ratio of an attribute passes a threshold,
+  controlled by dynamic var `sample-change-ratio`, default is `0.1`, i.e. 10
+  percent of an attribute's values changes.
 - [KV] Consolidated LMDB bindings to a single binding based on JavaCPP.
   Removed both LMDBJava and Graalvm native image specific bindings. This reduces
   release artifact sizes, eases maintenance and enhances performance.

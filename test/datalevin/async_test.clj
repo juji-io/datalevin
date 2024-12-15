@@ -6,6 +6,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
    [datalevin.core :as d]
+   [datalevin.util :as u]
    [datalevin.async :as a]
    )
   (:import
@@ -91,11 +92,21 @@
 
 (deftest last-work-test
   (let [executor   (a/get-executor)
-        input      (shuffle (range 10))
+        input      (vec (shuffle (range 1000)))
         last-input (last input)
         futs       (mapv #(a/exec executor (LastWork. %)) input)
-        res        (mapv #(deref %) futs)]
+        res        (mapv #(deref %) futs)
+        indices    (conj (->> (for [d (distinct res)] (u/index-of #{d} res))
+                              (drop 1)
+                              (map dec)
+                              vec)
+                         (dec (count res)))]
+    ;; (println "input->" input "res->" re-seq)
     (is (not= input res))
     (is (< (count (distinct res)) (count (distinct input))))
     (is (= last-input (peek res)))
+    (is (every? (fn [[i r]] (= i r))
+                (map (fn [x y] [x y])
+                     (for [i indices] (get input i))
+                     (for [i indices] (get res i)))))
     (a/shutdown-executor)))

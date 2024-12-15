@@ -4,7 +4,7 @@
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
-    ConcurrentLinkedQueue ConcurrentHashMap Callable]))
+    ConcurrentLinkedDeque ConcurrentHashMap Callable TimeUnit]))
 
 (defprotocol IAsyncWork
   "Work that wishes to be done asynchronously and auto-batched needs to
@@ -24,17 +24,19 @@
   (last-only? [_]
     "Return true if this type of work cares only about the last one"))
 
-(defprotocol IAsyncExecutor
-  (start [_] "Start the async event loop")
-  (stop [_] "Stop the async event loop")
-  (running? [_] "Return true if this is running")
-  (exec [_ work] "Submit a work, get back a future"))
-
 (deftype WorkItem [work promise])
 
-(deftype WorkQueue [^ConcurrentLinkedQueue items ; [WorkItem ...]
+(defprotocol ILastWork
+  (get-future [_] "return the last future")
+  (set-future [_ fut] "set the last future, return it"))
+
+(deftype WorkQueue [^ConcurrentLinkedDeque items ; [WorkItem ...]
                     limit
-                    last?])
+                    last?
+                    ^:volatile-mutable last-future]
+  ILastWork
+  (get-future [_] last-future)
+  (set-future [_ fut] (set! last-future fut)))
 
 (defn- do-work*
   [work]
@@ -43,20 +45,17 @@
          [:err e])))
 
 (defn- execute-works
-  [^"[Ldatalevin.async.WorkItem;" items last?]
-  (let [n (alength items)]
-    (when (< 0 n)
-      (let [lw (.-work ^WorkItem (aget items (dec n)))]
-        (try (pre-batch lw) (catch Exception _))
-        (if last?
-          (let [res (do-work* lw)]
-            (dotimes [i n]
-              (let [item ^WorkItem (aget items i)]
-                (deliver (.-promise item) res))))
-          (dotimes [i n]
-            (let [item ^WorkItem (aget items i)]
-              (deliver (.-promise item) (do-work* (.-work item))))))
-        (try (post-batch lw) (catch Exception _))))))
+  [^ConcurrentLinkedDeque items ^WorkQueue wq]
+  (let [^WorkItem last-item  (.getLast items)
+        ^WorkItem first-item (.getFirst items)
+        last-work            (.-work last-item)]
+    (try (pre-batch last-work) (catch Exception _))
+    (if (.-last? wq)
+      (do (deliver (.-promise first-item) (do-work* last-work))
+          (set-future wq nil))
+      (doseq [^WorkItem item items]
+        (deliver (.-promise item) (do-work* (.-work item)))))
+    (try (post-batch last-work) (catch Exception _))))
 
 (defn- handle-result
   [p]
@@ -66,17 +65,20 @@
       (throw payload))))
 
 (defn- event-handler
-  [^ExecutorService workers ^LinkedBlockingQueue event-queue
-   ^ConcurrentLinkedQueue q k limit last?]
-  (locking q
-    (let [size (.size q)]
-      (when (and (< 0 size)
+  [^ExecutorService workers ^LinkedBlockingQueue event-queue k ^WorkQueue wq]
+  (let [^ConcurrentLinkedDeque q (.-items wq)]
+    (locking q
+      (when (and (not (.isEmpty q))
                  (or (not (.contains event-queue k)) ; do nothing when busy
-                     (<= ^long limit size)))
-        ;; copy into an array, for iterator is only weakly consistent
-        (let [items (.toArray q)]
-          (.submit workers ^Callable #(execute-works items last?))
-          (.clear q))))))
+                     (<= ^long (.-limit wq) (.size q))))
+        (execute-works q wq)
+        (.clear q)))))
+
+(defprotocol IAsyncExecutor
+  (start [_] "Start the async event loop")
+  (stop [_] "Stop the async event loop")
+  (running? [_] "Return true if this is running")
+  (exec [_ work] "Submit a work, get back a future"))
 
 (deftype AsyncExecutor [^ExecutorService dispatcher
                         ^ExecutorService workers
@@ -87,15 +89,10 @@
   (start [_]
     (letfn [(event-loop []
               (when (.get running)
-                (let [k            (.take event-queue)
-                      ^WorkQueue q (.get work-queues k)
-                      limit        (.-limit q)
-                      last?        (.-last? q)
-                      items        (.-items q)]
+                (let [k  (.take event-queue)
+                      wq (.get work-queues k)]
                   (.submit workers
-                           ^Callable
-                           (event-handler
-                             workers event-queue items k limit last?)))
+                           ^Callable #(event-handler workers event-queue k wq)))
                 (recur)))
             (init []
               (try (event-loop)
@@ -108,25 +105,31 @@
   (running? [_] (.get running))
   (stop [_]
     (.set running false)
-    (.shutdown dispatcher)
-    (.shutdown workers))
+    (.shutdownNow dispatcher)
+    (.shutdownNow workers)
+    (.awaitTermination dispatcher 1 TimeUnit/MILLISECONDS)
+    (.awaitTermination workers 5 TimeUnit/MILLISECONDS))
   (exec [_ work]
-    (let [k (work-key work)]
+    (let [k     (work-key work)
+          limit (batch-limit work)
+          last? (last-only? work)]
       (assert (keyword? k) "work-key should return a keyword")
+      (assert (pos-int? limit) "batch-limit should return a positive integer")
+      (assert (boolean? last?) "last-only? should return a boolean")
       (.putIfAbsent work-queues k
-                    (let [limit (batch-limit work)
-                          last? (last-only? work)]
-                      (assert (pos-int? limit)
-                              "batch-limit should return a positive integer")
-                      (assert (boolean? last?)
-                              "last-only? should return a boolean")
-                      (->WorkQueue (ConcurrentLinkedQueue.) limit last?)))
+                    (->WorkQueue (ConcurrentLinkedDeque.) limit last? nil))
       (let [p                        (promise)
             item                     (->WorkItem work p)
-            ^ConcurrentLinkedQueue q (.-items ^WorkQueue (.get work-queues k))]
-        (locking q (.offer q item))
-        (.offer event-queue k)
-        (future (handle-result p))))))
+            ^WorkQueue wq            (.get work-queues k)
+            ^ConcurrentLinkedDeque q (.-items wq)]
+        (locking q
+          (.offer q item)
+          (.offer event-queue k)
+          (if last?
+            (if-let [fut (get-future wq)]
+              fut
+              (set-future wq (future (handle-result p))))
+            (future (handle-result p))))))))
 
 (defn- new-async-executor
   []

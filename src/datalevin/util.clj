@@ -11,7 +11,7 @@
     IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays Iterator]
-   [java.util.concurrent Executors ExecutorService Future]
+   [java.util.concurrent Executors ExecutorService Future TimeUnit]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -33,8 +33,25 @@
 
 (defn shutdown-query-thread-pool
   []
-  (when-let [pool @query-thread-pool-atom]
-    (.shutdown ^ExecutorService pool)))
+  (when-let [^ExecutorService pool @query-thread-pool-atom]
+    (.shutdownNow pool)
+    (.awaitTermination pool 5 TimeUnit/MILLISECONDS)))
+
+(defonce scheduler-atom (atom nil))
+
+(defn get-scheduler
+  "access the scheduler"
+  []
+  (let [pool @scheduler-atom]
+    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+      (reset! scheduler-atom (Executors/newSingleThreadScheduledExecutor))
+      pool)))
+
+(defn shutdown-scheduler
+  []
+  (when-let [^ExecutorService pool @scheduler-atom]
+    (.shutdownNow pool)
+    (.awaitTermination pool 5 TimeUnit/MILLISECONDS)))
 
 (defn seqable?
   ^Boolean [x]
@@ -568,7 +585,7 @@
         (link-vars ~vr (var ~n))
         ~vr))))
 
-(defonce sample-cache (LRUCache. 256))
+(defonce sample-cache (LRUCache. 128))
 
 (defn reservoir-sampling
   "optimized reservoir sampling, random sample n out of m items, returns a

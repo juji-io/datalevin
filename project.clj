@@ -82,8 +82,8 @@
                     :java-source-paths ["native/src/java"]
                     :jvm-opts
                     [
-                     "--add-opens=java.base/java.nio=ALL-UNNAMED"
-                     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/java.nio=ALL-UNNAMED"
+                     ;; "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
                      ;; "--add-opens=java.base/java.lang=ALL-UNNAMED"
                      ;; "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
                      "-Djdk.attach.allowAttachSelf"]
@@ -99,7 +99,9 @@
   :jar-exclusions [#"graal" #"datalevin.ni"]
   :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
              "-Xlint:all"
-             "-Dclojure.compiler.direct-linking=true"]
+             "-Dclojure.compiler.direct-linking=true"
+             "--add-opens=java.base/java.nio=ALL-UNNAMED"
+             "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
   :javac-options ["-target" "1.8" "-source" "1.8"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"

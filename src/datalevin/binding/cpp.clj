@@ -485,6 +485,11 @@
 
   ILMDB
   (close-kv [this]
+    (swap! l/lmdb-dirs disj (l/dir this))
+    (when (zero? (count @l/lmdb-dirs))
+      (u/shutdown-scheduler)
+      (u/shutdown-query-thread-pool)
+      (a/shutdown-executor))
     (when-not (.isClosed env)
       (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
         (loop []
@@ -503,10 +508,6 @@
         (.close ^Dbi (.-db dbi)))
       (.sync env)
       (.close env)
-      (swap! l/lmdb-dirs disj (l/dir this))
-      (when (zero? (count @l/lmdb-dirs))
-        (u/shutdown-query-thread-pool)
-        (a/shutdown-executor))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 

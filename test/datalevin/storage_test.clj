@@ -13,11 +13,10 @@
    [clojure.string :as s])
   (:import
    [java.util UUID Collection]
-   [java.util.concurrent LinkedBlockingQueue]
+   [java.util.concurrent LinkedBlockingQueue ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.storage Store]
    [datalevin.datom Datom]))
-
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
@@ -400,7 +399,8 @@
       :a [[[:open "0a0"] [:closed "15a"]]] nil false
       (set [[0] [10] [15]]))
     (sut/close store)
-    (u/delete-files dir)))
+    (u/delete-files dir)
+    ))
 
 (deftest eav-scan-v-test
   (let [d0      (d/datom 0 :a 10)
@@ -601,5 +601,54 @@
       tuples2 0 :a
       [[1 5] [1 8] [2 8][1 5] [1 8]]
       )
+    (sut/close store)
+    (u/delete-files dir)))
+
+(deftest sampling-test
+  (let [dir     (u/tmp-dir (str "sampling-test-" (UUID/randomUUID)))
+        store   (sut/open dir
+                          {:a {:db/valueType :db.type/long}
+                           :b {:db/valueType :db.type/long}}
+                          {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+        aid-a   (-> (sut/schema store) :a :db/aid)
+        size-a  5000
+        csize-a 1000
+        aid-b   (-> (sut/schema store) :b :db/aid)
+        size-b  10
+        csize-b 5
+        counts  #(.get ^ConcurrentHashMap (.-counts ^Store store) %)]
+    (is (nil? (counts aid-a)))
+    (sut/load-datoms store (mapv #(d/datom % :a %) (range 1 (inc size-a))))
+    (is (= size-a (counts aid-a)))
+    (is (= size-a (sut/actual-a-size store :a)))
+    (is (= size-a (sut/a-size store :a)))
+    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample store :a))]
+      (is (= c/init-exec-size-threshold (count sample)))
+      (sut/load-datoms store (mapv #(d/datom % :a %)
+                                   (range (inc size-a) (+ size-a (inc csize-a)))))
+      (is (= (+ size-a csize-a) (counts aid-a)))
+      (sut/sampling store)
+      (is (zero? (counts aid-a)))
+      (is (= (+ size-a csize-a) (sut/a-size store :a)))
+      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample store :a))]
+        (is (not= sample new-sample))
+        (is (< (apply max sample) (apply max new-sample)))))
+
+    (.remove ^ConcurrentHashMap (.-counts ^Store store) aid-a)
+    (is (nil? (counts aid-b)))
+    (sut/load-datoms store (mapv #(d/datom % :b %) (range 1 (inc size-b))))
+    (is (= size-b (counts aid-b)))
+    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample store :b))]
+      (is (= size-b (count sample)))
+      (is (= sample (range 1 (inc size-b))))
+      (sut/load-datoms store (mapv #(d/datom % :b %)
+                                   (range (inc size-b) (+ size-b (inc csize-b)))))
+      (is (= (+ size-b csize-b) (counts aid-b)))
+      (sut/sampling store)
+      (is (zero? (counts aid-b)))
+      (is (= (+ size-b csize-b) (sut/a-size store :b)))
+      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample store :b))]
+        (is (= (concat sample (range (inc size-b) (+ size-b (inc csize-b))))
+               new-sample))))
     (sut/close store)
     (u/delete-files dir)))

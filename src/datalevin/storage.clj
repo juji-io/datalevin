@@ -15,15 +15,13 @@
    [datalevin.async :as a]
    [clojure.string :as str])
   (:import
-   [java.util List Random Comparator Collection HashMap UUID]
-   [java.util.concurrent LinkedBlockingQueue]
+   [java.util List Comparator Collection HashMap UUID]
+   [java.util.concurrent LinkedBlockingQueue TimeUnit ScheduledExecutorService
+    ConcurrentHashMap]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
-   [org.eclipse.collections.impl.map.mutable.primitive LongIntHashMap]
-   [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
-   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
    [datalevin.datom Datom]
    [datalevin.async IAsyncWork]
    [datalevin.bits Retrieved Indexable]))
@@ -591,15 +589,14 @@
   (not-any? #(identical? (-> % schema :db/cardinality) :db.cardinality/many)
             (mapv first attrs-v)))
 
+
+
 (declare insert-datom delete-datom fulltext-index check transact-opts
-         ->SamplingWork)
+         ->SamplingWork e-sample*)
 
 (deftype Store [lmdb
                 search-engines
-                ^IntLongHashMap counts
-                ^IntObjectHashMap i-eids
-                ^IntObjectHashMap d-eids
-                ;; ^ScheduledExecutorService scheduler
+                ^ConcurrentHashMap counts
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
@@ -626,7 +623,7 @@
 
   (dir [_] (lmdb/dir lmdb))
 
-  (close [_] #_(.shutdownNow scheduler) (lmdb/close-kv lmdb))
+  (close [_] (lmdb/close-kv lmdb))
 
   (closed? [_] (lmdb/closed-kv? lmdb))
 
@@ -726,16 +723,14 @@
       (locking (lmdb/write-txn lmdb)
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds giants counts i-eids)
-            (delete-datom this datom txs ft-ds giants counts d-eids)))
+            (insert-datom this datom txs ft-ds giants counts)
+            (delete-datom this datom txs ft-ds giants counts)))
         (.add txs (lmdb/kv-tx :put c/meta :max-tx
                               (advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
                               (System/currentTimeMillis) :attr :long))
-        (let [res (lmdb/transact-kv lmdb txs)]
-          (fulltext-index search-engines ft-ds)
-          ;; (a/exec (a/get-executor) (->SamplingWork this (lmdb/sync? lmdb)))
-          res))))
+        (fulltext-index search-engines ft-ds)
+        (lmdb/transact-kv lmdb txs))))
 
   (fetch [_ datom]
     (mapv #(retrieved->datom lmdb attrs %)
@@ -799,18 +794,8 @@
                                            [:closed-open [aid 0]
                                             [aid c/init-exec-size-threshold]]
                                            :int-int :id))]
-            (r/vertical-tuples (sequence
-                                 (comp (map peek) (remove #(= -1 %))) res)))
-          (let [as  (.a-size this a)
-                ts  (FastList.)
-                _   (sample-ave-tuples
-                      this ts a as [[[:closed c/v0] [:closed c/vmax]]] nil false)
-                txs (map-indexed (fn [i ^objects t]
-                                   [:put c/meta [aid i] ^long (aget t 0)
-                                    :int-int :id])
-                                 ts)]
-            (lmdb/transact-kv lmdb txs)
-            ts))))
+            (r/vertical-tuples (sequence (map peek) res)))
+          (e-sample* this a aid (.a-size this a)))))
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 
@@ -1197,96 +1182,41 @@
       :g (s/add-doc engine [:g (nth d 0)] (peek d) false)
       :r (s/remove-doc engine [:g d]))))
 
-(defn- sampling
-  [^Store store]
-  (locking (.-write-txn store)
-    (let [^IntLongHashMap counts   (.-counts store)
-          ^IntObjectHashMap i-eids (.-i-eids store)
-          ^IntObjectHashMap d-eids (.-d-eids store)
-          ^FastList txs            (FastList.)
-          lmdb                     (.-lmdb store)
-          attrs                    (attrs store)
-          r                        (Random.)]
-      (doseq [^int aid (.toArray (.keySet counts))]
-        (let [^LongIntHashMap is (.getIfAbsentPut i-eids aid (LongIntHashMap.))
-              ^LongIntHashMap ds (.get d-eids aid)
-              s-range            [:closed-open [aid 0]
-                                  [aid c/init-exec-size-threshold]]
-              ^long start-n      (a-size store (attrs aid))]
-          (.add txs (lmdb/kv-tx :put c/meta aid
-                                (+ start-n ^long (.get counts aid)) :int :id))
-          (when ds
-            (let [^longs des (.toArray (.keySet ds))]
-              (dotimes [i (alength des)]
-                (let [e  (aget des i)
-                      ec (.getIfAbsent is e 0)]
-                  (.put is e (- ec ^int (.get ds e)))))))
-          (when-not (.isEmpty is)
-            (let [gaps (lmdb/range-keep
-                         lmdb c/meta
-                         (fn [kv]
-                           (let [[_ i] (b/read-buffer (lmdb/k kv) :int-int)
-                                 e     (b/read-buffer (lmdb/v kv) :id)]
-                             (when (= e -1) i)))
-                         s-range :int-int)
-                  gc   (count gaps)
-                  ga   (int-array gaps)
-                  gi   (volatile! 0)
-                  kc   (lmdb/range-count lmdb c/meta s-range :int-int)
-                  k    (volatile! (if (zero? gc) kc (- ^long kc gc)))
-                  cur  (volatile! 0)
-                  ies  ^longs (.toArray (.keySet is))]
-              (dotimes [i (alength ies)]
-                (let [e (aget ies i)
-                      c (.get is e)]
-                  (cond
-                    (< 0 c)
-                    (dotimes [_ c]
-                      (vswap! cur u/long-inc)
-                      (cond
-                        (< ^long @gi gc)
-                        (do (.add txs (lmdb/kv-tx
-                                        :put c/meta [aid (aget ga @gi)]
-                                        e :int-int :id))
-                            (vswap! gi u/long-inc)
-                            (vswap! k u/long-inc))
-                        (< ^long @k ^long c/init-exec-size-threshold)
-                        (do (.add txs (lmdb/kv-tx
-                                        :put c/meta [aid @k]
-                                        e :int-int :id))
-                            (vswap! k u/long-inc))
-                        :else
-                        (let [p (.nextInt r (+ start-n ^long @cur 1))]
-                          (when (< p ^long c/init-exec-size-threshold)
-                            (.add txs (lmdb/kv-tx
-                                        :put c/meta [aid p] e :int-int :id))))))
-                    (= c 0) :do-nothing
-                    :else
-                    (dotimes [_ (- c)]
-                      (vswap! cur u/long-dec)
-                      (when-let [g (lmdb/range-some
-                                     lmdb c/meta
-                                     (fn [kv]
-                                       (when (= e (b/read-buffer (lmdb/v kv) :id))
-                                         (let [[_ i] (b/read-buffer
-                                                       (lmdb/k kv) :int-int)]
-                                           i)))
-                                     s-range :int-int :id)]
-                        (.add txs (lmdb/kv-tx :put c/meta [aid g]
-                                              -1 :int-int :id)))))))))))
-      (lmdb/transact-kv lmdb txs)
-      (.clear counts)
-      (.clear i-eids)
-      (.clear d-eids))))
+(defn- e-sample*
+  [^Store store a aid as]
+  (let [lmdb (.-lmdb store)
+        ts   (FastList.)]
+    (sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
+                       nil false)
+    (lmdb/transact-kv lmdb (map-indexed
+                             (fn [i ^objects t]
+                               [:put c/meta [aid i] ^long (aget t 0)
+                                :int-int :id])
+                             ts))
+    ts))
 
-(deftype SamplingWork [^Store store prev-sync]
+(defn sampling
+  "sample a random changed attribute at a time"
+  [^Store store]
+  (when-not (closed? store)
+    (let [counts ^ConcurrentHashMap (.-counts store)
+          aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
+          attr   ((attrs store) aid)]
+      (when attr
+        (let [acount ^long (.get counts aid)]
+          (when (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
+                   acount)
+            (e-sample* store attr aid (actual-a-size store attr))
+            (.put counts aid 0)))))))
+
+(deftype SamplingWork [^Store store]
   IAsyncWork
-  (work-key [_] (->> (db-name store) hash (str "store-sample") keyword))
+  (work-key [_] (->> (db-name store) hash (str "sampling") keyword))
   (do-work [_] (sampling store))
-  (pre-batch [_] (lmdb/turn-off-sync (.-lmdb store)))
-  (post-batch [_] (when prev-sync (lmdb/turn-on-sync (.-lmdb store))))
-  (batch-limit [_] Long/MAX_VALUE)
-  (last-only? [_] true))
+  (pre-batch [_])
+  (post-batch [_])
+  (batch-limit [_] (long (/ c/sample-processing-interval 2)))
+  (last-only? [_] false))
 
 (defn- check-cardinality
   [^Store store attr old new]
@@ -1360,7 +1290,7 @@
 
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
-   ^IntLongHashMap counts ^IntObjectHashMap eids]
+   ^ConcurrentHashMap counts]
   (let [attr   (.-a d)
         schema (schema store)
         opts   (opts store)
@@ -1377,10 +1307,7 @@
         max-gt (max-gt store)
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)
-        old-c  (.getIfAbsent counts aid 0)
-        old-es ^LongIntHashMap (.getIfAbsentPut eids ^int aid (LongIntHashMap.))
-        old-ec (.getIfAbsent old-es e 0)]
-    (.put old-es e (unchecked-inc old-ec))
+        old-c  ^long (.getOrDefault counts aid 0)]
     (.put counts aid (unchecked-inc old-c))
     (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
@@ -1399,7 +1326,7 @@
 
 (defn- delete-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
-   ^IntLongHashMap counts ^IntObjectHashMap eids]
+   ^ConcurrentHashMap counts]
   (let [e      (.-e d)
         attr   (.-a d)
         v      (.-v d)
@@ -1421,11 +1348,8 @@
                                :avg)
                              0)]
                        (.-g r))))
-        old-c  (.getIfAbsent counts aid 0)
-        old-es ^LongIntHashMap (.getIfAbsentPut eids ^int aid (LongIntHashMap.))
-        old-ec (.getIfAbsent old-es e 0)]
-    (.put old-es e (unchecked-inc old-ec))
-    (.put counts aid (unchecked-dec old-c))
+        old-c  ^long (.getOrDefault counts aid 0)]
+    (.put counts aid (unchecked-inc old-c))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
@@ -1538,26 +1462,27 @@
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)
            domains (init-domains (:search-domains opts2)
-                                 schema search-opts search-domains)
-           ;; scheduler (Executors/newScheduledThreadPool 1)
-           ]
+                                 schema search-opts search-domains)]
        (transact-opts lmdb opts2)
-       (let [store (->Store lmdb
-                            (init-engines lmdb domains)
-                            (IntLongHashMap.)
-                            (IntObjectHashMap.)
-                            (IntObjectHashMap.)
-                            ;; scheduler
-                            (load-opts lmdb)
-                            schema
-                            (schema->rschema schema)
-                            (init-attrs schema)
-                            (init-max-aid schema)
-                            (init-max-gt lmdb)
-                            (init-max-tx lmdb)
-                            (volatile! :storage-mutex))]
-         ;; (.schedule scheduler ^Callable #(collect-samples store)
-         ;;            ^long c/sample-processing-interval TimeUnit/SECONDS)
+       (let [store     (->Store lmdb
+                                (init-engines lmdb domains)
+                                (ConcurrentHashMap.)
+                                (load-opts lmdb)
+                                schema
+                                (schema->rschema schema)
+                                (init-attrs schema)
+                                (init-max-aid schema)
+                                (init-max-gt lmdb)
+                                (init-max-tx lmdb)
+                                (volatile! :storage-mutex))
+             scheduler ^ScheduledExecutorService (u/get-scheduler)]
+         (.scheduleWithFixedDelay scheduler
+                                  ^Runnable
+                                  #(a/exec (a/get-executor)
+                                           (->SamplingWork store))
+                                  ^long (rand-int c/sample-processing-interval)
+                                  ^long c/sample-processing-interval
+                                  TimeUnit/SECONDS)
          store)))))
 
 (defn- transfer-engines
@@ -1571,9 +1496,6 @@
   (->Store lmdb
            (transfer-engines (.-search-engines old) lmdb)
            (.-counts old)
-           (.-i-eids old)
-           (.-d-eids old)
-           ;; (.-scheduler old)
            (opts old)
            (schema old)
            (rschema old)

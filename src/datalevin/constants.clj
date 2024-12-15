@@ -387,6 +387,14 @@
 above which, the same number of items will be sampled instead"}
   init-exec-size-threshold 1000)
 
+(def ^{:dynamic true
+       :doc     "Time interval between sample processing, in seconds "}
+  sample-processing-interval 10)
+
+(def ^{:dynamic true
+       :doc     "Change ratio of an attribute's values, beyond which re-sampling will be done"}
+  sample-change-ratio 0.1)
+
 ;; search engine
 
 (def ^{:dynamic true
