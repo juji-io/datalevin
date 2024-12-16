@@ -22,7 +22,8 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 3)
-  (last-only? [_] false))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (defrecord Work2 [num]
   IAsyncWork
@@ -31,7 +32,8 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 5)
-  (last-only? [_] false))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (defrecord Work3 [num]
   IAsyncWork
@@ -40,7 +42,8 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (deftest basic-async-setup-test
   (let [executor (a/get-executor)
@@ -62,7 +65,8 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (defrecord ErrPreWork []
   IAsyncWork
@@ -71,7 +75,8 @@
   (pre-batch [_] (/ 1 0))
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (deftest exception-test
   (let [executor (a/get-executor)
@@ -88,7 +93,8 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] true))
+  (last-only? [_] true)
+  (callback [_] nil))
 
 (deftest last-work-test
   (let [executor   (a/get-executor)
@@ -101,7 +107,6 @@
                               (map dec)
                               vec)
                          (dec (count res)))]
-    ;; (println "input->" input "res->" re-seq)
     (is (not= input res))
     (is (< (count (distinct res)) (count (distinct input))))
     (is (= last-input (peek res)))
@@ -109,4 +114,24 @@
                 (map (fn [x y] [x y])
                      (for [i indices] (get input i))
                      (for [i indices] (get res i)))))
+    (a/shutdown-executor)))
+
+(defrecord CallbackWork [num cb]
+  IAsyncWork
+  (work-key [_] :cb-work)
+  (do-work [_] num)
+  (pre-batch [_])
+  (post-batch [_])
+  (batch-limit [_] 3)
+  (last-only? [_] false)
+  (callback [_] cb))
+
+(deftest callback-test
+  (let [executor (a/get-executor)
+        input    (vec (shuffle (range 100)))
+        sum      (volatile! 0)
+        cb       (fn [x] (vswap! sum + x))
+        futs     (mapv #(a/exec executor (CallbackWork. % cb)) input)]
+    (is (= input (mapv deref futs)))
+    (is (= @sum 4950))
     (a/shutdown-executor)))

@@ -15,14 +15,14 @@
     DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
+   [datalevin.lmdb RangeContext KVTxData]
+   [datalevin.async IAsyncWork]
    [java.lang AutoCloseable]
-   [java.util.concurrent Executors ExecutorService]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer]
-   [clojure.lang IObj]
-   [datalevin.lmdb RangeContext KVTxData]))
+   [clojure.lang IObj]))
 
 (defn- new-pools
   []
@@ -132,9 +132,9 @@
   IRtx
   (read-only? [_] (.isReadOnly txn))
   (get-txn [_] txn)
-  (close-rtx [_] (.close txn))
-  (reset [this] (.reset txn) this)
-  (renew [this] (.renew txn) this))
+  (close-rtx [_] (locking txn (.close txn)))
+  (reset [this] (locking txn (.reset txn)) this)
+  (renew [this] (locking txn (.renew txn)) this))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.ms_psize ^DTLV$MDB_stat (.get stat))
@@ -446,7 +446,7 @@
   (.get cur ^BufVal (.-start-kp rtx) ^BufVal (.-start-vp rtx)
         DTLV/MDB_GET_BOTH))
 
-(declare reset-write-txn ->CppLMDB)
+(declare reset-write-txn ->CppLMDB ->AsyncTx)
 
 (defn- up-db-size [^Env env]
   (let [^Info info (Info/create env)]
@@ -733,6 +733,18 @@
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " e {}))))))
+
+  (transact-kv-async [this txs] (.transact-kv-async this nil txs))
+  (transact-kv-async [this dbi-name txs]
+    (.transact-kv-async this dbi-name txs :data :data))
+  (transact-kv-async [this dbi-name txs k-type]
+    (.transact-kv-async this dbi-name txs k-type :data))
+  (transact-kv-async [this dbi-name txs k-type v-type]
+    (.transact-kv-async this dbi-name txs k-type v-type nil))
+  (transact-kv-async [this dbi-name txs k-type v-type callback]
+    (a/exec (a/get-executor)
+            (->AsyncTx this dbi-name txs k-type v-type callback
+                       (l/sync? this))))
 
   (sync [_] (.sync env))
 
@@ -1049,6 +1061,16 @@
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
+
+(deftype AsyncTx [lmdb dbi-name txs k-type v-type cb prev-sync]
+  IAsyncWork
+  (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
+  (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
+  (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
+  (post-batch [_] (if @prev-sync (l/turn-on-sync lmdb) (l/turn-off-sync lmdb)))
+  (batch-limit [_] c/*transact-kv-async-batch-limit*)
+  (last-only? [_] false)
+  (callback [_] cb))
 
 (defn- reset-write-txn
   [^CppLMDB lmdb]

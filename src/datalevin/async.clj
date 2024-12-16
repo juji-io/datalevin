@@ -22,7 +22,10 @@
     "Cleanup after the batch. Should handle its own exception.")
   (batch-limit [_] "The batch limit for this type of work")
   (last-only? [_]
-    "Return true if this type of work cares only about the last one"))
+    "Return true if this type of work cares only about the last one")
+  (callback [_]
+    "Add a callback function when the work is done. This callback takes as
+     input the result of do-work."))
 
 (deftype WorkItem [work promise])
 
@@ -58,8 +61,9 @@
     (try (post-batch last-work) (catch Exception _))))
 
 (defn- handle-result
-  [p]
+  [p cb]
   (let [[status payload] @p]
+    (when cb (locking cb (cb payload)))
     (if (identical? status :ok)
       payload
       (throw payload))))
@@ -107,15 +111,17 @@
     (.set running false)
     (.shutdownNow dispatcher)
     (.shutdownNow workers)
-    (.awaitTermination dispatcher 1 TimeUnit/MILLISECONDS)
+    (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS)
     (.awaitTermination workers 5 TimeUnit/MILLISECONDS))
   (exec [_ work]
     (let [k     (work-key work)
           limit (batch-limit work)
-          last? (last-only? work)]
+          last? (last-only? work)
+          cb    (callback work)]
       (assert (keyword? k) "work-key should return a keyword")
       (assert (pos-int? limit) "batch-limit should return a positive integer")
       (assert (boolean? last?) "last-only? should return a boolean")
+      (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
       (.putIfAbsent work-queues k
                     (->WorkQueue (ConcurrentLinkedDeque.) limit last? nil))
       (let [p                        (promise)
@@ -128,8 +134,8 @@
           (if last?
             (if-let [fut (get-future wq)]
               fut
-              (set-future wq (future (handle-result p))))
-            (future (handle-result p))))))))
+              (set-future wq (future (handle-result p cb))))
+            (future (handle-result p cb))))))))
 
 (defn- new-async-executor
   []

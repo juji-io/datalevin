@@ -12,5 +12,8 @@ The following benchmarks are included:
   equivalent SQL.
 * [Math Genealogy](math-bench)  compares Datascript, Datomic and Datalevin on
   recursive rule processing using Math Genealogy data set.
-* [Search](search-bench) compares Lucene and Datalevin on full-text search
+* [Rama](rama-bench) uses a synthetic data set to measure Datalevin's write
+  performance in various write modes, following this [Rama
+  benchmark](https://github.com/redplanetlabs/rama-vs-mongodb-vs-cassandra-benchmarks).
+* [Full-text Search](search-bench) compares Lucene and Datalevin on full-text search
   performance using Wikipedia data set.

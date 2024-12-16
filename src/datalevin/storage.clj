@@ -1215,8 +1215,9 @@
   (do-work [_] (sampling store))
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] (long (/ c/sample-processing-interval 2)))
-  (last-only? [_] false))
+  (batch-limit [_] (long (/ ^long c/sample-processing-interval 2)))
+  (last-only? [_] false)
+  (callback [_] nil))
 
 (defn- check-cardinality
   [^Store store attr old new]

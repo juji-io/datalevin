@@ -154,6 +154,23 @@
           (l/close-kv lmdb))))
     (u/delete-files dir)))
 
+(deftest transact-arity-test
+  (let [dir  (u/tmp-dir (str "lmdb-tx-arity-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb "a" [[:put :a 1]
+                             [:put :b 2]])
+    (is (= 1 (l/get-value lmdb "a" :a)))
+    (is (= 2 (l/get-value lmdb "a" :b)))
+
+    (l/open-dbi lmdb "b")
+    (l/transact-kv lmdb "b" [[:put "b" 1]
+                             [:put "a" 2]] :string)
+    (is (= [["a" 2] ["b" 1]]
+           (l/get-range lmdb "b" [:all] :string)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]

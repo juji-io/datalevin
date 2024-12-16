@@ -336,6 +336,10 @@
        :doc     "Initial maximal value size is 16384 bytes, automatically grown"}
   *init-val-size* 16384)
 
+(def ^{:dynamic true
+       :doc     "Async kv transaction batch limit"}
+  *transact-kv-async-batch-limit* 256)
+
 (defn ^:no-doc pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or
   equal to the current size"
@@ -355,6 +359,10 @@
 (def ^{:dynamic true
        :doc     "batch size (# of datoms) when filling DB"}
   *fill-db-batch-size* 1048576)
+
+(def ^{:dynamic true
+       :doc     "Async transaction batch limit"}
+  *transact-async-batch-limit* 16)
 
 ;; datalog query engine
 

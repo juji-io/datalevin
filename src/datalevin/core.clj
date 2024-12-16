@@ -1269,19 +1269,24 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
 
-(def ^{:arglists '([db txs])
-       :doc      "Update DB, insert or delete key value pairs in the key-value store.
+(def ^{:arglists '([db txs] [db dbi-name txs] [db dbi-name txs k-type]
+                   [db dbi-name txs k-type v-type])
+       :doc      "Synchronously update key-value DB, insert or delete key value pairs.
 
   `txs` is a seq of Clojure vectors, `[op dbi-name k v k-type v-type flags]`
   when `op` is `:put`, for insertion of a key value pair `k` and `v`;
-  or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
+  or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`.
 
-  `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
+  `dbi-name` is the name of the DBI (i.e sub-db) to be updated, a string.
 
   `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]].
+
+  When all vectors in the `txs` are updating the same DBI, it can be pulled out
+  of `txs` and passed in as `dbi-name` argument. Similarly, `k-type` and `v-type` can be
+  pulled out and passed in as arguments if the whole `txs` have the same data types.
 
   `:flags` is a set of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
        Pass in `:append` when the data is already sorted to gain better write performance.
@@ -1308,6 +1313,20 @@ Only usable for debug output.
 
 See also: [[open-kv]], [[sync]]"}
   transact-kv l/transact-kv)
+
+(def ^{:arglists '([db txs]
+                   [db dbi-name txs]
+                   [db dbi-name txs k-type]
+                   [db dbi-name txs k-type v-type]
+                   [db dbi-name txs k-type v-type callback])
+       :doc      "Asynchronously update key-value DB, insert or delete key value pairs, return a future. The future eventually contains `:transacted` if transaction succeeds, otherwise an exception will be thrown when the future is deref'ed.
+
+The asynchronous transactions are batched. Batch size is adaptive to the load, so the write throughput is generally higher than `transact-kv`.
+
+The 6-arity version of the function takes a `callback` function, which will be called when the transaction commits, which takes the transaction result (possibly an exception) as the single argument.
+
+See also: [[transact-kv]]"}
+  transact-kv-async l/transact-kv-async)
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}
