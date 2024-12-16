@@ -485,31 +485,32 @@
 
   ILMDB
   (close-kv [this]
-    (swap! l/lmdb-dirs disj (l/dir this))
-    (when (zero? (count @l/lmdb-dirs))
-      (u/shutdown-scheduler)
-      (u/shutdown-query-thread-pool)
-      (a/shutdown-executor))
-    (when-not (.isClosed env)
-      (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
-        (loop []
-          (when (.hasNext iter)
-            (.close-rtx ^Rtx (.next iter))
-            (.remove iter)
-            (recur))))
-      (doseq [^DBI dbi (.values dbis)]
-        (let [^Iterator iter (.iterator
-                               ^ArrayDeque (.get ^ThreadLocal (.-curs dbi)))]
+    (locking write-txn
+      (when-not (.isClosed env)
+        (swap! l/lmdb-dirs disj (l/dir this))
+        (when (zero? (count @l/lmdb-dirs))
+          (u/shutdown-scheduler)
+          (u/shutdown-query-thread-pool)
+          (a/shutdown-executor))
+        (doseq [^DBI dbi (.values dbis)]
+          (let [^Iterator iter (.iterator
+                                 ^ArrayDeque (.get ^ThreadLocal (.-curs dbi)))]
+            (loop []
+              (when (.hasNext iter)
+                (.close ^Cursor (.next iter))
+                (.remove iter)
+                (recur))))
+          (.close ^Dbi (.-db dbi)))
+        (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
           (loop []
             (when (.hasNext iter)
-              (.close ^Cursor (.next iter))
+              (.close-rtx ^Rtx (.next iter))
               (.remove iter)
               (recur))))
-        (.close ^Dbi (.-db dbi)))
-      (.sync env)
-      (.close env)
-      (when (@info :temp?) (u/delete-files (@info :dir)))
-      nil))
+        (.sync env)
+        (.close env)
+        (when (@info :temp?) (u/delete-files (@info :dir)))
+        nil)))
 
   (closed-kv? [_] (.isClosed env))
 
@@ -709,8 +710,8 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
-    (.check-ready this)
     (locking write-txn
+      (.check-ready this)
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
             ^DBI dbi  (when dbi-name
@@ -1067,7 +1068,9 @@
   (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
   (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
   (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
-  (post-batch [_] (if @prev-sync (l/turn-on-sync lmdb) (l/turn-off-sync lmdb)))
+  (post-batch [_]
+    (when @prev-sync (l/turn-on-sync lmdb))
+    (l/sync lmdb))
   (batch-limit [_] c/*transact-kv-async-batch-limit*)
   (last-only? [_] false)
   (callback [_] cb))
