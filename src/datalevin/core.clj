@@ -14,6 +14,7 @@
    [datalevin.storage :as s]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l]
+   [datalevin.async :as a]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
@@ -27,6 +28,7 @@
    [datalevin.storage Store]
    [datalevin.db DB]
    [datalevin.datom Datom]
+   [datalevin.async IAsyncWork]
    [datalevin.remote DatalogStore KVStore]
    [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
@@ -1091,26 +1093,47 @@ Only usable for debug output.
        (let [~(first spec) conn#] ~@body)
        (finally (close conn#)))))
 
+(deftype AsyncDLTx [conn lmdb tx-data tx-meta cb prev-sync]
+  IAsyncWork
+  (work-key [_] (->> (.-store ^DB @conn) s/db-name hash (str "tx") keyword))
+  (do-work [_] (transact! conn tx-data tx-meta))
+  (pre-batch [_]
+    (vreset! prev-sync (l/sync? lmdb))
+    (l/turn-off-sync lmdb))
+  (post-batch [_]
+    (when @prev-sync (l/turn-on-sync lmdb))
+    (l/sync lmdb))
+  (batch-limit [_] c/*transact-async-batch-limit*)
+  ;; (last-only? [_] false)
+  (callback [_] cb))
+
+(defn transact-async
+  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits. Use an adaptive batch transaction algorithm that adjust batch size according to workload: the higher the load, the larger the batch size."
+  ([conn tx-data] (transact-async conn tx-data nil))
+  ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
+  ([conn tx-data tx-meta cb]
+   {:pre [(conn? conn)]}
+   (a/exec (a/get-executor)
+           (let [lmdb (.-lmdb ^Store (.-store ^DB @conn))]
+             (->AsyncDLTx conn lmdb tx-data tx-meta cb (l/sync? lmdb))))
+   #_(future-call #(transact! conn tx-data tx-meta))))
+
 (defn transact
   "Datalog transaction that returns an already realized future that contains the transaction report. It uses the same adaptive batch transaction as [[transact-async]], but will block until the future is realized, i.e. when the transaction commits."
   ([conn tx-data] (transact conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
-   (let [res (transact! conn tx-data tx-meta)]
-     (reify
-       clojure.lang.IDeref
-       (deref [_] res)
-       clojure.lang.IBlockingDeref
-       (deref [_ _ _] res)
-       clojure.lang.IPending
-       (isRealized [_] true)))))
-
-(defn transact-async
-  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits. Use an adaptive batch transaction algorithm that adjust batch size according to workload: the higher the load, the larger the batch size."
-  ([conn tx-data] (transact-async conn tx-data nil))
-  ([conn tx-data tx-meta]
-   {:pre [(conn? conn)]}
-   (future-call #(transact! conn tx-data tx-meta))))
+   (let [fut (transact-async conn tx-data tx-meta)]
+     @fut
+     fut)
+   #_(let [res (transact! conn tx-data tx-meta)]
+       (reify
+         clojure.lang.IDeref
+         (deref [_] res)
+         clojure.lang.IBlockingDeref
+         (deref [_ _ _] res)
+         clojure.lang.IPending
+         (isRealized [_] true)))))
 
 (defn ^:no-doc squuid
   "Generates a UUID that grow with time.

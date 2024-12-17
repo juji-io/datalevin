@@ -22,7 +22,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 3)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] nil))
 
 (defrecord Work2 [num]
@@ -32,7 +32,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 5)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] nil))
 
 (defrecord Work3 [num]
@@ -42,7 +42,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] nil))
 
 (deftest basic-async-setup-test
@@ -65,7 +65,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] nil))
 
 (defrecord ErrPreWork []
@@ -75,7 +75,7 @@
   (pre-batch [_] (/ 1 0))
   (post-batch [_])
   (batch-limit [_] 10)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] nil))
 
 (deftest exception-test
@@ -86,35 +86,35 @@
     (is (= :something (deref fut2)))
     (a/shutdown-executor)))
 
-(defrecord LastWork [num]
-  IAsyncWork
-  (work-key [_] :last-work)
-  (do-work [_] num)
-  (pre-batch [_])
-  (post-batch [_])
-  (batch-limit [_] 10)
-  (last-only? [_] true)
-  (callback [_] nil))
+;; (defrecord LastWork [num]
+;;   IAsyncWork
+;;   (work-key [_] :last-work)
+;;   (do-work [_] num)
+;;   (pre-batch [_])
+;;   (post-batch [_])
+;;   (batch-limit [_] 10)
+;;   (last-only? [_] true)
+;;   (callback [_] nil))
 
-(deftest last-work-test
-  (let [executor   (a/get-executor)
-        input      (vec (shuffle (range 1000)))
-        last-input (last input)
-        futs       (mapv #(a/exec executor (LastWork. %)) input)
-        res        (mapv #(deref %) futs)
-        indices    (conj (->> (for [d (distinct res)] (u/index-of #{d} res))
-                              (drop 1)
-                              (map dec)
-                              vec)
-                         (dec (count res)))]
-    (is (not= input res))
-    (is (< (count (distinct res)) (count (distinct input))))
-    (is (= last-input (peek res)))
-    (is (every? (fn [[i r]] (= i r))
-                (map (fn [x y] [x y])
-                     (for [i indices] (get input i))
-                     (for [i indices] (get res i)))))
-    (a/shutdown-executor)))
+;; (deftest last-work-test
+;;   (let [executor   (a/get-executor)
+;;         input      (vec (shuffle (range 1000)))
+;;         last-input (last input)
+;;         futs       (mapv #(a/exec executor (LastWork. %)) input)
+;;         res        (mapv #(deref %) futs)
+;;         indices    (conj (->> (for [d (distinct res)] (u/index-of #{d} res))
+;;                               (drop 1)
+;;                               (map dec)
+;;                               vec)
+;;                          (dec (count res)))]
+;;     (is (not= input res))
+;;     (is (< (count (distinct res)) (count (distinct input))))
+;;     (is (= last-input (peek res)))
+;;     (is (every? (fn [[i r]] (= i r))
+;;                 (map (fn [x y] [x y])
+;;                      (for [i indices] (get input i))
+;;                      (for [i indices] (get res i)))))
+;;     (a/shutdown-executor)))
 
 (defrecord CallbackWork [num cb]
   IAsyncWork
@@ -123,7 +123,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 3)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] cb))
 
 (deftest callback-test

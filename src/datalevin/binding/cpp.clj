@@ -1072,7 +1072,7 @@
     (when @prev-sync (l/turn-on-sync lmdb))
     (l/sync lmdb))
   (batch-limit [_] c/*transact-kv-async-batch-limit*)
-  (last-only? [_] false)
+  ;; (last-only? [_] false)
   (callback [_] cb))
 
 (defn- reset-write-txn

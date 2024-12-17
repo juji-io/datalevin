@@ -70,29 +70,27 @@ public class Txn {
 
     public void abort() {
         checkReady();
-        DTLV.mdb_txn_abort(ptr);
         state = DONE;
+        DTLV.mdb_txn_abort(ptr);
     }
 
     public void close() {
-        if (state == RELEASED)
-            return;
-        if (state == READY)
-            DTLV.mdb_txn_abort(ptr);
+        if (state == RELEASED) return;
+        if (state == READY) DTLV.mdb_txn_abort(ptr);
         state = RELEASED;
     }
 
     public void commit() {
         checkReady();
-        Util.checkRc(DTLV.mdb_txn_commit(ptr));
         state = DONE;
+        Util.checkRc(DTLV.mdb_txn_commit(ptr));
     }
 
     public void reset() {
         if (state != READY && state != DONE)
             throw new Util.ResetException("Txn cannot be reset");
-        DTLV.mdb_txn_reset(ptr);
         state = RESET;
+        DTLV.mdb_txn_reset(ptr);
     }
 
     public void renew() {

@@ -1,37 +1,59 @@
 # Write Benchmark
 
-The purpose of this benchmark is to plot the throughput and latency under
-various conditions in Datalevin, to give users some reference data points. This
-benchmark loosely follows the tasks proposed in [this Rama
-benchmark](https://blog.redplanetlabs.com/2024/04/25/better-performance-rama-vs-mongodb-and-cassandra/).
+The purpose of this benchmark is to plot the write throughput and latency under
+various conditions in Datalevin. Hopefully, this gives users some reference data
+points to help choosing the right transaction function and the right data batch
+size for specific use cases.
+
+Datalevin supports these transaction functions for Key Value DB:
+
+* `transact-kv-async`
+* `transact-kv`
+
+And the following for Datalog DB:
+
+* `transact-async`
+* `transact`
+* `transact!`
+
+In all transaction functions, we only use Datalevin's default write setting,
+i.e. the safest ACID write setting. For now, faster, albeit less safe write
+conditions, such as `:mapasync`, `:nometasync`, `:nosync`, `:writemap`, and so
+on, are not tested in this benchmark.
+
 There are two main tasks, one is pure write in batch write condition, another is
-read/write at the same time.
+half read half write at the same time.
 
 ## Pure Write
 
-This benchmark writes two UUID strings as the key (imitating Cassandra's
-partitioning key and clustering key), and a UUID string as the value. So each
-write has a 72 bytes key and a 36 bytes value.
+This task writes two random UUID strings as the key, and a random UUID string as
+the value. So each write has a 72 bytes key and a 36 bytes value.
 
-These data are written one batch at a time. Instead of using fixed batch size,
-we vary the batch size to show the change of write throughput/latency. Since
-there's no upper limit on the batch size, we arbitrarily set the maximal batch
-size to be 1 million. In total, we write as fast as we can for 3 hours, with
-batch sizes in 1, 10, 100, 1000, 10000, 100000, or 1000000. We also measure
-latency of write acknowledgment throughout the run.
+These data are written in batches, one batch at a time. We vary the batch size
+to show the change of write throughput and latency. To avoid exhausting system
+resources, the number of asynchronous write requests in flight is capped at 1K
+at a time.
 
-### `transact-kv-async`
+Since there's no upper limit on the batch size, we arbitrarily set the maximal
+batch size to be 100K. In each benchmark run, we write to an empty DB as fast as
+we can for an hour, with batch sizes of 1, 10, 100, 1k, 10k, and 100k,
+respectively. For example, the command below runs benchmark for
+`transact-kv-async` with batch size 10, and save the results in
+`kv-async-10.csv`:
 
-This is asynchronous write in the KV store. We do not limit the number of calls
-in flight. Instead, we write as fast as possible. We report results on committed
-and synced to disk writes that are guaranteed to be durable.
+```bash
+ timeout 3600s clj -Xwrite :batch 10 :f kv-async > kv-async-10.csv
+```
 
-### `transact-kv`
+For every 100K writes, the following metrics are collected during the benchmark
+run:
 
-### `transact-async`
+* Throughout: the average number of writes per second.
+* Write Latency: the average latency of the transaction function call, in
+  milliseconds.
+* Commit Latency: the average latency of receiving the write success
+  acknowledgment, in milliseconds. As mentioned, the acknowledged writes are
+  guaranteed to be durable.
 
-### `transact`
-
-### `transact!`
 
 ## Read/Write
