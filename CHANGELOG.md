@@ -3,29 +3,35 @@
 ## WIP
 
 ### Added
-- [KV] `transanct-kv-async` function to return a future immediately and transact
-  in batches to enhance write throughput. Batch size is adaptive to the write
-  workload: the higher the load, the larger the batch, up to a batch limit,
-  controlled by a dynamic var `*transact-kv-async-batch-limit*`.
+- [KV] `transanct-kv-async` function to return a future and transact in batches
+  to enhance write throughput (depending on data size, 3X-10X higher throughput
+  compared with `transact-kv`). Since the commit latency also becomes generally
+  lower, it is recommended to use asynchronous transactions by default. Batch
+  size is automatically adaptive to the write workload: the higher the load, the
+  larger the batch, up to a batch limit, controlled by a dynamic var
+  `*transact-kv-async-batch-limit*`.
   [#256](https://github.com/juji-io/datalevin/issues/256)
+- [Benchmark] [Write benchmark](benchmarks/write-bench). Show Datalevin's write
+  throughput and latency using various transaction methods and write batch
+  sizes.
 - [Platform] Support for freebsd on amd64.
 
 ### Improved
-- [Datalog] Both `transact` and `transact-async` are changed to use the above
-  adaptive batch transaction mechanism to improve write throughout, controlled
-  by `*transact-async-batch-limit*`. `transact` is thus recommended as the
-  default transaction method, in place of `transact!`.
+- [Datalog] Both `transact` and `transact-async` are changed to use the same
+  adaptive batch transaction mechanism to improve write throughout, similarly
+  controlled by `*transact-async-batch-limit*`. `transact` is thus recommended
+  as the default transaction method, in place of `transact!`.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
   samples are more update to date. Each invocation will do less work, or no work
-  at all, based on if the changed ratio of an attribute passes a threshold,
+  , based on whether the changed ratio of an attribute passes a threshold,
   controlled by dynamic var `sample-change-ratio`, default is `0.1`, i.e. 10
-  percent of an attribute's values changes.
-- [KV] Consolidated LMDB bindings to a single binding based on JavaCPP.
-  Removed both LMDBJava and Graalvm native image specific bindings. This reduces
-  release artifact sizes, eases maintenance and enhances performance.
+  percent of an attribute's values changed.
+- [KV] Consolidated LMDB bindings to a single binding using JavaCPP. Removed
+  both LMDBJava and Graalvm native image specific bindings. This reduces release
+  artifact sizes, eases maintenance and enhances performance.
   [#35](https://github.com/juji-io/datalevin/issues/35).
 - [KV] Pushed all LMDB iterators, counters, sampler, and comparator
-  implementation down to C.
+  implementation down to C code.
   [#279](https://github.com/juji-io/datalevin/issues/279).
 - [KV] Adding `--add-opens` JVM options is now optional. If these JVM options
   are not set, Datalevin will use a slower default option instead of throwing
@@ -35,7 +41,7 @@
   native image. There's no longer a need for GraalVM specific Datalevin library,
   nor any GraalVM version restriction.
 - [Native] Upgrade to the latest version of GraalVM native image.
-- [Server] Handle exceptions in event loop.
+- [Server] Handle rare cases of exceptions in event loop.
 
 ## 0.9.14 (2024-11-25)
 

@@ -10,7 +10,7 @@
    [datalevin.async :as a]
    )
   (:import
-   [datalevin.async IAsyncWork]
+   [datalevin.async IAsyncWork WorkItem]
    [java.util UUID]))
 
 (use-fixtures :each db-fixture)
@@ -22,7 +22,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 3)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (defrecord Work2 [num]
@@ -32,7 +32,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 5)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (defrecord Work3 [num]
@@ -42,7 +42,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (deftest basic-async-setup-test
@@ -65,7 +65,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 10)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (defrecord ErrPreWork []
@@ -75,7 +75,7 @@
   (pre-batch [_] (/ 1 0))
   (post-batch [_])
   (batch-limit [_] 10)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (deftest exception-test
@@ -86,35 +86,78 @@
     (is (= :something (deref fut2)))
     (a/shutdown-executor)))
 
-;; (defrecord LastWork [num]
-;;   IAsyncWork
-;;   (work-key [_] :last-work)
-;;   (do-work [_] num)
-;;   (pre-batch [_])
-;;   (post-batch [_])
-;;   (batch-limit [_] 10)
-;;   (last-only? [_] true)
-;;   (callback [_] nil))
+(defn- last-combine [coll] (last coll))
 
-;; (deftest last-work-test
-;;   (let [executor   (a/get-executor)
-;;         input      (vec (shuffle (range 1000)))
-;;         last-input (last input)
-;;         futs       (mapv #(a/exec executor (LastWork. %)) input)
-;;         res        (mapv #(deref %) futs)
-;;         indices    (conj (->> (for [d (distinct res)] (u/index-of #{d} res))
-;;                               (drop 1)
-;;                               (map dec)
-;;                               vec)
-;;                          (dec (count res)))]
-;;     (is (not= input res))
-;;     (is (< (count (distinct res)) (count (distinct input))))
-;;     (is (= last-input (peek res)))
-;;     (is (every? (fn [[i r]] (= i r))
-;;                 (map (fn [x y] [x y])
-;;                      (for [i indices] (get input i))
-;;                      (for [i indices] (get res i)))))
-;;     (a/shutdown-executor)))
+(defrecord LastCombineWork [num]
+  IAsyncWork
+  (work-key [_] :last-combine-work)
+  (do-work [_] num)
+  (pre-batch [_])
+  (post-batch [_])
+  (batch-limit [_] 10)
+  (combine [_] last-combine)
+  (callback [_] nil))
+
+(deftest last-combine-work-test
+  (let [executor   (a/get-executor)
+        input      (vec (shuffle (range 1000)))
+        last-input (last input)
+        futs       (mapv #(a/exec executor (LastCombineWork. %)) input)
+        res        (mapv #(deref %) futs)
+        indices    (conj (->> (for [d (distinct res)] (u/index-of #{d} res))
+                              (drop 1)
+                              (map dec)
+                              vec)
+                         (dec (count res)))
+        max-stride (->> res
+                        (partition-by identity)
+                        (map count)
+                        (apply max))]
+    (is (not= input res))
+    (is (< (count (distinct res)) (count (distinct input))))
+    (is (= last-input (peek res)))
+    (is (every? (fn [[i r]] (= i r))
+                (map (fn [x y] [x y])
+                     (for [i indices] (get input i))
+                     (for [i indices] (get res i)))))
+    (is (<= max-stride (a/batch-limit (LastCombineWork. 1))))
+    (a/shutdown-executor)))
+
+(declare concat-combine)
+
+(defrecord ConcatCombineWork [v]
+  IAsyncWork
+  (work-key [_] :combine-work)
+  (do-work [_] v)
+  (pre-batch [_])
+  (post-batch [_])
+  (batch-limit [_] 3)
+  (combine [_] concat-combine)
+  (callback [_] nil))
+
+(defn- concat-combine
+  [coll]
+  (assoc (first coll) :v
+         (into [] (comp (map #(.-v ^ConcatCombineWork %)) cat) coll)))
+
+(deftest concat-combine-work-test
+  (let [executor   (a/get-executor)
+        get-v      #(vec (shuffle (range (inc ^int (rand-int %)))))
+        input      (mapv get-v (range 2 10))
+        futs       (mapv #(a/exec executor (ConcatCombineWork. %)) input)
+        res        (mapv #(deref %) futs)
+        dist-res   (->> res
+                        (partition-by identity)
+                        (mapv first)
+                        flatten)
+        max-stride (->> res
+                        (partition-by identity)
+                        (map count)
+                        (apply max))]
+    (is (not= input res))
+    (is (= (flatten input) dist-res))
+    (is (<= max-stride (a/batch-limit (ConcatCombineWork. [1]))))
+    (a/shutdown-executor)))
 
 (defrecord CallbackWork [num cb]
   IAsyncWork
@@ -123,14 +166,14 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] 3)
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] cb))
 
 (deftest callback-test
   (let [executor (a/get-executor)
         input    (vec (shuffle (range 100)))
         sum      (volatile! 0)
-        cb       (fn [x] (vswap! sum + x))
+        cb       (fn [x] (vswap! sum #(+ ^long % ^long x)))
         futs     (mapv #(a/exec executor (CallbackWork. % cb)) input)]
     (is (= input (mapv deref futs)))
     (is (= @sum 4950))

@@ -61,7 +61,7 @@
 
 (defn write
   [{:keys [batch f]}]
-  (let [db       (doto (d/open-kv (str "max-write-db-" f)
+  (let [db       (doto (d/open-kv (str "max-write-db-" f "-" batch)
                                   {:mapsize 60000})
                    (d/open-dbi max-write-dbi))
         kv-async (fn [txs measure]

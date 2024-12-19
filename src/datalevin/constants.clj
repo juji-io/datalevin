@@ -338,7 +338,7 @@
 
 (def ^{:dynamic true
        :doc     "Async kv transaction batch limit"}
-  *transact-kv-async-batch-limit* 256)
+  *transact-kv-async-batch-limit* 512)
 
 (defn ^:no-doc pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or

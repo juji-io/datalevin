@@ -21,7 +21,6 @@
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.binding.cpp]
-   ;; [datalevin.binding.java]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
@@ -1093,6 +1092,8 @@ Only usable for debug output.
        (let [~(first spec) conn#] ~@body)
        (finally (close conn#)))))
 
+(declare tx-data-combine)
+
 (deftype AsyncDLTx [conn lmdb tx-data tx-meta cb prev-sync]
   IAsyncWork
   (work-key [_] (->> (.-store ^DB @conn) s/db-name hash (str "tx") keyword))
@@ -1104,19 +1105,30 @@ Only usable for debug output.
     (when @prev-sync (l/turn-on-sync lmdb))
     (l/sync lmdb))
   (batch-limit [_] c/*transact-async-batch-limit*)
-  ;; (last-only? [_] false)
+  (combine [_] tx-data-combine)
   (callback [_] cb))
 
+(defn- tx-data-combine
+  [coll]
+  (let [^AsyncDLTx fw (first coll)]
+    (->AsyncDLTx (.-conn fw)
+                 (.-lmdb fw)
+                 (into [] (comp (map #(.-tx-data ^AsyncDLTx %)) cat) coll)
+                 (.-tx-meta fw)
+                 (.-cb fw)
+                 (.-prev-sync fw))))
+
 (defn transact-async
-  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits. Use an adaptive batch transaction algorithm that adjust batch size according to workload: the higher the load, the larger the batch size."
+  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits.
+
+  Use an adaptive batch transaction algorithm that adjusts batch size according to workload: the higher the load, the larger the batch size. The upper limit of batch size is set by dynamic var `:datalevin.constants/*transact-async-batch-limit*`"
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
   ([conn tx-data tx-meta cb]
    {:pre [(conn? conn)]}
    (a/exec (a/get-executor)
            (let [lmdb (.-lmdb ^Store (.-store ^DB @conn))]
-             (->AsyncDLTx conn lmdb tx-data tx-meta cb (l/sync? lmdb))))
-   #_(future-call #(transact! conn tx-data tx-meta))))
+             (->AsyncDLTx conn lmdb tx-data tx-meta cb (l/sync? lmdb))))))
 
 (defn transact
   "Datalog transaction that returns an already realized future that contains the transaction report. It uses the same adaptive batch transaction as [[transact-async]], but will block until the future is realized, i.e. when the transaction commits."
@@ -1125,15 +1137,7 @@ Only usable for debug output.
    {:pre [(conn? conn)]}
    (let [fut (transact-async conn tx-data tx-meta)]
      @fut
-     fut)
-   #_(let [res (transact! conn tx-data tx-meta)]
-       (reify
-         clojure.lang.IDeref
-         (deref [_] res)
-         clojure.lang.IBlockingDeref
-         (deref [_ _ _] res)
-         clojure.lang.IPending
-         (isRealized [_] true)))))
+     fut)))
 
 (defn ^:no-doc squuid
   "Generates a UUID that grow with time.
@@ -1344,7 +1348,7 @@ See also: [[open-kv]], [[sync]]"}
                    [db dbi-name txs k-type v-type callback])
        :doc      "Asynchronously update key-value DB, insert or delete key value pairs, return a future. The future eventually contains `:transacted` if transaction succeeds, otherwise an exception will be thrown when the future is deref'ed.
 
-The asynchronous transactions are batched. Batch size is adaptive to the load, so the write throughput is generally higher than `transact-kv`.
+The asynchronous transactions are batched. Batch size is adaptive to the load, so the write throughput is generally higher than `transact-kv`. The upper limit of the batch size is set by dynamic var `datalevin.constants/*transact-kv-async-batch-limit*`.
 
 The 6-arity version of the function takes a `callback` function, which will be called when the transaction commits, which takes the transaction result (possibly an exception) as the single argument.
 

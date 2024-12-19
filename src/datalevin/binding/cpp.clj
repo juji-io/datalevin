@@ -1063,6 +1063,8 @@
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
 
+(declare tx-combine)
+
 (deftype AsyncTx [lmdb dbi-name txs k-type v-type cb prev-sync]
   IAsyncWork
   (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
@@ -1072,8 +1074,19 @@
     (when @prev-sync (l/turn-on-sync lmdb))
     (l/sync lmdb))
   (batch-limit [_] c/*transact-kv-async-batch-limit*)
-  ;; (last-only? [_] false)
+  (combine [_] tx-combine)
   (callback [_] cb))
+
+(defn tx-combine
+  [coll]
+  (let [^AsyncTx fw (first coll)]
+    (->AsyncTx (.-lmdb fw)
+               (.-dbi-name fw)
+               (into [] (comp (map #(.-txs ^AsyncTx %)) cat) coll)
+               (.-k-type fw)
+               (.-v-type fw)
+               (.-cb fw)
+               (.-prev-sync fw))))
 
 (defn- reset-write-txn
   [^CppLMDB lmdb]

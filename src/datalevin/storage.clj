@@ -1216,7 +1216,7 @@
   (pre-batch [_])
   (post-batch [_])
   (batch-limit [_] (long (/ ^long c/sample-processing-interval 2)))
-  ;; (last-only? [_] false)
+  (combine [_] nil)
   (callback [_] nil))
 
 (defn- check-cardinality
