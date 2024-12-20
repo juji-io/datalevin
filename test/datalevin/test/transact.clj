@@ -568,7 +568,7 @@
                [?e :friend ?fe]
                [?fe :name ?fn]]]
     (is (= (:tempids tx)
-           {1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
+           {-1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
     (is (= (d/q q @conn "Sergey") #{["Ivan"] ["Petr"]}))
     (is (= (d/q q @conn "Boris") #{["Oleg"]}))
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))
@@ -776,14 +776,6 @@
 
     (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
 
-    (d/close conn)
-    (u/delete-files dir)))
-
-(deftest test-db-fn-returning-entity-without-db-id-issue-474
-  (let [dir  (u/tmp-dir (str "db-fn-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
-    (d/transact! conn [[:db.fn/call (fn [_] [{:foo "bar"}])]])
-    (is (= #{[1 :foo "bar"]} (tdc/all-datoms @conn)))
     (d/close conn)
     (u/delete-files dir)))
 

@@ -132,7 +132,7 @@
         (is (= (touched tx 3)
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
-               {3 3}))))
+               {}))))
     (d/close-db db)
     (u/delete-files dir)))
 

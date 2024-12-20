@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.util
   "Utility functions"
-  (:refer-clojure :exclude [seqable? merge-with])
+  (:refer-clojure :exclude [seqable? merge-with find])
   (:require
    [clojure.walk :as walk]
    [clojure.string :as s]
@@ -368,6 +368,22 @@
 
 (def conjv (fnil conj []))
 (def conjs (fnil conj #{}))
+
+(defn find [pred xs]
+  (reduce
+    (fn [_ x]
+      (when (pred x)
+        (reduced x)))
+    nil xs))
+
+(defn removem [key-pred m]
+  (persistent!
+    (reduce-kv
+      (fn [m k v]
+        (if (key-pred k)
+          m
+          (assoc! m k v)))
+      (transient (empty m)) m)))
 
 (defn bit-count
   ^long [^long v]

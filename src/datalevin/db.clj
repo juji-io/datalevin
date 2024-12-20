@@ -9,7 +9,7 @@
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
    [datalevin.util :as u
-    :refer [case-tree raise defrecord-updatable cond+ conjv concatv]]
+    :refer [case-tree raise defrecord-updatable cond+ conjv conjs concatv]]
    [datalevin.storage :as s]
    [datalevin.lmdb :as l]
    [datalevin.bits :as b]
@@ -22,6 +22,7 @@
    [datalevin.utl LRUCache]
    [java.util SortedSet Comparator Date]
    [java.util.concurrent ConcurrentHashMap]
+   [java.io Writer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
 
@@ -707,7 +708,101 @@
   (when eid
     (entid-strict db eid)))
 
+(defn reverse-ref?
+  ^Boolean [attr]
+  (cond
+    (keyword? attr)
+    (= \_ (nth (name attr) 0))
+
+    (string? attr)
+    (boolean (re-matches #"(?:([^/]+)/)?_([^/]+)" attr))
+
+    :else
+    (raise "Bad attribute type: " attr ", expected keyword or string"
+           {:error :transact/syntax, :attribute attr})))
+
+(defn reverse-ref [attr]
+  (cond
+    (keyword? attr)
+    (if (reverse-ref? attr)
+      (keyword (namespace attr) (subs (name attr) 1))
+      (keyword (namespace attr) (str "_" (name attr))))
+
+    (string? attr)
+    (let [[_ ns name] (re-matches #"(?:([^/]+)/)?([^/]+)" attr)]
+      (if (= \_ (nth name 0))
+        (if ns (str ns "/" (subs name 1)) (subs name 1))
+        (if ns (str ns "/_" name) (str "_" name))))
+
+    :else
+    (raise "Bad attribute type: " attr ", expected keyword or string"
+           {:error :transact/syntax, :attribute attr})))
+
 ;;;;;;;;;; Transacting
+
+(def *last-auto-tempid
+  (atom 0))
+
+(deftype AutoTempid [id]
+  Object
+  (toString [d]
+    (str "#datalevin/AutoTempid [" id "]")))
+
+(defmethod print-method AutoTempid [^AutoTempid id, ^Writer w]
+  (.write w (str "#datalevin/AutoTempid "))
+  (binding [*out* w]
+    (pr [(.-id id)])))
+
+(defn auto-tempid []
+  (AutoTempid. (swap! *last-auto-tempid inc)))
+
+(defn ^Boolean auto-tempid? [x]
+  (instance? AutoTempid x))
+
+(defn assoc-auto-tempids [db tx-data]
+  (for [entity tx-data]
+    (cond+
+      (map? entity)
+      (reduce-kv
+        (fn [entity a v]
+          (cond
+            (not (or (keyword? a) (string? a)))
+            (assoc entity a v)
+
+            (and (ref? db a) (multival? db a) (sequential? v))
+            (assoc entity a (assoc-auto-tempids db v))
+
+            (ref? db a)
+            (assoc entity a (first (assoc-auto-tempids db [v])))
+
+            (and (reverse-ref? a) (sequential? v))
+            (assoc entity a (assoc-auto-tempids db v))
+
+            (reverse-ref? a)
+            (assoc entity a (first (assoc-auto-tempids db [v])))
+
+            :else
+            (assoc entity a v)))
+        {}
+        (if (contains? entity :db/id)
+          entity
+          (assoc entity :db/id (auto-tempid))))
+
+      (not (sequential? entity))
+      entity
+
+      :let [[op e a v] entity]
+
+      (and (= :db/add op) (ref? db a))
+      (cond
+        (and (multival? db a) (sequential? v))
+        [op e a (assoc-auto-tempids db v)]
+
+        :else
+        [op e a (first (assoc-auto-tempids db [v]))])
+
+      :else
+      entity)))
 
 (defn- validate-datom [^DB db ^Datom datom]
   (let [store (.-store db)
@@ -756,7 +851,9 @@
 
 (defn- tempid?
   ^Boolean [x]
-  (or (and (number? x) (neg? ^long x)) (string? x)))
+  (or (and (number? x) (neg? ^long x))
+      (string? x)
+      (auto-tempid? x)))
 
 (defn- new-eid? [db ^long eid] (> eid ^long (:max-eid db)))
 
@@ -773,10 +870,14 @@
          new? (new-eid? db eid)]
      (cond-> report
        (tx-id? e)
-       (update :tempids assoc e eid)
+       (->
+         (update :tempids assoc e eid)
+         (update ::reverse-tempids update eid conjs e))
 
        (tempid? e)
-       (update :tempids assoc e eid)
+       (->
+         (update :tempids assoc e eid)
+         (update ::reverse-tempids update eid conjs e))
 
        (and (not (tempid? e)) new?)
        (update :tempids assoc eid eid)
@@ -842,36 +943,6 @@
             queue' (queue-tuples queue tuples db e a v)]
         (update report' ::queued-tuples assoc e queue'))
       report')))
-
-(defn reverse-ref?
-  ^Boolean [attr]
-  (cond
-    (keyword? attr)
-    (= \_ (nth (name attr) 0))
-
-    (string? attr)
-    (boolean (re-matches #"(?:([^/]+)/)?_([^/]+)" attr))
-
-    :else
-    (raise "Bad attribute type: " attr ", expected keyword or string"
-           {:error :transact/syntax, :attribute attr})))
-
-(defn reverse-ref [attr]
-  (cond
-    (keyword? attr)
-    (if (reverse-ref? attr)
-      (keyword (namespace attr) (subs (name attr) 1))
-      (keyword (namespace attr) (str "_" (name attr))))
-
-    (string? attr)
-    (let [[_ ns name] (re-matches #"(?:([^/]+)/)?([^/]+)" attr)]
-      (if (= \_ (nth name 0))
-        (if ns (str ns "/" (subs name 1)) (subs name 1))
-        (if ns (str ns "/_" name) (str "_" name))))
-
-    :else
-    (raise "Bad attribute type: " attr ", expected keyword or string"
-           {:error :transact/syntax, :attribute attr})))
 
 (defn- resolve-upserts
   "Returns [entity' upserts]. Upsert attributes that resolve to existing entities
@@ -1177,6 +1248,8 @@
              (-> report
                  check-value-tempids
                  (dissoc ::upserted-tempids)
+                 (dissoc ::reverse-tempids)
+                 (update :tempids #(u/removem auto-tempid? %))
                  (update :tempids assoc :db/current-tx (current-tx report))
                  (update :db-after update :max-tx u/long-inc))
 
@@ -1232,15 +1305,9 @@
                  ;; resolved | allocated-tempid | tempid | nil => explode
                  (or (number? old-eid)
                      (nil?    old-eid)
-                     (string? old-eid))
-                 (let [new-eid    (cond
-                                    (nil? old-eid)    (next-eid db)
-                                    (tempid? old-eid) (or (get tempids old-eid)
-                                                          (next-eid db))
-                                    :else             old-eid)
-                       new-entity (assoc entity :db/id new-eid)]
-                   (recur (allocate-eid tx-time report old-eid new-eid)
-                          (concat (explode db new-entity) entities)))
+                     (string? old-eid)
+                     (auto-tempid? old-eid))
+                 (recur report (concat (explode db entity) entities))
 
                  ;; trash => error
                  :else
@@ -1249,7 +1316,7 @@
 
              (sequential? entity)
              (let [[op e a v] entity]
-               (cond
+               (cond+
                  (identical? op :db.fn/call)
                  (let [[_ f & args] entity]
                    (recur report (concat (apply f db args) entities)))
@@ -1333,6 +1400,19 @@
                      (retry-with-tempid initial-report report initial-es e upserted-eid)
                      (let [eid (or upserted-eid allocated-eid (next-eid db))]
                        (recur (allocate-eid tx-time report e eid) (cons [op eid a v] entities)))))
+
+                 (and
+                   (-is-attr? db a :db.unique/identity)
+                   (contains? (::reverse-tempids report) e)
+                   (let [upserted-eid (:e (-first-datom db :ave a v nil))]
+                     (and e upserted-eid (not= e upserted-eid))))
+                 (let [tempids      (get (::reverse-tempids report) e)
+                       tempid       (u/find #(not (contains? (::upserted-tempids report) %)) tempids)
+                       upserted-eid (:e (-first-datom db :ave a v nil))]
+                   (if tempid
+                     (retry-with-tempid initial-report report initial-es tempid upserted-eid)
+                     (raise "Conflicting upsert: " e " resolves to " upserted-eid " via " entity
+                            {:error :transact/upsert})))
 
                  (and (not (::internal (meta entity)))
                       (tuple-attr? db a))
@@ -1465,30 +1545,31 @@
       [tx-data tempids max-eid])))
 
 (defn transact-tx-data
-  ([initial-report initial-es simulated?]
-   (when-not (or (nil? initial-es)
-                 (sequential? initial-es))
-     (raise "Bad transaction data " initial-es ", expected sequential collection"
-            {:error :transact/syntax, :tx-data initial-es}))
-   (let [^DB db (:db-before initial-report)
-         store  (.-store db)]
-     (if (instance? datalevin.remote.DatalogStore store)
-       (try
-         (let [res                       (r/tx-data store initial-es simulated?)
-               [tx-data tempids max-eid] (remote-tx-result res)]
-           (assoc initial-report
-                  :db-after (-> (new-db store)
-                                (assoc :max-eid max-eid)
-                                (#(if simulated?
-                                    (update % :max-tx u/long-inc)
-                                    %)))
-                  :tx-data tx-data
-                  :tempids tempids))
-         (catch Exception e
-           (if (:resized (ex-data e))
-             (throw e)
-             (local-transact-tx-data initial-report initial-es simulated?))))
-       (local-transact-tx-data initial-report initial-es simulated?)))))
+  [initial-report initial-es simulated?]
+  (when-not (or (nil? initial-es)
+                (sequential? initial-es))
+    (raise "Bad transaction data " initial-es ", expected sequential collection"
+           {:error :transact/syntax, :tx-data initial-es}))
+  (let [^DB db     (:db-before initial-report)
+        initial-es (assoc-auto-tempids db initial-es)
+        store      (.-store db)]
+    (if (instance? datalevin.remote.DatalogStore store)
+      (try
+        (let [res                       (r/tx-data store initial-es simulated?)
+              [tx-data tempids max-eid] (remote-tx-result res)]
+          (assoc initial-report
+                 :db-after (-> (new-db store)
+                               (assoc :max-eid max-eid)
+                               (#(if simulated?
+                                   (update % :max-tx u/long-inc)
+                                   %)))
+                 :tx-data tx-data
+                 :tempids tempids))
+        (catch Exception e
+          (if (:resized (ex-data e))
+            (throw e)
+            (local-transact-tx-data initial-report initial-es simulated?))))
+      (local-transact-tx-data initial-report initial-es simulated?))))
 
 (defn tx-data->simulated-report
   [db tx-data]
