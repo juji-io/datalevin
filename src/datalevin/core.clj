@@ -19,6 +19,7 @@
    [datalevin.query :as dq]
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
+   [datalevin.datafy]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
