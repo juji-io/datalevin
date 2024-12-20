@@ -21,6 +21,7 @@
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.binding.cpp]
+   [datalevin.datafy]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]

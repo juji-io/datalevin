@@ -1,6 +1,7 @@
 (ns datalevin-bench.core
   (:require
-   [datalevin.core :as d])
+   [datalevin.core :as d]
+   [clojure.string :as s])
   (:import
    [java.util.concurrent Semaphore]
    [org.eclipse.collections.impl.list.mutable FastList]))
@@ -15,7 +16,7 @@
 (def in-flight 1000)
 
 (defn max-write-bench
-  [batch-size tx-fn]
+  [batch-size tx-fn add-fn]
   (let [sem        (Semaphore. (* in-flight batch-size))
         target     (long (/ 100000 batch-size))
         write-time (volatile! 0)
@@ -50,7 +51,7 @@
         (vreset! sync-count 0))
       (let [txs    (reduce
                      (fn [^FastList txs _]
-                       (.add txs [:put [(gen-uuid) (gen-uuid)] (gen-uuid)])
+                       (add-fn txs)
                        txs)
                      (FastList. batch-size)
                      (range 0 batch-size))
@@ -61,16 +62,35 @@
 
 (defn write
   [{:keys [batch f]}]
-  (let [db       (doto (d/open-kv (str "max-write-db-" f "-" batch)
-                                  {:mapsize 60000})
-                   (d/open-dbi max-write-dbi))
+  (let [kv?      (s/starts-with? (name f) "kv")
+        kvdb     (when kv?
+                   (doto (d/open-kv (str "max-write-db-" f "-" batch)
+                                    {:mapsize 60000})
+                     (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
-                   (d/transact-kv-async db max-write-dbi txs
+                   (d/transact-kv-async kvdb max-write-dbi txs
                                         [:string :string] :string measure))
         kv-sync  (fn [txs measure]
-                   (measure (d/transact-kv db max-write-dbi txs
-                                           [:string :string] :string)))]
-    (max-write-bench batch (condp = f
-                             'kv-async kv-async
-                             'kv-sync  kv-sync))
-    (d/close-kv db)))
+                   (measure (d/transact-kv kvdb max-write-dbi txs
+                                           [:string :string] :string)))
+        kv-add   (fn [^FastList txs]
+                   (.add txs [:put [(gen-uuid) (gen-uuid)] (gen-uuid)]))
+        conn     (when (not kv?)
+                   (d/get-conn (str "max-write-db-" f "-" batch)
+                               {:k {:db/valueType :db.type/tuple
+                                    :db/tupleType :db.type/string}
+                                :v {:db/valueType :db.type/string}}
+                               {:kv-opts {:mapsize 150000}}))
+        dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
+        dl-sync  (fn [txs measure] (measure (d/transact! conn txs nil)))
+        dl-add   (fn [^FastList txs]
+                   (.add txs {:k [(gen-uuid) (gen-uuid)] :v (gen-uuid)}))
+        tx-fn    (condp = f
+                   'kv-async kv-async
+                   'kv-sync  kv-sync
+                   'dl-async dl-async
+                   'dl-sync  dl-sync)
+        add-fn   (if kv? kv-add dl-add)]
+    (max-write-bench batch tx-fn add-fn)
+    (when kvdb (d/close-kv kvdb))
+    (when conn (d/close conn))))

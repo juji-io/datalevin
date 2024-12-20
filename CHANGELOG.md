@@ -4,11 +4,11 @@
 
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
-  to enhance write throughput (depending on data size, 3X-10X higher throughput
-  compared with `transact-kv`). Since the commit latency also becomes generally
-  lower, it is recommended to use asynchronous transactions by default. Batch
-  size is automatically adaptive to the write workload: the higher the load, the
-  larger the batch, up to a batch limit, controlled by a dynamic var
+  to enhance write throughput (3X-10X higher throughput compared with
+  `transact-kv`). Since the commit latency also becomes generally lower, it is
+  recommended to use asynchronous transactions by default. Batch size is
+  automatically adaptive to the write workload: the higher the load, the larger
+  the batch, up to a batch limit, controlled by a dynamic var
   `*transact-kv-async-batch-limit*`.
   [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Benchmark] [Write benchmark](benchmarks/write-bench). Show Datalevin's write
