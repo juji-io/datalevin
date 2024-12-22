@@ -17,6 +17,8 @@
 
 (defn max-write-bench
   [batch-size tx-fn add-fn]
+  (println
+    "Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)")
   (let [sem        (Semaphore. (* in-flight batch-size))
         target     (long (/ 100000 batch-size))
         write-time (volatile! 0)
@@ -30,8 +32,6 @@
                      (vreset! sync-time (System/currentTimeMillis))
                      (vswap! sync-count inc)
                      (vswap! inserted + batch-size))]
-    (println
-      "Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)")
     (loop [counter 0]
       (.acquire sem batch-size)
       (when (and (= 0 (mod counter target))
@@ -82,14 +82,14 @@
                                 :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 150000}}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
-        dl-sync  (fn [txs measure] (measure (d/transact! conn txs nil)))
+        dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
                    (.add txs {:k [(gen-uuid) (gen-uuid)] :v (gen-uuid)}))
-        tx-fn    (condp = f
-                   'kv-async kv-async
-                   'kv-sync  kv-sync
-                   'dl-async dl-async
-                   'dl-sync  dl-sync)
+        tx-fn    (case f
+                   kv-async kv-async
+                   kv-sync  kv-sync
+                   dl-async dl-async
+                   dl-sync  dl-sync)
         add-fn   (if kv? kv-add dl-add)]
     (max-write-bench batch tx-fn add-fn)
     (when kvdb (d/close-kv kvdb))

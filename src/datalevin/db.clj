@@ -1465,30 +1465,30 @@
       [tx-data tempids max-eid])))
 
 (defn transact-tx-data
-  ([initial-report initial-es simulated?]
-   (when-not (or (nil? initial-es)
-                 (sequential? initial-es))
-     (raise "Bad transaction data " initial-es ", expected sequential collection"
-            {:error :transact/syntax, :tx-data initial-es}))
-   (let [^DB db (:db-before initial-report)
-         store  (.-store db)]
-     (if (instance? datalevin.remote.DatalogStore store)
-       (try
-         (let [res                       (r/tx-data store initial-es simulated?)
-               [tx-data tempids max-eid] (remote-tx-result res)]
-           (assoc initial-report
-                  :db-after (-> (new-db store)
-                                (assoc :max-eid max-eid)
-                                (#(if simulated?
-                                    (update % :max-tx u/long-inc)
-                                    %)))
-                  :tx-data tx-data
-                  :tempids tempids))
-         (catch Exception e
-           (if (:resized (ex-data e))
-             (throw e)
-             (local-transact-tx-data initial-report initial-es simulated?))))
-       (local-transact-tx-data initial-report initial-es simulated?)))))
+  [initial-report initial-es simulated?]
+  (when-not (or (nil? initial-es)
+                (sequential? initial-es))
+    (raise "Bad transaction data " initial-es ", expected sequential collection"
+           {:error :transact/syntax, :tx-data initial-es}))
+  (let [^DB db (:db-before initial-report)
+        store  (.-store db)]
+    (if (instance? datalevin.remote.DatalogStore store)
+      (try
+        (let [res                       (r/tx-data store initial-es simulated?)
+              [tx-data tempids max-eid] (remote-tx-result res)]
+          (assoc initial-report
+                 :db-after (-> (new-db store)
+                               (assoc :max-eid max-eid)
+                               (#(if simulated?
+                                   (update % :max-tx u/long-inc)
+                                   %)))
+                 :tx-data tx-data
+                 :tempids tempids))
+        (catch Exception e
+          (if (:resized (ex-data e))
+            (throw e)
+            (local-transact-tx-data initial-report initial-es simulated?))))
+      (local-transact-tx-data initial-report initial-es simulated?))))
 
 (defn tx-data->simulated-report
   [db tx-data]

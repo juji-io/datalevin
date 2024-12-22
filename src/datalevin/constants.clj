@@ -362,7 +362,7 @@
 
 (def ^{:dynamic true
        :doc     "Async transaction batch limit"}
-  *transact-async-batch-limit* 16)
+  *transact-async-batch-limit* 512)
 
 ;; datalog query engine
 

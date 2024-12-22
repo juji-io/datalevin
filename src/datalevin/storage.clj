@@ -715,16 +715,27 @@
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
-    (let [;; fulltext [:a d [e aid v]], [:d d [e aid v]],
-          ;; [:g d [gt v]] or [:r d gt]
-          ft-ds  (FastList.)
-          txs    (FastList. (* 3 (count datoms)))
-          giants (HashMap.)]
+    (let [n          (count datoms)
+          txs        (FastList. (* 3 n))
+          eav-txs    (FastList. n)
+          ave-txs    (FastList. n)
+          vae-txs    (FastList.)
+          giants-txs (FastList.)
+          ;; fulltext [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
+          ;; or [:r d gt]
+          ft-ds      (FastList.)
+          giants     (HashMap.)]
       (locking (lmdb/write-txn lmdb)
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds giants counts)
-            (delete-datom this datom txs ft-ds giants counts)))
+            (insert-datom this datom eav-txs ave-txs vae-txs giants-txs ft-ds
+                          giants)
+            (delete-datom this datom eav-txs ave-txs vae-txs giants-txs ft-ds
+                          giants)))
+        (.addAll txs ave-txs)
+        (.addAll txs eav-txs)
+        (.addAll txs giants-txs)
+        (.addAll txs vae-txs)
         (.add txs (lmdb/kv-tx :put c/meta :max-tx
                               (advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
@@ -1290,49 +1301,52 @@
            op])))
 
 (defn- insert-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
-   ^ConcurrentHashMap counts]
-  (let [attr   (.-a d)
-        schema (schema store)
+  [^Store store ^Datom d ^FastList eav-txs ^FastList ave-txs ^FastList vae-txs
+   ^FastList giants-txs ^FastList ft-ds ^HashMap giants]
+  (let [schema (schema store)
         opts   (opts store)
+        counts ^ConcurrentHashMap (.-counts store)
+        attr   (.-a d)
         _      (or (not (opts :closed-schema?))
                    (schema attr)
                    (u/raise "Attribute is not defined in schema when
 `:closed-schema?` is true: " attr {:attr attr :value (.-v d)}))
+        e      (.-e d)
+        v      (.-v d)
         props  (or (schema attr)
                    (swap-attr store attr identity))
         vt     (value-type props)
-        e      (.-e d)
-        v      (.-v d)
         aid    (props :db/aid)
         max-gt (max-gt store)
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)
         old-c  ^long (.getOrDefault counts aid 0)]
     (.put counts aid (unchecked-inc old-c))
-    (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
-    (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
+    (.add ave-txs (lmdb/kv-tx :put c/ave i i :av :eg))
+    (.add eav-txs (lmdb/kv-tx :put c/eav e i :id :avg))
     (when (identical? :db.type/ref vt)
-      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
+      (.add vae-txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
-        (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
-                              :id :data [:append]))))
+        (.add giants-txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
+                                     :id :data [:append]))))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
                           (if giant? [:g [max-gt v]] [:a [e aid v]]))))))
 
 (defn- delete-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants
-   ^ConcurrentHashMap counts]
-  (let [e      (.-e d)
+  [^Store store ^Datom d ^FastList eav-txs ^FastList ave-txs ^FastList vae-txs
+   ^FastList giants-txs ^FastList ft-ds ^HashMap giants]
+  (let [schema (schema store)
+        counts ^ConcurrentHashMap (.-counts store)
+        e      (.-e d)
         attr   (.-a d)
         v      (.-v d)
         d-eav  [e attr v]
-        props  ((schema store) attr)
+        props  (schema attr)
         vt     (value-type props)
         aid    (props :db/aid)
         i      ^Indexable (b/indexable e aid v vt c/g0)
@@ -1355,13 +1369,13 @@
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (.add txs (lmdb/kv-tx :del-list c/ave ii [ii] :av :eg))
-      (.add txs (lmdb/kv-tx :del-list c/eav e [ii] :id :avg))
+      (.add ave-txs (lmdb/kv-tx :del-list c/ave ii [ii] :av :eg))
+      (.add eav-txs (lmdb/kv-tx :del-list c/eav e [ii] :id :avg))
       (when gt
         (when gt-cur (.remove giants d-eav))
-        (.add txs (lmdb/kv-tx :del c/giants gt :id)))
+        (.add giants-txs (lmdb/kv-tx :del c/giants gt :id)))
       (when (identical? :db.type/ref vt)
-        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
+        (.add vae-txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
 
 (defn- transact-opts
   [lmdb opts]
