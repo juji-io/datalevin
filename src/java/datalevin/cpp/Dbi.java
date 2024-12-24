@@ -9,6 +9,7 @@ import dtlvnative.DTLV;
 public class Dbi {
 
     private IntPointer ptr;
+    private int handle;
     private String name;
 
     public Dbi(Env env, String name, int flags) {
@@ -18,7 +19,8 @@ public class Dbi {
         Txn txn = Txn.create(env);
         try {
             Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
-            Util.checkRc(DTLV.dtlv_set_comparator(txn.get(), ptr.get()));
+            handle = get();
+            Util.checkRc(DTLV.dtlv_set_comparator(txn.get(), handle));
         } catch (Exception e) {
             txn.close();
             throw e;
@@ -76,7 +78,7 @@ public class Dbi {
     }
 
     public void put(Txn txn, BufVal k, BufVal v, int mask) {
-        Util.checkRc(DTLV.mdb_put(txn.get(), get(), k.ptr(), v.ptr(), mask));
+        Util.checkRc(DTLV.mdb_put(txn.get(), handle, k.ptr(), v.ptr(), mask));
     }
 
     public void del(Txn txn, BufVal k, BufVal v) {
@@ -86,7 +88,7 @@ public class Dbi {
         } else {
             vp = v.ptr();
         }
-        Util.checkRc(DTLV.mdb_del(txn.get(), get(), k.ptr(), vp));
+        Util.checkRc(DTLV.mdb_del(txn.get(), handle, k.ptr(), vp));
     }
 
 }

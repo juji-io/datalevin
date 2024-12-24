@@ -338,7 +338,7 @@
 
 (def ^{:dynamic true
        :doc     "Async kv transaction batch limit"}
-  *transact-kv-async-batch-limit* 512)
+  *transact-kv-async-batch-limit* 768)
 
 (defn ^:no-doc pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or
@@ -362,7 +362,7 @@
 
 (def ^{:dynamic true
        :doc     "Async transaction batch limit"}
-  *transact-async-batch-limit* 512)
+  *transact-async-batch-limit* 768)
 
 ;; datalog query engine
 
