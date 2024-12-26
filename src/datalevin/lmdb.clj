@@ -198,13 +198,6 @@
     [db dbi-name txs k-type]
     [db dbi-name txs k-type v-type]
     "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
-  (transact-kv-async
-    [db txs]
-    [db dbi-name txs]
-    [db dbi-name txs k-type]
-    [db dbi-name txs k-type v-type]
-    [db dbi-name txs k-type v-type callback]
-    "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData. Transact asynchronously. Return a future immediately.")
   (sync [db] "force synchronous flush to disk")
   (get-value
     [db dbi-name k]
@@ -601,9 +594,10 @@ values;")
 
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
+  ensuring atomicity of key-value operations. Works with synchronous `transact-kv`.
 
-  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
+  `db` is a new identifier of the kv database with a new read/write transaction attached,
+  and `orig-db` is the original kv database.
 
   `body` should refer to `db`.
 

@@ -164,35 +164,35 @@
     (l/open-dbi lmdb "d")
 
     (testing "transacting nil will throw"
-      (is (thrown? Exception @(l/transact-kv-async lmdb [[:put "a" nil 1]])))
-      (is (thrown? Exception @(l/transact-kv-async lmdb [[:put "a" 1 nil]]))))
+      (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" nil 1]])))
+      (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" 1 nil]]))))
 
     (testing "transact-kv-async"
-      @(l/transact-kv-async lmdb
-                            [[:put "a" 1 2]
-                             [:put "a" 'a 1]
-                             [:put "a" 5 {}]
-                             [:put "a" :annunaki/enki true :attr :data]
-                             [:put "a" :datalevin ["hello" "world"]]
-                             [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-                             [:put "b" 2 3]
-                             [:put "b" (byte 0x01) #{1 2} :byte :data]
-                             [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-                             [:put "b" [-1 -235254457N] 5]
-                             [:put "b" :a 4]
-                             [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                             [:put "b" 1 :long :long :data]
-                             [:put "b" :long 1 :data :long]
-                             [:put "b" 2 3 :long :long]
-                             [:put "b" "ok" 42 :string :long]
-                             [:put "d" 3.14 :pi :double :keyword]
-                             [:put "d" #inst "1969-01-01" "nice year" :instant :string]
-                             [:put "d" [-1 0 1 2 3 4] 1 [:long]]
-                             [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
-                             [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
-                              [:long :string :keyword]]
-                             [:put "d"  [:ok -0.687 "nice"] [2 4]
-                              [:keyword :double :string] [:long]]]))
+      @(dc/transact-kv-async lmdb
+                             [[:put "a" 1 2]
+                              [:put "a" 'a 1]
+                              [:put "a" 5 {}]
+                              [:put "a" :annunaki/enki true :attr :data]
+                              [:put "a" :datalevin ["hello" "world"]]
+                              [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                              [:put "b" 2 3]
+                              [:put "b" (byte 0x01) #{1 2} :byte :data]
+                              [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+                              [:put "b" [-1 -235254457N] 5]
+                              [:put "b" :a 4]
+                              [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                              [:put "b" 1 :long :long :data]
+                              [:put "b" :long 1 :data :long]
+                              [:put "b" 2 3 :long :long]
+                              [:put "b" "ok" 42 :string :long]
+                              [:put "d" 3.14 :pi :double :keyword]
+                              [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+                              [:put "d" [-1 0 1 2 3 4] 1 [:long]]
+                              [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
+                              [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
+                               [:long :string :keyword]]
+                              [:put "d"  [:ok -0.687 "nice"] [2 4]
+                               [:keyword :double :string] [:long]]]))
 
     (testing "entries"
       (is (= 5 (:entries (l/stat lmdb))))
@@ -237,9 +237,9 @@
       (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
 
     (testing "delete"
-      @(l/transact-kv-async lmdb [[:del "a" 1]
-                                  [:del "a" :non-exist]
-                                  [:del "a" "random things that do not exist"]])
+      @(dc/transact-kv-async lmdb [[:del "a" 1]
+                                   [:del "a" :non-exist]
+                                   [:del "a" "random things that do not exist"]])
       (is (nil? (l/get-value lmdb "a" 1))))
 
     (testing "entries-again"
@@ -250,12 +250,12 @@
       (is (thrown? Exception (l/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
-      @(l/transact-kv-async lmdb [[:put "c" 1 (range 100000)]])
+      @(dc/transact-kv-async lmdb [[:put "c" 1 (range 100000)]])
       (is (= (range 100000) (l/get-value lmdb "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception
-                   @(l/transact-kv-async lmdb [[:put "a" (range 1000) 1]]))))
+                   @(dc/transact-kv-async lmdb [[:put "a" (range 1000) 1]]))))
 
     (u/delete-files dir)))
 

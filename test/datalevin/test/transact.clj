@@ -256,7 +256,7 @@
     (u/delete-files dir)))
 
 (deftest test-transact!
-  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "transact-" (UUID/randomUUID)))
         conn (d/create-conn
                dir
                {:aka {:db/cardinality :db.cardinality/many}}
@@ -265,7 +265,63 @@
     (d/transact! conn [[:db/add 1 :name "Petr"]])
     (d/transact! conn [[:db/add 1 :aka "Devil"]])
     (d/transact! conn [[:db/add 1 :aka "Tupen"]])
+    (is (= (d/q '[:find ?v
+                  :where [1 :name ?v]] @conn)
+           #{["Petr"]}))
+    (is (= (d/q '[:find ?v
+                  :where [1 :aka ?v]] @conn)
+           #{["Devil"] ["Tupen"]}))
+    (d/close conn)
+    (u/delete-files dir)))
 
+(deftest test-transact-async
+  (let [dir  (u/tmp-dir (str "transact-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir
+               {:aka {:db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    @(d/transact-async conn [[:db/add 1 :name "Ivan"]])
+    @(d/transact-async conn [[:db/add 1 :name "Petr"]])
+    @(d/transact-async conn [[:db/add 1 :aka "Devil"]])
+    @(d/transact-async conn [[:db/add 1 :aka "Tupen"]])
+    (is (= (d/q '[:find ?v
+                  :where [1 :name ?v]] @conn)
+           #{["Petr"]}))
+    (is (= (d/q '[:find ?v
+                  :where [1 :aka ?v]] @conn)
+           #{["Devil"] ["Tupen"]}))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest test-transact
+  (let [dir  (u/tmp-dir (str "transact-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir
+               {:aka {:db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (d/transact conn [[:db/add 1 :name "Ivan"]])
+    (d/transact conn [[:db/add 1 :name "Petr"]])
+    (d/transact conn [[:db/add 1 :aka "Devil"]])
+    (d/transact conn [[:db/add 1 :aka "Tupen"]])
+    (is (= (d/q '[:find ?v
+                  :where [1 :name ?v]] @conn)
+           #{["Petr"]}))
+    (is (= (d/q '[:find ?v
+                  :where [1 :aka ?v]] @conn)
+           #{["Devil"] ["Tupen"]}))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest test-transact-after-async
+  (let [dir  (u/tmp-dir (str "transact-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir
+               {:aka {:db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (d/transact-async conn [[:db/add 1 :name "Ivan"]])
+    (d/transact-async conn [[:db/add 1 :name "Petr"]])
+    (d/transact-async conn [[:db/add 1 :aka "Devil"]])
+    (d/transact conn [[:db/add 1 :aka "Tupen"]])
     (is (= (d/q '[:find ?v
                   :where [1 :name ?v]] @conn)
            #{["Petr"]}))

@@ -735,18 +735,6 @@
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " e {}))))))
 
-  (transact-kv-async [this txs] (.transact-kv-async this nil txs))
-  (transact-kv-async [this dbi-name txs]
-    (.transact-kv-async this dbi-name txs :data :data))
-  (transact-kv-async [this dbi-name txs k-type]
-    (.transact-kv-async this dbi-name txs k-type :data))
-  (transact-kv-async [this dbi-name txs k-type v-type]
-    (.transact-kv-async this dbi-name txs k-type v-type nil))
-  (transact-kv-async [this dbi-name txs k-type v-type callback]
-    (a/exec (a/get-executor)
-            (->AsyncTx this dbi-name txs k-type v-type callback
-                       (l/sync? this))))
-
   (sync [_] (.sync env))
 
   (get-value [this dbi-name k]
@@ -1062,31 +1050,6 @@
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
-
-(declare tx-combine)
-
-(deftype AsyncTx [lmdb dbi-name txs k-type v-type cb prev-sync]
-  IAsyncWork
-  (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
-  (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
-  (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
-  (post-batch [_]
-    (when @prev-sync (l/turn-on-sync lmdb))
-    (l/sync lmdb))
-  (batch-limit [_] c/*transact-kv-async-batch-limit*)
-  (combine [_] tx-combine)
-  (callback [_] cb))
-
-(defn tx-combine
-  [coll]
-  (let [^AsyncTx fw (first coll)]
-    (->AsyncTx (.-lmdb fw)
-               (.-dbi-name fw)
-               (into [] (comp (map #(.-txs ^AsyncTx %)) cat) coll)
-               (.-k-type fw)
-               (.-v-type fw)
-               (.-cb fw)
-               (.-prev-sync fw))))
 
 (defn- reset-write-txn
   [^CppLMDB lmdb]

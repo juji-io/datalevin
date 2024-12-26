@@ -125,28 +125,28 @@ Here is a simple code example using Datalevin:
 ;; Define an optional schema.
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
 ;; However, attributes requiring special handling need to be defined in schema,
-;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
+;; e.g. range query, many cardinality, uniqueness, reference type, etc.
 ;; Similar to Datascript, Datalevin schemas differ from Datomic®:
 ;; - The schema must be a map of maps, not a vector of maps.
 ;; - It is not `transact`ed into the db but passed when acquiring connections.
-;; - Use `update-schema` to update the schema of an open connection to a database.
+;; - Use `update-schema` to update the schema of an open connection to a DB.
 (def schema {:aka  {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
              ;; treated as EDN blobs, and may not be optimal for range queries
              :name {:db/valueType :db.type/string
                     :db/unique    :db.unique/identity}})
 
-;; Create DB on disk and connect to it, assume write permission to create given dir
+;; Create DB on disk and connect to it, assume write permission to create the dir
 (def conn (d/get-conn "/tmp/datalevin/mydb" schema))
 ;; or if you have a Datalevin server running on myhost with default port 8898
 ;; (def conn (d/get-conn "dtlv://myname:mypasswd@myhost/mydb" schema))
 
 ;; Transact some data
-;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
-(d/transact! conn
-             [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-              {:name "Peirce", :db/id -2, :nation "france"}
-              {:name "De Morgan", :db/id -3, :nation "English"}])
+;; `:nation` is not defined in schema, so it will be treated as an EDN blob
+(d/transact conn
+            [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+             {:name "Peirce", :db/id -2, :nation "france"}
+             {:name "De Morgan", :db/id -3, :nation "English"}])
 
 ;; Query the data
 (d/q '[:find ?nation
@@ -159,7 +159,7 @@ Here is a simple code example using Datalevin:
 ;; => #{["France"]}
 
 ;; Retract the name attribute of an entity
-(d/transact! conn [[:db/retract 1 :name "Frege"]])
+(d/transact conn [[:db/retract 1 :name "Frege"]])
 
 ;; Pull the entity, now the name is gone
 (d/q '[:find (pull ?e [*])

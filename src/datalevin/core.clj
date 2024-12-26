@@ -133,7 +133,6 @@ Only usable for debug output.
              "}
   touch de/touch)
 
-
 ;; Pull API
 
 (def ^{:arglists '([db pattern id] [db pattern id opts])
@@ -293,7 +292,8 @@ Only usable for debug output.
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of Datalog database operations.
+  ensuring atomicity of Datalog database operations. Works with synchronous
+  `transact!`.
 
   `conn` is a new identifier of the Datalog database connection with a new
   read/write transaction attached, and `orig-conn` is the original database
@@ -826,9 +826,10 @@ Only usable for debug output.
     (assoc report :db-after @conn)))
 
 (defn transact!
-  "Applies transaction to the underlying Datalog database of a connection.
+  "Synchronously applies transaction to the underlying Datalog database of a
+  connection.
 
-  Returns transaction report, a map:
+  Returns a transaction report, a map:
 
        { :db-before ...
          :db-after  ...
@@ -1093,9 +1094,9 @@ Only usable for debug output.
        (let [~(first spec) conn#] ~@body)
        (finally (close conn#)))))
 
-(declare tx-data-combine)
+(declare dl-tx-combine)
 
-(deftype AsyncDLTx [conn lmdb tx-data tx-meta cb prev-sync]
+(deftype ^:no-doc AsyncDLTx [conn lmdb tx-data tx-meta cb prev-sync]
   IAsyncWork
   (work-key [_] (->> (.-store ^DB @conn) s/db-name hash (str "tx") keyword))
   (do-work [_] (transact! conn tx-data tx-meta))
@@ -1106,10 +1107,10 @@ Only usable for debug output.
     (when @prev-sync (l/turn-on-sync lmdb))
     (l/sync lmdb))
   (batch-limit [_] c/*transact-async-batch-limit*)
-  (combine [_] tx-data-combine)
+  (combine [_] dl-tx-combine)
   (callback [_] cb))
 
-(defn- tx-data-combine
+(defn- dl-tx-combine
   [coll]
   (let [^AsyncDLTx fw (first coll)]
     (->AsyncDLTx (.-conn fw)
@@ -1120,9 +1121,18 @@ Only usable for debug output.
                  (.-prev-sync fw))))
 
 (defn transact-async
-  "Datalog transaction that returns a future immediately. The future will eventually contain the transaction report when the transaction commits.
+  "Datalog transaction that returns a future immediately. The future will
+  eventually contain the transaction report when this asynchronous transaction
+  successfully commits, otherwise, an exception will be thrown when the future
+  is deref'ed.
 
-  Use an adaptive batch transaction algorithm that adjusts batch size according to workload: the higher the load, the larger the batch size. The upper limit of batch size is set by dynamic var `:datalevin.constants/*transact-async-batch-limit*`"
+  Use an adaptive batch transaction algorithm that adjusts batch size
+  according to workload: the higher the load, the larger the batch size. The
+  upper limit of batch size is set by dynamic var
+  `datalevin.constants/*transact-async-batch-limit*`.
+
+  This function has higher throughput than [[transact!]] in high write rate use
+  cases."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
   ([conn tx-data tx-meta cb]
@@ -1132,7 +1142,16 @@ Only usable for debug output.
              (->AsyncDLTx conn lmdb tx-data tx-meta cb (l/sync? lmdb))))))
 
 (defn transact
-  "Datalog transaction that returns an already realized future that contains the transaction report. It uses the same adaptive batch transaction as [[transact-async]], but will block until the future is realized, i.e. when the transaction commits."
+  "Datalog transaction that returns an already realized future that contains
+  the transaction report when the transaction succeeds, otherwise an exception
+  will be thrown.
+
+  It is the same as [[transact-async]], but will block until the future is
+  realized, i.e. when the transaction commits.
+
+  One use of this function is to end a consecutive sequence of `transact-async`
+  calls, and when this function returns, it indicates that all those previous
+  async transactions are also committed."
   ([conn tx-data] (transact conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
@@ -1342,19 +1361,57 @@ Only usable for debug output.
 See also: [[open-kv]], [[sync]]"}
   transact-kv l/transact-kv)
 
-(def ^{:arglists '([db txs]
-                   [db dbi-name txs]
-                   [db dbi-name txs k-type]
-                   [db dbi-name txs k-type v-type]
-                   [db dbi-name txs k-type v-type callback])
-       :doc      "Asynchronously update key-value DB, insert or delete key value pairs, return a future. The future eventually contains `:transacted` if transaction succeeds, otherwise an exception will be thrown when the future is deref'ed.
+(declare kv-tx-combine)
 
-The asynchronous transactions are batched. Batch size is adaptive to the load, so the write throughput is generally higher than `transact-kv`. The upper limit of the batch size is set by dynamic var `datalevin.constants/*transact-kv-async-batch-limit*`.
+(deftype AsyncKVTx [lmdb dbi-name txs k-type v-type cb prev-sync]
+  IAsyncWork
+  (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
+  (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
+  (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
+  (post-batch [_]
+    (when @prev-sync (l/turn-on-sync lmdb))
+    (l/sync lmdb))
+  (batch-limit [_] c/*transact-kv-async-batch-limit*)
+  (combine [_] kv-tx-combine)
+  (callback [_] cb))
 
-The 6-arity version of the function takes a `callback` function, which will be called when the transaction commits, which takes the transaction result (possibly an exception) as the single argument.
+(defn- kv-tx-combine
+  [coll]
+  (let [^AsyncKVTx fw (first coll)]
+    (->AsyncKVTx (.-lmdb fw)
+                 (.-dbi-name fw)
+                 (into [] (comp (map #(.-txs ^AsyncKVTx %)) cat) coll)
+                 (.-k-type fw)
+                 (.-v-type fw)
+                 (.-cb fw)
+                 (.-prev-sync fw))))
 
-See also: [[transact-kv]]"}
-  transact-kv-async l/transact-kv-async)
+(defn transact-kv-async
+  "Asynchronously update key-value DB, insert or delete key value pairs,
+  return a future. The future eventually contains `:transacted` if transaction
+  succeeds, otherwise an exception will be thrown when the future is deref'ed.
+
+  The asynchronous transactions are batched. Batch size is adaptive to the load,
+  so the write throughput is higher than `transact-kv`. The upper limit of the
+  batch size is set by dynamic var
+  `datalevin.constants/*transact-kv-async-batch-limit*`.
+
+  The 6-arity version of the function takes a `callback` function, which will
+  be called when the transaction commits, which takes the transaction result
+  (possibly an exception) as the single argument.
+
+  See also: [[transact-kv]]"
+  ([this txs] (transact-kv-async this nil txs))
+  ([this dbi-name txs]
+   (transact-kv-async this dbi-name txs :data :data))
+  ([this dbi-name txs k-type]
+   (transact-kv-async this dbi-name txs k-type :data))
+  ([this dbi-name txs k-type v-type]
+   (transact-kv-async this dbi-name txs k-type v-type nil))
+  ([this dbi-name txs k-type v-type callback]
+   (a/exec (a/get-executor)
+           (->AsyncKVTx this dbi-name txs k-type v-type callback
+                        (l/sync? this)))))
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}
