@@ -1096,16 +1096,16 @@ Only usable for debug output.
 
 (declare dl-tx-combine)
 
-(deftype ^:no-doc AsyncDLTx [conn lmdb tx-data tx-meta cb prev-sync]
+(deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb prev-sync]
   IAsyncWork
   (work-key [_] (->> (.-store ^DB @conn) s/db-name hash (str "tx") keyword))
   (do-work [_] (transact! conn tx-data tx-meta))
   (pre-batch [_]
-    (vreset! prev-sync (l/sync? lmdb))
-    (l/turn-off-sync lmdb))
+    (vreset! prev-sync (l/sync? store))
+    (l/turn-off-sync store))
   (post-batch [_]
-    (when @prev-sync (l/turn-on-sync lmdb))
-    (l/sync lmdb))
+    (when @prev-sync (l/turn-on-sync store))
+    (l/sync store))
   (batch-limit [_] c/*transact-async-batch-limit*)
   (combine [_] dl-tx-combine)
   (callback [_] cb))
@@ -1114,7 +1114,7 @@ Only usable for debug output.
   [coll]
   (let [^AsyncDLTx fw (first coll)]
     (->AsyncDLTx (.-conn fw)
-                 (.-lmdb fw)
+                 (.-store fw)
                  (into [] (comp (map #(.-tx-data ^AsyncDLTx %)) cat) coll)
                  (.-tx-meta fw)
                  (.-cb fw)
@@ -1138,8 +1138,13 @@ Only usable for debug output.
   ([conn tx-data tx-meta cb]
    {:pre [(conn? conn)]}
    (a/exec (a/get-executor)
-           (let [lmdb (.-lmdb ^Store (.-store ^DB @conn))]
-             (->AsyncDLTx conn lmdb tx-data tx-meta cb (l/sync? lmdb))))))
+           (let [store (.-store ^DB @conn)]
+             (if (instance? DatalogStore store)
+               (->AsyncDLTx conn store tx-data tx-meta cb
+                            (volatile! (l/sync? store)))
+               (let [lmdb (.-lmdb ^Store store)]
+                 (->AsyncDLTx conn lmdb tx-data tx-meta cb
+                              (volatile! (l/sync? lmdb)))))))))
 
 (defn transact
   "Datalog transaction that returns an already realized future that contains
@@ -1411,7 +1416,7 @@ See also: [[open-kv]], [[sync]]"}
   ([this dbi-name txs k-type v-type callback]
    (a/exec (a/get-executor)
            (->AsyncKVTx this dbi-name txs k-type v-type callback
-                        (l/sync? this)))))
+                        (volatile! (l/sync? this))))))
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}

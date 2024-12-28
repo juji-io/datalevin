@@ -1,6 +1,8 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
   the load, the bigger the batch, up to batch limit"
+  (:require
+   [clojure.stacktrace :as stt])
   (:import
    [java.util.concurrent.atomic AtomicBoolean AtomicLong]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
@@ -80,11 +82,15 @@
       (when (or (<= limit (.get size)) (not (.contains event-queue k)))
         (let [^WorkItem first-item (.peek items)
               first-work           (.-work first-item)]
-          (try (pre-batch first-work) (catch Exception _))
+          (try (pre-batch first-work)
+               (catch Exception e
+                 (stt/print-stack-trace e)))
           (if-let [cmb (combine first-work)]
             (combined-work cmb items limit size (.-stage wq))
             (individual-work items limit size))
-          (try (post-batch first-work) (catch Exception _)))))))
+          (try (post-batch first-work)
+               (catch Exception e
+                 (stt/print-stack-trace e))))))))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")

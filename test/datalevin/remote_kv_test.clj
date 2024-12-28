@@ -150,12 +150,117 @@
                  (l/get-range store "r" [:all] :long :long true))))
         (l/close-kv store)))))
 
+(deftest async-basic-ops-test
+  (let [dir  (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
+        lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
+
+    (l/open-dbi lmdb "a")
+    (l/open-dbi lmdb "b")
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (l/open-dbi lmdb "d")
+
+    (testing "transacting nil will throw"
+      (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" nil 1]])))
+      (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" 1 nil]]))))
+
+    (testing "transact-kv-async"
+      @(dc/transact-kv-async lmdb
+                             [[:put "a" 1 2]
+                              [:put "a" 'a 1]
+                              [:put "a" 5 {}]
+                              [:put "a" :annunaki/enki true :attr :data]
+                              [:put "a" :datalevin ["hello" "world"]]
+                              [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                              [:put "b" 2 3]
+                              [:put "b" (byte 0x01) #{1 2} :byte :data]
+                              [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+                              [:put "b" [-1 -235254457N] 5]
+                              [:put "b" :a 4]
+                              [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                              [:put "b" 1 :long :long :data]
+                              [:put "b" :long 1 :data :long]
+                              [:put "b" 2 3 :long :long]
+                              [:put "b" "ok" 42 :string :long]
+                              [:put "d" 3.14 :pi :double :keyword]
+                              [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+                              [:put "d" [-1 0 1 2 3 4] 1 [:long]]
+                              [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
+                              [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
+                               [:long :string :keyword]]
+                              [:put "d"  [:ok -0.687 "nice"] [2 4]
+                               [:keyword :double :string] [:long]]]))
+
+    (testing "entries"
+      (is (= 5 (:entries (l/stat lmdb))))
+      (is (= 6 (:entries (l/stat lmdb "a"))))
+      (is (= 6 (l/entries lmdb "a")))
+      (is (= 10 (l/entries lmdb "b"))))
+
+    (testing "get-value"
+      (is (= 1 (l/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
+      (is (= [1 2 3] (l/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
+      (is (= 2 (l/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
+                            [:long :string :keyword])))
+      (is (= [2 4] (l/get-value lmdb "d" [:ok -0.687 "nice"]
+                                [:keyword :double :string] [:long])))
+      (is (= 2 (l/get-value lmdb "a" 1)))
+      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
+      (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value lmdb "a" 42 :long :datom)))
+      (is (nil? (l/get-value lmdb "a" 2)))
+      (is (nil? (l/get-value lmdb "b" 1)))
+      (is (= 5 (l/get-value lmdb "b" [-1 -235254457N])))
+      (is (= 1 (l/get-value lmdb "a" 'a)))
+      (is (= {} (l/get-value lmdb "a" 5)))
+      (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
+      (is (= 3 (l/get-value lmdb "b" 2)))
+      (is (= 4 (l/get-value lmdb "b" :a)))
+      (is (= #{1 2} (l/get-value lmdb "b" (byte 0x01) :byte)))
+      (is (= :bk (l/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
+                         ^bytes (l/get-value lmdb "b" :bv :data :bytes)))
+      (is (= :long (l/get-value lmdb "b" 1 :long :data)))
+      (is (= 1 (l/get-value lmdb "b" :long :data :long)))
+      (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
+      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
+      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+      (is (= "nice year"
+             (l/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
+
+    (testing "get-first and get-first-n"
+      (is (= [1 2] (l/get-first lmdb "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
+
+    (testing "delete"
+      @(dc/transact-kv-async lmdb [[:del "a" 1]
+                                   [:del "a" :non-exist]
+                                   [:del "a" "random things that do not exist"]])
+      (is (nil? (l/get-value lmdb "a" 1))))
+
+    (testing "entries-again"
+      (is (= 5 (l/entries lmdb "a")))
+      (is (= 10 (l/entries lmdb "b"))))
+
+    (testing "non-existent dbi"
+      (is (thrown? Exception (l/get-value lmdb "z" 1))))
+
+    (testing "handle val overflow automatically"
+      @(dc/transact-kv-async lmdb [[:put "c" 1 (range 100000)]])
+      (is (= (range 100000) (l/get-value lmdb "c" 1))))
+
+    (testing "key overflow throws"
+      (is (thrown? Exception
+                   @(dc/transact-kv-async lmdb [[:put "a" (range 1000) 1]]))))
+
+    (u/delete-files dir)))
+
 (deftest list-basic-ops-test
   (let [dir     (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
         lmdb    (l/open-kv dir)
         sum     (volatile! 0)
         visitor (i/inter-fn
-                    [vb]
+                  [vb]
                   (let [^long v (b/read-buffer vb :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
     (l/open-list-dbi lmdb "l")

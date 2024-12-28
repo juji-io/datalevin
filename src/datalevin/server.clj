@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.server
   "Non-blocking event-driven database server with role based access control"
-  (:refer-clojure :exclude [run-calls])
+  (:refer-clojure :exclude [run-calls sync])
   (:require
    [datalevin.util :as u]
    [datalevin.core :as d]
@@ -1094,6 +1094,10 @@
    'open-transact
    'close-transact
    'abort-transact
+   'turn-off-sync
+   'turn-on-sync
+   'sync?
+   'sync
    'fetch
    'populated?
    'size
@@ -1838,7 +1842,7 @@
 (defn- get-kv-store
   [server db-name]
   (let [s (get-store server db-name)]
-    (if (instance? ILMDB s) s (.-lmdb ^Store s))))
+    (if (instance? Store s) (.-lmdb ^Store s) s)))
 
 (declare write-txn-runner run-calls halt-run)
 
@@ -1936,9 +1940,57 @@
           kv-store (get-kv-store server db-name)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (l/abort-transact-kv kv-store)
+        (write-message skey {:type :command-complete})))))
+
+(defn- turn-off-sync
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (l/turn-off-sync kv-store)
+        (write-message skey {:type :command-complete})))))
+
+(defn- turn-on-sync
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (l/turn-on-sync kv-store)
+        (write-message skey {:type :command-complete})))))
+
+(defn- sync?
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (l/sync? kv-store)
+        (write-message skey {:type :command-complete})))))
+
+(defn- sync
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (l/sync kv-store)
         (write-message skey {:type :command-complete})))))
 
 (defn- transact-kv
@@ -1948,8 +2000,8 @@
           kv-store (get-store server db-name)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (case mode
           :copy-in (do (l/transact-kv kv-store (copy-in server skey))
                        (write-message skey {:type :command-complete}))

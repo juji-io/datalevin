@@ -1,8 +1,9 @@
 (ns ^:no-doc datalevin.binding.cpp
   "Native binding using JavaCPP"
+  (:refer-clojure :exclude [sync])
   (:require
    [datalevin.bits :as b]
-   [datalevin.util :refer [raise] :as u]
+   [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
    [datalevin.async :as a]
    [datalevin.scan :as scan]
@@ -131,7 +132,6 @@
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
-  (get-txn [_] txn)
   (close-rtx [_] (locking txn (.close txn)))
   (reset [this] (locking txn (.reset txn)) this)
   (renew [this] (locking txn (.renew txn)) this))
@@ -446,7 +446,7 @@
   (.get cur ^BufVal (.-start-kp rtx) ^BufVal (.-start-vp rtx)
         DTLV/MDB_GET_BOTH))
 
-(declare reset-write-txn ->CppLMDB ->AsyncTx)
+(declare create-rw-txn reset-write-txn ->CppLMDB)
 
 (defn- up-db-size [^Env env]
   (let [^Info info (Info/create env)]
@@ -622,9 +622,10 @@
               (new-bufval c/+max-key-size+)
               (volatile! false))))
 
-  (return-rtx [_ rtx]
-    (.reset ^Rtx rtx)
-    (.add ^ArrayDeque (.get pools) rtx))
+  (return-rtx [this rtx]
+    (when-not  (.closed-kv? this)
+      (.reset ^Rtx rtx)
+      (.add ^ArrayDeque (.get pools) rtx)))
 
   (stat [_]
     (try
@@ -717,7 +718,10 @@
             ^DBI dbi  (when dbi-name
                         (or (.get dbis dbi-name)
                             (raise dbi-name " is not open" {})))
-            ^Txn txn  (if one-shot? (Txn/create env) (.-txn rtx))]
+            ^Txn txn  (if one-shot?
+                        (create-rw-txn this)
+                        ;; (Txn/create env)
+                        (.-txn rtx))]
         (try
           (if dbi
             (transact1* txs dbi txn k-type v-type)
@@ -1051,6 +1055,12 @@
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
 
+(defn- create-rw-txn
+  [^CppLMDB lmdb]
+  (if @(.-sync? lmdb)
+    (Txn/create (.-env lmdb))
+    (Txn/createNoSync (.-env lmdb))))
+
 (defn- reset-write-txn
   [^CppLMDB lmdb]
   (let [kp-w       ^BufVal (.-kp-w lmdb)
@@ -1067,9 +1077,7 @@
     (.clear stop-vp-w)
     (vreset! (.-write-txn lmdb)
              (Rtx. lmdb
-                   (if @(.-sync? lmdb)
-                     (Txn/create (.-env lmdb))
-                     (Txn/createNoSync (.-env lmdb)))
+                   (create-rw-txn lmdb)
                    kp-w
                    vp-w
                    start-kp-w

@@ -17,9 +17,12 @@ And the following for Datalog DB:
 * `transact!`
 
 In all transaction functions, we only use Datalevin's default write setting,
-i.e. the safest ACID write setting. For now, faster, albeit less safe write
-conditions, such as `:mapasync`, `:nometasync`, `:nosync`, `:writemap`, and so
-on, are not tested in this benchmark.
+i.e. the safest ACID write setting that flushes data to disk when commit. For
+now, the faster, albeit less safe write conditions, such as `:mapasync`,
+`:nometasync`, `:nosync`, `:writemap`, and so on, are not tested in this
+benchmark. For Datalog write, the faster `init-db` and `fill-db` functions that
+directly load prepared datoms are not tested in this benchmark either, as we are
+only interested in the transaction of raw data.
 
 There are two main tasks, one is pure write in batch write condition, another is
 half read half write at the same time.
@@ -48,7 +51,7 @@ respectively. For example, the command below runs benchmark for
 For every 100K writes, the following metrics are collected during the benchmark
 run:
 
-* Throughout: the average number of writes per second.
+* Throughout: the average number of writes per second so far.
 * Write Latency: the average latency of the transaction function call, in
   milliseconds.
 * Commit Latency: the average latency of receiving the write success

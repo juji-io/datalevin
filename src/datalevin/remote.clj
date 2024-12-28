@@ -1,5 +1,6 @@
 (ns ^:no-doc datalevin.remote
   "Proxy for remote stores"
+  (:refer-clojure :exclude [sync])
   (:require
    [datalevin.util :as u]
    [datalevin.constants :as c]
@@ -68,7 +69,8 @@
     "Send to remote server the data from call to `db/transact-tx-data`")
   (open-transact [store])
   (abort-transact [store])
-  (close-transact [store]))
+  (close-transact [store])
+  )
 
 (declare ->DatalogStore)
 
@@ -229,6 +231,16 @@
   (close-transact [_]
     (cl/normal-request client :close-transact [db-name] true))
 
+  ILMDB
+  (turn-off-sync [_]
+    (cl/normal-request client :turn-off-sync [db-name] writing?))
+  (turn-on-sync [_]
+    (cl/normal-request client :turn-on-sync [db-name] writing?))
+  (sync? [_]
+    (cl/normal-request client :sync? [db-name] writing?))
+  (sync [_]
+    (cl/normal-request client :sync [db-name] writing?))
+
   IAdmin
   (re-index [_ schema opts]
     (cl/normal-request client :datalog-re-index [db-name schema opts])))
@@ -321,6 +333,8 @@
     (cl/normal-request client :turn-on-sync [db-name] writing?))
   (sync? [_]
     (cl/normal-request client :sync? [db-name] writing?))
+  (sync [_]
+    (cl/normal-request client :sync [db-name] writing?))
 
   (open-transact-kv [db]
     (cl/normal-request client :open-transact-kv [db-name])
