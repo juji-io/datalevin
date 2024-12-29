@@ -314,9 +314,9 @@ Only usable for debug output.
   `(locking ~orig-conn
      (let [db#  ^DB (deref ~orig-conn)
            s#   (.-store db#)
-           old# (datalog-index-cache-limit db#)]
+           old# (db/cache-disabled? s#)]
        (locking (l/write-txn s#)
-         (datalog-index-cache-limit db# 0)
+         (db/disable-cache s#)
          (if (instance? DatalogStore s#)
            (let [res#    (if (l/writing? s#)
                            (let [~conn ~orig-conn]
@@ -333,7 +333,7 @@ Only usable for debug output.
                                (finally (r/close-transact s#)))))
                  new-db# (db/new-db s#)]
              (reset! ~orig-conn new-db#)
-             (datalog-index-cache-limit new-db# old#)
+             (when-not old# (db/enable-cache s#))
              res#)
            (let [kv#     (.-lmdb ^Store s#)
                  s1#     (volatile! nil)
@@ -345,9 +345,10 @@ Only usable for debug output.
                                           ~@body)]
                              (vreset! s1# (.-store ^DB (deref conn1#)))
                              res#))
-                 new-db# (db/new-db (s/transfer (deref s1#) kv#))]
+                 new-s#  (s/transfer (deref s1#) kv#)
+                 new-db# (db/new-db new-s#)]
              (reset! ~orig-conn new-db#)
-             (datalog-index-cache-limit new-db# old#)
+             (when-not old# (db/enable-cache new-s#))
              res1#))))))
 
 (def ^{:arglists '([conn])
@@ -1136,7 +1137,6 @@ Only usable for debug output.
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
   ([conn tx-data tx-meta cb]
-   {:pre [(conn? conn)]}
    (a/exec (a/get-executor)
            (let [store (.-store ^DB @conn)]
              (if (instance? DatalogStore store)

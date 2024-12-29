@@ -8,8 +8,11 @@ public class LRUCache {
 
     long target;
 
+    boolean disabled;
+
     public LRUCache(int capacity) {
         this.capacity = capacity;
+        disabled = false;
         map = Collections.synchronizedMap(new LinkedHashMap<Object, Object>(capacity,
                                                                             0.75f,
                                                                             true) {
@@ -24,15 +27,29 @@ public class LRUCache {
         this.target = target;
     }
 
+    public boolean isDisabled() {
+        return disabled;
+    }
+
+    public void disable() {
+        disabled = true;
+    }
+
+    public void enable() {
+        disabled = false;
+    }
+
     public long target() {
         return target;
     }
 
     public Object get(Object key) {
+        if (disabled == true) return null;
         return map.get(key);
     }
 
     public void put(Object key, Object value) {
+        if (disabled == true) return;
         map.put(key, value);
     }
 

@@ -96,6 +96,18 @@
    (.put ^ConcurrentHashMap caches (s/dir store)
          (LRUCache. (:cache-limit (s/opts store)) target))))
 
+(defn cache-disabled?
+  [store]
+  (.isDisabled ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+
+(defn disable-cache
+  [store]
+  (.disable ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+
+(defn enable-cache
+  [store]
+  (.enable ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+
 (defn cache-get
   [store k]
   (.get ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store)) k))

@@ -10,14 +10,12 @@ import java.nio.ByteBuffer;
 public class Cursor {
 
     private DTLV.MDB_cursor ptr;
-    private SizeTPointer cPtr;
 
     private BufVal key;
     private BufVal val;
 
-    public Cursor(DTLV.MDB_cursor ptr, SizeTPointer cPtr, BufVal key, BufVal val) {
+    public Cursor(DTLV.MDB_cursor ptr, BufVal key, BufVal val) {
         this.ptr = ptr;
-        this.cPtr = cPtr;
         this.key = key;
         this.val = val;
     }
@@ -28,11 +26,10 @@ public class Cursor {
     public static Cursor create(Txn txn, Dbi dbi, BufVal key, BufVal val) {
 
         DTLV.MDB_cursor ptr = new DTLV.MDB_cursor();
-        SizeTPointer cPtr = new SizeTPointer(1);
 
         Util.checkRc(DTLV.mdb_cursor_open(txn.get(), dbi.get(), ptr));
 
-        return new Cursor(ptr, cPtr, key, val);
+        return new Cursor(ptr, key, val);
     }
 
     /**
@@ -96,15 +93,17 @@ public class Cursor {
     public void close() {
         DTLV.mdb_cursor_close(ptr);
         ptr.close();
-        cPtr.close();
     }
 
     /**
      * Return count of duplicates for current key.
      */
     public long count() {
+        SizeTPointer cPtr = new SizeTPointer(1);
         Util.checkRc(DTLV.mdb_cursor_count(ptr, cPtr));
-        return (long)cPtr.get();
+        long res = (long)cPtr.get();
+        cPtr.close();
+        return res;
     }
 
     /**

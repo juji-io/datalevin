@@ -17,11 +17,14 @@
         conn (d/create-conn
                dir {}
                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (d/transact! conn [{:db/id 1 :counter 0}])
+    (is (= 0 (d/q query @conn 1)))
+
     (d/with-transaction [cn conn]
-      (is (nil? (d/q query @cn 1)))
+      (is (= 0 (d/q query @cn 1)))
       (d/transact! cn [{:db/id 1 :counter 1}])
       (is (= 1 (d/q query @cn 1)))
-      (is (nil? (d/q query @conn 1))))
+      (is (= 0 (d/q query @conn 1))))
     (is (= 1 (d/q query @conn 1)))
     (d/close conn)))
 

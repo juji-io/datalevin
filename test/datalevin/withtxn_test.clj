@@ -18,14 +18,15 @@
         query '[:find ?c .
                 :in $ ?e
                 :where [?e :counter ?c]]]
-    (is (nil? (d/q query @conn 1)))
+    (d/transact! conn [{:db/id 1 :counter 0}])
+    (is (= 0 (d/q query @conn 1)))
 
     (testing "new value is invisible to outside readers"
       (d/with-transaction [cn conn]
-        (is (nil? (d/q query @cn 1)))
+        (is (= 0 (d/q query @cn 1)))
         (d/transact! cn [{:db/id 1 :counter 1}])
         (is (= 1 (d/q query @cn 1)))
-        (is (nil? (d/q query @conn 1))))
+        (is (= 0 (d/q query @conn 1))))
       (is (= 1 (d/q query @conn 1))))
 
     (testing "abort"
