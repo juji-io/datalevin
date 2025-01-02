@@ -1215,7 +1215,6 @@
   (do-work [_] (sampling store))
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 1)
   (combine [_] nil)
   (callback [_] nil))
 

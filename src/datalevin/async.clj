@@ -1,10 +1,10 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
-  the load, the bigger the batch, up to batch limit"
+  the load, the bigger the batch"
   (:require
    [clojure.stacktrace :as stt])
   (:import
-   [java.util.concurrent.atomic AtomicBoolean AtomicLong]
+   [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
     ConcurrentLinkedQueue ConcurrentHashMap Callable TimeUnit]
    [org.eclipse.collections.impl.list.mutable FastList]))
@@ -23,7 +23,6 @@
     the system will ignore it.")
   (post-batch [_]
     "Cleanup after the batch. Should handle its own exception.")
-  (batch-limit [_] "The upper limit of batch size for this type of work")
   (combine [_]
     "Return a function that takes a collection of this work and combine them
      into one. Or return nil if there's no need to combine.")
@@ -33,9 +32,7 @@
 
 (deftype WorkItem [work promise])
 
-(deftype WorkQueue [^ConcurrentLinkedQueue items ; [WorkItem ...]
-                    ^long limit
-                    ^AtomicLong size
+(deftype WorkQueue [^ConcurrentLinkedQueue items  ; [WorkItem ...]
                     ^FastList stage])  ; for combining work
 
 (defn- do-work*
@@ -53,44 +50,49 @@
       (throw payload))))
 
 (defn- individual-work
-  [^ConcurrentLinkedQueue items ^long limit ^AtomicLong size]
-  (loop [i 0]
-    (when (and (.peek items) (< i limit))
+  [^ConcurrentLinkedQueue items]
+  (loop []
+    (when (.peek items)
       (let [^WorkItem item (.poll items)]
-        (.decrementAndGet size)
         (deliver (.-promise item) (do-work* (.-work item))))
-      (recur (inc i)))))
+      (recur))))
 
 (defn- combined-work
-  [cmb ^ConcurrentLinkedQueue items limit ^AtomicLong size ^FastList stage]
+  [cmb ^ConcurrentLinkedQueue items ^FastList stage]
   (.clear stage)
-  (loop [i 0]
-    (when (and (.peek items) (< i ^long limit))
+  (loop []
+    (when (.peek items)
       (let [^WorkItem item (.poll items)]
-        (.decrementAndGet size)
         (.add stage item))
-      (recur (inc i))))
+      (recur)))
   (let [res (do-work* (cmb (mapv #(.-work ^WorkItem %) stage)))]
-    (mapv #(deliver (.-promise ^WorkItem %) res) stage)))
+    (dotimes [i (.size stage)]
+      (deliver (.-promise ^WorkItem (.get stage i)) res))))
 
 (defn- event-handler
-  [^LinkedBlockingQueue event-queue k ^WorkQueue wq]
-  (let [^ConcurrentLinkedQueue items (.-items wq)
-        limit                        (.-limit wq)
-        ^AtomicLong size             (.-size wq)]
+  [^ConcurrentHashMap work-queues k]
+  (let [^WorkQueue wq                (.get work-queues k)
+        ^ConcurrentLinkedQueue items (.-items wq)]
     (locking items
-      (when (or (<= limit (.get size)) (not (.contains event-queue k)))
-        (let [^WorkItem first-item (.peek items)
-              first-work           (.-work first-item)]
-          (try (pre-batch first-work)
-               (catch Exception e
-                 (stt/print-stack-trace e)))
-          (if-let [cmb (combine first-work)]
-            (combined-work cmb items limit size (.-stage wq))
-            (individual-work items limit size))
-          (try (post-batch first-work)
-               (catch Exception e
-                 (stt/print-stack-trace e))))))))
+      (let [^WorkItem first-item (.peek items)
+            first-work           (.-work first-item)]
+        (try (pre-batch first-work)
+             (catch Exception _
+               #_(stt/print-stack-trace e)))
+        (if-let [cmb (combine first-work)]
+          (combined-work cmb items (.-stage wq))
+          (individual-work items))
+        (try (post-batch first-work)
+             (catch Exception _
+               #_(stt/print-stack-trace e))))
+      )))
+
+(defn- new-workqueue
+  [work]
+  (let [cmb (combine work)]
+    (assert (or (nil? cmb) (ifn? cmb)) "combine should be nil or a function")
+    (->WorkQueue (ConcurrentLinkedQueue.)
+                 (when cmb (FastList.)))))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
@@ -107,9 +109,9 @@
   (start [_]
     (letfn [(event-loop []
               (when (.get running)
-                (let [k  (.take event-queue)
-                      wq (.get work-queues k)]
-                  (.submit workers ^Callable #(event-handler event-queue k wq)))
+                (let [k (.take event-queue)]
+                  (when-not (.contains event-queue k) ; do nothing when busy
+                    (.submit workers ^Callable #(event-handler work-queues k))))
                 (recur)))
             (init []
               (try (event-loop)
@@ -127,26 +129,16 @@
     (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS)
     (.awaitTermination workers 5 TimeUnit/MILLISECONDS))
   (exec [_ work]
-    (let [k     (work-key work)
-          limit (batch-limit work)
-          cmb   (combine work)
-          cb    (callback work)]
+    (let [k  (work-key work)
+          cb (callback work)]
       (assert (keyword? k) "work-key should return a keyword")
-      (assert (pos-int? limit) "batch-limit should return a positive integer")
-      (assert (or (nil? cmb) (ifn? cmb)) "combine should be nil or a function")
       (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
-      (.putIfAbsent work-queues k
-                    (->WorkQueue (ConcurrentLinkedQueue.)
-                                 limit
-                                 (AtomicLong.)
-                                 (when cmb (FastList. (int limit)))))
+      (.putIfAbsent work-queues k (new-workqueue work))
       (let [p                        (promise)
             item                     (->WorkItem work p)
             ^WorkQueue wq            (.get work-queues k)
-            ^ConcurrentLinkedQueue q (.-items wq)
-            ^AtomicLong s            (.-size wq)]
+            ^ConcurrentLinkedQueue q (.-items wq)]
         (.offer q item)
-        (.incrementAndGet s)
         (.offer event-queue k)
         (future (handle-result p cb))))))
 

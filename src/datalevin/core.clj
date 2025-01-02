@@ -1107,7 +1107,6 @@ Only usable for debug output.
   (post-batch [_]
     (when @prev-sync (l/turn-on-sync store))
     (l/sync store))
-  (batch-limit [_] c/*transact-async-batch-limit*)
   (combine [_] dl-tx-combine)
   (callback [_] cb))
 
@@ -1128,9 +1127,7 @@ Only usable for debug output.
   is deref'ed.
 
   Use an adaptive batch transaction algorithm that adjusts batch size
-  according to workload: the higher the load, the larger the batch size. The
-  upper limit of batch size is set by dynamic var
-  `datalevin.constants/*transact-async-batch-limit*`.
+  according to workload: the higher the load, the larger the batch size.
 
   This function has higher throughput than [[transact!]] in high write rate use
   cases."
@@ -1376,7 +1373,6 @@ See also: [[open-kv]], [[sync]]"}
   (post-batch [_]
     (when @prev-sync (l/turn-on-sync lmdb))
     (l/sync lmdb))
-  (batch-limit [_] c/*transact-kv-async-batch-limit*)
   (combine [_] kv-tx-combine)
   (callback [_] cb))
 
@@ -1397,9 +1393,7 @@ See also: [[open-kv]], [[sync]]"}
   succeeds, otherwise an exception will be thrown when the future is deref'ed.
 
   The asynchronous transactions are batched. Batch size is adaptive to the load,
-  so the write throughput is higher than `transact-kv`. The upper limit of the
-  batch size is set by dynamic var
-  `datalevin.constants/*transact-kv-async-batch-limit*`.
+  so the write throughput is higher than `transact-kv`.
 
   The 6-arity version of the function takes a `callback` function, which will
   be called when the transaction commits, which takes the transaction result

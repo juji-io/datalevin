@@ -10,8 +10,6 @@
 
 (def max-write-dbi "test")
 
-(defn gen-uuid [] (str (random-uuid)))
-
 ;; limit the number of threads in flight
 (def in-flight 1000)
 
@@ -69,22 +67,21 @@
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/transact-kv-async kvdb max-write-dbi txs
-                                        [:string :string] :string measure))
+                                        :uuid :uuid measure))
         kv-sync  (fn [txs measure]
                    (measure (d/transact-kv kvdb max-write-dbi txs
-                                           [:string :string] :string)))
+                                           :uuid :uuid)))
         kv-add   (fn [^FastList txs]
-                   (.add txs [:put [(gen-uuid) (gen-uuid)] (gen-uuid)]))
+                   (.add txs [:put (random-uuid) (random-uuid)]))
         conn     (when (not kv?)
                    (d/get-conn (str "max-write-db-" f "-" batch)
-                               {:k {:db/valueType :db.type/tuple
-                                    :db/tupleType :db.type/string}
-                                :v {:db/valueType :db.type/string}}
-                               {:kv-opts {:mapsize 150000}}))
+                               {:k {:db/valueType :db.type/uuid}
+                                :v {:db/valueType :db.type/uuid}}
+                               {:kv-opts {:mapsize 200000}}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
-                   (.add txs {:k [(gen-uuid) (gen-uuid)] :v (gen-uuid)}))
+                   (.add txs {:k (random-uuid) :v (random-uuid)}))
         tx-fn    (case f
                    kv-async kv-async
                    kv-sync  kv-sync

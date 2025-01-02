@@ -8,9 +8,7 @@
   `transact-kv`). Since the commit latency also becomes generally lower, it is
   recommended to use asynchronous transactions by default. Batch size is
   automatically adaptive to the write workload: the higher the load, the larger
-  the batch, up to a batch limit, controlled by a dynamic var
-  `*transact-kv-async-batch-limit*`.
-  [#256](https://github.com/juji-io/datalevin/issues/256)
+  the batch. [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Benchmark] [Write benchmark](benchmarks/write-bench). Show Datalevin's write
   throughput and latency using various transaction methods and write batch
   sizes.
@@ -18,9 +16,7 @@
 
 ### Improved
 - [Datalog] Both `transact` and `transact-async` are changed to use the same
-  adaptive batch transaction mechanism to improve write throughout, similarly
-  controlled by `*transact-async-batch-limit*`. `transact` is thus recommended
-  as the default transaction method, in place of `transact!`.
+  adaptive batch transaction mechanism to improve write throughout.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
   samples are more update to date. Each invocation will do less work, or no work
   , based on whether the changed ratio of an attribute passes a threshold,

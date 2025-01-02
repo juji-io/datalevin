@@ -92,10 +92,14 @@
                      [joda-time/joda-time]
                      ;; [org.graalvm.nativeimage/svm]
                      ]
-                    :global-vars
-                    {*print-namespace-maps* false
-                     *unchecked-math*       :warn-on-boxed
-                     *warn-on-reflection*   true}}}
+                    ;; :global-vars
+                    ;; {*print-namespace-maps* false
+                    ;;  *unchecked-math*       :warn-on-boxed
+                    ;;  *warn-on-reflection*   true}
+                    }}
+  :global-vars {*print-namespace-maps* false
+                *unchecked-math*       :warn-on-boxed
+                *warn-on-reflection*   true}
   :jar-exclusions [#"graal" #"datalevin.ni"]
   :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
              "-Xlint:all"

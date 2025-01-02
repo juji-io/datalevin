@@ -21,7 +21,6 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 3)
   (combine [_] nil)
   (callback [_] nil))
 
@@ -31,7 +30,6 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 5)
   (combine [_] nil)
   (callback [_] nil))
 
@@ -41,7 +39,6 @@
   (do-work [_]  num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 10)
   (combine [_] nil)
   (callback [_] nil))
 
@@ -64,7 +61,6 @@
   (do-work [_]  (/ 1 0))
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 10)
   (combine [_] nil)
   (callback [_] nil))
 
@@ -74,7 +70,6 @@
   (do-work [_] :something)
   (pre-batch [_] (/ 1 0))
   (post-batch [_])
-  (batch-limit [_] 10)
   (combine [_] nil)
   (callback [_] nil))
 
@@ -94,7 +89,6 @@
   (do-work [_] num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 10)
   (combine [_] last-combine)
   (callback [_] nil))
 
@@ -108,11 +102,7 @@
                               (drop 1)
                               (map dec)
                               vec)
-                         (dec (count res)))
-        max-stride (->> res
-                        (partition-by identity)
-                        (map count)
-                        (apply max))]
+                         (dec (count res)))]
     (is (not= input res))
     (is (< (count (distinct res)) (count (distinct input))))
     (is (= last-input (peek res)))
@@ -120,7 +110,6 @@
                 (map (fn [x y] [x y])
                      (for [i indices] (get input i))
                      (for [i indices] (get res i)))))
-    (is (<= max-stride (a/batch-limit (LastCombineWork. 1))))
     (a/shutdown-executor)))
 
 (declare concat-combine)
@@ -131,7 +120,6 @@
   (do-work [_] v)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 3)
   (combine [_] concat-combine)
   (callback [_] nil))
 
@@ -141,22 +129,17 @@
          (into [] (comp (map #(.-v ^ConcatCombineWork %)) cat) coll)))
 
 (deftest concat-combine-work-test
-  (let [executor   (a/get-executor)
-        get-v      #(vec (shuffle (range (inc ^int (rand-int %)))))
-        input      (mapv get-v (range 2 10))
-        futs       (mapv #(a/exec executor (ConcatCombineWork. %)) input)
-        res        (mapv #(deref %) futs)
-        dist-res   (->> res
-                        (partition-by identity)
-                        (mapv first)
-                        flatten)
-        max-stride (->> res
-                        (partition-by identity)
-                        (map count)
-                        (apply max))]
+  (let [executor (a/get-executor)
+        get-v    #(vec (shuffle (range (inc ^int (rand-int %)))))
+        input    (mapv get-v (range 2 10))
+        futs     (mapv #(a/exec executor (ConcatCombineWork. %)) input)
+        res      (mapv #(deref %) futs)
+        dist-res (->> res
+                      (partition-by identity)
+                      (mapv first)
+                      flatten)]
     (is (not= input res))
     (is (= (flatten input) dist-res))
-    (is (<= max-stride (a/batch-limit (ConcatCombineWork. [1]))))
     (a/shutdown-executor)))
 
 (defrecord CallbackWork [num cb]
@@ -165,7 +148,6 @@
   (do-work [_] num)
   (pre-batch [_])
   (post-batch [_])
-  (batch-limit [_] 3)
   (combine [_] nil)
   (callback [_] cb))
 
