@@ -1097,13 +1097,15 @@ Only usable for debug output.
 
 (declare dl-tx-combine)
 
+(defn- dl-work-key* [db-name] (->> db-name hash (str "tx") keyword))
+
+(def ^:no-doc dl-work-key (memoize dl-work-key*))
+
 (deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb prev-sync]
   IAsyncWork
-  (work-key [_] (->> (.-store ^DB @conn) s/db-name hash (str "tx") keyword))
+  (work-key [_] (->> (.-store ^DB @conn) s/db-name dl-work-key))
   (do-work [_] (transact! conn tx-data tx-meta))
-  (pre-batch [_]
-    (vreset! prev-sync (l/sync? store))
-    (l/turn-off-sync store))
+  (pre-batch [_] (vreset! prev-sync (l/sync? store)) (l/turn-off-sync store))
   (post-batch [_]
     (when @prev-sync (l/turn-on-sync store))
     (l/sync store))
@@ -1365,9 +1367,13 @@ See also: [[open-kv]], [[sync]]"}
 
 (declare kv-tx-combine)
 
+(defn- kv-work-key* [dir] (->> dir hash (str "kv-tx") keyword))
+
+(def ^:no-doc kv-work-key (memoize kv-work-key*))
+
 (deftype AsyncKVTx [lmdb dbi-name txs k-type v-type cb prev-sync]
   IAsyncWork
-  (work-key [_] (->> (l/dir lmdb) hash (str "kv-tx") keyword))
+  (work-key [_] (kv-work-key (l/dir lmdb)))
   (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
   (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
   (post-batch [_]

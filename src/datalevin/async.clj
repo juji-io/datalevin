@@ -27,13 +27,14 @@
     "Return a function that takes a collection of this work and combine them
      into one. Or return nil if there's no need to combine.")
   (callback [_]
-    "Add a callback for when a work is done. This callback takes as
+    "Return a callback for when a work is done. This callback takes as
      input the result of do-work. This could be nil."))
 
 (deftype WorkItem [work promise])
 
 (deftype WorkQueue [^ConcurrentLinkedQueue items  ; [WorkItem ...]
-                    ^FastList stage])  ; for combining work
+                    ^FastList stage ; for combining work
+                    cb])
 
 (defn- do-work*
   [work]
@@ -77,22 +78,20 @@
       (let [^WorkItem first-item (.peek items)
             first-work           (.-work first-item)]
         (try (pre-batch first-work)
-             (catch Exception _
-               #_(stt/print-stack-trace e)))
+             (catch Exception _ #_(stt/print-stack-trace e)))
         (if-let [cmb (combine first-work)]
           (combined-work cmb items (.-stage wq))
           (individual-work items))
         (try (post-batch first-work)
-             (catch Exception _
-               #_(stt/print-stack-trace e))))
-      )))
+             (catch Exception _ #_(stt/print-stack-trace e)))))))
 
 (defn- new-workqueue
   [work]
-  (let [cmb (combine work)]
+  (let [cmb (combine work)
+        cb  (callback work)]
     (assert (or (nil? cmb) (ifn? cmb)) "combine should be nil or a function")
-    (->WorkQueue (ConcurrentLinkedQueue.)
-                 (when cmb (FastList.)))))
+    (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
+    (->WorkQueue (ConcurrentLinkedQueue.) (when cmb (FastList.)) cb)))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
@@ -129,10 +128,8 @@
     (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS)
     (.awaitTermination workers 5 TimeUnit/MILLISECONDS))
   (exec [_ work]
-    (let [k  (work-key work)
-          cb (callback work)]
+    (let [k (work-key work)]
       (assert (keyword? k) "work-key should return a keyword")
-      (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
       (.putIfAbsent work-queues k (new-workqueue work))
       (let [p                        (promise)
             item                     (->WorkItem work p)
@@ -140,7 +137,7 @@
             ^ConcurrentLinkedQueue q (.-items wq)]
         (.offer q item)
         (.offer event-queue k)
-        (future (handle-result p cb))))))
+        (future (handle-result p (.-cb wq)))))))
 
 (defn- new-async-executor
   []
