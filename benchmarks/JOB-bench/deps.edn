@@ -6,7 +6,7 @@
          com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
          com.taoensso/nippy                          {:mvn/version "3.4.2"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
-         org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version "0.10.12"}
+         org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version "0.10.13"}
          org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.6"}
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          }

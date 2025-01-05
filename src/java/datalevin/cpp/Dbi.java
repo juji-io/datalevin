@@ -19,7 +19,7 @@ public class Dbi {
         Txn txn = Txn.create(env);
         try {
             Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
-            handle = get();
+            handle = (int)ptr.get();
             Util.checkRc(DTLV.dtlv_set_comparator(txn.get(), handle));
         } catch (Exception e) {
             txn.close();
@@ -70,7 +70,7 @@ public class Dbi {
      * Return the MDB_dbi integer to be used in DTLV calls
      */
     public int get() {
-        return (int)ptr.get();
+        return handle;
     }
 
     public String getName() {
