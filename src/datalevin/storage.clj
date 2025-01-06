@@ -234,6 +234,7 @@
     "Return the number of datoms with the given attribute, an estimate")
   (actual-a-size [this a]
     "Return the number of datoms with the given attribute")
+  (start-sampling [this])
   (e-sample [this a]
     "Return a sample of eids sampled from full value range of an attribute")
   (v-size [this v]
@@ -604,6 +605,7 @@
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-tx
+                sample-started
                 write-txn]
 
   IWriting
@@ -796,6 +798,17 @@
                                            :int-int :id))]
             (r/vertical-tuples (sequence (map peek) res)))
           (e-sample* this a aid (.a-size this a)))))
+
+  (start-sampling [this]
+    (when-not @sample-started
+      (let [scheduler ^ScheduledExecutorService (u/get-scheduler)]
+        (.scheduleWithFixedDelay scheduler
+                                 ^Runnable
+                                 #(a/exec (a/get-executor) (->SamplingWork this))
+                                 ^long (rand-int c/sample-processing-interval)
+                                 ^long c/sample-processing-interval
+                                 TimeUnit/SECONDS)
+        (vreset! sample-started true))))
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 
@@ -1465,26 +1478,18 @@
            domains (init-domains (:search-domains opts2)
                                  schema search-opts search-domains)]
        (transact-opts lmdb opts2)
-       (let [store     (->Store lmdb
-                                (init-engines lmdb domains)
-                                (ConcurrentHashMap.)
-                                (load-opts lmdb)
-                                schema
-                                (schema->rschema schema)
-                                (init-attrs schema)
-                                (init-max-aid schema)
-                                (init-max-gt lmdb)
-                                (init-max-tx lmdb)
-                                (volatile! :storage-mutex))
-             scheduler ^ScheduledExecutorService (u/get-scheduler)]
-         (.scheduleWithFixedDelay scheduler
-                                  ^Runnable
-                                  #(a/exec (a/get-executor)
-                                           (->SamplingWork store))
-                                  ^long (rand-int c/sample-processing-interval)
-                                  ^long c/sample-processing-interval
-                                  TimeUnit/SECONDS)
-         store)))))
+       (->Store lmdb
+                (init-engines lmdb domains)
+                (ConcurrentHashMap.)
+                (load-opts lmdb)
+                schema
+                (schema->rschema schema)
+                (init-attrs schema)
+                (init-max-aid schema)
+                (init-max-gt lmdb)
+                (init-max-tx lmdb)
+                (volatile! false)
+                (volatile! :storage-mutex))))))
 
 (defn- transfer-engines
   [engines lmdb]
@@ -1504,4 +1509,5 @@
            (max-aid old)
            (max-gt old)
            (max-tx old)
+           (.-sample-started old)
            (.-write-txn old)))

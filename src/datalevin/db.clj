@@ -513,6 +513,7 @@
 (defn new-db
   [^IStore store]
   (refresh-cache store)
+  (s/start-sampling store)
   (let [db (map->DB
              {:store         store
               :max-eid       (s/init-max-eid store)

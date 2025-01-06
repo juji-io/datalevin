@@ -1105,6 +1105,7 @@
    'tail
    'slice
    'rslice
+   'start-sampling
    'e-datoms
    'av-datoms
    'v-datoms
@@ -1679,6 +1680,10 @@
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
+
+(defn- start-sampling
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler start-sampling)))
 
 (defn- e-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

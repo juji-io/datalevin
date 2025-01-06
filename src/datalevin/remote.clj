@@ -172,6 +172,9 @@
   (e-datoms [_ e]
     (cl/normal-request client :e-datoms [db-name e] writing?))
 
+  (start-sampling [_]
+    (cl/normal-request client :start-sampling [db-name] writing?))
+
   (av-datoms [_ a v]
     (cl/normal-request client :av-datoms [db-name a v] writing?))
 
