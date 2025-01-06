@@ -33,6 +33,7 @@
 (deftype WorkItem [work promise])
 
 (deftype WorkQueue [^ConcurrentLinkedQueue items  ; [WorkItem ...]
+                    fw ; first work
                     ^FastList stage ; for combining work
                     cb])
 
@@ -73,17 +74,16 @@
 (defn- event-handler
   [^ConcurrentHashMap work-queues k]
   (let [^WorkQueue wq                (.get work-queues k)
-        ^ConcurrentLinkedQueue items (.-items wq)]
+        ^ConcurrentLinkedQueue items (.-items wq)
+        first-work                   (.-fw wq)]
     (locking items
-      (let [^WorkItem first-item (.peek items)
-            first-work           (.-work first-item)]
-        (try (pre-batch first-work)
-             (catch Exception _ #_(stt/print-stack-trace e)))
-        (if-let [cmb (combine first-work)]
-          (combined-work cmb items (.-stage wq))
-          (individual-work items))
-        (try (post-batch first-work)
-             (catch Exception _ #_(stt/print-stack-trace e)))))))
+      (try (pre-batch first-work)
+           (catch Exception _ #_(stt/print-stack-trace e)))
+      (if-let [cmb (combine first-work)]
+        (combined-work cmb items (.-stage wq))
+        (individual-work items))
+      (try (post-batch first-work)
+           (catch Exception _ #_(stt/print-stack-trace e))))))
 
 (defn- new-workqueue
   [work]
@@ -91,7 +91,7 @@
         cb  (callback work)]
     (assert (or (nil? cmb) (ifn? cmb)) "combine should be nil or a function")
     (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
-    (->WorkQueue (ConcurrentLinkedQueue.) (when cmb (FastList.)) cb)))
+    (->WorkQueue (ConcurrentLinkedQueue.) work (when cmb (FastList.)) cb)))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
