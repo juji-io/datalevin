@@ -22,7 +22,6 @@
    [datalevin.utl LRUCache]
    [java.util SortedSet Comparator Date]
    [java.util.concurrent ConcurrentHashMap]
-   [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
 
 ;;;;;;;;;; Protocols
@@ -495,14 +494,12 @@
     (when (contains? kv :db/tupleTypes)
       (let [ex-data {:error     :schema/validation
                      :attribute a
-                     :key       :db/tupleTypes}]
-        (let [attrs (:db/tupleTypes kv)]
-          (when-not (and (sequential? attrs) (< 1 (count attrs))
-                         (every? c/datalog-value-types attrs)
-                         (not (some #(identical? :db.type/tuple %) attrs)))
-            (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))
-
-    ))
+                     :key       :db/tupleTypes}
+            attrs   (:db/tupleTypes kv)]
+        (when-not (and (sequential? attrs) (< 1 (count attrs))
+                       (every? c/datalog-value-types attrs)
+                       (not (some #(identical? :db.type/tuple %) attrs)))
+          (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data))))))
 
 (defn- open-store
   [dir schema opts]
@@ -821,7 +818,7 @@
                     (update :avet del))
           ref? (update :vaet del))))))
 
-(defn- queue-tuple [queue tuple idx db e a v]
+(defn- queue-tuple [queue tuple idx db e _ v]
   (let [tuple-value  (or (get queue tuple)
                          (:v (sf
                                (.subSet ^TreeSortedSet (:eavt db)
@@ -930,9 +927,9 @@
               (and (coll? v) (not (map? v))))
             (let [[insert upsert] (split a v)]
               [(cond-> entity'
-                 (not (empty? insert)) (assoc a insert))
+                 (seq insert) (assoc a insert))
                (cond-> upserts
-                 (not (empty? upsert)) (assoc a upsert))])
+                 (seq upsert) (assoc a upsert))])
 
             :else
             (if-some [e (resolve a (correct-value (.-store ^DB db) a v))]
@@ -982,8 +979,7 @@
     [vs]
 
     ;; not a collection at all, so definitely a single value
-    (not (or ;;(arrays/array? vs)
-           (and (coll? vs) (not (map? vs)))))
+    (not (and (coll? vs) (not (map? vs))))
     [vs]
 
     ;; probably lookup ref
@@ -1035,8 +1031,7 @@
           (or (sf (.subSet ^TreeSortedSet (:eavt db)
                            (datom e a nil tx0)
                            (datom e a nil txmax)))
-              (s/head (:store db) :eav
-                      (datom e a c/v0) (datom e a c/vmax))))]
+              (s/head (:store db) :eav (datom e a c/v0) (datom e a c/vmax))))]
     (cond
       (nil? old-datom)
       (transact-report report new-datom)
@@ -1174,8 +1169,8 @@
    (let [tx-time         (System/currentTimeMillis)
          initial-report' (-> initial-report
                              (update :db-after -clear-tx-cache))
-         has-tuples?     (not (empty? (-attrs-by (:db-after initial-report)
-                                                 :db.type/tuple)))
+         has-tuples?     (seq (-attrs-by (:db-after initial-report)
+                                         :db.type/tuple))
          initial-es'     (cond-> initial-es
                            (:auto-entity-time?
                             (s/opts (.-store ^DB (:db-before initial-report))))
