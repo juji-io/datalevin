@@ -131,13 +131,13 @@
   (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
         conn (pd/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
                                :name {:db/valueType :db.type/string
-                                      :db/unique    :db.unique/identity}})]
-    (let [rp (pd/transact! conn
+                                      :db/unique    :db.unique/identity}})
+        rp   (pd/transact! conn
                            [{:name "Frege", :db/id -1, :nation "France",
                              :aka  ["foo" "fred"]}
                             {:name "Peirce", :db/id -2, :nation "france"}
                             {:name "De Morgan", :db/id -3, :nation "English"}])]
-      (is (= 8 (count (:tx-data rp)))))
+    (is (= 8 (count (:tx-data rp))))
     (is (= #{["France"]}
            (pd/q '[:find ?nation
                    :in $ ?alias
@@ -464,4 +464,57 @@
     (is (= [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]
            (pd/search engine "red" {:display :offsets})))
     (pd/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest transact-async-test
+  (let [dir  (u/tmp-dir (str "transact-async-test-" (UUID/randomUUID)))
+        conn (pd/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
+                               :name {:db/valueType :db.type/string
+                                      :db/unique    :db.unique/identity}})]
+    (pd/transact-async
+      conn
+      [{:name "Frege", :db/id -1, :nation "France",
+        :aka  ["foo" "fred"]}
+       {:name "Peirce", :db/id -2, :nation "france"}
+       {:name "De Morgan", :db/id -3, :nation "English"}]
+      nil (fn [rp] (is (= 8 (count (:tx-data rp))))))
+    (is (= #{["France"]}
+           (pd/q '[:find ?nation
+                   :in $ ?alias
+                   :where
+                   [?e :aka ?alias]
+                   [?e :nation ?nation]]
+                 (pd/db conn)
+                 "fred")))
+    (pd/transact-async
+      conn
+      [[:db/retract 1 :name "Frege"]]
+      nil identity)
+    (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+           (pd/q '[:find (pull ?e [*])
+                   :in $ ?alias
+                   :where
+                   [?e :aka ?alias]]
+                 (pd/db conn)
+                 "fred")))
+    (is (= #{} (pd/q '[:find ?dummy
+                       :in $
+                       :where
+                       [?e :dummy ?dummy]] ;; non-existent attr
+                     (pd/db conn))))
+    (pd/close conn)
+    (u/delete-files dir)))
+
+(deftest transact-kv-async-test
+  (let [dir (u/tmp-dir (str "pod-kv-async-test-" (UUID/randomUUID)))
+        db  (pd/open-kv dir)
+        dbi "a"]
+    (pd/open-dbi db dbi)
+    (pd/transact-kv-async
+      db dbi
+      [[:put "hello" "world"]]
+      :string :string
+      (fn [res] (is (= res :transacted))))
+    (is (= "world" (pd/get-value db dbi "hello" :string :string)))
+    (pd/close-kv db)
     (u/delete-files dir)))

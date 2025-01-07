@@ -3273,8 +3273,8 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [f [2.0]
-          s [4.0]
+  (doseq [f [2.5]
+          s [4.0 4.5]
           v [2.0]
           ]
     (let [start (System/currentTimeMillis)]

@@ -1131,18 +1131,23 @@ Only usable for debug output.
   Use an adaptive batch transaction algorithm that adjusts batch size
   according to workload: the higher the load, the larger the batch size.
 
+  The 4-arity version of the function takes a `callback` function that will
+  be called when the transaction commits, which takes the transaction result
+  (possibly an exception) as the single argument. Babashka pod only supports
+  this version as callback is required for async pod function.
+
   This function has higher throughput than [[transact!]] in high write rate use
   cases."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
-  ([conn tx-data tx-meta cb]
+  ([conn tx-data tx-meta callback]
    (a/exec (a/get-executor)
            (let [store (.-store ^DB @conn)]
              (if (instance? DatalogStore store)
-               (->AsyncDLTx conn store tx-data tx-meta cb
+               (->AsyncDLTx conn store tx-data tx-meta callback
                             (volatile! (l/sync? store)))
                (let [lmdb (.-lmdb ^Store store)]
-                 (->AsyncDLTx conn lmdb tx-data tx-meta cb
+                 (->AsyncDLTx conn lmdb tx-data tx-meta callback
                               (volatile! (l/sync? lmdb)))))))))
 
 (defn transact
@@ -1401,9 +1406,10 @@ See also: [[open-kv]], [[sync]]"}
   The asynchronous transactions are batched. Batch size is adaptive to the load,
   so the write throughput is higher than `transact-kv`.
 
-  The 6-arity version of the function takes a `callback` function, which will
+  The 6-arity version of the function takes a `callback` function that will
   be called when the transaction commits, which takes the transaction result
-  (possibly an exception) as the single argument.
+  (possibly an exception) as the single argument. Babashka pod only supports
+  this version as callback is required for async pod function.
 
   See also: [[transact-kv]]"
   ([this txs] (transact-kv-async this nil txs))

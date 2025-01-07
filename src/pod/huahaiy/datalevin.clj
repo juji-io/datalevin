@@ -1,4 +1,5 @@
 (ns ^:no-doc pod.huahaiy.datalevin
+  "Implement babashka pod"
   (:refer-clojure :exclude [read read-string])
   (:require
    [bencode.core :as bencode]
@@ -43,7 +44,6 @@
 
 (defn- read []
   (bencode/read-bencode stdin))
-
 
 ;; dbs
 
@@ -222,8 +222,7 @@
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
   ([dir schema] (conn-from-db (empty-db dir schema)))
-  ([dir schema opts] (conn-from-db (empty-db dir schema opts)))
-  )
+  ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
 
 (defn close [{:keys [::conn]}]
   (let [[old _] (swap-vals! dl-conns dissoc conn)]
@@ -235,6 +234,23 @@
 (defn datalog-index-cache-limit
   ([cn] (when-let [c (get-cn cn)] (d/datalog-index-cache-limit c)))
   ([cn n] (when-let [c (get-cn cn)] (d/datalog-index-cache-limit c n))))
+
+(defn transact
+  ([cn tx-data] (when-let [c (get-cn cn)] (d/transact c tx-data)))
+  ([cn tx-data tx-meta]
+   (when-let [c (get-cn cn)] (d/transact c tx-data tx-meta))))
+
+(defn- rp->res
+  [rp]
+  {:tx-data (:tx-data rp)
+   :tempids (:tempids rp)
+   :tx-meta (:tx-meta rp)})
+
+(defn transact-async*
+  [cn tx-data tx-meta]
+  (when-let [c (get-cn cn)]
+    (let [fut (d/transact-async c tx-data tx-meta)]
+      (rp->res @fut))))
 
 (defn transact!
   ([cn tx-data]
@@ -252,9 +268,7 @@
                       (swap! (if writing? wdl-conns dl-conns)
                              assoc conn (atom d :meta (meta c)))))
                   (throw e)))]
-       {:tx-data (:tx-data rp)
-        :tempids (:tempids rp)
-        :tx-meta (:tx-meta rp)}))))
+       (rp->res rp)))))
 
 (defn db [{:keys [::conn] :as cn}]
   (when-let [c (get-cn cn)]
@@ -379,6 +393,11 @@
    (when-let [d (get-kv db)] (d/transact-kv d dbi-name txs k-type)))
   ([db dbi-name txs k-type v-type]
    (when-let [d (get-kv db)] (d/transact-kv d dbi-name txs k-type v-type))))
+
+(defn transact-kv-async*
+  [db dbi-name txs k-type v-type]
+  (when-let [d (get-kv db)]
+    @(d/transact-kv-async d dbi-name txs k-type v-type)))
 
 (defn get-value
   ([db dbi-name k]
@@ -752,6 +771,8 @@
    'datalog-index-cache-limit datalog-index-cache-limit
    'closed?                   closed?
    'transact!                 transact!
+   'transact                  transact
+   'transact-async*           transact-async*
    'db                        db
    'schema                    schema
    'update-schema             update-schema
@@ -777,6 +798,7 @@
    'close-transact            close-transact
    'abort-transact            abort-transact
    'transact-kv               transact-kv
+   'transact-kv-async*        transact-kv-async*
    'get-value                 get-value
    'get-first                 get-first
    'get-first-n               get-first-n
@@ -817,78 +839,75 @@
    're-index                  re-index
    })
 
-(defmacro defpodfn
-  [fn-name args & body]
-  `(pod-fn '~fn-name '~args '~@body))
-
-(defmacro with-transaction-kv
-  [binding & body]
-  `(let [db# ~(second binding)]
-     (try
-       (let [~(first binding) (open-transact-kv db#)]
-         (try
-           ~@body
-           (catch Exception ~'e
-             (if (:resized (ex-data ~'e))
-               (do ~@body)
-               (throw ~'e)))))
-       (finally (close-transact-kv db#)))))
-
-(defmacro with-transaction
-  [binding & body]
-  `(let [conn# ~(second binding)]
-     (try
-       (let [~(first binding) (open-transact conn#)]
-         (try
-           ~@body
-           (catch Exception ~'e
-             (if (:resized (ex-data ~'e))
-               (do ~@body)
-               (throw ~'e)))))
-       (finally (close-transact conn#)))))
-
 (def ^:private lookup
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
 
 (defn- all-vars []
-  (u/concatv (mapv (fn [k] {"name" (name k)}) (keys exposed-vars))
-             [{"name" "defpodfn"
-               "code"
-               "(defmacro defpodfn
-              [fn-name args & body]
-              `(pod-fn '~fn-name
-                      '~args
-                      '~@body))"}
-              {"name" "with-transaction-kv"
-               "code"
-               "(defmacro with-transaction-kv
-              [binding & body]
-              `(let [db# ~(second binding)]
+  (u/concatv
+    (mapv (fn [k] {"name" (name k)}) (keys exposed-vars))
+    [{"name" "defpodfn"
+      "code"
+      "(defmacro defpodfn
+          [fn-name args & body]
+          `(pod-fn '~fn-name
+                  '~args
+                  '~@body))"}
+     {"name" "with-transaction-kv"
+      "code"
+      "(defmacro with-transaction-kv
+          [binding & body]
+          `(let [db# ~(second binding)]
+            (try
+              (let [~(first binding) (open-transact-kv db#)]
                 (try
-                  (let [~(first binding) (open-transact-kv db#)]
-                    (try
-                      ~@body
-                      (catch Exception ~'e
-                        (if (:resized (ex-data ~'e))
-                          (do ~@body)
-                          (throw ~'e)))))
-                  (finally
-                    (close-transact-kv db#)))))"}
-              {"name" "with-transaction"
-               "code"
-               "(defmacro with-transaction
-               [binding & body]
-               `(let [conn# ~(second binding)]
-                  (try
-                    (let [~(first binding) (open-transact conn#)]
-                      (try
-                        ~@body
-                        (catch Exception ~'e
-                          (if (:resized (ex-data ~'e))
-                            (do ~@body)
-                            (throw ~'e)))))
-                    (finally (close-transact conn#)))))"}]))
+                  ~@body
+                  (catch Exception ~'e
+                    (if (:resized (ex-data ~'e))
+                      (do ~@body)
+                      (throw ~'e)))))
+              (finally
+                (close-transact-kv db#)))))"}
+     {"name" "with-transaction"
+      "code"
+      "(defmacro with-transaction
+          [binding & body]
+          `(let [conn# ~(second binding)]
+            (try
+              (let [~(first binding) (open-transact conn#)]
+                (try
+                  ~@body
+                  (catch Exception ~'e
+                    (if (:resized (ex-data ~'e))
+                      (do ~@body)
+                      (throw ~'e)))))
+              (finally (close-transact conn#)))))"}
+     {"name" "transact-async"
+      "code"
+      "(defn transact-async
+          [conn tx-data tx-meta callback]
+          (babashka.pods/invoke
+            \"pod.huahaiy.datalevin\"
+            'pod.huahaiy.datalevin/transact-async*
+            [conn tx-data tx-meta]
+            {:handlers {:success (fn [res] (callback res))
+                        :error   (fn [{:keys [:ex-message :ex-data]}]
+                                    (binding [*out* *err*]
+                                      (println \"ERROR:\" ex-message)))}})
+          nil)"}
+     {"name" "transact-kv-async"
+      "code"
+      "(defn transact-kv-async
+          [db dbi-name txs k-type v-type callback]
+          (babashka.pods/invoke
+            \"pod.huahaiy.datalevin\"
+            'pod.huahaiy.datalevin/transact-kv-async*
+            [db dbi-name txs k-type v-type]
+            {:handlers {:success (fn [res] (callback res))
+                        :error   (fn [{:keys [:ex-message :ex-data]}]
+                                    (binding [*out* *err*]
+                                      (println \"ERROR:\" ex-message)))}})
+          nil)"}]))
 
 (defn run []
   (loop []
@@ -914,7 +933,7 @@
                         args (-> (get message "args")
                                  read-string
                                  p/read-transit-string)]
-                    ;; (debug "var" var "args" args)
+                    (debug "id" id "var" var "args" args)
                     (if-let [f (lookup var)]
                       (let [res   (apply f args)
                             value (p/write-transit-string res)

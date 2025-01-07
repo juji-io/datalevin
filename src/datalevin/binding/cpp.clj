@@ -720,7 +720,6 @@
                             (raise dbi-name " is not open" {})))
             ^Txn txn  (if one-shot?
                         (create-rw-txn this)
-                        ;; (Txn/create env)
                         (.-txn rtx))]
         (try
           (if dbi
