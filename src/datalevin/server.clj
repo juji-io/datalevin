@@ -1107,7 +1107,9 @@
    'rslice
    'start-sampling
    'e-datoms
+   'e-first-datom
    'av-datoms
+   'av-first-datom
    'v-datoms
    'size-filter
    'head-filter
@@ -1696,6 +1698,10 @@
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
+(defn- e-first-datom
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler e-first-datom)))
+
 (defn- av-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
@@ -1706,6 +1712,10 @@
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
+
+(defn- av-first-datom
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler av-first-datom)))
 
 (defn- v-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

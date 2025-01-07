@@ -28,10 +28,10 @@
 ;;;;;;;;;; Protocols
 
 (defprotocol ISearch
-  (-search [data pattern])
-  (-count [data pattern] [data pattern cap] [data pattern cap actual?])
-  (-first [data pattern])
-  (-last [data pattern]))
+  (-search [db pattern])
+  (-count [db pattern] [data pattern cap] [data pattern cap actual?])
+  (-first [db pattern])
+  (-last [db pattern]))
 
 (defprotocol IIndexAccess
   (-populated? [db index c1 c2 c3])
@@ -264,8 +264,8 @@
                             (when ((vpred v) (.-v d)) d))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
-           (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-           (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+           (s/e-first-datom store e) ; e _ _
+           (s/av-first-datom store a v) ; _ a v
            (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
            (s/head-filter store :eav
                           (fn [^Datom d]
@@ -698,13 +698,13 @@
         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                              (datom e0 attr value tx0)
                              (datom emax attr value txmax))))
-            (:e (-first-datom db :ave attr value nil)))))
+            (:e (-first db [nil attr value])))))
 
     (keyword? eid)
     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                          (datom e0 :db/ident eid tx0)
                          (datom emax :db/ident eid txmax))))
-        (:e (-first-datom db :ave :db/ident eid nil)))
+        (:e (-first db [nil :db/ident eid])))
 
     :else
     (raise "Expected number or lookup ref for entity id, got " eid
@@ -902,13 +902,13 @@
                       (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                            (d/datom e0 a v tx0)
                                            (d/datom emax a v txmax))))
-                          (:e (-first-datom db :ave a v nil)))
+                          (:e (-first db [nil a v])))
                       (not (tempid? v))
                       (let [rv (entid db v)]
                         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                              (d/datom e0 a rv tx0)
                                              (d/datom emax a rv txmax))))
-                            (:e (-first-datom db :ave a rv nil))))))
+                            (:e (-first db [nil a rv]))))))
 
           split (fn [a vs]
                   (reduce
@@ -1340,7 +1340,7 @@
                                                      ^TreeSortedSet (:avet db)
                                                      (d/datom e0 a v tx0)
                                                      (d/datom emax a v txmax))))
-                                           (:e (-first-datom db :ave a v nil))))
+                                           (:e (-first db [nil a v]))))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                      (retry-with-tempid initial-report report initial-es e upserted-eid)

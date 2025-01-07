@@ -13,12 +13,18 @@
 ;; limit the number of threads in flight
 (def in-flight 1000)
 
+;; total number of writes
+(def total 100000000)
+
+;; print numbers every this number of writes
+(def report 100000)
+
 (defn max-write-bench
   [batch-size tx-fn add-fn]
   (println
     "Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)")
   (let [sem        (Semaphore. (* in-flight batch-size))
-        target     (long (/ 100000 batch-size))
+        target     (long (/ report batch-size))
         write-time (volatile! 0)
         sync-count (volatile! 0)
         inserted   (volatile! 0)
@@ -31,32 +37,33 @@
                      (vswap! sync-count inc)
                      (vswap! inserted + batch-size))]
     (loop [counter 0]
-      (.acquire sem batch-size)
-      (when (and (= 0 (mod counter target))
-                 (not= 0 counter) (not= 0 @sync-count))
-        (let [duration (- @sync-time start-time)]
-          (println (str
-                     (long (/ duration 1000))
-                     ","
-                     (format "%.1f" (double (* (/ @inserted duration) 1000)))
-                     ","
-                     (format "%.4f" (double (/ @write-time @sync-count)))
-                     ","
-                     (format "%.4f" (double (/ (- @sync-time @prev-time)
-                                               @sync-count))))))
-        (vreset! write-time 0)
-        (vreset! prev-time @sync-time)
-        (vreset! sync-count 0))
-      (let [txs    (reduce
-                     (fn [^FastList txs _]
-                       (add-fn txs)
-                       txs)
-                     (FastList. batch-size)
-                     (range 0 batch-size))
-            before (System/currentTimeMillis)]
-        (tx-fn txs measure)
-        (vswap! write-time + (- (System/currentTimeMillis) before)))
-      (recur (inc counter)))))
+      (when (<= (* counter batch-size) total)
+        (.acquire sem batch-size)
+        (when (and (= 0 (mod counter target))
+                   (not= 0 counter) (not= 0 @sync-count))
+          (let [duration (- @sync-time start-time)]
+            (println (str
+                       (long (/ duration 1000))
+                       ","
+                       (format "%.1f" (double (* (/ @inserted duration) 1000)))
+                       ","
+                       (format "%.4f" (double (/ @write-time @sync-count)))
+                       ","
+                       (format "%.4f" (double (/ (- @sync-time @prev-time)
+                                                 @sync-count))))))
+          (vreset! write-time 0)
+          (vreset! prev-time @sync-time)
+          (vreset! sync-count 0))
+        (let [txs    (reduce
+                       (fn [^FastList txs _]
+                         (add-fn txs)
+                         txs)
+                       (FastList. batch-size)
+                       (range 0 batch-size))
+              before (System/currentTimeMillis)]
+          (tx-fn txs measure)
+          (vswap! write-time + (- (System/currentTimeMillis) before)))
+        (recur (inc counter))))))
 
 (defn write
   [{:keys [batch f]}]

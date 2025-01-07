@@ -254,7 +254,9 @@
   (rslice [this index high-datom low-datom]
     "Return a range of datoms in reverse within the given range (inclusive)")
   (e-datoms [this e] "Return datoms with given e value")
+  (e-first-datom [this e] "Return the first datom with given e value")
   (av-datoms [this a v] "Return datoms with given a and v value")
+  (av-first-datom [this a v] "Return the first datom with given a and value")
   (v-datoms [this v] "Return datoms with given v, for ref attribute only")
   (size-filter
     [this index pred low-datom high-datom]
@@ -590,8 +592,6 @@
   (not-any? #(identical? (-> % schema :db/cardinality) :db.cardinality/many)
             (mapv first attrs-v)))
 
-
-
 (declare insert-datom delete-datom fulltext-index check transact-opts
          ->SamplingWork e-sample*)
 
@@ -876,11 +876,22 @@
     (mapv #(avg-retrieved->datom lmdb attrs e %)
           (lmdb/get-list lmdb c/eav e :id :avg)))
 
+  (e-first-datom [_ e]
+    (when-let [avg (lmdb/get-value lmdb c/eav e :id :avg true)]
+      (avg-retrieved->datom lmdb attrs e avg)))
+
   (av-datoms [_ a v]
     (mapv #(d/datom % a v)
           (lmdb/get-list
             lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false)
             :av :id)))
+
+  (av-first-datom [_ a v]
+    (when-let [e (lmdb/get-value
+                   lmdb c/ave
+                   (datom->indexable schema (d/datom c/e0 a v) false)
+                   :av :id true)]
+      (d/datom e a v)))
 
   (v-datoms [_ v]
     (mapv #(ae-retrieved->datom attrs v %)

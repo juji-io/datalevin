@@ -12,6 +12,26 @@
    [java.util Iterator]
    [java.lang AutoCloseable Iterable]))
 
+(defn get-value
+  [lmdb dbi-name k k-type v-type ignore-key?]
+  (l/check-ready lmdb)
+  (let [dbi (l/get-dbi lmdb dbi-name false)
+        rtx (if (l/writing? lmdb)
+              @(l/write-txn lmdb)
+              (l/get-rtx lmdb))]
+    (try
+      (l/put-key rtx k k-type)
+      (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
+        (if ignore-key?
+          (b/read-buffer bb v-type)
+          [(b/expected-return k k-type) (b/read-buffer bb v-type)]))
+      (catch Exception e
+        (raise "Fail to get-value: " e
+               {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
+      (finally
+        (when-not (l/writing? lmdb)
+          (l/return-rtx lmdb rtx))))))
+
 (defmacro scan
   ([call error]
    `(scan ~call ~error false))
@@ -33,17 +53,6 @@
               (l/close-cursor ~'dbi ~'cur))
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
               (l/return-rtx ~'lmdb ~'rtx))))))))
-
-(defn get-value
-  [lmdb dbi-name k k-type v-type ignore-key?]
-  (scan
-    (do (l/put-key rtx k k-type)
-        (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
-          (if ignore-key?
-            (b/read-buffer bb v-type)
-            [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
-    (raise "Fail to get-value: " e
-           {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
