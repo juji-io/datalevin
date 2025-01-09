@@ -622,3 +622,7 @@ values;")
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
 
 (defonce lmdb-dirs (atom #{}))
+
+;; (System/loadLibrary "lmdb")
+;; (System/loadLibrary "dtlv")
+;; (System/loadLibrary "jniDTLV")

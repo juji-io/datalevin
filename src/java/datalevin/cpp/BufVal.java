@@ -3,7 +3,9 @@ package datalevin.cpp;
 import static java.lang.Long.BYTES;
 import static datalevin.cpp.UnsafeAccess.UNSAFE;
 
-import dtlvnative.DTLV;
+import java.lang.reflect.InaccessibleObjectException;
+
+import datalevin.dtlvnative.DTLV;
 import java.lang.reflect.Field;
 
 import org.bytedeco.javacpp.*;
@@ -15,8 +17,6 @@ import java.nio.*;
  */
 @SuppressWarnings("removal")
 public class BufVal {
-
-    static final boolean UNSAFE_AVAILABLE = UnsafeAccess.isAvailable();
 
     static final int STRUCT_FIELD_OFFSET_DATA = BYTES;
     static final int STRUCT_FIELD_OFFSET_SIZE = 0;
@@ -41,14 +41,14 @@ public class BufVal {
         throw new RuntimeException("Field name: " + name + " not found");
     }
 
+    static final boolean UNSAFE_AVAILABLE = UnsafeAccess.isAvailable();
+
     static {
-        try {
+        if (UNSAFE_AVAILABLE) {
             final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
             final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
             addressOffset = UNSAFE.objectFieldOffset(address);
             capacityOffset = UNSAFE.objectFieldOffset(capacity);
-        } catch (final SecurityException e) {
-            // don't throw, as unsafe access is optional
         }
     }
 

@@ -11,13 +11,12 @@
     :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
-   [dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
+   [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
     DTLV$dtlv_list_iter DTLV$dtlv_list_sample_iter DTLV$dtlv_list_val_iter
     DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
-   [datalevin.async IAsyncWork]
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]

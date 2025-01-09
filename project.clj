@@ -8,8 +8,7 @@
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.333"]
-   [com.github.clj-easy/graal-build-time "0.1.4"]
-   ;; [com.github.jnr/jnr-ffi "2.2.16"]
+   [com.github.clj-easy/graal-build-time "1.0.5"]
    [com.taoensso/nippy "3.4.2"]
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.13.0"]
@@ -21,7 +20,7 @@
    [org.clojure/clojure "1.12.0"]
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
-   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.10.14"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.11.0"]
    ;; [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64 "0.9.8"]
@@ -41,6 +40,7 @@
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64]
+   [com.github.clj-easy/graal-build-time]
    ;; [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared]
@@ -61,46 +61,34 @@
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
    [com.cognitect/transit-clj]]
-  :source-paths ["src"]
+  :source-paths ["src" "test"]
   :java-source-paths ["src/java"]
   :profiles
-  {:uberjar        {:main           datalevin.main
-                    :aot            [datalevin.main]
-                    :jar-inclusions [#"graal"]
-                    }
-   :native-uberjar {:aot            [pod.huahaiy.datalevin],
-                    :jar-inclusions [#"graal"]
-                    :uberjar-name   "main.uberjar.jar"}
+  {:uberjar        {:main datalevin.main
+                    :aot  [datalevin.main]}
+   :native-uberjar {:aot          [pod.huahaiy.datalevin],
+                    :uberjar-name "main.uberjar.jar"}
    :test0-uberjar  {:main           datalevin.test0
-                    :jar-inclusions [#"graal" #"test"]
-                    :uberjar-name   "test0.uberjar.jar"}
-   :test1-uberjar  {:main           datalevin.test1
-                    :jar-inclusions [#"graal" #"test"]
-                    :uberjar-name   "test1.uberjar.jar"}
-   :dev            {:main              datalevin.test0
-                    :source-paths      ["src" "test"]
-                    :java-source-paths ["native/src/java"]
-                    :jvm-opts
-                    [
-                     ;; "--add-opens=java.base/java.nio=ALL-UNNAMED"
-                     ;; "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                     ;; "--add-opens=java.base/java.lang=ALL-UNNAMED"
-                     ;; "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
-                     "-Djdk.attach.allowAttachSelf"]
+                    :aot            [datalevin.test0],
                     :dependencies
                     [[org.clojure/test.check]
-                     [joda-time/joda-time]
-                     ;; [org.graalvm.nativeimage/svm]
-                     ]
-                    ;; :global-vars
-                    ;; {*print-namespace-maps* false
-                    ;;  *unchecked-math*       :warn-on-boxed
-                    ;;  *warn-on-reflection*   true}
-                    }}
+                     [joda-time/joda-time]]
+                    :jar-inclusions [#"test"]
+                    :uberjar-name   "test0.uberjar.jar"}
+   :test1-uberjar  {:main           datalevin.test1
+                    :aot            [datalevin.test1],
+                    :dependencies
+                    [[org.clojure/test.check]
+                     [joda-time/joda-time]]
+                    :jar-inclusions [#"test"]
+                    :uberjar-name   "test1.uberjar.jar"}
+   :dev            {:main datalevin.test0
+                    :dependencies
+                    [[org.clojure/test.check]
+                     [joda-time/joda-time]]}}
   :global-vars {*print-namespace-maps* false
                 *unchecked-math*       :warn-on-boxed
                 *warn-on-reflection*   true}
-  :jar-exclusions [#"graal" #"datalevin.ni"]
   :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
              "-Xlint:all"
              "-Dclojure.compiler.direct-linking=true"

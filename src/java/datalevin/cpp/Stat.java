@@ -1,7 +1,7 @@
 package datalevin.cpp;
 
 import org.bytedeco.javacpp.*;
-import dtlvnative.DTLV;
+import datalevin.dtlvnative.DTLV;
 
 /**
  * Wrap a MDB_stat

@@ -9,7 +9,6 @@
    datalevin.test.transact
    datalevin.remote-withtxn-test
    datalevin.search-test
-   datalevin.main-test
    datalevin.core-test)
   (:gen-class))
 
@@ -23,7 +22,6 @@
           'datalevin.test.transact
           'datalevin.remote-withtxn-test
           'datalevin.search-test
-          'datalevin.main-test
           'datalevin.core-test)]
     (System/exit (if (zero? ^long (+ ^long fail ^long error)) 0 1))))
 

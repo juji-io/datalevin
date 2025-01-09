@@ -6,7 +6,7 @@ import static datalevin.cpp.Txn.State.RELEASED;
 import static datalevin.cpp.Txn.State.RESET;
 
 import org.bytedeco.javacpp.*;
-import dtlvnative.DTLV;
+import datalevin.dtlvnative.DTLV;
 
 /**
  * Wrap a DTLV MDB_txn

@@ -1,6 +1,8 @@
 package datalevin.cpp;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
+
 import sun.misc.Unsafe;
 import java.nio.Buffer;
 
@@ -27,7 +29,8 @@ final class UnsafeAccess {
 
             available = true;
         } catch (final NoSuchFieldException | SecurityException
-                | IllegalArgumentException | IllegalAccessException e) {
+                | IllegalArgumentException | IllegalAccessException
+                | InaccessibleObjectException e) {
             // don't throw, as Unsafe use is optional
             available = false;
         }
