@@ -17,7 +17,7 @@
 (def total 100000000)
 
 ;; print numbers every this number of writes
-(def report 100000)
+(def report 1000000)
 
 (defn max-write-bench
   [batch-size tx-fn add-fn]

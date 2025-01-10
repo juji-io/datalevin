@@ -4,7 +4,7 @@
 
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
-  to enhance write throughput (at least 3X higher throughput in heavy write
+  to enhance write throughput (3X-10X higher throughput in heavy write
   condition compared with `transact-kv`). Batch size is automatically adaptive
   to the write workload: the higher the load, the larger the batch.
   [#256](https://github.com/juji-io/datalevin/issues/256)
