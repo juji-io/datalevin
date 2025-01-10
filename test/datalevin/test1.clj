@@ -43,7 +43,6 @@
    datalevin.test.issues
    datalevin.server-test
    datalevin.client-test
-   datalevin.main-test
    datalevin.remote-withtxnkv-test
    datalevin.remote-search-test
    datalevin.remote-sutil-test
@@ -101,7 +100,6 @@
           'datalevin.test.issues
           'datalevin.server-test
           'datalevin.client-test
-          'datalevin.main-test
           'datalevin.remote-kv-test
           'datalevin.remote-withtxnkv-test
           'datalevin.remote-search-test

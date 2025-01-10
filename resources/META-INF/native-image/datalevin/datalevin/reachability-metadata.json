@@ -9,8 +9,10 @@
             "type": "java.util.Date",
             "allPublicConstructors": true,
             "allPublicMethods": true,
-            "allPublicFields": true,
-            "allPublicClasses": true
+            "allPublicFields": true
+        },
+        {
+            "type": "org.joda.time.DateTime"
         },
         {
             "type": "java.lang.UnsatisfiedLinkError"
@@ -126,10 +128,8 @@
             "allPublicConstructors" : true,
             "allDeclaredMethods" : true,
             "allPublicMethods" : true,
-            "allDeclaredClasses" : true,
             "allPublicFields" : true,
-            "allDeclaredFields" : true,
-            "allPublicClasses" : true
+            "allDeclaredFields" : true
         },
         {
             "type": "datalevin.client.Client"
@@ -160,7 +160,9 @@
         },
         {
             "type": "datalevin.cpp.BufVal",
-            "unsafeAllocated": true
+            "allPublicConstructors": true,
+            "allPublicMethods": true,
+            "allPublicFields": true
         },
         {
             "type": "datalevin.cpp.Cursor"
@@ -285,10 +287,8 @@
             "allPublicConstructors" : true,
             "allDeclaredMethods" : true,
             "allPublicMethods" : true,
-            "allDeclaredClasses" : true,
             "allPublicFields" : true,
-            "allDeclaredFields" : true,
-            "allPublicClasses" : true
+            "allDeclaredFields" : true
         },
         {
             "type": "datalevin.entity.Transactable"
@@ -327,8 +327,7 @@
             "type": "[Ldatalevin.hu.TreeNode;",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type": "datalevin.io.ByteBufferInputStream"
@@ -541,8 +540,7 @@
             "type": "datalevin.query.Plan",
             "allPublicConstructors": true,
             "allPublicMethods": true,
-            "allPublicFields": true,
-            "allPublicClasses": true
+            "allPublicFields": true
         },
         {
             "type": "datalevin.relation.Relation"
@@ -673,211 +671,181 @@
             "type":"org.tartarus.snowball.SnowballStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.arabicStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.armenianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.basqueStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.catalanStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.danishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.dutchStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.englishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.frenchStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.finnishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.germanStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.greekStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.hindiStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.hungarianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.indonesianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.irishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.italianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.lithuanianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.nepaliStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.norwegianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.portugueseStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.romanianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.russianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.serbianStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.swedishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.tamilStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.turkishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.spanishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.yiddishStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"org.tartarus.snowball.ext.porterStemmer",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         }
     ],
     "resources": [
@@ -918,15 +886,13 @@
             "type": "java.lang.Boolean",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type": "java.lang.Object",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type":"java.lang.Byte",
@@ -943,15 +909,13 @@
             "type": "java.lang.SecurityManager",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type": "java.lang.String",
             "allPublicConstructors" : true,
             "allPublicMethods" : true,
-            "allPublicFields" : true,
-            "allPublicClasses" : true
+            "allPublicFields" : true
         },
         {
             "type": "java.nio.Buffer",

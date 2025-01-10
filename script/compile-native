@@ -26,10 +26,10 @@ args_test0=(
     "-H:Name=dtlv-test0"
 )
 
-# lein clean
-# lein with-profile native-uberjar uberjar
+lein clean
+lein with-profile native-uberjar uberjar
 
-# "$GRAALVM_HOME/bin/native-image" "${args_app[@]}"
+"$GRAALVM_HOME/bin/native-image" "${args_app[@]}"
 
 lein clean
 lein with-profile test0-uberjar uberjar

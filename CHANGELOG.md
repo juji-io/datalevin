@@ -4,40 +4,42 @@
 
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
-  to enhance write throughput (3X-10X higher throughput compared with
-  `transact-kv`). Since the commit latency also becomes generally lower, it is
-  recommended to use asynchronous transactions by default. Batch size is
-  automatically adaptive to the write workload: the higher the load, the larger
-  the batch. [#256](https://github.com/juji-io/datalevin/issues/256)
+  to enhance write throughput (at least 3X higher throughput in heavy write
+  condition compared with `transact-kv`). Batch size is automatically adaptive
+  to the write workload: the higher the load, the larger the batch.
+  [#256](https://github.com/juji-io/datalevin/issues/256)
 - [Benchmark] [Write benchmark](benchmarks/write-bench). Show Datalevin's write
-  throughput and latency using various transaction methods and write batch
+  throughput and latency using various transaction methods and manual batch
   sizes.
 - [Platform] Support for freebsd on amd64.
 
+### Fixed
+- [Datalog]
+
 ### Improved
-- [Datalog] Both `transact` and `transact-async` are changed to use the same
-  adaptive batch transaction mechanism to improve write throughout.
+- [Datalog] Both `transact` and `transact-async` are also changed to use the
+  same adaptive batch transaction mechanism to improve write throughout.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
   samples are more update to date. Each invocation will do less work, or no work
-  , based on whether the changed ratio of an attribute passes a threshold,
-  controlled by dynamic var `sample-change-ratio`, default is `0.1`, i.e. 10
-  percent of an attribute's values changed.
+  , based on whether the change ratio, controlled by dynamic var
+  `sample-change-ratio`, default is `0.1`, i.e. resample if 10 percent of an
+  attribute's values changed.
 - [KV] Consolidated LMDB bindings to a single binding using JavaCPP. Removed
-  both LMDBJava and Graalvm native image specific bindings. This reduces release
-  artifact sizes, eases maintenance and enhances performance.
-  [#35](https://github.com/juji-io/datalevin/issues/35).
+  both LMDBJava and Graalvm native image specific bindings. This eases
+  maintenance, enhances performance, and makes it easier to add native
+  dependencies. [#35](https://github.com/juji-io/datalevin/issues/35).
 - [KV] Pushed all LMDB iterators, counters, sampler, and comparator
   implementation down to C code.
   [#279](https://github.com/juji-io/datalevin/issues/279).
-- [KV] Adding `--add-opens` JVM options to open modules for Java 11 and above is
-  now optional. If these JVM options are not set, Datalevin will use a safer but
-  slower default option instead of throwing exceptions. However, it is still
-  recommended to add these JVM options to get optimal performance. Native image
-  always uses safer option.
+- [KV] Now it is optional to add `--add-opens` JVM options to open modules for
+  Java 11 and above. If these JVM options are not set, Datalevin will use a
+  safer but slower default option instead of throwing exceptions. It is still
+  recommended to add these JVM options to get optimal performance. For now,
+  native image uses only the safer option.
 - [Native] Datalevin library jar can now be used directly to compile GraalVM
-  native image. There's no longer a need for GraalVM specific Datalevin library,
-  nor any GraalVM version restriction.
-- [Native] Upgrade to the latest version of GraalVM native image.
+  native image. There's no longer a need for a GraalVM specific Datalevin
+  library, nor GraalVM version restriction.
+- [Native] Upgrade to the latest version of GraalVM .
 - [Server] Handle rare cases of exceptions in event loop.
 
 ## 0.9.14 (2024-11-25)
