@@ -29,10 +29,11 @@
 - [KV] Pushed all LMDB iterators, counters, sampler, and comparator
   implementation down to C code.
   [#279](https://github.com/juji-io/datalevin/issues/279).
-- [KV] Adding `--add-opens` JVM options is now optional. If these JVM options
-  are not set, Datalevin will use a slower default option instead of throwing
-  exceptions. However, it is still recommended to add these JVM options to get
-  optimal performance.
+- [KV] Adding `--add-opens` JVM options to open modules for Java 11 and above is
+  now optional. If these JVM options are not set, Datalevin will use a safer but
+  slower default option instead of throwing exceptions. However, it is still
+  recommended to add these JVM options to get optimal performance. Native image
+  always uses safer option.
 - [Native] Datalevin library jar can now be used directly to compile GraalVM
   native image. There's no longer a need for GraalVM specific Datalevin library,
   nor any GraalVM version restriction.

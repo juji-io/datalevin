@@ -57,6 +57,9 @@
 (defn ^:export test-clj []
   (let [{:keys [fail error]}
         (t/run-tests
+          'datalevin.remote-test
+          'datalevin.remote-dl-test
+          'datalevin.remote-entity-test
           'datalevin.spill-test
           'datalevin.hu-test
           'datalevin.concurrent-test
@@ -103,9 +106,6 @@
           'datalevin.remote-withtxnkv-test
           'datalevin.remote-search-test
           'datalevin.remote-sutil-test
-          'datalevin.remote-test
-          'datalevin.remote-dl-test
-          'datalevin.remote-entity-test
           'datalevin.remote-transact-test)]
     (System/exit (if (zero? (+ ^long fail ^long error)) 0 1))))
 

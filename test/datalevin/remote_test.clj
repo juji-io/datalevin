@@ -111,13 +111,13 @@
                                  (d/datom c/e0 nil nil))))
         (is (= d (st/head-filter store :eav
                                  (i/inter-fn [^Datom d]
-                                   (when (= v (dc/datom-v d))
-                                     d))
+                                             (when (= v (dc/datom-v d))
+                                               d))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
         (is (= [d] (st/slice-filter store :eav
                                     (i/inter-fn [^Datom d]
-                                      (when (= v (dc/datom-v d)) d))
+                                                (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
         (is (= [d1 d] (st/rslice store :ave d1 d)))
@@ -129,7 +129,7 @@
                                  (d/datom c/e0 nil nil))))
         (is (= [d] (st/slice-filter store :ave
                                     (i/inter-fn [^Datom d]
-                                      (when (= v (dc/datom-v d)) d))
+                                                (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
         (st/swap-attr store c (i/inter-fn [& ms] (apply merge ms)) p2)
@@ -172,7 +172,8 @@
       (is (= 3 (st/datom-count store c/eav)))
 
       (is (thrown? Exception (st/set-schema store {:o/p {}})))
-      (is (thrown? Exception (st/load-datoms store []))))))
+      (is (thrown? Exception (st/load-datoms store [])))
+      (st/close store))))
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
@@ -211,7 +212,6 @@
     (dc/open-dbi store1 "a")
     (dc/transact-kv store1 [[:put "a" "hello" "world"]])
     (is (= (dc/get-value store1 "a" "hello") "world"))
-    (dc/close-kv store1)
 
     (let [conn (dc/conn-from-db (db/new-db store2))]
       (dc/transact! conn [{:hello "world"}])
@@ -226,4 +226,5 @@
                                                 [_ :hello ?w]]
                                               @conn))
              1))
-      (dc/close conn))))
+      (dc/close conn))
+    (dc/close-kv store1)))

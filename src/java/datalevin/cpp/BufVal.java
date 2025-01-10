@@ -41,14 +41,18 @@ public class BufVal {
         throw new RuntimeException("Field name: " + name + " not found");
     }
 
-    static final boolean UNSAFE_AVAILABLE = UnsafeAccess.isAvailable();
+    static boolean UNSAFE_AVAILABLE = UnsafeAccess.isAvailable();
 
     static {
         if (UNSAFE_AVAILABLE) {
-            final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
-            final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
-            addressOffset = UNSAFE.objectFieldOffset(address);
-            capacityOffset = UNSAFE.objectFieldOffset(capacity);
+            try {
+                final Field address = findField(Buffer.class, FIELD_NAME_ADDRESS);
+                final Field capacity = findField(Buffer.class, FIELD_NAME_CAPACITY);
+                addressOffset = UNSAFE.objectFieldOffset(address);
+                capacityOffset = UNSAFE.objectFieldOffset(capacity);
+            } catch (Exception e) {
+                UNSAFE_AVAILABLE = false;
+            }
         }
     }
 

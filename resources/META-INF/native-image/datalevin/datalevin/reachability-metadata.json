@@ -1,0 +1,1069 @@
+{
+    "reflection": [
+        {
+            "type": "org.bytedeco.javacpp.presets.javacpp",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true
+        },
+        {
+            "type": "java.util.Date",
+            "allPublicConstructors": true,
+            "allPublicMethods": true,
+            "allPublicFields": true,
+            "allPublicClasses": true
+        },
+        {
+            "type": "java.lang.UnsatisfiedLinkError"
+        },
+        {
+            "type": "java.lang.NullPointerException"
+        },
+        {
+            "type": "org.bytedeco.javacpp.BoolPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.BooleanPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.BytePointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.CLongPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.CharPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.DoublePointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.FloatPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.IntPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.Loader"
+        },
+        {
+            "type": "org.bytedeco.javacpp.Loader$Helper"
+        },
+        {
+            "type": "org.bytedeco.javacpp.LongPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.Pointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.Pointer$NativeDeallocator"
+        },
+        {
+            "type": "org.bytedeco.javacpp.PointerPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.ShortPointer"
+        },
+        {
+            "type": "org.bytedeco.javacpp.SizeTPointer"
+        },
+        {
+            "type": "[Ldatalevin.search.Candidate;"
+        },
+        {
+            "type": "datalevin.async.AsyncExecutor"
+        },
+        {
+            "type": "datalevin.async.IAsyncExecutor"
+        },
+        {
+            "type": "datalevin.async.IAsyncWork"
+        },
+        {
+            "type": "datalevin.async.WorkItem"
+        },
+        {
+            "type": "datalevin.async.WorkQueue"
+        },
+        {
+            "type": "datalevin.binding.cpp.CppLMDB"
+        },
+        {
+            "type": "datalevin.binding.cpp.DBI"
+        },
+        {
+            "type": "datalevin.binding.cpp.Flag"
+        },
+        {
+            "type": "datalevin.binding.cpp.IFlag"
+        },
+        {
+            "type": "datalevin.binding.cpp.KV"
+        },
+        {
+            "type": "datalevin.binding.cpp.KeyIterable"
+        },
+        {
+            "type": "datalevin.binding.cpp.ListFullValIterable"
+        },
+        {
+            "type": "datalevin.binding.cpp.ListIterable"
+        },
+        {
+            "type": "datalevin.binding.cpp.ListRandKeyValIterable"
+        },
+        {
+            "type": "datalevin.binding.cpp.ListSampleIterable"
+        },
+        {
+            "type": "datalevin.binding.cpp.Rtx"
+        },
+        {
+            "type": "datalevin.bits.Indexable"
+        },
+        {
+            "type": "datalevin.bits.Retrieved",
+            "allDeclaredConstructors" : true,
+            "allPublicConstructors" : true,
+            "allDeclaredMethods" : true,
+            "allPublicMethods" : true,
+            "allDeclaredClasses" : true,
+            "allPublicFields" : true,
+            "allDeclaredFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "datalevin.client.Client"
+        },
+        {
+            "type": "datalevin.client.Connection"
+        },
+        {
+            "type": "datalevin.client.ConnectionPool"
+        },
+        {
+            "type": "datalevin.client.IClient"
+        },
+        {
+            "type": "datalevin.client.IConnection"
+        },
+        {
+            "type": "datalevin.client.IConnectionPool"
+        },
+        {
+            "type": "datalevin.compress.ICompressor"
+        },
+        {
+            "type": "datalevin.core.AsyncDLTx"
+        },
+        {
+            "type": "datalevin.core.AsyncKVTx"
+        },
+        {
+            "type": "datalevin.cpp.BufVal",
+            "unsafeAllocated": true
+        },
+        {
+            "type": "datalevin.cpp.Cursor"
+        },
+        {
+            "type": "datalevin.cpp.Dbi"
+        },
+        {
+            "type": "datalevin.cpp.Env"
+        },
+        {
+            "type": "datalevin.cpp.Info"
+        },
+        {
+            "type": "datalevin.cpp.Stat"
+        },
+        {
+            "type": "datalevin.cpp.Txn"
+        },
+        {
+            "type": "datalevin.cpp.UnsafeAccess"
+        },
+        {
+            "type": "datalevin.cpp.Util"
+        },
+        {
+            "type": "datalevin.cpp.Util$BadReaderLockException"
+        },
+        {
+            "type": "datalevin.cpp.Util$MapFullException"
+        },
+        {
+            "type": "datalevin.cpp.Util$DTLVException"
+        },
+        {
+            "type": "datalevin.cpp.Util$NotReadyException"
+        },
+        {
+            "type": "datalevin.cpp.Util$NotResetException"
+        },
+        {
+            "type": "datalevin.cpp.Util$ResetException"
+        },
+        {
+            "type": "datalevin.csv.IReadCSV"
+        },
+        {
+            "type": "datalevin.datom.Datom"
+        },
+        {
+            "type": "datalevin.datom.IDatom"
+        },
+        {
+            "type": "datalevin.db.DB"
+        },
+        {
+            "type": "datalevin.db.IDB"
+        },
+        {
+            "type": "datalevin.db.IIndexAccess"
+        },
+        {
+            "type": "datalevin.db.ISearch"
+        },
+        {
+            "type": "datalevin.db.ISearchable"
+        },
+        {
+            "type": "datalevin.db.ITuples"
+        },
+        {
+            "type": "datalevin.db.TxReport"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_assert_func"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_cmp_func"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_env"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_envinfo"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_msg_func"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_rel_func"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_stat"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_txn"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$MDB_val"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$dtlv_key_iter"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$dtlv_list_iter"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$dtlv_list_sample_iter"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$dtlv_list_val_full_iter"
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$dtlv_list_val_iter"
+        },
+        {
+            "type": "datalevin.entity.Entity",
+            "allDeclaredConstructors" : true,
+            "allPublicConstructors" : true,
+            "allDeclaredMethods" : true,
+            "allPublicMethods" : true,
+            "allDeclaredClasses" : true,
+            "allPublicFields" : true,
+            "allDeclaredFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "datalevin.entity.Transactable"
+        },
+        {
+            "type": "datalevin.hu.DecodeNode"
+        },
+        {
+            "type": "datalevin.hu.EncodeBuf"
+        },
+        {
+            "type": "datalevin.hu.HuTucker"
+        },
+        {
+            "type": "datalevin.hu.IEncodeBuf"
+        },
+        {
+            "type": "datalevin.hu.IHuTucker"
+        },
+        {
+            "type": "datalevin.hu.INode"
+        },
+        {
+            "type": "datalevin.hu.ITreeNode"
+        },
+        {
+            "type": "datalevin.hu.Node"
+        },
+        {
+            "type": "datalevin.hu.SeqNode"
+        },
+        {
+            "type": "datalevin.hu.TreeNode"
+        },
+        {
+            "type": "[Ldatalevin.hu.TreeNode;",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "datalevin.io.ByteBufferInputStream"
+        },
+        {
+            "type": "datalevin.io.ByteBufferOutputStream"
+        },
+        {
+            "type": "datalevin.lmdb.IAdmin"
+        },
+        {
+            "type": "datalevin.lmdb.IBuffer"
+        },
+        {
+            "type": "datalevin.lmdb.IDB"
+        },
+        {
+            "type": "datalevin.lmdb.IKV"
+        },
+        {
+            "type": "datalevin.lmdb.IKVTxable"
+        },
+        {
+            "type": "datalevin.lmdb.ILMDB"
+        },
+        {
+            "type": "datalevin.lmdb.IList"
+        },
+        {
+            "type": "datalevin.lmdb.IListRandKeyValIterable"
+        },
+        {
+            "type": "datalevin.lmdb.IListRandKeyValIterator"
+        },
+        {
+            "type": "datalevin.lmdb.IRange"
+        },
+        {
+            "type": "datalevin.lmdb.IRtx"
+        },
+        {
+            "type": "datalevin.lmdb.IWriting"
+        },
+        {
+            "type": "datalevin.lmdb.KVTxData"
+        },
+        {
+            "type": "datalevin.lmdb.RangeContext"
+        },
+        {
+            "type": "datalevin.parser.Aggregate"
+        },
+        {
+            "type": "datalevin.parser.And"
+        },
+        {
+            "type": "datalevin.parser.BindColl"
+        },
+        {
+            "type": "datalevin.parser.BindIgnore"
+        },
+        {
+            "type": "datalevin.parser.BindScalar"
+        },
+        {
+            "type": "datalevin.parser.BindTuple"
+        },
+        {
+            "type": "datalevin.parser.Constant"
+        },
+        {
+            "type": "datalevin.parser.DefaultSrc"
+        },
+        {
+            "type": "datalevin.parser.FindColl"
+        },
+        {
+            "type": "datalevin.parser.FindRel"
+        },
+        {
+            "type": "datalevin.parser.FindScalar"
+        },
+        {
+            "type": "datalevin.parser.FindTuple"
+        },
+        {
+            "type": "datalevin.parser.Function"
+        },
+        {
+            "type": "datalevin.parser.IFindElements"
+        },
+        {
+            "type": "datalevin.parser.IFindVars"
+        },
+        {
+            "type": "datalevin.parser.ITraversable"
+        },
+        {
+            "type": "datalevin.parser.Not"
+        },
+        {
+            "type": "datalevin.parser.Or"
+        },
+        {
+            "type": "datalevin.parser.Pattern"
+        },
+        {
+            "type": "datalevin.parser.Placeholder"
+        },
+        {
+            "type": "datalevin.parser.PlainSymbol"
+        },
+        {
+            "type": "datalevin.parser.Predicate"
+        },
+        {
+            "type": "datalevin.parser.Pull"
+        },
+        {
+            "type": "datalevin.parser.Query"
+        },
+        {
+            "type": "datalevin.parser.ReturnMap"
+        },
+        {
+            "type": "datalevin.parser.Rule"
+        },
+        {
+            "type": "datalevin.parser.RuleBranch"
+        },
+        {
+            "type": "datalevin.parser.RuleExpr"
+        },
+        {
+            "type": "datalevin.parser.RuleVars"
+        },
+        {
+            "type": "datalevin.parser.RulesVar"
+        },
+        {
+            "type": "datalevin.parser.SrcVar"
+        },
+        {
+            "type": "datalevin.parser.Traversable"
+        },
+        {
+            "type": "datalevin.parser.Variable"
+        },
+        {
+            "type": "datalevin.pull_api.AttrsFrame"
+        },
+        {
+            "type": "datalevin.pull_api.Context"
+        },
+        {
+            "type": "datalevin.pull_api.IFrame"
+        },
+        {
+            "type": "datalevin.pull_api.MultivalAttrFrame"
+        },
+        {
+            "type": "datalevin.pull_api.MultivalRefAttrFrame"
+        },
+        {
+            "type": "datalevin.pull_api.ResultFrame"
+        },
+        {
+            "type": "datalevin.pull_api.ReverseAttrsFrame"
+        },
+        {
+            "type": "datalevin.pull_parser.PullAttr"
+        },
+        {
+            "type": "datalevin.pull_parser.PullPattern"
+        },
+        {
+            "type": "datalevin.query.Clause"
+        },
+        {
+            "type": "datalevin.query.Context"
+        },
+        {
+            "type": "datalevin.query.IBinding"
+        },
+        {
+            "type": "datalevin.query.IContextResolve"
+        },
+        {
+            "type": "datalevin.query.IPostProcess"
+        },
+        {
+            "type": "datalevin.query.IStep"
+        },
+        {
+            "type": "datalevin.query.InitStep"
+        },
+        {
+            "type": "datalevin.query.Link"
+        },
+        {
+            "type": "datalevin.query.LinkStep"
+        },
+        {
+            "type": "datalevin.query.MergeScanStep"
+        },
+        {
+            "type": "datalevin.query.Node"
+        },
+        {
+            "type": "datalevin.query.Plan",
+            "allPublicConstructors": true,
+            "allPublicMethods": true,
+            "allPublicFields": true,
+            "allPublicClasses": true
+        },
+        {
+            "type": "datalevin.relation.Relation"
+        },
+        {
+            "type": "datalevin.remote.DatalogStore"
+        },
+        {
+            "type": "datalevin.remote.IRemoteDB"
+        },
+        {
+            "type": "datalevin.remote.KVStore"
+        },
+        {
+            "type": "datalevin.remote.SearchEngine"
+        },
+        {
+            "type": "datalevin.search.Candidate"
+        },
+        {
+            "type": "datalevin.search.ICandidate"
+        },
+        {
+            "type": "datalevin.search.IIndexWriter"
+        },
+        {
+            "type": "datalevin.search.IPositions"
+        },
+        {
+            "type": "datalevin.search.ISearchEngine"
+        },
+        {
+            "type": "datalevin.search.ISpan"
+        },
+        {
+            "type": "datalevin.search.IndexWriter"
+        },
+        {
+            "type": "datalevin.search.Positions"
+        },
+        {
+            "type": "datalevin.search.SearchEngine"
+        },
+        {
+            "type": "datalevin.search.Span"
+        },
+        {
+            "type": "datalevin.server.IRunner"
+        },
+        {
+            "type": "datalevin.server.IServer"
+        },
+        {
+            "type": "datalevin.server.Runner"
+        },
+        {
+            "type": "datalevin.server.Server"
+        },
+        {
+            "type": "datalevin.sparselist.ISparseIntArrayList"
+        },
+        {
+            "type": "datalevin.sparselist.SparseIntArrayList"
+        },
+        {
+            "type": "datalevin.spill.ISpillable"
+        },
+        {
+            "type": "datalevin.spill.RSVecSeq"
+        },
+        {
+            "type": "datalevin.spill.SVecSeq"
+        },
+        {
+            "type": "datalevin.spill.SpillableMap"
+        },
+        {
+            "type": "datalevin.spill.SpillableSet"
+        },
+        {
+            "type": "datalevin.spill.SpillableVector"
+        },
+        {
+            "type": "datalevin.storage.IStore"
+        },
+        {
+            "type": "datalevin.storage.ITuplePipe"
+        },
+        {
+            "type": "datalevin.storage.SamplingWork"
+        },
+        {
+            "type": "datalevin.storage.Store"
+        },
+        {
+            "type": "datalevin.storage.TuplePipe"
+        },
+        {
+            "type": "datalevin.utl.BitOps"
+        },
+        {
+            "type": "datalevin.utl.BufOps"
+        },
+        {
+            "type": "datalevin.utl.GrowingIntArray"
+        },
+        {
+            "type": "datalevin.utl.LRUCache"
+        },
+        {
+            "type": "datalevin.utl.LeftistHeap"
+        },
+        {
+            "type": "datalevin.utl.LikeFSM"
+        },
+        {
+            "type": "datalevin.utl.PriorityQueue"
+        },
+        {
+            "type": "sun.security.provider.NativePRNG",
+            "allPublicConstructors": true
+        },
+        {
+            "type": "sun.security.provider.SHA",
+            "allPublicConstructors": true
+        },
+        {
+            "type":"org.tartarus.snowball.SnowballStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.arabicStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.armenianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.basqueStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.catalanStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.danishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.dutchStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.englishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.frenchStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.finnishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.germanStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.greekStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.hindiStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.hungarianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.indonesianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.irishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.italianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.lithuanianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.nepaliStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.norwegianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.portugueseStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.romanianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.russianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.serbianStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.swedishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.tamilStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.turkishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.spanishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.yiddishStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"org.tartarus.snowball.ext.porterStemmer",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        }
+    ],
+    "resources": [
+        {
+            "glob": "org/bytedeco/javacpp/macosx-arm64/libjnijavacpp.dylib"
+        },
+        {
+            "glob": "macosx-arm64/libjnijavacpp.dylib"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-arm64/libdtlv.dylib"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-arm64/libjniDTLV.dylib"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-arm64/liblmdb.dylib"
+        },
+        {
+            "glob": "macosx-arm64/libdtlv.dylib"
+        },
+        {
+            "glob": "macosx-arm64/libjniDTLV.dylib"
+        },
+        {
+            "glob": "macosx-arm64/liblmdb.dylib"
+        }
+    ],
+    "jni": [
+        {
+            "type": "datalevin.dtlvnative.DTLV",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true
+        },
+        {
+            "type": "java.lang.Boolean",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "java.lang.Object",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type":"java.lang.Byte",
+            "allPublicConstructors":true,
+            "allPublicMethods":true
+        },
+        {
+            "type":"byte[]",
+            "allPublicConstructors":true,
+            "allDeclaredMethods":true,
+            "allPublicMethods":true
+        },
+        {
+            "type": "java.lang.SecurityManager",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "java.lang.String",
+            "allPublicConstructors" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allPublicClasses" : true
+        },
+        {
+            "type": "java.nio.Buffer",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true,
+            "allDeclaredFields": true,
+            "allPublicFields": true
+        },
+        {
+            "type": "org.bytedeco.javacpp.Loader",
+            "methods": [
+                {
+                    "name": "putMemberOffset",
+                    "parameterTypes": [
+                        "java.lang.String",
+                        "java.lang.String",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "org.bytedeco.javacpp.Pointer",
+            "fields": [
+                {
+                    "name": "address"
+                },
+                {
+                    "name": "capacity"
+                },
+                {
+                    "name": "deallocator"
+                },
+                {
+                    "name": "limit"
+                },
+                {
+                    "name": "position"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "init",
+                    "parameterTypes": [
+                        "long",
+                        "long",
+                        "long",
+                        "long"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "org.bytedeco.javacpp.Pointer$NativeDeallocator",
+            "fields": [
+                {
+                    "name": "ownerAddress"
+                }
+            ]
+        },
+        {
+            "type": "sun.management.VMManagementImpl",
+            "fields": [
+                {
+                    "name": "compTimeMonitoringSupport"
+                },
+                {
+                    "name": "currentThreadCpuTimeSupport"
+                },
+                {
+                    "name": "objectMonitorUsageSupport"
+                },
+                {
+                    "name": "otherThreadCpuTimeSupport"
+                },
+                {
+                    "name": "remoteDiagnosticCommandsSupport"
+                },
+                {
+                    "name": "synchronizerUsageSupport"
+                },
+                {
+                    "name": "threadAllocatedMemorySupport"
+                },
+                {
+                    "name": "threadContentionMonitoringSupport"
+                }
+            ]
+        }
+    ],
+    "serialization": [
+        {   "type":"org.joda.time.DateTime" },
+        {   "type":"java.lang.IllegalArgumentException"  },
+        {   "type":"java.lang.NullPointerException"      },
+        {   "type":"java.lang.IndexOutOfBoundsException"      },
+        {   "type":"java.net.URI"      },
+        {   "type":"java.util.UUID"      },
+        {   "type":"java.util.Date"      },
+        {   "type":"java.time.LocalDate"      },
+        {   "type":"java.time.LocalDateTime"      },
+        {   "type":"java.time.LocalTime"      },
+        {   "type":"java.time.MonthDay"      },
+        {   "type":"java.time.OffsetDateTime"      },
+        {   "type":"java.time.OffsetTime"      },
+        {   "type":"java.time.Year"      },
+        {   "type":"java.time.YearMonth"      },
+        {   "type":"java.time.ZonedDateTime"      },
+        {   "type":"java.time.ZoneId"      },
+        {   "type":"java.time.ZoneOffset"      },
+        {   "type":"java.time.DateTimeException"      },
+        {   "type":"org.eclipse.collections.impl.list.mutable.FastList"   }
+    ]
+}

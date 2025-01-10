@@ -2,6 +2,7 @@
   "Native binding using JavaCPP"
   (:refer-clojure :exclude [sync])
   (:require
+   [clojure.stacktrace :as stt]
    [datalevin.bits :as b]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
@@ -1151,4 +1152,6 @@
              (.addShutdownHook (Runtime/getRuntime)
                                (Thread. #(l/close-kv lmdb)))))
        lmdb)
-     (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
+     (catch Exception e
+       (stt/print-stack-trace e)
+       (raise "Fail to open database: " e {:dir dir})))))
