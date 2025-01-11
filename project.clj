@@ -21,6 +21,7 @@
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.11.0"]
+   [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.11.1"]
    ;; [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-aarch64 "0.9.8"]
@@ -36,6 +37,7 @@
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64]
+   [org.clojars.huahaiy/dtlvnative-linux-x86_64]
    [com.github.clj-easy/graal-build-time]
    ;; [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    ;; [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]

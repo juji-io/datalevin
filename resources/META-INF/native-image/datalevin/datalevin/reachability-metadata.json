@@ -850,28 +850,16 @@
     ],
     "resources": [
         {
-            "glob": "org/bytedeco/javacpp/macosx-arm64/libjnijavacpp.dylib"
+            "glob": "datalevin/dtlvnative/linux-x86_64/libdtlv.so"
         },
         {
-            "glob": "macosx-arm64/libjnijavacpp.dylib"
+            "glob": "datalevin/dtlvnative/linux-x86_64/libjniDTLV.so"
         },
         {
             "glob": "datalevin/dtlvnative/macosx-arm64/libdtlv.dylib"
         },
         {
             "glob": "datalevin/dtlvnative/macosx-arm64/libjniDTLV.dylib"
-        },
-        {
-            "glob": "datalevin/dtlvnative/macosx-arm64/liblmdb.dylib"
-        },
-        {
-            "glob": "macosx-arm64/libdtlv.dylib"
-        },
-        {
-            "glob": "macosx-arm64/libjniDTLV.dylib"
-        },
-        {
-            "glob": "macosx-arm64/liblmdb.dylib"
         }
     ],
     "jni": [
