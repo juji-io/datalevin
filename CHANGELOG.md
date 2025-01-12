@@ -17,10 +17,10 @@
 
 ### Improved
 - [Datalog] Both `transact` and `transact-async` are also changed to use the
-  same adaptive batch transaction mechanism to enhance write throughout.
+  same adaptive batching transaction mechanism to enhance write throughout.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
   samples are more update to date. Each invocation will do less work, or no work
-  , based on a change ratio, controlled by dynamic var `sample-change-ratio`,
+  , based on a change ratio, controlled by a dynamic var `sample-change-ratio`,
   default is `0.1`, i.e. resample if 10 percent of an attribute's values
   changed.
 - [KV] Consolidated LMDB bindings to a single binding using JavaCPP. Removed

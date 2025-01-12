@@ -22,6 +22,7 @@
    [datalevin.utl LRUCache]
    [java.util SortedSet Comparator Date]
    [java.util.concurrent ConcurrentHashMap]
+   [java.io Writer]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
 
 ;;;;;;;;;; Protocols
@@ -768,9 +769,14 @@
 (defn ^Boolean auto-tempid? [x]
   (instance? AutoTempid x))
 
+;; HACK to avoid circular dependency
+(def de-entity? (delay (resolve 'datalevin.entity/entity?)))
+(def de-entity->txs (delay (resolve 'datalevin.entity/->txs)))
+
 (defn assoc-auto-tempids [db tx-data]
   (for [entity tx-data]
     (cond+
+
       (map? entity)
       (reduce-kv
         (fn [entity a v]
@@ -1173,10 +1179,6 @@
     :db.fn/retractEntity
     :db/retractEntity})
 
-;; HACK to avoid circular dependency
-(def de-entity? (delay (resolve 'datalevin.entity/entity?)))
-(def de-entity->txs (delay (resolve 'datalevin.entity/->txs)))
-
 (defn- update-entity-time
   [initial-es tx-time]
   (loop [es     initial-es
@@ -1271,11 +1273,6 @@
                  (dissoc report ::queued-tuples)
                  (concat (flush-tuples report) entities))
                (recur report entities))
-
-             (@de-entity? entity)
-             (recur report
-                    (concatv entities (@de-entity->txs entity)))
-
 
              :let [^DB db      (:db-after report)
                    tempids (:tempids report)]
@@ -1551,6 +1548,15 @@
           tempids           (into {} (butlast tempids))]
       [tx-data tempids max-eid])))
 
+(defn- expand-transactable-entities
+  [entities]
+  (into []
+        (mapcat (fn [entity]
+            (if (@de-entity? entity)
+              (@de-entity->txs entity)
+              [entity])))
+        entities))
+
 (defn transact-tx-data
   [initial-report initial-es simulated?]
   (when-not (or (nil? initial-es)
@@ -1558,7 +1564,9 @@
     (raise "Bad transaction data " initial-es ", expected sequential collection"
            {:error :transact/syntax, :tx-data initial-es}))
   (let [^DB db     (:db-before initial-report)
-        initial-es (assoc-auto-tempids db initial-es)
+        initial-es (->> initial-es
+                        expand-transactable-entities
+                        (assoc-auto-tempids db))
         store      (.-store db)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
