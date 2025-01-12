@@ -20,7 +20,7 @@
    [org.clojure/clojure "1.12.0"]
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
-   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.11.0"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.11.2"]
    [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.11.1"]
    ;; [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.8"]
    ;; [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.8"]
