@@ -5,25 +5,24 @@
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
   to enhance write throughput (3X-10X higher throughput in heavy write
-  condition compared with `transact-kv`). Batch size is automatically adaptive
-  to the write workload: the higher the load, the larger the batch.
+  condition compared with `transact-kv`). Batch size is automatically adjusted
+  to the write workload: the higher the load, the larger the batch. Howver,
+  manual batching of transaction data is still helpful, as the effects of
+  automatic batching and manual batching add up.
   [#256](https://github.com/juji-io/datalevin/issues/256)
-- [Benchmark] [Write benchmark](benchmarks/write-bench). Show Datalevin's write
-  throughput and latency using various transaction methods and manual batch
-  sizes.
-- [Platform] Support for freebsd on amd64.
 
 ### Fixed
-- [Datalog]
+- [Datalog] Upsert fails on entity with unique composite tuple
+  [#299](https://github.com/juji-io/datalevin/issues/299)
 
 ### Improved
 - [Datalog] Both `transact` and `transact-async` are also changed to use the
-  same adaptive batch transaction mechanism to improve write throughout.
+  same adaptive batch transaction mechanism to enhance write throughout.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
   samples are more update to date. Each invocation will do less work, or no work
-  , based on whether the change ratio, controlled by dynamic var
-  `sample-change-ratio`, default is `0.1`, i.e. resample if 10 percent of an
-  attribute's values changed.
+  , based on a change ratio, controlled by dynamic var `sample-change-ratio`,
+  default is `0.1`, i.e. resample if 10 percent of an attribute's values
+  changed.
 - [KV] Consolidated LMDB bindings to a single binding using JavaCPP. Removed
   both LMDBJava and Graalvm native image specific bindings. This eases
   maintenance, enhances performance, and makes it easier to add native
