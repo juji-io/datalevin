@@ -104,8 +104,8 @@
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
 
-      [ {:profile {:email "@2"}} ] ;; issue #59
-      #{ [1 :profile 2] [2 :email "@2"] })
+      [{:profile {:email "@2"}}]
+      #{[2 :profile 1] [1 :email "@2"]})
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -183,45 +183,51 @@
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many
                        :db/isComponent true}}
-        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-
-        db (d/db-with (d/empty-db dir schema)
-                      [{:db/id 1, :comp [{:name "C"}]}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
-           [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ]))
+        dir    (u/tmp-dir (str "test-circular-" (UUID/randomUUID)))
+        db     (-> (d/empty-db dir schema)
+                   (d/db-with [{:db/id -1 :name "Name"}])
+                   (d/db-with [{:db/id 1, :comp [{:name "C"}]}]))]
+    (is (= [[1 :comp 2]
+            [1 :name "Name"]
+            [2 :name "C"]]
+           (mapv (juxt :e :a :v) (d/datoms db :eav))))
     (d/close-db db)
     (u/delete-files dir))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many}}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-
-        db (d/db-with (d/empty-db dir schema)
-                      [{:db/id 1, :comp [{:name "C"}]}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
-           [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ]))
+        db     (-> (d/empty-db dir schema)
+                   (d/db-with [{:db/id -1 :name "Name"}])
+                   (d/db-with [{:db/id 1, :comp [{:name "C"}]}]))]
+    (is (= [[1 :comp 2]
+            [1 :name "Name"]
+            [2 :name "C"]]
+           (mapv (juxt :e :a :v) (d/datoms db :eav))))
     (d/close-db db)
     (u/delete-files dir))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/isComponent true}}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-        db     (d/db-with (d/empty-db dir schema)
-                          [{:db/id 1, :comp {:name "C"}}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
-           [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ]))
+        db     (-> (d/empty-db dir schema)
+                   (d/db-with [{:db/id -1 :name "Name"}])
+                   (d/db-with [{:db/id 1, :comp {:name "C"}}]))]
+    (is (= [[1 :comp 2]
+            [1 :name "Name"]
+            [2 :name "C"]]
+           (mapv (juxt :e :a :v) (d/datoms db :eav))))
     (d/close-db db)
     (u/delete-files dir))
 
   (let [schema {:comp {:db/valueType :db.type/ref}}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-        db     (d/db-with (d/empty-db dir schema)
-                          [{:db/id 1, :comp {:name "C"}}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
-           [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ]))
+        db     (-> (d/empty-db dir schema)
+                   (d/db-with [{:db/id -1 :name "Name"}])
+                   (d/db-with [{:db/id 1, :comp {:name "C"}}]))]
+    (is (= [[1 :comp 2]
+            [1 :name "Name"]
+            [2 :name "C"]]
+           (mapv (juxt :e :a :v) (d/datoms db :eav))))
     (d/close-db db)
     (u/delete-files dir)))

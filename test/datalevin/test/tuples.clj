@@ -253,6 +253,37 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest test-upsert-by-tuple-components
+  (let [dir (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        db  (d/empty-db dir {:a+b {:db/tupleAttrs [:a :b]
+                                   :db/unique     :db.unique/identity}})
+        db' (d/db-with db [{:a "A" :b "B" :name "Ivan"}])]
+    (is (= #{[1 :a "A"]
+             [1 :b "B"]
+             [1 :a+b ["A" "B"]]
+             [1 :name "Oleg"]}
+           (tdc/all-datoms
+             (d/db-with db'
+                        [{:db/id -1 :a "A" :b "B" :name "Oleg"}]))))
+    (is (= #{[1 :a "A"]
+             [1 :b "B"]
+             [1 :a+b ["A" "B"]]
+             [1 :name "Oleg"]}
+           (tdc/all-datoms
+             (d/db-with db'
+                        [{:a "A" :b "B" :name "Oleg"}]))))
+    (is (= #{[1 :a "A"]
+             [1 :b "B"]
+             [1 :a+b ["A" "B"]]
+             [1 :name "Oleg"]}
+           (tdc/all-datoms
+             (d/db-with db'
+                        [[:db/add -1 :a "A"]
+                         [:db/add -1 :b "B"]
+                         [:db/add -1 :name "Oleg"]]))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 (deftest test-lookup-refs
   (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn
