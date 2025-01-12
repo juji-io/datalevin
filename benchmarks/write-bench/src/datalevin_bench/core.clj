@@ -66,10 +66,10 @@
         (recur (inc counter))))))
 
 (defn write
-  [{:keys [batch f]}]
+  [{:keys [base-dir batch f]}]
   (let [kv?      (s/starts-with? (name f) "kv")
         kvdb     (when kv?
-                   (doto (d/open-kv (str "max-write-db-" f "-" batch)
+                   (doto (d/open-kv (str base-dir "/max-write-db-" f "-" batch)
                                     {:mapsize 60000})
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
@@ -81,10 +81,10 @@
         kv-add   (fn [^FastList txs]
                    (.add txs [:put (random-uuid) (random-uuid)]))
         conn     (when (not kv?)
-                   (d/get-conn (str "max-write-db-" f "-" batch)
+                   (d/get-conn (str base-dir "/max-write-db-" f "-" batch)
                                {:k {:db/valueType :db.type/uuid}
                                 :v {:db/valueType :db.type/uuid}}
-                               {:kv-opts {:mapsize 200000}}))
+                               {:kv-opts {:mapsize 60000}}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
