@@ -850,11 +850,26 @@
     ],
     "resources": [
         {
+            "glob": "datalevin/dtlvnative/windows-x86_64/jniDTLV.dll"
+        },
+        {
             "glob": "datalevin/dtlvnative/linux-x86_64/libdtlv.so"
         },
         {
             "glob": "datalevin/dtlvnative/linux-x86_64/libjniDTLV.so"
         },
+        {
+            "glob": "datalevin/dtlvnative/linux-arm64/libdtlv.so"
+        },
+        {
+            "glob": "datalevin/dtlvnative/linux-arm64/libjniDTLV.so"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-x86_64/libdtlv.dylib"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-x86_64/libjniDTLV.dylib"
+        }
         {
             "glob": "datalevin/dtlvnative/macosx-arm64/libdtlv.dylib"
         },
