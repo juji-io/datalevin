@@ -637,7 +637,6 @@
   {:pre [(<= r n)]}
   (/ ^long (factorial n) ^long (factorial (- n r))))
 
-#_(def map+ map)
 (defn map+
   "parallel map using query-thread-pool"
   ([f coll]

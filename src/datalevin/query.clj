@@ -1641,10 +1641,6 @@
 
 (defn- writing? [db] (l/writing? (.-lmdb ^Store (.-store ^DB db))))
 
-;; somehow graal has problem with pmap
-;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map pmap))
-;; (def map+ (if (System/getenv "DTLV_COMPILE_NATIVE") map map))
-
 (defn- update-nodes
   [db nodes]
   (if (= 1 (count nodes))

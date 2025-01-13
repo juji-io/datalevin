@@ -24,18 +24,20 @@ Commands:
   stat  Display statistics of database
 
 Options:
-  -a, --all                            Include all of the sub-databases
-  -c, --compact                        Compact while copying
-  -d, --dir PATH                       Path to the database directory
-  -D, --delete                         Delete the sub-database, not just empty it
-  -f, --file PATH                      Path to the specified file
-  -g, --datalog                        Dump/load as a Datalog database
-  -h, --help                           Show usage
-  -l, --list                           List the names of sub-databases instead of the content
-  -p, --port PORT  8898                Listening port number
-  -r, --root ROOT  /var/lib/datalevin  Server root data directory
-  -v, --verbose                        Show verbose server debug log
-  -V, --version                        Show Datalevin version and exit
+  -a, --all                                            Include all of the sub-databases
+  -c, --compact                                        Compact while copying
+  -d, --dir PATH                                       Path to the database directory
+  -D, --delete                                         Delete the sub-database, not just empty it
+  -f, --file PATH                                      Path to the specified file
+  -g, --datalog                                        Dump/load as a Datalog database
+  -h, --help                                           Show usage
+  -i, --idle-timeout IDLE_TIMEOUT  172800000           Server session idle timeout in ms
+  -l, --list                                           List the names of sub-databases instead of the content
+  -n, --nippy                                          Dump/load database in nippy binary format
+  -p, --port PORT                  8898                Server listening port number
+  -r, --root ROOT                  /var/lib/datalevin  Server root data directory
+  -v, --verbose                                        Show verbose server debug log
+  -V, --version                                        Show Datalevin version and exit
 
 Type 'dtlv help <command>' to read about a specific command.
 
@@ -76,27 +78,41 @@ In addition to some Clojure core functions, the following functions are availabl
 
 In namespace datalevin.core
 
-add                   clear                 clear-dbi             close
-close-db              close-kv              closed-kv?            closed?
-conn-from-datoms      conn-from-db          conn?                 copy
-create-conn           datom                 datom-a               datom-e
+abort-transact        abort-transact-kv     add                   add-doc
+cardinality           clear                 clear-dbi             clear-docs
+close                 close-db              close-kv              closed-kv?
+closed?               commit                conn-from-datoms      conn-from-db
+conn?                 copy                  count-datoms          create-conn
+datalog-index-cache-limitdatom                 datom-a               datom-e
 datom-v               datom?                datoms                db
-db?                   dir                   drop-dbi              empty-db
-entid                 entity                entity-db             entries
-get-conn              get-first             get-range             get-some
-get-value             index-range           init-db               k
-list-dbis             listen!               open-dbi              open-kv
-pull                  pull-many             put-buffer            q
-range-count           range-filter          range-filter-count    read-buffer
+db?                   del-list-items        dir                   doc-count
+doc-indexed?          drop-dbi              empty-db              entid
+entity                entity-db             entries               explain
+fill-db               fulltext-datoms       get-conn              get-first
+get-first-n           get-list              get-range             get-some
+get-value             hexify-string         in-list?              index-range
+init-db               k                     key-range             key-range-count
+key-range-list-count  list-count            list-dbis             list-range
+list-range-count      list-range-filter     list-range-filter-countlist-range-first
+list-range-first-n    list-range-keep       list-range-some       listen!
+new-search-engine     open-dbi              open-kv               open-list-dbi
+opts                  pull                  pull-many             put-buffer
+put-list-items        q                     range-count           range-filter
+range-filter-count    range-keep            range-seq             range-some
+re-index              read-buffer           read-csv              remove-doc
 reset-conn!           resolve-tempid        retract               rseek-datoms
-schema                seek-datoms           stat                  tempid
+schema                search                search-datoms         search-index-writer
+seek-datoms           stat                  sync                  tempid
 touch                 transact              transact!             transact-async
-transact-kv           unlisten!             update-schema         v
-with-conn
+transact-kv           transact-kv-async     tx-data->simulated-reportunhexify-string
+unlisten!             update-schema         v                     visit
+visit-key-range       visit-list            visit-list-range      with-conn
+with-transaction      with-transaction-kv   write                 write-csv
 
 In namespace datalevin.interpret
 
-exec-code             inter-fn              inter-fn?
+definterfn            exec-code             inter-fn              inter-fn-from-reader
+inter-fn?             load-edn
 
 In namespace datalevin.client
 
@@ -104,17 +120,18 @@ assign-role           close-database        create-database       create-role
 create-user           disconnect-client     drop-database         drop-role
 drop-user             grant-permission      list-databases        list-databases-in-use
 list-role-permissions list-roles            list-user-permissions list-user-roles
-list-users            new-client            query-system          reset-password
-revoke-permission     show-clients          withdraw-role
+list-users            new-client            open-database         query-system
+reset-password        revoke-permission     show-clients          withdraw-role
 
 Can call function without namespace: (<function name> <arguments>)
 
 Type (doc <function name>) to read documentation of the function
 
+
 user> (def conn (get-conn "/tmp/test-db"))
 #'user/conn
 user> (transact! conn [{:greeting "hello"}])
-{:datoms-transacted 1}
+#datalevin.db.TxReport{:db-before #datalevin.db.DB{:store #object[datalevin.storage.Store 0x3004662 "datalevin.storage.Store@3004662"], :max-eid 0, :max-tx 1, :eavt #{#datalevin/Datom [1 :greeting "hello"]}, :avet #{#datalevin/Datom [1 :greeting "hello"]}, :vaet #{}, :pull-patterns #object[datalevin.utl.LRUCache 0x9ce4d38 "datalevin.utl.LRUCache@9ce4d38"]}, :db-after #datalevin.db.DB{:store #object[datalevin.storage.Store 0x48cb33af "datalevin.storage.Store@48cb33af"], :max-eid 1, :max-tx 2, :eavt #{}, :avet #{}, :vaet #{}, :pull-patterns #object[datalevin.utl.LRUCache 0x5c6fc4f2 "datalevin.utl.LRUCache@5c6fc4f2"]}, :tx-data [#datalevin/Datom [1 :greeting "hello"]], :tempids {:db/current-tx 2}, :tx-meta nil}
 user>
 ```
 We are unapologetic about the use of Clojure language. Unlike most other
@@ -173,7 +190,7 @@ Use `dtlv dump` and `dtlv load` to export and import databases as text files.
 ```console
 $ dtlv help dump
 
-  Command dump - dump the content of the database or sub-database(s)
+  Command dump - dump the content of the database or sub-database(s).
 
   Required option:
       -d --dir PATH   Path to the source database directory
@@ -181,6 +198,7 @@ $ dtlv help dump
       -a --all        All of the sub-databases
       -f --file PATH  Write to the specified target file instead of stdout
       -g --datalog    Dump as a Datalog database
+      -n --nippy      Dump database in nippy binary format
       -l --list       List the names of sub-databases instead of the content
   Optional arguments:
       Name(s) of sub-database(s)
@@ -200,6 +218,7 @@ $ dtlv help load
   Optional option:
       -f --file PATH  Load from the specified source file instead of stdin
       -g --datalog    Load a Datalog database
+      -n --nippy      Load a database in nippy binary format
   Optional argument:
       Name of the single sub-database to load the data into, useful when loading
       data into a sub-database with a name different from the original name

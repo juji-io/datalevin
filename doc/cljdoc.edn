@@ -7,5 +7,4 @@
   ["Transaction" {:file "doc/transact.md"}]
   ["Server/Client" {:file "doc/server.md"}]
   ["Query Engine" {:file "doc/query.md"}]
-  ["Search Engine" {:file "doc/search.md"}]
-  ["Graal Native" {:file "native/README.md"}]]}
+  ["Search Engine" {:file "doc/search.md"}]]}

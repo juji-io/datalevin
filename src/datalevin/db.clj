@@ -776,7 +776,6 @@
 (defn assoc-auto-tempids [db tx-data]
   (for [entity tx-data]
     (cond+
-
       (map? entity)
       (reduce-kv
         (fn [entity a v]

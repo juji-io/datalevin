@@ -1,7 +1,7 @@
 # Transactions in Datalevin
 
 Datalevin relies on the transaction mechanism of the underlying key-value store,
-LMDB, to achieve ACID.
+LMDB (Lightening Memory-Mapped Database), to achieve ACID.
 
 In LMDB, read and write are independent and do not block each other. Read
 requires a read transaction. Write requires a read-write transaction. These are
@@ -24,11 +24,61 @@ LMDB suggests that:
 > by newer write transactions, thus the database can grow quickly. Write
 > transactions prevent other write transactions, since writes are serialized.
 
-## Explicit Transaction
+## Batching of Transaction Data
+
+By default, each write transaction flushes to disk when it commits, which is an
+expensive operation even with today's SSD disks.
+
+Batching transacation data together reduces the number of such expensive commit
+calls, which enhances write throughput. It is therefore recommended to
+batch transaction data in user code if possible.
+
+## Env Flags
+
+Datalevin adopts the same default write condition as that of LMDB. That is, the
+write transactions by default are guranteed to be durable, i.e. no risk of data
+loss or DB corruption in case of system crash. As mentioned above, this fully
+safe write condition has some cost since syncing to disk is expensive.
+
+Datalevin supports several faster, albeit less safe write conditions by passing in
+some Env flags when openning the DB. The follwing table lists these flags and
+their implications.
+
+| Flags | Meaning | Implication |
+| ----- | ----- | ----- |
+| :writemap | Writeable memory map | Buggy native code may accidentally overwrite memory to corrupt DB; File system failure may crash process; On OS don't support sparse files, e.g. OSX, underlaying storage will be immediately fully preallocated to specificed map size. |
+| :mapasync | use asynchronous msync when :writemap is used | DB may be corrupted when system crashes |
+| :nometasync | don't fsync metapage when commit | The committed data in the last transaction may be lost when system crashes |
+| :nosync | don't fsync when commit | DB may be corrupted when system crashes |
+
+These flags normally improve write speed signficantly. User can then manually
+call `sync` function to force flusing to disk at appropriate time. Combining
+these techniques appropriately may achieve desirable write speed and safety for
+some use cases.
+
+Here are some examples of passing the env flags:
+
+```Clojure
+(require '[datalevin.core :as d])
+(require '[datalevin.constant :as c])
+
+;; Pass :nosync to my-kvdb KV store
+(d/open-kv "/tmp/my-kvdb" {:flags (conj c/defaultl-env-flags :nosync)))})
+
+;; Set :temp? true for a KV store automaticaly adds :nosync, this DB will also
+;; be deleted on JVM exit.
+(d/open-kv "/tmp/tmp-kvdb" {:temp? true))})
+
+;; Pass :nometasync to testdb Datalog store
+(d/get-conn "/tmp/testdb" {} {:kv-opts {:flags (conj c/default-env-flags :nometasync)}})
+
+```
+
+## Explicit Synchronous Transaction
 
 To obtain features such as compare-and-swap semantics, that is, a group of reads
 and writes are treated as a single atomic action, Datalevin exposes explicit
-transaction.
+synchronous transaction.
 
 For key-value API, `with-transaction-kv` macro is used for explicit transaction.
 `with-transaction` macro is used for Datalog API. Basically, all the code in the
@@ -41,6 +91,24 @@ Rollback from within the transaction can be done with `abort-transact-kv` and
 `abort-transact`.
 
 Datalog functions such as `transact!` use `with-transaction` internally.
+
+## Asynchronous Transaction
+
+Datalevin provides `transact-kv-async` function for asynchronous transaction in
+the KV store. This function returns a future that is realized when data is
+committed.
+
+An auto-batching mechanism is designed to automatically batch
+transaction data when this function is called. The batching is adaptive to write
+load. The higher the load, the bigger the batch size. So write throughput is
+higher than `transact-kv`.
+
+Similarly, for Datalog store, `transact-async` can be used for auto-batching.
+`transact` function also use asynchronous transaction, but it blocks until the
+future is realized.
+
+One can call a sequence of `transact-async`, followed by a `transact` to achive
+good batching effect and determinstic commit at the same time.
 
 ## Transaction Functions in Datalog Store
 
@@ -68,7 +136,8 @@ For usage examples, see tests in `datalevin.test.transact`.
 ### By Transaction
 
 The most straightforward method of transacting data at a time using `transact!`
-works quite well for many cases.
+works quite well for many cases. To have higher throughput, use
+`transact-async`.
 
 Because Datalevin supports only a single write thread at a time, parallel
 transactions actually slow writes down significantly due to the thread switching
@@ -76,8 +145,7 @@ overhead.
 
 However, transacting Datalog data involves a great number of data transformation
 and integrity checks, hence it can be slow. When initializing a DB with data, it
-may not be necessary to pay the price of this overhead. Also, out of memory
-errors may be encountered if the amount of data to be transacted is too large.
+may not be necessary to pay the price of this overhead.
 
 ### By `init-db` and `fill-db`
 

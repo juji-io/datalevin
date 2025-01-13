@@ -10,8 +10,6 @@ fi
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
-export DTLV_COMPILE_NATIVE=true
-
 echo $JAVA_HOME
 
 args_app=(

@@ -13,7 +13,7 @@
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.13.0"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
-   [metosin/jsonista "0.3.11"]
+   [metosin/jsonista "0.3.13"]
    [nrepl/bencode "1.2.0"]
    [org.babashka/sci "0.9.44"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]

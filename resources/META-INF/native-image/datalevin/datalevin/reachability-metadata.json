@@ -237,6 +237,15 @@
             "type": "datalevin.db.TxReport"
         },
         {
+            "type": "datalevin.db.AutoTempid",
+            "allDeclaredConstructors" : true,
+            "allPublicConstructors" : true,
+            "allDeclaredMethods" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allDeclaredFields" : true
+        },
+        {
             "type": "datalevin.dtlvnative.DTLV"
         },
         {
@@ -869,7 +878,7 @@
         },
         {
             "glob": "datalevin/dtlvnative/macosx-x86_64/libjniDTLV.dylib"
-        }
+        },
         {
             "glob": "datalevin/dtlvnative/macosx-arm64/libdtlv.dylib"
         },
