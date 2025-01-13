@@ -320,60 +320,6 @@ adjust the priorities based on feedback.
 * 4.1.0 Read-only replicas for server.
 * 5.0.0 Distributed mode.
 
-## :floppy_disk: Differences from Datascript
-
-Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
-totally from scratch and is not related by any means to" Datomic®. Datalevin
-started out as a port of Datascript to LMDB, but differs from Datascript in more
-significant ways than just the difference in data durability and running mode:
-
-* Datalevin has a cost-based query optimizer, so queries are truly declarative
-  and clause ordering does not affect query performance.
-
-* Datalevin is not an immutable database, and there is no
-  "database as a value" feature.  Since history is not kept, transaction ids are
-  not stored.
-
-* Datoms in a transaction are committed together as a batch, rather than being
-  saved by `with-datom` one at a time.
-
-* ACID transaction and rollback are supported.
-
-* Lazy results set and spill to disk are supported.
-
-* Entity and transaction integer ids are 64 bits long, instead of 32 bits.
-
-* Respects `:db/valueType`. Currently, most [Datomic® value
-  types](https://docs.datomic.com/schema/schema-reference.html#db-valuetype) are
-  supported, except uri. Values of the attributes that
-  are not defined in the schema or have unspecified types are treated as
-  [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
-  de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
-
-* In addition to composite tuples, Datalevin also supports heterogeneous and
-  homogeneous tuples.
-
-* More query functions, such as `like` and `not-like` that are similar to LIKE
-  and NOT LIKE operators in SQL; `in` and `not-in` that are similar to IN and
-  NOT IN operators in SQL, among others.
-
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute;
-  The attribute and value leading index (AVE) is enabled for all datoms, so
-  there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
-  have AEV index, in order to save storage and improve write speed.
-
-* Stored transaction functions of `:db/fn` should be defined with `inter-fn`, for
-  function serialization requires special care in order to support GraalVM
-  native image. It is the same for functions that need to be passed over the
-  wire to server or babashka.
-
-* Attributes are stored in indices as integer ids, thus attributes in index
-  access are returned in attribute creation order, not in lexicographic order
-  (i.e. do not expect `:b` to come after `:a`). This is the same as Datomic®.
-
-* Has no features that are applicable only for in-memory DBs, such as DB as an
-  immutable data structure, DB pretty print, etc.
-
 ## :baby: Limitations
 
 * Attribute names have a length limitation: an attribute name cannot be more
@@ -382,7 +328,7 @@ significant ways than just the difference in data durability and running mode:
 * Because keys are compared bitwise, for range queries to work as expected on an
   attribute, its `:db/valueType` should be specified.
 
-* Floating point `NaN` cannot be stored.
+* `nil` cannot be stored. Floating point `NaN` cannot be stored.
 
 * Big integers do not go beyond the range of `[-2^1015, 2^1015-1]`, the
   unscaled value of big decimal has the same limit.
@@ -397,35 +343,6 @@ significant ways than just the difference in data durability and running mode:
   Clojure-hosting runtime is possible, since bindings for LMDB
   exist in almost all major languages and available on most platforms.
 
-## :shopping: Alternatives
-
-If you are interested in using the dialect of Datalog pioneered by Datomic®,
-here are your current options:
-
-* If you need time travel and cloud features backed by the company that
-  maintains Clojure, and there is no need to see the source code, you may try
-  [Datomic®](https://www.datomic.com).
-
-* If you need mainly an in-memory store with optional durability, that has
-  almost the same API as Datomic®, you may try
-  [Datascript](https://github.com/tonsky/datascript).
-
-* If you need a simple and versatile store with almost the same Datalog API as
-  the above two and with a much greater query performance, you may try
-  [Datalevin](https://github.com/juji-io/datalevin), this project.
-
-* If you need features such as bi-temporal models and SQL, you may try
-  [XTDB](https://github.com/xtdb/xtdb).
-
-* If you need a graph database with an open world assumption, you may try
-  [Asami](https://github.com/threatgrid/asami).
-
-* If you need a durable store with some storage choices, you may try
-  [Datahike](https://github.com/replikativ/datahike).
-
-* There was also [Eva](https://github.com/Workiva/eva/), a distributed store,
-  but it is no longer in active development.
-
 ## :arrows_clockwise: Contact
 
 We appreciate and welcome your contributions or suggestions. Please feel free to
@@ -437,6 +354,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2024 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2025 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
