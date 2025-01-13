@@ -1,6 +1,6 @@
 # Limitations
 
-* Single writer. See also [transaction](transact).
+* Single writer. See also [transaction](transact.md).
 
 * Attributes must be keywords.
 
