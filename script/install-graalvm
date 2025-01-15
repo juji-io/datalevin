@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BASE_URL="https://download.oracle.com/graalvm/23/latest/"
+
+FILENAME="graalvm-jdk-23_${DTLV_OS}-${DTLV_ARCH}_bin.tar.gz"
+
+GRAALVM_HOME="graalvm-jdk"
+
+mkdir $GRAALVM_HOME
+
+echo "Downloading GraalVM on '$PWD'..."
+wget -nv "$BASE_URL$FILENAME"
+tar xzf "$FILENAME" -C "$GRAALVM_HOME" --strip-components=1

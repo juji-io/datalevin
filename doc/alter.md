@@ -3,7 +3,7 @@
 Datalevin stands on the shoulder of giants. Datascript is developed by [Nikita
 Prokopov](https://tonsky.me/) that "is built totally from scratch and is not
 related by any means to" Datomic®. Datalevin started out as a port of Datascript
-to LMDB storage, but has since diviated from that origin signficantly.
+to LMDB storage, but has since deviated from that origin signficantly.
 
 ## Differences from Datascript
 
@@ -31,7 +31,10 @@ to LMDB storage, but has since diviated from that origin signficantly.
 
 * Lazy results set and spill to disk are supported.
 
-* Entity and transaction integer ids are 64 bits long, instead of 32 bits.
+* Support transactoble Entity.
+
+* Entity id and transaction integer ids are 64 bits long, instead of 32 bits, to
+  support much larger DB.
 
 * Respects `:db/valueType`. Currently, most [Datomic® value
   types](https://docs.datomic.com/schema/schema-reference.html#db-valuetype) are

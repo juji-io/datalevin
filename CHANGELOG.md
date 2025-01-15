@@ -23,6 +23,7 @@
   , based on a change ratio, controlled by a dynamic var `sample-change-ratio`,
   default is `0.1`, i.e. resample if 10 percent of an attribute's values
   changed.
+- [Datalog] Port applicable fixes from Datascript up to 1.7.4.
 - [KV] Consolidated LMDB bindings to a single binding using JavaCPP. Removed
   both LMDBJava and Graalvm native image specific bindings. This eases
   maintenance, enhances performance, and makes it easier to add native
@@ -209,6 +210,7 @@
 - [Datalog] `min` and `max` query predicates handle all comparable data.
 - [Datalog] Port applicable fixes from Datascript up to 1.7.1.
 - update deps.
+
 
 ## 0.9.5 (2024-04-17)
 

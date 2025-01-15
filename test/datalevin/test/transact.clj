@@ -487,6 +487,12 @@
           e                  (d/entity db-after 1)]
       (is (= (:age e) 32))
       (is (:had-birthday e)))
+
+    (let [{:keys [db-after tempids]}
+          (d/transact! conn [[:db.fn/call (fn [_] [{:db/id -1 :name "Vera"}])]])
+          e (d/entity db-after (tempids -1))]
+      (is (= "Vera" (:name e))))
+
     (d/close conn)
     (u/delete-files dir)))
 

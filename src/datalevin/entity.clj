@@ -140,16 +140,14 @@
 (defn- entity->txs [^Entity e]
   (let [eid (.-eid e)
         db  (.-db e)
-        {:keys [ref-attrs ref-rattrs ref-many-rattrs ref-many-attrs]}
+        {:keys [ref-many-rattrs ref-many-attrs]}
         (db->attr-types db)]
     (into
       []
       (mapcat
         (fn [[k [meta v]]]
           (let [{:keys [op]} meta]
-            (cond
-              (or (ref-many-attrs k)
-                  (ref-many-rattrs k))
+            (if (or (ref-many-attrs k) (ref-many-rattrs k))
               (let [v (if (lookup-ref? v)
                         [v]
                         (u/ensure-vec v))]
@@ -164,8 +162,6 @@
                                  (map (fn [e]
                                         [:db/retract eid k (:db/id e)]))
                                  v)))
-
-              :else
               (case op
                 (:dissoc :retract) [[:db.fn/retractAttribute eid k]]
                 (:assoc :add)      [[:db/add eid k v]])))))

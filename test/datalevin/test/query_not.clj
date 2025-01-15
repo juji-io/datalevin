@@ -82,7 +82,14 @@
                    [?e :name "Oleg"]
                    [?e :age  ?a]
                    [?e :age  10])]
-        #{[1 10] [5 10]}))
+        #{[1 10] [5 10]}
+
+        [[?e :age ?a]
+         (not-join [?a]
+                   [?e :name "Petr"]
+                   [?e :age ?a])]
+        #{[1 10] [2 20] [3 10] [4 20] [5 10] [6 20]}
+        ))
 
     (testing "test-impl-edge-cases"
       (are [q res] (= (d/q (quote q) test-db)

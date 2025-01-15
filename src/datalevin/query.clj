@@ -908,16 +908,26 @@
                                   *lookup-attrs*)]
          (update context :rels collapse-rels relation))))))
 
+(defn short-circuit-empty-rel [context]
+  (if (some #(empty? (:tuples %)) (:rels context))
+    (assoc context
+           :rels
+           [(r/relation!
+              (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
+              [])])
+    context))
+
 (defn resolve-clause
   [context clause]
   (if (->> (:rels context) (some (comp empty? :tuples)))
     context
-    (if (qu/rule? context clause)
-      (if (qu/source? (first clause))
-        (binding [*implicit-source* (get (:sources context) (first clause))]
-          (resolve-clause context (next clause)))
-        (update context :rels collapse-rels (solve-rule context clause)))
-      (-resolve-clause context clause))))
+    (short-circuit-empty-rel
+      (if (qu/rule? context clause)
+        (if (qu/source? (first clause))
+          (binding [*implicit-source* (get (:sources context) (first clause))]
+            (resolve-clause context (next clause)))
+          (update context :rels collapse-rels (solve-rule context clause)))
+        (-resolve-clause context clause)))))
 
 ;; optimizer
 

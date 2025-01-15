@@ -47,21 +47,27 @@
 
         db0 (d/empty-db dir { :children {:db/valueType   :db.type/ref
                                          :db/cardinality :db.cardinality/many } })]
-    (let [db (d/db-with db0 [{:db/id -1, :name "Ivan", :children [-2 -3]}
-                             {:db/id -2, :name "Petr"}
-                             {:db/id -3, :name "Evgeny"}])]
-      (is (= (d/q '[:find ?n
-                    :where [_ :children ?e]
-                    [?e :name ?n]] db)
-             #{["Petr"] ["Evgeny"]})))
+    (doseq [children [[-2 -3]
+                      #{-2 -3}
+                      (list -2 -3)]]
+      (testing (str "ref + many + " children)
+        (let [db (d/db-with db0 [{:db/id -1, :name "Ivan", :children children}
+                                 {:db/id -2, :name "Petr"}
+                                 {:db/id -3, :name "Evgeny"}])]
+          (is (= #{["Petr"] ["Evgeny"]}
+                 (d/q '[:find ?n
+                        :where
+                        [_ :children ?e]
+                        [?e :name ?n]] db))))))
 
     (let [db (d/db-with db0 [{:db/id -1, :name "Ivan"}
                              {:db/id -2, :name "Petr", :_children -1}
                              {:db/id -3, :name "Evgeny", :_children -1}])]
-      (is (= (d/q '[:find ?n
-                    :where [_ :children ?e]
-                    [?e :name ?n]] db)
-             #{["Petr"] ["Evgeny"]})))
+      (is (= #{["Petr"] ["Evgeny"]}
+             (d/q '[:find ?n
+                    :where
+                    [_ :children ?e]
+                    [?e :name ?n]] db))))
 
     (is (thrown-msg? "Bad attribute :_parent: reverse attribute name requires {:db/valueType :db.type/ref} in schema"
                      (d/db-with db0 [{:name "Sergey" :_parent 1}])))
@@ -161,6 +167,25 @@
       (u/delete-files dir))))
 
 (deftest test-explode-nested-maps-7
+  (testing "multi-valued"
+    (let [schema { :profile { :db/valueType  :db.type/ref
+                             :db/cardinality :db.cardinality/many }}
+          dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
+
+          db (d/empty-db dir schema)]
+      (are [tx res] (= (d/q '[:find ?e ?a ?v
+                              :where [?e ?a ?v]]
+                            (d/db-with db tx)) res)
+
+        [{:name "Ivan" :profile #{{:email "@2"} {:email "@3"}}}]
+        #{[1 :name "Ivan"] [1 :profile 2] [2 :email "@3"] [1 :profile 3] [3 :email "@2"]}
+
+        [{:name "Ivan" :profile (list {:email "@2"} {:email "@3"})}]
+        #{[1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] [1 :profile 3] [3 :email "@3"]})
+      (d/close-db db)
+      (u/delete-files dir))))
+
+(deftest test-explode-nested-maps-8
   (testing "multi-valued"
     (let [schema { :profile { :db/valueType  :db.type/ref
                              :db/cardinality :db.cardinality/many }}
