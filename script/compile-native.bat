@@ -6,9 +6,13 @@ if "%GRAALVM_HOME%"=="" (
 
 echo %GRAALVM_HOME%
 
-set JAVA_HOME=%GRAALVM_HOME%\bin
-set PATH=%GRAALVM_HOME%\bin;%PATH%
-set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8
+set "JAVA_HOME=%GRAALVM_HOME%"
+
+set "PATH=%GRAALVM_HOME%\bin;%PATH%"
+
+set "JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8"
+
+echo %JAVA_HOME%
 
 java -version
 
@@ -19,6 +23,7 @@ call lein.bat run
 echo Build test uberjar ...
 
 call lein.bat with-profile test0-uberjar do clean, uberjar
+
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo Build native test ...
@@ -42,6 +47,7 @@ del dtlv-test0
 echo Build main uberjar ...
 
 call lein.bat with-profile native-uberjar uberjar
+
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo Build native app ...
