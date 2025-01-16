@@ -1110,6 +1110,9 @@
    'e-first-datom
    'av-datoms
    'av-first-datom
+   'av-first-e
+   'ea-first-datom
+   'ea-first-v
    'v-datoms
    'size-filter
    'head-filter
@@ -1716,6 +1719,18 @@
 (defn- av-first-datom
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler av-first-datom)))
+
+(defn- av-first-e
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler av-first-e)))
+
+(defn- ea-first-datom
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler ea-first-datom)))
+
+(defn- ea-first-v
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler ea-first-v)))
 
 (defn- v-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

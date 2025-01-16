@@ -909,7 +909,7 @@
                                       (println \"ERROR:\" ex-message)))}})
           nil)"}]))
 
-(defn run []
+(defn run [& _]
   (loop []
     (let [message (try (read)
                        (catch java.io.EOFException _
@@ -962,6 +962,3 @@
             (do
               (write {"err" (str "unknown op:" (name op))})
               (recur))))))))
-
-(defn -main [& _]
-  (run))

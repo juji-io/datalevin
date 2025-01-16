@@ -8,9 +8,7 @@
 
 (use-fixtures :each db-fixture)
 
-;; TODO uberjar build hangs if this ns is included
-;; not include this in native test for now
-(pods/load-pod ["lein" "run" "-m" "pod.huahaiy.datalevin"])
+(pods/load-pod ["clj" "-Xpod"])
 
 (require '[pod.huahaiy.datalevin :as pd])
 

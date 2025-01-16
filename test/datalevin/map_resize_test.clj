@@ -15,17 +15,17 @@
         conn (d/create-conn
                dir {}
                {:kv-opts {:flags   (conj c/default-env-flags :nosync)
-                          :mapsize 10}})]
+                          :mapsize 1}})]
 
-    (dotimes [i 100000] (d/transact! conn [{:foo i}]))
-    (is (= 100000 (count (d/datoms @conn :eav))))
+    (dotimes [i 10000] (d/transact! conn [{:foo i}]))
+    (is (= 10000 (count (d/datoms @conn :eav))))
 
-    ;; this will blow through 10 MiB boundary
-    (dotimes [i 100000] (d/transact! conn [{:foo i}]))
-    (is (= 200000 (count (d/datoms @conn :eav))))
+    ;; this will blow through 1 MiB boundary
+    (dotimes [i 10000] (d/transact! conn [{:foo i}]))
+    (is (= 20000 (count (d/datoms @conn :eav))))
 
     (d/close conn)
-    #_(u/delete-files dir)))
+    (u/delete-files dir)))
 
 (deftest map-resize-clear-test
   (let [dir (u/tmp-dir (str "clear-test-" (UUID/randomUUID)))]

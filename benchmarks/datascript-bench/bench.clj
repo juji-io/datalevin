@@ -81,18 +81,16 @@
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"../..\"}
                   org.clojure/clojure   {:mvn/version \"1.12.0\"}
-                  ;; org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
-                  com.taoensso/nippy    {:mvn/version \"3.4.1\"}
+                  com.taoensso/nippy    {:mvn/version \"3.4.2\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.6\"}
-                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.11.0\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.3.0\"}
+                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.11.4\"}
+                  org.clojars.huahaiy/dtlvnative-macosx-x86_64 {:mvn/version \"0.11.4\"}
+                  org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.11.4\"}
+                  org.clojars.huahaiy/dtlvnative-linux-x86_64 {:mvn/version \"0.11.4\"}
+                  org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version \"0.11.4\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
-                  ;; org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.9.1\"}
-                  ;; org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu {:mvn/version \"0.9.1\"}
-                  ;; org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.9.1\"}
-                  ;; org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu {:mvn/version \"0.9.1\"}
-                  ;; org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.9.1\"}
                   }}"
                   )
 

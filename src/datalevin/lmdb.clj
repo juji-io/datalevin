@@ -87,6 +87,9 @@
     "return the number of items in the list of a key")
   (in-list? [db list-name k v k-type v-type]
     "return true if an item is in the value list of the key")
+  (near-list [db list-name k v k-type v-type]
+    "return the value buf that is equal to or greater than the given
+     value of the given key, return nil if not found")
   (list-range
     [db list-name k-range k-type v-range v-type]
     "Return a seq of key-values in the specified value range of the

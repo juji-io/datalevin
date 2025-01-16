@@ -336,9 +336,9 @@
                    {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]
-                     (map-indexed (fn [i ^String t]
-                                    [t i (.indexOf text t)])
-                                  (s/split text #"\s")))
+                               (map-indexed (fn [i ^String t]
+                                              [t i (.indexOf text t)])
+                                            (s/split text #"\s")))
           schema   {:a/string   {:db/valueType :db.type/string
                                  :db/fulltext  true}
                     :a/keyword  {:db/valueType :db.type/keyword}
@@ -448,4 +448,5 @@
         (is (= (set
                  (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
                (set vs)))
-        (d/close conn1)))))
+        (d/close conn1))
+      (u/delete-files dest-dir))))

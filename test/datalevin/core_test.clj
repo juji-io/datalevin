@@ -576,7 +576,8 @@
                     (sut/db conn1)
                     "fred")))
       (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
-      (sut/close conn1))))
+      (sut/close conn1))
+    (u/delete-files dir)))
 
 (deftest datalog-readme-test
   (let [dir  (u/tmp-dir (str "readme-test-" (UUID/randomUUID)))

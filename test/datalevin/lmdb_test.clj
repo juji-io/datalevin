@@ -526,6 +526,10 @@
     (is (not (l/in-list? lmdb "list" "a" 7 :string :long)))
     (is (l/in-list? lmdb "list" "b" 7 :string :long))
 
+    (is (nil? (l/near-list lmdb "list" "a" 7 :string :long)))
+    (is (= 5 (b/read-buffer
+               (l/near-list lmdb "list" "b" 4 :string :long) :long)))
+
     (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
     (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
 

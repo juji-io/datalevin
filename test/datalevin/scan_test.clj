@@ -452,6 +452,13 @@
 
     (is (= 3 (l/list-count lmdb "a" 1 :long))) ;; set behavior
     (is (l/in-list? lmdb "a" 8 17 :long :long))
+
+    (is (= 17 (b/read-buffer (l/near-list lmdb "a" 8 17 :long :long) :long)))
+    (is (= 17 (b/read-buffer (l/near-list lmdb "a" 8 16 :long :long) :long)))
+    (is (= 3 (b/read-buffer (l/near-list lmdb "a" 8 1 :long :long) :long)))
+    (is (nil? (l/near-list lmdb "a" 8 20 :long :long)))
+    (is (nil? (l/near-list lmdb "a" 9 17 :long :long)))
+
     (is (= [2 3 4] (l/get-list lmdb "a" 1 :long :long)))
 
     (l/del-list-items lmdb "a" 8 [17 12] :long :long)

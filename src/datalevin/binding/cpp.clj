@@ -446,6 +446,13 @@
   (.get cur ^BufVal (.-start-kp rtx) ^BufVal (.-start-vp rtx)
         DTLV/MDB_GET_BOTH))
 
+(defn- near-list*
+  [^Rtx rtx ^Cursor cur k kt v vt]
+  (l/list-range-info rtx :at-least k nil kt :at-least v nil vt)
+  (when (.get cur ^BufVal (.-start-kp rtx) ^BufVal (.-start-vp rtx)
+              DTLV/MDB_GET_BOTH_RANGE)
+    (.outBuf (.val cur))))
+
 (declare create-rw-txn reset-write-txn ->CppLMDB)
 
 (defn- up-db-size [^Env env]
@@ -929,6 +936,13 @@
         (list-count* rtx cur k kt)
         (raise "Fail to count list: " e {:dbi dbi-name :k k}))
       0))
+
+  (near-list [lmdb dbi-name k v kt vt]
+    (.check-ready lmdb)
+    (scan/scan
+      (near-list* rtx cur k kt v vt)
+      (raise "Fail to get an item that is near in a list: "
+             e {:dbi dbi-name :k k :v v})))
 
   (in-list? [lmdb dbi-name k v kt vt]
     (.check-ready lmdb)

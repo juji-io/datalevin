@@ -257,6 +257,9 @@
   (e-first-datom [this e] "Return the first datom with given e value")
   (av-datoms [this a v] "Return datoms with given a and v value")
   (av-first-datom [this a v] "Return the first datom with given a and value")
+  (ea-first-datom [this e a] "Return first datom with given e and a")
+  (ea-first-v [this e a] "Return first value with given e and a")
+  (av-first-e [this a v] "Return the first e of the given a and v")
   (v-datoms [this v] "Return datoms with given v, for ref attribute only")
   (size-filter
     [this index pred low-datom high-datom]
@@ -345,6 +348,13 @@
     (if (= g c/normal)
       (d/datom e (attrs (.-a r)) (.-v r))
       (gt->datom lmdb g))))
+
+(defn- avg-retrieved->v
+  [lmdb ^Retrieved r]
+  (let [g (.-g r)]
+    (if (= g c/normal)
+      (.-v r)
+      (:v (gt->datom lmdb g)))))
 
 (defn- ae-retrieved->datom
   [attrs v ^Retrieved r]
@@ -591,6 +601,13 @@
   [schema attrs-v]
   (not-any? #(identical? (-> % schema :db/cardinality) :db.cardinality/many)
             (mapv first attrs-v)))
+
+(defn- ea->r
+  [schema lmdb e a]
+  (when-let [aid (:db/aid (schema a))]
+    (when-let [^ByteBuffer bf (lmdb/near-list lmdb c/eav e aid :id :int)]
+      (when (= ^int aid ^int (b/read-buffer bf :int))
+        (b/read-buffer (.rewind bf) :avg)))))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts
          ->SamplingWork e-sample*)
@@ -886,12 +903,21 @@
             lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false)
             :av :id)))
 
-  (av-first-datom [_ a v]
-    (when-let [e (lmdb/get-value
-                   lmdb c/ave
-                   (datom->indexable schema (d/datom c/e0 a v) false)
-                   :av :id true)]
-      (d/datom e a v)))
+  (av-first-e [_ a v]
+    (lmdb/get-value
+      lmdb c/ave
+      (datom->indexable schema (d/datom c/e0 a v) false)
+      :av :id true))
+
+  (av-first-datom [this a v]
+    (when-let [e (.av-first-e this a v)] (d/datom e a v)))
+
+  (ea-first-datom [_ e a]
+    (when-let [r (ea->r schema lmdb e a)]
+      (avg-retrieved->datom lmdb attrs e r)))
+
+  (ea-first-v [_ e a]
+    (when-let [r (ea->r schema lmdb e a)] (avg-retrieved->v lmdb r)))
 
   (v-datoms [_ v]
     (mapv #(ae-retrieved->datom attrs v %)

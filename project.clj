@@ -6,7 +6,8 @@
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
-  [[babashka/babashka.pods "0.2.0"]
+  [
+   [babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "1.0.5"]
    [com.taoensso/nippy "3.4.2"]
@@ -52,7 +53,7 @@
   :profiles
   {:uberjar        {:main datalevin.main
                     :aot  [datalevin.main]}
-   :native-uberjar {:aot          [pod.huahaiy.datalevin],
+   :native-uberjar {:aot          [datalevin.main],
                     :uberjar-name "main.uberjar.jar"}
    :test0-uberjar  {:main           datalevin.test0
                     :aot            [datalevin.test0],

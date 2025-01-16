@@ -184,6 +184,15 @@
   (av-first-datom [_ a v]
     (cl/normal-request client :av-first-datom [db-name a v] writing?))
 
+  (av-first-e [_ a v]
+    (cl/normal-request client :av-first-e [db-name a v] writing?))
+
+  (ea-first-datom [_ e a]
+    (cl/normal-request client :ea-first-datom [db-name e a] writing?))
+
+  (ea-first-v [_ e a]
+    (cl/normal-request client :ea-first-v [db-name e a] writing?))
+
   (v-datoms [_ v]
     (cl/normal-request client :v-datoms [db-name v] writing?))
 
