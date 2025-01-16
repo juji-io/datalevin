@@ -31,7 +31,7 @@ echo Build native test ...
 
 call "%GRAALVM_HOME%\bin\native-image.cmd" ^
    "-R:MaxHeapSize=5g" ^
-   "-jar" "%CD%\target\test0.uberjar.jar" ^
+   "-jar" "target/test0.uberjar.jar" ^
    "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
    dtlv-test0
 
@@ -54,7 +54,7 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 echo Build native app ...
 
 call "%GRAALVM_HOME%\bin\native-image.cmd" ^
-  "-jar" "%CD%\target\main.uberjar.jar" ^
+  "-jar" "target/main.uberjar.jar" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
   dtlv
 
