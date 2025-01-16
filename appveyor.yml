@@ -19,8 +19,8 @@ clone_folder: C:\projects\datalevin
 
 environment:
   GRAALVM_HOME: C:\projects\datalevin\graalvm
-  JAVA_HOME: C:\projects\datalevin\graalvm
-  PATH: C:\projects\datalevin\graalvm\bin;%PATH%
+  JAVA_HOME: C:\Program Files\Java\jdk21
+  PATH: C:\Program Files\Java\jdk21\bin;%PATH%
 
 clone_script:
 - ps: >-
