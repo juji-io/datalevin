@@ -257,7 +257,7 @@
       (is (thrown? Exception
                    @(dc/transact-kv-async lmdb [[:put "a" (range 1000) 1]]))))
 
-    (u/delete-files dir)))
+    (when-not (u/windows?) (u/delete-files dir))))
 
 (deftest transact-arity-test
   (let [dir  (u/tmp-dir (str "lmdb-tx-arity-test-" (UUID/randomUUID)))
