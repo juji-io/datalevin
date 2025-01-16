@@ -4,9 +4,11 @@ version: "v-{build}"
 
 branches:
   only:
-    - master
+    - coll
+    # - master
 
-skip_non_tags: true
+skip_non_tags: false
+# skip_non_tags: true
 
 image: Visual Studio 2019
 
@@ -16,8 +18,7 @@ configuration:
 clone_folder: C:\projects\datalevin
 
 environment:
-  GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-22.3.1
-  DTVL_NATIVE_EXTRACT_DIR: C:\projects\datalevin
+  GRAALVM_HOME: C:\projects\datalevin\graalvm
 
 clone_script:
 - ps: >-
@@ -41,27 +42,25 @@ build_script:
 - cmd: >-
     call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
 
-    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.3.1/graalvm-ce-java11-windows-amd64-22.3.1.zip', 'graalvm.zip') }"
+    wget https://download.oracle.com/graalvm/23/latest/graalvm-jdk-23_windows-x64_bin.zip
+
+
+    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://download.oracle.com/graalvm/23/latest/graalvm-jdk-23_windows-x64_bin.zip', 'graalvm.zip') }"
 
     powershell -Command "if (Test-Path('graalvm')) { return } else { Expand-Archive graalvm.zip graalvm }"
 
-    powershell -Command "(New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.3.1/native-image-installable-svm-java11-windows-amd64-22.3.1.jar', 'native.jar')"
-
-    cd native
-
-    call script\compile.bat
+    call script\compile-native.bat
 
     7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip dtlv.exe
 
 artifacts:
-  - path: native\dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
+  - path: dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
 
-deploy:
-  provider: GitHub
-  auth_token:
-    secure: QIiuupmpAl2Y5kxVyFJTSDRIj/uKyXXE3PzARE//JY44zXEJ7vbqvhcftKq/dFdf
-  artifact: /.*\.zip/
-  force_update: true
-  on:
-    APPVEYOR_REPO_TAG: true
-# branch: master
+# deploy:
+#   provider: GitHub
+#   auth_token:
+#     secure: QIiuupmpAl2Y5kxVyFJTSDRIj/uKyXXE3PzARE//JY44zXEJ7vbqvhcftKq/dFdf
+#   artifact: /.*\.zip/
+#   force_update: true
+#   on:
+#     APPVEYOR_REPO_TAG: true
