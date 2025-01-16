@@ -56,9 +56,9 @@ task:
 task:
   name: MacOS ARM64 Build
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-monterey-base:latest
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+    image: ghcr.io/cirruslabs/macos-runner:sonoma
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: macos
   script: |

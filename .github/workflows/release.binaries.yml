@@ -1,17 +1,22 @@
 name: Build
 
+on: push
 # on: workflow_dispatch
-on:
-  workflow_dispatch:
-  release:
-    types:
-      - created
+# on:
+#   workflow_dispatch:
+#   release:
+#     types:
+#       - created
+
+env:
+  DTLV_ARCH: amd64
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        # os: [macos-13, ubuntu-20.04]
         os: [macos-latest, ubuntu-latest]
 
     steps:
@@ -24,7 +29,7 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '23'
 
       - name: Install Lein
         uses: knicknic/os-specific-run@v1.0.3
@@ -51,37 +56,33 @@ jobs:
           overwrite: true
 
       - name: Setup Graalvm
-        uses: DeLaGuardo/setup-graalvm@master
+        uses: graalvm/setup-graalvm@v1
         with:
-          graalvm-version: '22.3.1.java11'
-
-      - name: Install Native Image
-        run: |
-          gu install native-image
+          java-version: '23'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Native Datalevin
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: |
-            cd native
-            bash script/compile
+            export DTLV_OS=macos
+            bash script/compile-native
           linux: |
-            cd native
-            sudo bash script/setup-musl
-            bash script/compile-static
+            export DTLV_OS=linux
+            bash script/compile-native
 
       - name: Run Native Tests
         run: |
-          native/dtlv-test0
+          ./dtlv-test0
 
       - name: Zip Binary
         run: |
-          cd native
           7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
 
       - name: Upload Binary
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+          asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
           overwrite: true
