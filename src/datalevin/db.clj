@@ -1392,13 +1392,13 @@
                      (identical? op :db/retract))
                  (if-some [e (entid db e)]
                    (let [_      (validate-attr a entity)
-                         datoms (concat
-                                  (.subSet ^TreeSortedSet (:eavt db)
-                                           (datom e a nil tx0)
-                                           (datom e a nil txmax))
+                         datoms (concatv
                                   (s/slice (:store db) :eav
                                            (datom e a c/v0)
-                                           (datom e a c/vmax)))]
+                                           (datom e a c/vmax))
+                                  (.subSet ^TreeSortedSet (:eavt db)
+                                           (datom e a nil tx0)
+                                           (datom e a nil txmax)))]
                      (recur (reduce transact-retract-datom report datoms)
                             (concat (retract-components db datoms) entities)))
                    (recur report entities))
@@ -1406,16 +1406,16 @@
                  (or (identical? op :db.fn/retractEntity)
                      (identical? op :db/retractEntity))
                  (if-some [e (entid db e)]
-                   (let [e-datoms (concat
+                   (let [e-datoms (concatv
+                                    (s/e-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:eavt db)
                                              (datom e nil nil tx0)
-                                             (datom e nil nil txmax))
-                                    (s/e-datoms (:store db) e))
-                         v-datoms (concat
+                                             (datom e nil nil txmax)))
+                         v-datoms (concatv
+                                    (s/v-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)
-                                             (datom emax nil e txmax))
-                                    (s/v-datoms (:store db) e))]
+                                             (datom emax nil e txmax)))]
                      (recur (reduce transact-retract-datom report
                                     (concat e-datoms v-datoms))
                             (concat (retract-components db e-datoms) entities)))

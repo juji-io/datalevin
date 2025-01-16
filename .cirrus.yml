@@ -1,6 +1,5 @@
 env:
   LEIN_ROOT: "true"
-  GRAALVM_VERSION: "23"
   DTLV_ARCH: aarch64
   GITHUB_TOKEN: ENCRYPTED[!41f1e85b6e586455cca18744e840eb478625b1e76bdf38741704b504929b3115f541f73101393835ca625e2e9db295a2!]
 
@@ -9,8 +8,8 @@ task:
   arm_container:
     image: ubuntu:focal
     memory: 8G
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: linux
   script: |
@@ -52,14 +51,14 @@ task:
     chmod +x install
     ./install
 
-    bb --config ../.build/bb.edn release-artifact
+    bb --config .build/bb.edn release-artifact
 
 task:
   name: MacOS ARM64 Build
   macos_instance:
     image: ghcr.io/cirruslabs/macos-monterey-base:latest
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_PLATFORM: macos
   script: |
@@ -67,19 +66,15 @@ task:
     brew install leiningen
     lein run
 
-    cd native
     script/install-graalvm
 
-    export GRAALVM_HOME=$(pwd)/graalvm-ce-java11-${GRAALVM_VERSION}/Contents/Home
+    export GRAALVM_HOME=graalvm-jdk/Contents/Home
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
-    script/compile
+    script/compile-native
 
-    cd ..
-    native/dtlv-test0
-
-    cd native
+    ./dtlv-test0
 
     brew install p7zip
 
@@ -90,4 +85,4 @@ task:
 
     brew install borkdude/brew/babashka
 
-    bb --config ../.build/bb.edn release-artifact
+    bb --config .build/bb.edn release-artifact
