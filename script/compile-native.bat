@@ -4,15 +4,11 @@ if "%GRAALVM_HOME%"=="" (
     exit /b
 )
 
-echo %GRAALVM_HOME%
-
-set "JAVA_HOME=%GRAALVM_HOME%"
-
-set "PATH=%GRAALVM_HOME%\bin;%PATH%"
+echo GRAALVM_HOME %GRAALVM_HOME%
 
 set "JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8"
 
-echo %JAVA_HOME%
+echo JAVA_HOME %JAVA_HOME%
 
 java -version
 
