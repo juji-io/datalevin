@@ -1,3 +1,6 @@
+echo The current working directory is: %CD%
+
+dir %CD%
 
 if "%GRAALVM_HOME%"=="" (
     echo Please set GRAALVM_HOME
@@ -5,8 +8,6 @@ if "%GRAALVM_HOME%"=="" (
 )
 
 echo GRAALVM_HOME %GRAALVM_HOME%
-
-echo The current working directory is: %CD%
 
 dir %GRAALVM_HOME%\bin
 
