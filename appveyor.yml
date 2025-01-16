@@ -41,7 +41,7 @@ build_script:
 
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://download.oracle.com/graalvm/23/latest/graalvm-jdk-23_windows-x64_bin.zip', 'graalvm.zip')"
 
-    powershell -Command "Expand-Archive graalvm.zip graalvm"
+    powershell -Command "Expand-Archive -Path 'graalvm.zip' -DestinationPath 'graalvm' -Verbose"
 
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein.bat', 'lein.bat')"
 

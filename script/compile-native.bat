@@ -9,7 +9,7 @@ if "%GRAALVM_HOME%"=="" (
 
 echo GRAALVM_HOME %GRAALVM_HOME%
 
-dir "%GRAALVM_HOME%\bin"
+dir "%GRAALVM_HOME%"
 
 set "JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8"
 
