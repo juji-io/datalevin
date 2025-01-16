@@ -10,7 +10,7 @@ branches:
 skip_non_tags: false
 # skip_non_tags: true
 
-image: Visual Studio 2019
+image: Visual Studio 2022
 
 configuration:
 - Release
@@ -37,7 +37,7 @@ clone_script:
 
 build_script:
 - cmd: >-
-    call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+    call "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://download.oracle.com/graalvm/23/latest/graalvm-jdk-23_windows-x64_bin.zip', 'graalvm.zip')"
 
