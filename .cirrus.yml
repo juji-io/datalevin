@@ -60,7 +60,7 @@ task:
   # only_if: $CIRRUS_TAG != ''
   only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
-    DTLV_PLATFORM: macos
+    DTLV_OS: macos
   script: |
 
     brew install leiningen
