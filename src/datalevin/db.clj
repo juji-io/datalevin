@@ -1094,7 +1094,8 @@
 
 (declare local-transact-tx-data)
 
-(defn- retry-with-tempid [initial-report report es tempid upserted-eid]
+(defn- retry-with-tempid
+  [initial-report report es tempid upserted-eid tx-time]
   (if-some [eid (get (::upserted-tempids initial-report) tempid)]
     (raise "Conflicting upsert: " tempid " resolves"
            " both to " upserted-eid " and " eid
@@ -1106,7 +1107,7 @@
           report'  (-> initial-report
                        (assoc :tempids tempids')
                        (update ::upserted-tempids assoc tempid upserted-eid))]
-      (local-transact-tx-data report' es))))
+      (local-transact-tx-data report' es tx-time))))
 
 (def builtin-fn?
   #{:db.fn/call
@@ -1117,40 +1118,6 @@
     :db.fn/retractAttribute
     :db.fn/retractEntity
     :db/retractEntity})
-
-(defn- update-entity-time
-  [initial-es tx-time]
-  (loop [es     initial-es
-         new-es (transient [])]
-    (let [[entity & entities] es]
-      (cond
-        (empty? es)
-        (persistent! new-es)
-
-        (nil? entity)
-        (recur entities new-es)
-
-        (map? entity)
-        (recur entities (conj! new-es (assoc entity :db/updated-at tx-time)))
-
-        (sequential? entity)
-        (let [[op e _ _] entity]
-          (if (or (identical? op :db/retractEntity)
-                  (identical? op :db.fn/retractEntity))
-            (recur entities (conj! new-es entity))
-            (recur entities (-> new-es
-                                (conj! entity)
-                                (conj! [:db/add e :db/updated-at tx-time])))))
-
-        (datom? entity)
-        (let [e (d/datom-e entity)]
-          (recur entities (-> new-es
-                              (conj! entity)
-                              (conj! [:db/add e :db/updated-at tx-time]))))
-
-        :else
-        (raise "Bad entity at " entity ", expected map, vector, datom or entity"
-               {:error :transact/syntax, :tx-data entity})))))
 
 (defn flush-tuples [report]
   (let [db    (:db-after report)
@@ -1175,20 +1142,18 @@
       [] (::queued-tuples report))))
 
 (defn- local-transact-tx-data
-  ([initial-report initial-es]
-   (local-transact-tx-data initial-report initial-es false))
-  ([initial-report initial-es simulated?]
-   (let [tx-time         (System/currentTimeMillis)
-         initial-report' (-> initial-report
+  ([initial-report initial-es tx-time]
+   (local-transact-tx-data initial-report initial-es tx-time false))
+  ([initial-report initial-es tx-time simulated?]
+   (let [initial-report' (-> initial-report
                              (update :db-after -clear-tx-cache))
-         has-tuples?     (seq (-attrs-by (:db-after initial-report)
-                                         :db.type/tuple))
-         store           (.-store ^DB (:db-before initial-report))
-         initial-es'     (cond-> initial-es
-                           (:auto-entity-time? (s/opts store))
-                           (update-entity-time tx-time)
-                           has-tuples?
-                           (interleave (repeat ::flush-tuples)))
+         db              ^DB (:db-before initial-report)
+         initial-es'     (if (seq (-attrs-by db :db.type/tuple))
+                           (sequence
+                             (mapcat vector)
+                             initial-es (repeat ::flush-tuples))
+                           initial-es)
+         store           (.-store db)
          schema          (s/schema store)
          rp
          (loop [report initial-report'
@@ -1204,9 +1169,6 @@
                  (update :db-after update :max-tx u/long-inc))
 
              :let [[entity & entities] es]
-
-             ;; (nil? entity)
-             ;; (recur report entities)
 
              (identical? ::flush-tuples entity)
              (if (contains? report ::queued-tuples)
@@ -1239,7 +1201,8 @@
                  (if (and (tempid? old-eid)
                           (contains? tempids old-eid)
                           (not= upserted-eid (get tempids old-eid)))
-                   (retry-with-tempid initial-report report initial-es old-eid upserted-eid)
+                   (retry-with-tempid initial-report report initial-es old-eid
+                                      upserted-eid tx-time)
                    (recur (-> (allocate-eid tx-time report old-eid upserted-eid)
                               (update ::tx-redundant conjv
                                       (datom upserted-eid nil nil tx0)))
@@ -1339,7 +1302,8 @@
                                            (s/av-first-e store a v)))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
-                     (retry-with-tempid initial-report report initial-es e upserted-eid)
+                     (retry-with-tempid initial-report report initial-es e upserted-eid
+                                        tx-time)
                      (let [eid (or upserted-eid allocated-eid (next-eid db))]
                        (recur (allocate-eid tx-time report e eid)
                               (cons [op eid a v] entities)))))
@@ -1354,7 +1318,8 @@
                        tempid  (u/find #(not (contains? (::upserted-tempids report) %))
                                        tempids)]
                    (if tempid
-                     (retry-with-tempid initial-report report initial-es tempid upserted-eid)
+                     (retry-with-tempid initial-report report initial-es tempid
+                                        upserted-eid tx-time)
                      (raise "Conflicting upsert: " e " resolves to " upserted-eid
                             " via " entity {:error :transact/upsert})))
 
@@ -1498,19 +1463,51 @@
     (@de-entity->txs entity)
     [entity]))
 
+(defn- update-entity-time
+  [entity tx-time]
+  (cond
+    (map? entity)
+    [(assoc entity :db/updated-at tx-time)]
+
+    (sequential? entity)
+    (let [[op e _ _] entity]
+      (if (or (identical? op :db/retractEntity)
+              (identical? op :db.fn/retractEntity))
+        [entity]
+        [entity [:db/add e :db/updated-at tx-time]]))
+
+    (datom? entity)
+    (let [e (d/datom-e entity)]
+      [entity [:db/add e :db/updated-at tx-time]])
+
+    (nil? entity)
+    []
+
+    :else
+    (raise "Bad entity at " entity ", expected map, vector, datom or entity"
+           {:error :transact/syntax, :tx-data entity})))
+
+(defn- prepare-entities
+  [^DB db entities tx-time]
+  (let [aat #(assoc-auto-tempid db %)
+        uet #(update-entity-time % tx-time)]
+    (sequence
+      (if (:auto-entity-time? (s/opts (.-store db)))
+        (comp (mapcat expand-transactable-entity)
+           (map aat)
+           (mapcat uet))
+        (comp (mapcat expand-transactable-entity)
+           (map aat)))
+      entities)))
+
 (defn transact-tx-data
   [initial-report initial-es simulated?]
-  (when-not (or (nil? initial-es)
-                (sequential? initial-es))
+  (when-not (or (nil? initial-es) (sequential? initial-es))
     (raise "Bad transaction data " initial-es ", expected sequential collection"
            {:error :transact/syntax, :tx-data initial-es}))
-  (let [^DB db     (:db-before initial-report)
-        aat        #(assoc-auto-tempid db %)
-        initial-es (sequence
-                     (comp (mapcat expand-transactable-entity)
-                        (map aat))
-                     initial-es)
-        store      (.-store db)]
+  (let [^DB db  (:db-before initial-report)
+        store   (.-store db)
+        tx-time (System/currentTimeMillis)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
         (let [res                       (r/tx-data store initial-es simulated?)
@@ -1526,8 +1523,11 @@
         (catch Exception e
           (if (:resized (ex-data e))
             (throw e)
-            (local-transact-tx-data initial-report initial-es simulated?))))
-      (local-transact-tx-data initial-report initial-es simulated?))))
+            (let [entities (prepare-entities db initial-es tx-time)]
+              (local-transact-tx-data initial-report entities tx-time
+                                      simulated?)))))
+      (let [entities (prepare-entities db initial-es tx-time)]
+        (local-transact-tx-data initial-report entities tx-time simulated?)))))
 
 (defn tx-data->simulated-report
   [db tx-data]
