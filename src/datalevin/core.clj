@@ -1376,7 +1376,7 @@ See also: [[open-kv]], [[sync]]"}
 
 (def ^:no-doc kv-work-key (memoize kv-work-key*))
 
-(deftype AsyncKVTx [lmdb dbi-name txs k-type v-type cb prev-sync]
+(deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb prev-sync]
   IAsyncWork
   (work-key [_] (kv-work-key (l/dir lmdb)))
   (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))

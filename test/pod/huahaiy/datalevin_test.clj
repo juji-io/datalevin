@@ -1,4 +1,4 @@
-(ns pod.huahaiy.datalevin-test
+(ns ^:no-doc pod.huahaiy.datalevin-test
   (:require [datalevin.util :as u]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
