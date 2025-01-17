@@ -15,6 +15,15 @@
             "type": "org.joda.time.DateTime"
         },
         {
+            "type": "org.eclipse.collections.impl.set.sorted.mutable.TreeSortedSet",
+            "allDeclaredConstructors" : true,
+            "allPublicConstructors" : true,
+            "allDeclaredMethods" : true,
+            "allPublicMethods" : true,
+            "allPublicFields" : true,
+            "allDeclaredFields" : true
+        },
+        {
             "type": "java.lang.UnsatisfiedLinkError"
         },
         {

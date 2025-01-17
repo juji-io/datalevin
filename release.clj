@@ -4,7 +4,8 @@
 
 (def new-v (first *command-line-args*))
 
-(assert (re-matches #"\d+\.\d+\.\d+" (or new-v "")) "Use ./release.clj <new-version>")
+(assert (re-matches #"\d+\.\d+\.\d+" (or new-v ""))
+        "Use ./release.clj <new-version>")
 (println "Releasing version" new-v)
 
 (require '[clojure.string :as str])
@@ -23,7 +24,8 @@
 
 (defn sh [& args]
   (apply println "Running" (if (empty? *env*) "" (str :env " " *env*)) args)
-  (let [res (apply sh/sh (concat args [:env (merge (into {} (System/getenv)) *env*)]))]
+  (let [res (apply sh/sh
+                   (concat args [:env (merge (into {} (System/getenv)) *env*)]))]
     (if (== 0 (:exit res))
       (do
         (println (:out res))
@@ -32,27 +34,23 @@
         (println "Process" args "exited with code" (:exit res))
         (println (:out res))
         (println (:err res))
-        (throw (ex-info (str "Process" args "exited with code" (:exit res)) res))))))
+        (throw (ex-info
+                 (str "Process" args "exited with code" (:exit res)) res))))))
 
 (defn update-version []
   (println "\n\n[ Updating version number ]\n")
   (let [old-v    (current-version)
         old->new #(str/replace % old-v new-v)]
     (update-file "CHANGELOG.md"
-                 #(str/replace % "# WIP"
-                               (str "# " new-v " ("
-                                    (.toString (LocalDate/now))
-                                    ")")))
+                 #(str/replace % "# WIP" (str "# " new-v " ("
+                                              (.toString (LocalDate/now))
+                                              ")")))
     (update-file "project.clj" #(str/replace-first % old-v new-v))
     (update-file "test-jar/deps.edn" old->new)
     (update-file "test-jar/test-uber.sh" old->new)
-    (update-file "test-jar/project.clj" old->new)
     (update-file "doc/install.md" old->new)
     (update-file "doc/dtlv.md" old->new)
     (update-file "src/datalevin/constants.clj" old->new)
-    (update-file "native/project.clj"  old->new)
-    (update-file "native/test-jar/deps.edn"  old->new)
-    (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
 (defn make-commit []
@@ -62,13 +60,9 @@
       "project.clj"
       "test-jar/deps.edn"
       "test-jar/test-uber.sh"
-      "test-jar/project.clj"
       "doc/install.md"
       "doc/dtlv.md"
       "src/datalevin/constants.clj"
-      "native/project.clj"
-      "native/test-jar/deps.edn"
-      "native/README.md"
       "README.md")
 
   (sh "git" "commit" "-m" (str "Version " new-v))
@@ -91,13 +85,13 @@
   (sh "test-jar/test-uber.sh")
 
   (println "\n\n[ Testing native jar ]\n")
-  (sh "script/jar" :dir "native")
-  (sh "./test.sh" :dir "native/test-jar")
+  (sh "test-jar/test-native.sh")
 
   (println "\n\n[ Running native tests ]\n")
-  (sh "script/compile-local" :dir "native")
-  (sh "native/dtlv-test0")
-  (sh "native/dtlv-test1")
+  (sh "script/compile-native")
+  (sh "./dtlv-test0")
+  (sh "script/compile-native-test1")
+  (sh "./dtlv-test1")
   )
 
 (defn- str->json [s]
@@ -138,7 +132,6 @@
   (make-commit)
   (github-release)
   (sh "./deploy" :dir "script")
-  (sh "script/deploy" :dir "native")
   (System/exit 0)
   )
 

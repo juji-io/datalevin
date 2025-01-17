@@ -55,14 +55,19 @@ more declarative and composable than SQL, e.g. the automatic implicit joins seem
 to be its killer feature. In addition, the recursive rules feature of Datalog
 makes it suitable for graph processing and deductive reasoning.
 
-The feature set of Datomic® may not be a good fit for some use cases. One thing that may [confuse some users](https://vvvvalvalval.github.io/posts/2017-07-08-Datomic-this-is-not-the-history-youre-looking-for.html) is its [temporal features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To keep things simple and familiar, Datalevin behaves the same way as most other databases: when data are deleted, they are gone. Datalevin also follows the widely accepted principles of ACID, instead of introducing [unusual semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
+The feature set of Datomic® may not be a good fit for some use cases. One thing
+that may [confuse some
+users](https://vvvvalvalval.github.io/posts/2017-07-08-Datomic-this-is-not-the-history-youre-looking-for.html)
+is its [temporal
+features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To
+keep things simple and familiar, Datalevin behaves the same way as most other
+databases: when data are deleted, they are gone. Datalevin also follows the
+widely accepted principles of ACID, instead of introducing [unusual
+semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
 
-Datalevin started out as a port of
-[Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
-[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database) for
-persistence. We then added a [cost-based query optimizer](doc/query.md),
-resulting in query performance [competitive](benchmarks/JOB-bench) against SQL
-RDBMS such as PostgreSQL.
+Datalevin has a [novel cost-based query optimizer](doc/query.md), with a query
+performance [competitive](benchmarks/JOB-bench) with SQL RDBMS such as
+PostgreSQL.
 
 Datalevin can be used as a library, embedded in applications to manage state, e.g.
 used like SQLite; or it can run in a networked
@@ -84,7 +89,7 @@ engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
 [competitive](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench)
 search performance.
 
-Additional materials:
+Additional materials in chronological order:
 
 * [Competing for the JOB with a Triplestore](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
 * [If I had to Pick One: Datalevin](https://vimsical.notion.site/If-I-Had-To-Pick-One-Datalevin-be5c4b62cda342278a10a5e5cdc2206d)
@@ -112,7 +117,7 @@ Datalevin is aimed to be a versatile database.
 ### Use as a Datalog store
 
 In addition to [our API doc](https://cljdoc.org/d/datalevin/datalevin),
-since Datalevin has almost the same Datalog API as Datascript, which in turn has
+Datalevin has almost the same Datalog API as [Datascript](https://github.com/tonsky/datascript), which in turn has
 almost the same API as Datomic®, please consult the abundant tutorials, guides
 and learning sites available online to learn about the usage of Datomic® flavor
 of Datalog.
@@ -256,13 +261,11 @@ for EDN data.
 
 Please refer to the [API
 documentation](https://cljdoc.org/d/datalevin/datalevin) for more details.
-You may also consult online materials for Datascript or Datomic®, as the Datalog API is
-similar.
 
 ## :rocket: Status
 
 Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
+in production at [Juji](https://juji.io), among other companies.
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench),
@@ -278,9 +281,8 @@ here is how it looks.
 
 In all benchmarked queries, Datalevin is the fastest among the three tested
 systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
-Datomic do not. Datalevin also has a caching layer for index access.
-
-See [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench)
+Datomic do not. Datalevin also has a caching layer for index access. See
+[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench)
 for a detailed analysis of the results.
 
 We also compared Datalevin and PostgreSQL in handling complex queries, using
@@ -294,9 +296,8 @@ the average times:
 
 Datalevin is about 1.3X faster than PostgreSQL on average in running the complex
 queries in this benchmark. The gain is mainly in better query execution time due
-to higher quality of generated query plans.
-
-For more details, see [here](benchmarks/JOB-bench).
+to higher quality of generated query plans. For more details, see
+[here](benchmarks/JOB-bench).
 
 ## :earth_americas: Roadmap
 

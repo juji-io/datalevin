@@ -826,7 +826,7 @@
                           :closed-schema?    true
                           :auto-entity-time? true})]
     ;; TODO need to be more robust on Windows,
-    ;; occasionally fail to key-range-list-count
+    ;; occasionally fail to key-range-list-count for these none existent key
     (when-not (u/windows?)
       (is (nil? (d/q '[:find ?c .
                        :in $ ?e
