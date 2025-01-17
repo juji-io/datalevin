@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.15 (2025-01-17)
 
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
