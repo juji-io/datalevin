@@ -1,4 +1,4 @@
-(ns datalevin.test.db
+(ns ^:no-doc datalevin.test.db
   (:require
    [clojure.data]
    [clojure.test :as t :refer [is are deftest testing]]

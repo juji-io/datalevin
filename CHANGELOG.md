@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+### Changed
+- [Platform] Drop Java 8 support. Minimum JVM is now 11.
+
+### Improved
+- [Doc] Fix cljdoc build.
+- [Package] Exclude tests, test data, Java source files from releases.
+
 ## 0.9.15 (2025-01-17)
 
 ### Added

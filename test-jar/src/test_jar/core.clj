@@ -43,4 +43,5 @@
 
 (defn -main [& args]
   (run {})
-  (println "Native Test Succeeded!"))
+  (println "Test Succeeded!")
+  (System/exit 0))
