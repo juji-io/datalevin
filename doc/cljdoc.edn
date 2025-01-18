@@ -8,5 +8,4 @@
   ["Server/Client" {:file "doc/server.md"}]
   ["Query Engine" {:file "doc/query.md"}]
   ["Search Engine" {:file "doc/search.md"}]
-  ["Limitations" {:file "doc/limits.md"}]]
- :cljdoc/languages ["clj"]}
+  ["Limitations" {:file "doc/limits.md"}]]}
