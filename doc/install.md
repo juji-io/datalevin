@@ -21,10 +21,10 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 {:deps {datalevin/datalevin {:mvn/version "0.9.15"}}}
 ```
 
-This library supports Java 8 and above.
+This library supports Java 11 and above.
 
-**Performance Tip:**  For JVM version newer than 11, to obtain optimal
-performance, you may want to add the following JVM options:
+**Performance Tip:**  To obtain optimal performance, you may want to add the
+following JVM options:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED

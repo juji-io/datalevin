@@ -5,7 +5,7 @@ height="140"></img></p>
 💽 </p>
 <p align="center">
 <a href="https://cljdoc.org/d/datalevin/datalevin"><img
-src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on
+src="https://cljdoc.org/badge/8datalevin/datalevin" alt="datalevin on
 cljdoc"></img></a>
 <a href="https://clojars.org/datalevin"><img
 src="https://img.shields.io/clojars/v/datalevin.svg?color=success"
