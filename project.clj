@@ -55,20 +55,22 @@
                     :aot  [datalevin.main]}
    :native-uberjar {:aot          [datalevin.main],
                     :uberjar-name "main.uberjar.jar"}
-   :test0-uberjar  {:main           datalevin.test0
-                    :aot            [datalevin.test0],
-                    :dependencies   [[org.clojure/test.check]
-                                     [joda-time/joda-time]]
-                    :jar-inclusions [#"-test" #"\.test\." #"\.csv"
-                                     #"\.edn" #"\.txt"]
-                    :uberjar-name   "test0.uberjar.jar"}
-   :test1-uberjar  {:main           datalevin.test1
-                    :aot            [datalevin.test1],
-                    :dependencies   [[org.clojure/test.check]
-                                     [joda-time/joda-time]]
-                    :jar-inclusions [#"-test" #"\.test\." #"\.csv"
-                                     #"\.edn" #"\.txt"]
-                    :uberjar-name   "test1.uberjar.jar"}
+   :test0-uberjar  {:main         datalevin.test0
+                    :aot          [datalevin.test0],
+                    :dependencies [[org.clojure/test.check]
+                                   [joda-time/joda-time]]
+                    :jar-inclusions
+                    [#"_test" #"\/test\/" #"test\d" #"\/data\.json" #"all\.json"
+                     #"\.csv" #"\.edn" #"\.txt"]
+                    :uberjar-name "test0.uberjar.jar"}
+   :test1-uberjar  {:main         datalevin.test1
+                    :aot          [datalevin.test1],
+                    :dependencies [[org.clojure/test.check]
+                                   [joda-time/joda-time]]
+                    :jar-inclusions
+                    [#"_test" #"\/test\/" #"test\d" #"\/data\.json" #"all\.json"
+                     #"\.csv" #"\.edn"  #"\.txt"]
+                    :uberjar-name "test1.uberjar.jar"}
    :dev            {:main datalevin.test0
                     :dependencies
                     [[org.clojure/test.check]
@@ -82,7 +84,7 @@
              "--add-opens=java.base/java.nio=ALL-UNNAMED"
              "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
   :javac-options ["-target" "11" "-source" "11"]
-  :jar-exclusions [#"-test" #"\.test\." #"^data\.json" #"all\.json"
+  :jar-exclusions [#"_test" #"\/test\/" #"test\d" #"\/data\.json" #"all\.json"
                    #"\.csv" #"\.edn" #"\.java"
                    #"\.md" #"\.txt"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]

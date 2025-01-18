@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Doc] Remove test namespaces from cljdoc.
+
+
 ## 0.9.16 (2025-01-17)
 
 ### Changed
