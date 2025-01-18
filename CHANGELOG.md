@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.16 (2025-01-17)
 
 ### Changed
 - [Platform] Drop Java 8 support. Minimum JVM is now 11.
