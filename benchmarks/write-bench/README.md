@@ -1,4 +1,4 @@
-# Write Benchmark
+# Write Benchmark (WIP)
 
 The purpose of this benchmark is to plot the write throughput and latency under
 various conditions in Datalevin. Hopefully, this gives users some reference data

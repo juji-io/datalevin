@@ -1,6 +1,7 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
+   [datalevin.constants :as c]
    [clojure.string :as s])
   (:import
    [java.util.concurrent Semaphore]
@@ -70,7 +71,9 @@
   (let [kv?      (s/starts-with? (name f) "kv")
         kvdb     (when kv?
                    (doto (d/open-kv (str base-dir "max-write-db-" f "-" batch)
-                                    {:mapsize 60000})
+                                    {:mapsize 60000
+                                     :flags   (conj c/default-env-flags :nosync)
+                                     })
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/transact-kv-async kvdb max-write-dbi txs
@@ -84,7 +87,8 @@
                    (d/get-conn (str base-dir "max-write-db-" f "-" batch)
                                {:k {:db/valueType :db.type/uuid}
                                 :v {:db/valueType :db.type/uuid}}
-                               {:kv-opts {:mapsize 60000}}))
+                               {:kv-opts {:mapsize 60000
+                                          }}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
