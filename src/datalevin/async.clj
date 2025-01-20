@@ -1,8 +1,6 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
   the load, the bigger the batch"
-  (:require
-   [clojure.stacktrace :as stt])
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
@@ -18,11 +16,6 @@
   (do-work [_]
     "Actually do the work, result will be in the future returned by exec.
     If there's an exception, it will be thrown when deref the future.")
-  (pre-batch [_]
-    "Preparation before the batch. Should handle its own exception, for
-    the system will ignore it.")
-  (post-batch [_]
-    "Cleanup after the batch. Should handle its own exception.")
   (combine [_]
     "Return a function that takes a collection of this work and combine them
      into one. Or return nil if there's no need to combine.")
@@ -77,13 +70,9 @@
         ^ConcurrentLinkedQueue items (.-items wq)
         first-work                   (.-fw wq)]
     (locking items
-      (try (pre-batch first-work)
-           (catch Exception _ #_(stt/print-stack-trace e)))
       (if-let [cmb (combine first-work)]
         (combined-work cmb items (.-stage wq))
-        (individual-work items))
-      (try (post-batch first-work)
-           (catch Exception _ #_(stt/print-stack-trace e))))))
+        (individual-work items)))))
 
 (defn- new-workqueue
   [work]

@@ -188,9 +188,6 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
-  (turn-off-sync [db] "write in nosync mode")
-  (turn-on-sync [db] "write in sync mode")
-  (sync? [db] "return false if in nosync mode")
   (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
   (abort-transact-kv [db] "abort the explicit read/write rtx")
@@ -200,7 +197,8 @@
     [db dbi-name txs k-type]
     [db dbi-name txs k-type v-type]
     "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
-  (sync [db] "force synchronous flush to disk")
+  (sync [db] [db force]
+    "force synchronous flush to disk if force (int) is non-zero, otherwise respect env flags")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]

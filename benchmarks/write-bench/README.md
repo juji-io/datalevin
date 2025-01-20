@@ -5,58 +5,93 @@ various conditions in Datalevin. Hopefully, this gives users some reference data
 points to help choosing the right transaction function and the right data batch
 size for specific use cases.
 
-Datalevin supports these transaction functions for Key Value DB:
+## Setup
 
-* `transact-kv-async`
-* `transact-kv`
+The benchmark is conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores,
+64GB RAM, 1TB SSD. The OS is Ubuntu 20.04.1, kernel 5.15.0, running OpenJDK
+version "21.0.5" 2024-10-15, and Clojure version is 1.12.0.
 
-And the following for Datalog DB:
+To avoid exhausting system resources, the number of asynchronous write requests
+in flight is always capped at 1K using a Semaphore.
 
-* `transact-async`
-* `transact`
-* `transact!`
+## Measures
 
-In all transaction functions, we only use Datalevin's default write setting,
-i.e. the safest ACID write setting that flushes data to disk when commit. For
-now, the faster, albeit less safe write conditions, such as `:mapasync`,
-`:nometasync`, `:nosync`, `:writemap`, and so on, are not tested in this
-benchmark. For Datalog write, the faster `init-db` and `fill-db` functions that
-directly load prepared datoms are not tested in this benchmark either, as we are
-only interested in the transaction of raw data.
+For every one million writes, a set of measures are taken:
 
-There are two main tasks, one is pure write in batch write condition, another is
-half read half write at the same time.
+* Time (seconds), time since benchmark run starts.
+* Throughput (writes/second), average throughput at the moment.
+* Write Latency (milliseconds), average latency of transact function calls.
+* Commit Latency (milliseconds), average latency of transaction commits.
 
-## Pure Write
+The results are written into a CSV file.
 
-This task writes two random UUID strings as the key, and a random UUID string as
-the value. So each write has a 72 bytes key and a 36 bytes value.
-
-These data are written in batches, one batch at a time. We vary the batch size
-to show the change of write throughput and latency. To avoid exhausting system
-resources, the number of asynchronous write requests in flight is capped at 1K
-at a time.
-
-Since there's no upper limit on the batch size, we arbitrarily set the maximal
-batch size to be 100K. In each benchmark run, we write to an empty DB as fast as
-we can for an hour, with batch sizes of 1, 10, 100, 1k, 10k, and 100k,
-respectively. For example, the command below runs benchmark for
-`transact-kv-async` with batch size 10, and save the results in
-`kv-async-10.csv`:
+For example, the command below runs benchmark for `transact-kv-async` with batch
+size 10, and save the results in `kv-async-10.csv`:
 
 ```bash
- timeout 3600s clj -Xwrite :batch 10 :f kv-async > kv-async-10.csv
+time clj -Xwrite :base-dir \"/tmp/test/\" :batch 10 :f kv-async > kv-10-async.csv
 ```
 
-For every 100K writes, the following metrics are collected during the benchmark
-run:
-
-* Throughout: the average number of writes per second so far.
-* Write Latency: the average latency of the transaction function call, in
-  milliseconds.
-* Commit Latency: the average latency of receiving the write success
-  acknowledgment, in milliseconds. As mentioned, the acknowledged writes are
-  guaranteed to be durable.
+The final wall clock time, system time and user time are also reported.
 
 
-## Read/Write
+## Key Value Transaction
+
+### Tasks
+
+#### Random Write
+
+This task writes a 8 bytes even integer between 1 and 200 millions as the key
+and a random UUID string as the value. The pure write task is to write **100
+millions** such data to an empty DB. The keys are all even numbers, so the next
+task can have 50% chance of overwrite existing keys. The keys are also then
+shuffled, so it does not artificially benefit LMDB, which write siginificantly
+faster when keys are sorted.
+
+#### Mixed Read/Write
+
+With 100 millions items in DB, we then do 20 million additional operations, with
+10 million reads and 10 million writes interleaved. The read/write keys are
+random number between 1 and 200 millions. So initally write has a 50% chance of
+being an addition, and 50% chance of being an overwrite. The chance of being an
+overwrite increases slightly as more items are written.
+
+### Write Conditions
+
+Datalevin supports these transaction functions for key value store:
+
+* `transact-kv`
+* `transact-kv-async`
+
+In addition to the default durable write condition, Datalevin supports some
+faster, albeit less durable write flags:
+
+* `:nosync`
+* `:nometasync`
+* `:writemap` + `:mapasync`
+
+Write data in batches generrally improve throughput, so we vary the batch sizes
+as well: 1, 10, 100, 1k, and 10k.
+
+We will show how combinations of these conditions affect throughput and latency.
+
+### Results
+
+## Datalog Transaction
+
+We only test durable writes for Datalog transaction. Because it does a lot more
+work than just writing key values, the differences among different env flags in
+Datalog transactions are not as pronounced as in KV stores.
+
+### Write Conditions
+
+Tested the following functions for Datalog DB:
+
+* `transact!`
+* `transact-async`
+
+`transact` is just the block version of `transact-async` so it is not tested.
+There are two faster `init-db` and `fill-db` functions that directly load
+prepared datoms and by-pass the expensive process of turning data into datoms.
+These are not tested in this benchmark either, as we are only interested in
+transactions of raw data.

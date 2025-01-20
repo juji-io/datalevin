@@ -1019,7 +1019,7 @@
       (:db.type/bigint :bigint)   (<= c/min-bigint x c/max-bigint)
       (:db.type/bigdec :bigdec)   (<= c/min-bigdec x c/max-bigdec)
       (:db.type/long :db.type/ref
-                     :long)       (int? x)
+                     :long :id)   (int? x)
       (:db.type/float :float)     (<= Float/MIN_VALUE x Float/MAX_VALUE)
       (:db.type/double :double)   (<= Double/MIN_VALUE x Double/MAX_VALUE)
       (:db.type/bytes :bytes)     (bytes? x)

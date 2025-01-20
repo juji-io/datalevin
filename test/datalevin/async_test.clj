@@ -19,8 +19,6 @@
   IAsyncWork
   (work-key [_] :work1)
   (do-work [_]  num)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] nil))
 
@@ -28,8 +26,6 @@
   IAsyncWork
   (work-key [_] :work2)
   (do-work [_]  num)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] nil))
 
@@ -37,8 +33,6 @@
   IAsyncWork
   (work-key [_] :work3)
   (do-work [_]  num)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] nil))
 
@@ -59,26 +53,13 @@
   IAsyncWork
   (work-key [_] :err-work)
   (do-work [_]  (/ 1 0))
-  (pre-batch [_])
-  (post-batch [_])
-  (combine [_] nil)
-  (callback [_] nil))
-
-(defrecord ErrPreWork []
-  IAsyncWork
-  (work-key [_] :err-pre-work)
-  (do-work [_] :something)
-  (pre-batch [_] (/ 1 0))
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] nil))
 
 (deftest exception-test
   (let [executor (a/get-executor)
-        fut1     (a/exec executor (ErrWork.))
-        fut2     (a/exec executor (ErrPreWork.))]
+        fut1     (a/exec executor (ErrWork.))]
     (is (thrown? Exception (deref fut1)))
-    (is (= :something (deref fut2)))
     (a/shutdown-executor)))
 
 (defn- last-combine [coll] (last coll))
@@ -87,8 +68,6 @@
   IAsyncWork
   (work-key [_] :last-combine-work)
   (do-work [_] num)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] last-combine)
   (callback [_] nil))
 
@@ -118,8 +97,6 @@
   IAsyncWork
   (work-key [_] :combine-work)
   (do-work [_] v)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] concat-combine)
   (callback [_] nil))
 
@@ -146,8 +123,6 @@
   IAsyncWork
   (work-key [_] :cb-work)
   (do-work [_] num)
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] cb))
 

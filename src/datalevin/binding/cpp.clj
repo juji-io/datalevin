@@ -472,7 +472,6 @@
                   ^BufVal start-vp-w
                   ^BufVal stop-vp-w
                   write-txn
-                  sync?
                   writing?
                   ^:unsynchronized-mutable meta]
 
@@ -484,7 +483,7 @@
   (mark-write [_]
     (->CppLMDB
       env info pools dbis kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w write-txn sync? true meta))
+      stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
   (withMeta [this m] (set! meta m) this)
@@ -514,7 +513,7 @@
               (.close-rtx ^Rtx (.next iter))
               (.remove iter)
               (recur))))
-        (.sync env)
+        (.sync env 1)
         (.close env)
         (when (@info :temp?) (u/delete-files (@info :dir)))
         nil)))
@@ -672,10 +671,6 @@
           (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
-  (turn-off-sync [_] (vreset! sync? false))
-  (turn-on-sync [_] (vreset! sync? true))
-  (sync? [_] @sync?)
-
   (open-transact-kv [this]
     (.check-ready this)
     (try
@@ -745,7 +740,8 @@
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " e {}))))))
 
-  (sync [_] (.sync env))
+  (sync [_] (.sync env 1))
+  (sync [_ force] (.sync env force))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -1068,11 +1064,7 @@
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
 
-(defn- create-rw-txn
-  [^CppLMDB lmdb]
-  (if @(.-sync? lmdb)
-    (Txn/create (.-env lmdb))
-    (Txn/createNoSync (.-env lmdb))))
+(defn- create-rw-txn [^CppLMDB lmdb] (Txn/create (.-env lmdb)))
 
 (defn- reset-write-txn
   [^CppLMDB lmdb]
@@ -1155,7 +1147,6 @@
                                (new-bufval c/+max-key-size+)
                                (new-bufval c/+max-key-size+)
                                (volatile! nil)
-                               (volatile! true)
                                false
                                nil)]
        (swap! l/lmdb-dirs conj dir)

@@ -1263,8 +1263,6 @@
   IAsyncWork
   (work-key [_] (->> (db-name store) hash (str "sampling") keyword))
   (do-work [_] (sampling store))
-  (pre-batch [_])
-  (post-batch [_])
   (combine [_] nil)
   (callback [_] nil))
 

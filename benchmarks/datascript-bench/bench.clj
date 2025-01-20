@@ -83,7 +83,7 @@
                   org.clojure/clojure   {:mvn/version \"1.12.0\"}
                   com.taoensso/nippy    {:mvn/version \"3.4.2\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
-                  me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
+                  me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.2.1\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.3.0\"}
                   org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.11.4\"}
                   org.clojars.huahaiy/dtlvnative-macosx-x86_64 {:mvn/version \"0.11.4\"}
@@ -151,9 +151,9 @@
 
 (def default-versions
   [
-   ["latest" "datomic"]
-   ["latest" "datascript"]
-   ["0.9.17" "datalevin"]
+   ;; ["latest" "datomic"]
+   ;; ["latest" "datascript"]
+   ;; ["0.9.17" "datalevin"]
    ["latest" "datalevin"]
    ])
 

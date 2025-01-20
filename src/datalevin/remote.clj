@@ -250,14 +250,9 @@
     (cl/normal-request client :close-transact [db-name] true))
 
   ILMDB
-  (turn-off-sync [_]
-    (cl/normal-request client :turn-off-sync [db-name] writing?))
-  (turn-on-sync [_]
-    (cl/normal-request client :turn-on-sync [db-name] writing?))
-  (sync? [_]
-    (cl/normal-request client :sync? [db-name] writing?))
-  (sync [_]
-    (cl/normal-request client :sync [db-name] writing?))
+  (sync [this] (.sync this 1))
+  (sync [_ force]
+    (cl/normal-request client :sync [db-name force] writing?))
 
   IAdmin
   (re-index [_ schema opts]
@@ -345,14 +340,15 @@
   (entries [_ dbi-name]
     (cl/normal-request client :entries [db-name dbi-name] writing?))
 
-  (turn-off-sync [_]
-    (cl/normal-request client :turn-off-sync [db-name] writing?))
-  (turn-on-sync [_]
-    (cl/normal-request client :turn-on-sync [db-name] writing?))
-  (sync? [_]
-    (cl/normal-request client :sync? [db-name] writing?))
-  (sync [_]
-    (cl/normal-request client :sync [db-name] writing?))
+  ;; (turn-off-sync [_]
+  ;;   (cl/normal-request client :turn-off-sync [db-name] writing?))
+  ;; (turn-on-sync [_]
+  ;;   (cl/normal-request client :turn-on-sync [db-name] writing?))
+  ;; (sync? [_]
+  ;;   (cl/normal-request client :sync? [db-name] writing?))
+  (sync [this] (.sync this 1))
+  (sync [_ force]
+    (cl/normal-request client :sync [db-name force] writing?))
 
   (open-transact-kv [db]
     (cl/normal-request client :open-transact-kv [db-name])

@@ -1101,14 +1101,10 @@ Only usable for debug output.
 
 (def ^:no-doc dl-work-key (memoize dl-work-key*))
 
-(deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb prev-sync]
+(deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb]
   IAsyncWork
   (work-key [_] (->> (.-store ^DB @conn) s/db-name dl-work-key))
   (do-work [_] (transact! conn tx-data tx-meta))
-  (pre-batch [_] (vreset! prev-sync (l/sync? store)) (l/turn-off-sync store))
-  (post-batch [_]
-    (when @prev-sync (l/turn-on-sync store))
-    (l/sync store))
   (combine [_] dl-tx-combine)
   (callback [_] cb))
 
@@ -1119,8 +1115,7 @@ Only usable for debug output.
                  (.-store fw)
                  (into [] (comp (map #(.-tx-data ^AsyncDLTx %)) cat) coll)
                  (.-tx-meta fw)
-                 (.-cb fw)
-                 (.-prev-sync fw))))
+                 (.-cb fw))))
 
 (defn transact-async
   "Datalog transaction that returns a future immediately. The future will
@@ -1144,11 +1139,9 @@ Only usable for debug output.
    (a/exec (a/get-executor)
            (let [store (.-store ^DB @conn)]
              (if (instance? DatalogStore store)
-               (->AsyncDLTx conn store tx-data tx-meta callback
-                            (volatile! (l/sync? store)))
+               (->AsyncDLTx conn store tx-data tx-meta callback)
                (let [lmdb (.-lmdb ^Store store)]
-                 (->AsyncDLTx conn lmdb tx-data tx-meta callback
-                              (volatile! (l/sync? lmdb)))))))))
+                 (->AsyncDLTx conn lmdb tx-data tx-meta callback)))))))
 
 (defn transact
   "Datalog transaction that returns an already realized future that contains
@@ -1376,14 +1369,10 @@ See also: [[open-kv]], [[sync]]"}
 
 (def ^:no-doc kv-work-key (memoize kv-work-key*))
 
-(deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb prev-sync]
+(deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb]
   IAsyncWork
   (work-key [_] (kv-work-key (l/dir lmdb)))
   (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
-  (pre-batch [_] (vreset! prev-sync (l/sync? lmdb)) (l/turn-off-sync lmdb))
-  (post-batch [_]
-    (when @prev-sync (l/turn-on-sync lmdb))
-    (l/sync lmdb))
   (combine [_] kv-tx-combine)
   (callback [_] cb))
 
@@ -1395,8 +1384,7 @@ See also: [[open-kv]], [[sync]]"}
                  (into [] (comp (map #(.-txs ^AsyncKVTx %)) cat) coll)
                  (.-k-type fw)
                  (.-v-type fw)
-                 (.-cb fw)
-                 (.-prev-sync fw))))
+                 (.-cb fw))))
 
 (defn transact-kv-async
   "Asynchronously update key-value DB, insert or delete key value pairs,
@@ -1421,8 +1409,7 @@ See also: [[open-kv]], [[sync]]"}
    (transact-kv-async this dbi-name txs k-type v-type nil))
   ([this dbi-name txs k-type v-type callback]
    (a/exec (a/get-executor)
-           (->AsyncKVTx this dbi-name txs k-type v-type callback
-                        (volatile! (l/sync? this))))))
+           (->AsyncKVTx this dbi-name txs k-type v-type callback))))
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}

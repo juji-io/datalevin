@@ -2,8 +2,13 @@
   (:require
    [datalevin.core :as d]
    [datalevin.constants :as c]
-   [clojure.string :as s])
+   [clojure.string :as s]
+   [next.jdbc :as jdbc]
+   [next.jdbc.sql :as sql]
+   [clojure.java.io :as io]
+   )
   (:import
+   [java.util Random]
    [java.util.concurrent Semaphore]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -16,6 +21,8 @@
 
 ;; total number of writes
 (def total 100000000)
+
+(def keyspace (* 2 total))
 
 ;; print numbers every this number of writes
 (def report 1000000)
@@ -66,39 +73,70 @@
           (vswap! write-time + (- (System/currentTimeMillis) before)))
         (recur (inc counter))))))
 
+(def id (volatile! 0))
+
 (defn write
   [{:keys [base-dir batch f]}]
   (let [kv?      (s/starts-with? (name f) "kv")
+        dl?      (s/starts-with? (name f) "dl")
+        sql?     (s/starts-with? (name f) "sql")
         kvdb     (when kv?
-                   (doto (d/open-kv (str base-dir "max-write-db-" f "-" batch)
+                   (doto (d/open-kv (str base-dir "/max-write-db-" f "-" batch)
                                     {:mapsize 60000
-                                     :flags   (conj c/default-env-flags :nosync)
+                                     :flags   (-> c/default-env-flags
+                                                  ;; (conj :writemap)
+                                                  ;; (conj :mapasync)
+                                                  ;; (conj :nosync)
+                                                  )
                                      })
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/transact-kv-async kvdb max-write-dbi txs
-                                        :uuid :uuid measure))
+                                        :id :string measure))
         kv-sync  (fn [txs measure]
                    (measure (d/transact-kv kvdb max-write-dbi txs
-                                           :uuid :uuid)))
+                                           :id :string)))
         kv-add   (fn [^FastList txs]
-                   (.add txs [:put (random-uuid) (random-uuid)]))
-        conn     (when (not kv?)
-                   (d/get-conn (str base-dir "max-write-db-" f "-" batch)
-                               {:k {:db/valueType :db.type/uuid}
-                                :v {:db/valueType :db.type/uuid}}
+                   (.add txs [:put (vswap! id + 2) (str (random-uuid))]))
+        conn     (when dl?
+                   (d/get-conn (str base-dir "/max-write-db-" f "-" batch)
+                               {:k {:db/valueType :db.type/long}
+                                :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 60000
+                                          ;; :flags   (-> c/default-env-flags
+                                          ;;              ;; (conj :writemap)
+                                          ;;              ;; (conj :nosync)
+                                          ;;              ;; (conj :nometasync)
+                                          ;;              )
                                           }}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
-                   (.add txs {:k (random-uuid) :v (random-uuid)}))
+                   (.add txs {:k (vswap! id + 2) :v (str (random-uuid))}))
+        sql-conn (when sql?
+                   (let [conn (jdbc/get-connection {:dbtype "sqlite"
+                                                    :dbname (str base-dir "/sqlite-" batch)})]
+                     (jdbc/execute! conn ["PRAGMA synchronous=FULL"])
+                     (jdbc/execute! conn
+                                    ["CREATE TABLE IF NOT EXISTS my_table (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     k INTEGER, v TEXT)"])
+                     conn))
+        sql-tx   (fn [txs measure]
+                   (measure (sql/insert-multi! sql-conn :my_table (vec txs))))
+        sql-add  (fn [^FastList txs]
+                   (.add txs {:k (vswap! id + 2) :v (str (random-uuid))}))
         tx-fn    (case f
                    kv-async kv-async
                    kv-sync  kv-sync
                    dl-async dl-async
-                   dl-sync  dl-sync)
-        add-fn   (if kv? kv-add dl-add)]
+                   dl-sync  dl-sync
+                   sql-tx   sql-tx)
+        add-fn   (cond
+                   kv?  kv-add
+                   dl?  dl-add
+                   sql? sql-add)]
     (max-write-bench batch tx-fn add-fn)
     (when kvdb (d/close-kv kvdb))
-    (when conn (d/close conn))))
+    (when conn (d/close conn))
+    (when sql-conn (.close sql-conn))))

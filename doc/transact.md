@@ -26,35 +26,31 @@ LMDB suggests that:
 
 ## Batching of Transaction Data
 
-By default, each write transaction flushes to disk when it commits, which is an
-expensive operation even with today's SSD disks.
+By default, each write transaction in LMDB flushes to disk when it commits,
+which is an expensive operation even with today's SSD disks. In addition, LMDB
+use read-only memory map by default.
 
 Batching transacation data together reduces the number of such expensive commit
 calls, which enhances write throughput. It is therefore recommended to
 batch transaction data in user code if possible.
 
-## Env Flags
+## Non-durable Env Flags
 
-Datalevin adopts the same default write condition as that of LMDB. That is, the
-write transactions by default are guranteed to be durable, i.e. no risk of data
-loss or DB corruption in case of system crash. As mentioned above, this fully
-safe write condition has some cost since syncing to disk is expensive.
+Datalevin write transactions by default are guranteed to be durable, i.e. no
+risk of data loss or DB corruption in case of system crash. As mentioned above,
+this fully safe durable write condition has some performance implications since
+syncing to disk is expensive.
 
-Datalevin supports several faster, albeit less safe write conditions by passing in
-some Env flags when openning the DB. The follwing table lists these flags and
-their implications.
+Datalevin supports some faster, albeit less durable write conditions. By passing
+in some Env Flags when openning the DB, significant write speed up can be
+achieved, with some caveats. The follwing table lists these flags and their
+implications.
 
-| Flags | Meaning | Implication |
+| Flags | Meaning | Typical Speedup | Implication |
 | ----- | ----- | ----- |
-| :writemap | Writeable memory map | Buggy native code may accidentally overwrite memory to corrupt DB; File system failure may crash process; On OS don't support sparse files, e.g. OSX, underlaying storage will be immediately fully preallocated to specificed map size. |
-| :mapasync | use asynchronous msync when :writemap is used | DB may be corrupted when system crashes |
-| :nometasync | don't fsync metapage when commit | The committed data in the last transaction may be lost when system crashes |
-| :nosync | don't fsync when commit | DB may be corrupted when system crashes |
-
-These flags normally improve write speed signficantly. User can then manually
-call `sync` function to force flusing to disk at appropriate time. Combining
-these techniques appropriately may achieve desirable write speed and safety for
-some use cases.
+| :nometasync | Only sync data pages when commit | up to 2X | Last transaction may be lost at untimely system crashes, but integrity of DB is retained |
+| :nosync | Don't fsync when commit | 5X - 15X | OS is responsible for syncing the data. Untimely system crash may render the DB corrupted. |
+| :writemap + :mapasync | Use writeable memory map and asynchronous commit | 5X - 15X | Untimely system crash may render the DB corrupted; Buggy external code may accidentally overwrite DB memory; Some OS fully preallocates the disk to the specified map size. |
 
 Here are some examples of passing the env flags:
 
@@ -65,14 +61,43 @@ Here are some examples of passing the env flags:
 ;; Pass :nosync to my-kvdb KV store
 (d/open-kv "/tmp/my-kvdb" {:flags (conj c/defaultl-env-flags :nosync)))})
 
-;; Set :temp? true for a KV store automaticaly adds :nosync, this DB will also
-;; be deleted on JVM exit.
+;; Set :temp? true for a KV store automaticaly adds :nosync,
+;; this DB will also be deleted on graceful JVM exit.
 (d/open-kv "/tmp/tmp-kvdb" {:temp? true))})
 
-;; Pass :nometasync to testdb Datalog store
-(d/get-conn "/tmp/testdb" {} {:kv-opts {:flags (conj c/default-env-flags :nometasync)}})
-
+;; Pass :writemap + :mapasync to testdb Datalog store
+(d/get-conn "/tmp/testdb" {}
+            {:kv-opts {:flags (-> c/default-env-flags
+                                  (conj :writemap)
+                                  (conj :mapasync))}})
 ```
+
+Setting these flags improves write speed signficantly, users can then manually
+call `sync` function at appropriate time to force flusing to disk in application
+code. Timely backups may also migigate some potential data loss. Combining these
+techniques may achieve desirable write speed and durability trade-off.
+
+## Asynchronous Durable Transaction
+
+If a user wants to retain the default durability gurantee but get a higher
+write throughput, Datalevin provides a `transact-kv-async` function for
+asynchronous transaction in the KV store. This function returns a future that is
+realized when data are flushed to disk. An auto-batching mechanism is designed to
+automatically batch transaction data when this function is called. The batching
+is adaptive to write load. The higher the load, the bigger the batch size. Write
+throughput is typically 2X - 3X higher than `transact-kv` in the default
+durable condition.
+
+Similarly, for Datalog store, `transact-async` can be used for auto-batching.
+`transact` function also use asynchronous transaction, but it blocks until the
+future is realized. One can call a sequence of `transact-async`, followed by a
+`transact` to achieve good batching effect and determinstic commit at the same
+time.
+
+Auto-batching in asynchronous transaction has some overhead, as it relies on
+JVM's concurrency facilities. It is still important to mauanlly batch
+transaction data as much as possible in user code, as the effect of auto batching
+and manual batching compounds nicely.
 
 ## Explicit Synchronous Transaction
 
@@ -92,24 +117,6 @@ Rollback from within the transaction can be done with `abort-transact-kv` and
 
 Datalog functions such as `transact!` use `with-transaction` internally.
 
-## Asynchronous Transaction
-
-Datalevin provides `transact-kv-async` function for asynchronous transaction in
-the KV store. This function returns a future that is realized when data is
-committed.
-
-An auto-batching mechanism is designed to automatically batch
-transaction data when this function is called. The batching is adaptive to write
-load. The higher the load, the bigger the batch size. So write throughput is
-higher than `transact-kv`.
-
-Similarly, for Datalog store, `transact-async` can be used for auto-batching.
-`transact` function also use asynchronous transaction, but it blocks until the
-future is realized.
-
-One can call a sequence of `transact-async`, followed by a `transact` to achive
-good batching effect and determinstic commit at the same time.
-
 ## Transaction Functions in Datalog Store
 
 In addition to `with-transaction`, transaction functions can be used in Datalog
@@ -127,7 +134,9 @@ limitations, e.g. except for built-in ones, normal Clojure vars are not
 accessible. We will address these limitations in the future.
 
 `:db.fn/call` is another way to call a transaction function, which does not
-store the function in the database, so this is usable in embedded mode, where that function is available in user code to call and that function can be a regular Clojure function.
+store the function in the database, so this is usable in embedded mode, where
+that function is available in user code to call and that function can be a
+regular Clojure function.
 
 For usage examples, see tests in `datalevin.test.transact`.
 
@@ -242,7 +251,8 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 ;    :db/id 1}
 ```
 
-For more examples have a look at the [tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L45-L116).
+For more examples have a look at the
+[tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L45-L116).
 
 This Entity API is new and can be improved. For example, it does not currently
 resolve lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel

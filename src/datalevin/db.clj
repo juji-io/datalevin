@@ -536,7 +536,7 @@
     (:db.type/long :db.type/ref) (long v)
     :db.type/float               (float v)
     :db.type/double              (double v)
-    (:db.type/bytes :bytes)      (bytes v)
+    (:db.type/bytes :bytes)      (if (bytes? v) v (byte-array v))
     (:db.type/keyword :keyword)  (keyword v)
     (:db.type/symbol :symbol)    (symbol v)
     (:db.type/boolean :boolean)  (boolean v)

@@ -23,8 +23,8 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 This library supports Java 11 and above.
 
-**Performance Tip:**  To obtain optimal performance, you may want to add the
-following JVM options:
+**Performance Tip:**  To obtain better performance (about 5% to 20%), you may
+want to add the following JVM options:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED

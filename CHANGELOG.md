@@ -1,10 +1,25 @@
 # Change Log
 
+## WIP
+
+## Added
+- [KV] `set-env-flags` and `get-env-flags`, so users may change the env flags
+  after the DB is open. This is useful for adjusting transaction durability
+  settings on the fly.
+
+## Fixed
+- [KV] Type validation and coercion for `:bytes`.
+
+## Improved
+- [Feature] Streamline async transactions so it respects env flags.
+- [Datalog] More accurate sample change ratio computation.
+- [Benchmark] Add [write benchmarks](benchmarks/write-bench) to show write performance
+  under various conditions.
+
 ## 0.9.17 (2025-01-17)
 
 ### Improved
 - [Doc] Remove test namespaces from cljdoc.
-
 
 ## 0.9.16 (2025-01-17)
 
@@ -19,7 +34,7 @@
 
 ### Added
 - [KV] `transanct-kv-async` function to return a future and transact in batches
-  to enhance write throughput (3X-10X higher throughput in heavy write
+  to enhance write throughput (2.5X or more higher throughput in heavy write
   condition compared with `transact-kv`). Batch size is automatically adjusted
   to the write workload: the higher the load, the larger the batch. Howver,
   manual batching of transaction data is still helpful, as the effects of
@@ -34,7 +49,7 @@
 - [Datalog] Both `transact` and `transact-async` are also changed to use the
   same adaptive batching transaction mechanism to enhance write throughout.
 - [Datalog] Reduce default `sample-processing-interval` to 10 seconds, so
-  samples are more update to date. Each invocation will do less work, or no work
+  samples are more up to date. Each invocation will do less work, or no work
   , based on a change ratio, controlled by a dynamic var `sample-change-ratio`,
   default is `0.1`, i.e. resample if 10 percent of an attribute's values
   changed.

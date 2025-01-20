@@ -696,9 +696,16 @@
   "validate data during transact"
   (let [sc  {:company {:db/valueType :db.type/string}
              :id      {:db/valueType :db.type/uuid}
+             :raw     {:db/valueType :db.type/bytes}
              :code    {:db/valueType :db.type/long}}
         dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (d/empty-db dir sc {:validate-data? true})]
+    (is (thrown-with-msg?
+          Exception #"Invalid data, expecting"
+          (d/db-with db [{:db/id -1 :company (byte-array [1]) :raw (byte-array [1 2])}])))
+    (is (thrown-with-msg?
+          Exception #"Invalid data, expecting"
+          (d/db-with db [{:db/id -1 :company "IBM" :raw 1 :code 1}])))
     (is (thrown-with-msg?
           Exception #"Invalid data, expecting"
           (d/db-with db [{:db/id -1 :company "IBM" :id "ibm" :code 1}])))

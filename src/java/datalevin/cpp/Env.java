@@ -61,13 +61,13 @@ public class Env {
     }
 
     /**
-     * Force sync to disk
+     * sync to disk, non-zero force will force a synchronous flush. Otherwise,
+     * respect env flags.
      */
-    public void sync() {
+    public void sync(final int force) {
         if (closed) {
             return;
         }
-        final int force = 1;
         Util.checkRc(DTLV.mdb_env_sync(env, force));
     }
 

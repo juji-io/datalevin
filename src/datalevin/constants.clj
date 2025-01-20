@@ -262,7 +262,7 @@
 
 (def ^:no-doc kv-value-types
   #{:keyword :symbol :string :boolean :long :double :float :instant :uuid
-    :bytes :bigint :bigdec :data})
+    :bytes :bigint :bigdec :data :id})
 
 ;; server / client
 
