@@ -71,6 +71,13 @@ public class Env {
         Util.checkRc(DTLV.mdb_env_sync(env, force));
     }
 
+    /**
+     * Set flags, non-zero onOff set the flags . Otherwise, clear the flags.
+     */
+    public void setFlags(final int toChange, final int onOff) {
+        Util.checkRc(DTLV.mdb_env_set_flags(env, toChange, onOff));
+    }
+
     public void setMapSize(long size) {
         Util.checkRc(DTLV.mdb_env_set_mapsize(env, size));
     }

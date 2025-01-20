@@ -962,3 +962,6 @@
             (do
               (write {"err" (str "unknown op:" (name op))})
               (recur))))))))
+
+(defn -main [& _]
+  (run))

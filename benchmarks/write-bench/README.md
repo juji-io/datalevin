@@ -8,8 +8,8 @@ size for specific use cases.
 ## Setup
 
 The benchmark is conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores,
-64GB RAM, 1TB SSD. The OS is Ubuntu 20.04.1, kernel 5.15.0, running OpenJDK
-version "21.0.5" 2024-10-15, and Clojure version is 1.12.0.
+64GB RAM, 1TB SSD. The OS is Debian 12.9, kernel 6.1.0-28-amd64, running OpenJDK
+version "17.0.13" 2024-10-15, and Clojure version is 1.12.0.
 
 To avoid exhausting system resources, the number of asynchronous write requests
 in flight is always capped at 1K using a Semaphore.
@@ -44,16 +44,14 @@ The final wall clock time, system time and user time are also reported.
 This task writes a 8 bytes even integer between 1 and 200 millions as the key
 and a random UUID string as the value. The pure write task is to write **100
 millions** such data to an empty DB. The keys are all even numbers, so the next
-task can have 50% chance of overwrite existing keys. The keys are also then
-shuffled, so it does not artificially benefit LMDB, which write siginificantly
-faster when keys are sorted.
+task can have 50% chance of overwrite existing keys.
 
 #### Mixed Read/Write
 
 With 100 millions items in DB, we then do 20 million additional operations, with
 10 million reads and 10 million writes interleaved. The read/write keys are
 random number between 1 and 200 millions. So initally write has a 50% chance of
-being an addition, and 50% chance of being an overwrite. The chance of being an
+being an addition and 50% chance of being an overwrite. The chance of being an
 overwrite increases slightly as more items are written.
 
 ### Write Conditions
@@ -79,9 +77,9 @@ We will show how combinations of these conditions affect throughput and latency.
 
 ## Datalog Transaction
 
-We only test durable writes for Datalog transaction. Because it does a lot more
-work than just writing key values, the differences among different env flags in
-Datalog transactions are not as pronounced as in KV stores.
+Because a Datalog transaction does a lot more work than just writing key values,
+the differences among different env flags in Datalog transactions are not as
+pronounced as in KV stores. We only test durable writes for Datalog transaction.
 
 ### Write Conditions
 
@@ -90,8 +88,13 @@ Tested the following functions for Datalog DB:
 * `transact!`
 * `transact-async`
 
-`transact` is just the block version of `transact-async` so it is not tested.
+`transact` is just the blocked version of `transact-async` so it is not tested.
 There are two faster `init-db` and `fill-db` functions that directly load
 prepared datoms and by-pass the expensive process of turning data into datoms.
 These are not tested in this benchmark either, as we are only interested in
 transactions of raw data.
+
+Similar to KV tasks above, every write transacts an entitiy of two attributes,
+one is a long integer, marked as `:db.unique/identity`, and the other an UUID
+string. 100 millions such entities are writen first, then 20 million mixed query
+and write are conducted. Same measures are also taken.

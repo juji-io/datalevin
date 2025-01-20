@@ -8,13 +8,14 @@
   settings on the fly.
 
 ## Fixed
+- [Platform] Clojure compiler adds `java.util.SequencedCollection` automatically
+  when compiled on JDK 21 and above, which does not exist in earlier JDK.
+  Compile library with JDK 17 instead.
 - [KV] Type validation and coercion for `:bytes`.
 
 ## Improved
 - [Feature] Streamline async transactions so it respects env flags.
 - [Datalog] More accurate sample change ratio computation.
-- [Benchmark] Add [write benchmarks](benchmarks/write-bench) to show write performance
-  under various conditions.
 
 ## 0.9.17 (2025-01-17)
 

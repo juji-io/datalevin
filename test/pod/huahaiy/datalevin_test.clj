@@ -8,7 +8,8 @@
 
 (use-fixtures :each db-fixture)
 
-(pods/load-pod ["clj" "-Xpod"])
+(pods/load-pod ["lein" "run" "-m" "pod.huahaiy.datalevin"])
+;; (pods/load-pod ["clj" "-Xpod"])
 
 (require '[pod.huahaiy.datalevin :as pd])
 
