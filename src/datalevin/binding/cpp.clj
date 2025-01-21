@@ -98,7 +98,7 @@
   [v]
   (reduce-kv
     (fn [s i k]
-      (if (not= 0 (bit-and i v))
+      (if (not= 0 (bit-and ^int i ^int v))
         (conj s k)
         s))
     #{} env-flag-map))
