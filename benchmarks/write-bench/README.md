@@ -98,3 +98,6 @@ Similar to KV tasks above, every write transacts an entitiy of two attributes,
 one is a long integer, marked as `:db.unique/identity`, and the other an UUID
 string. 100 millions such entities are writen first, then 20 million mixed query
 and write are conducted. Same measures are also taken.
+
+In addition, we also tested Sqlite with the same tasks in the default durable
+transaction mode.

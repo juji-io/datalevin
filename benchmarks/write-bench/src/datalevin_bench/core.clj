@@ -102,13 +102,7 @@
                    (d/get-conn (str base-dir "/max-write-db-" f "-" batch)
                                {:k {:db/valueType :db.type/long}
                                 :v {:db/valueType :db.type/string}}
-                               {:kv-opts {:mapsize 60000
-                                          ;; :flags   (-> c/default-env-flags
-                                          ;;              ;; (conj :writemap)
-                                          ;;              ;; (conj :nosync)
-                                          ;;              ;; (conj :nometasync)
-                                          ;;              )
-                                          }}))
+                               {:kv-opts {:mapsize 60000}}))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn (seq txs) nil)))
         dl-add   (fn [^FastList txs]
@@ -116,7 +110,6 @@
         sql-conn (when sql?
                    (let [conn (jdbc/get-connection {:dbtype "sqlite"
                                                     :dbname (str base-dir "/sqlite-" batch)})]
-                     (jdbc/execute! conn ["PRAGMA synchronous=FULL"])
                      (jdbc/execute! conn
                                     ["CREATE TABLE IF NOT EXISTS my_table (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
