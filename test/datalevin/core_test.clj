@@ -439,6 +439,8 @@
         lmdb (sut/open-kv dir)]
     (sut/open-dbi lmdb "misc")
 
+    (is (= c/default-env-flags (sut/get-env-flags lmdb)))
+
     (sut/transact-kv
       lmdb
       [[:put "misc" :datalevin "Hello, world!"]

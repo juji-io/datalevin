@@ -15,7 +15,7 @@
 
 ## Improved
 - [Feature] Streamline async transactions so it respects env flags.
-- [Datalog] More accurate sample change ratio computation.
+- [Datalog] Reduce default sample change ratio to `0.05`.
 
 ## 0.9.17 (2025-01-17)
 

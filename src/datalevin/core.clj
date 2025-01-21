@@ -1213,8 +1213,7 @@ Only usable for debug output.
    for the db file. Default is 128. It may induce slowness if too big a
    number of DBIs are created, as a linear scan is used to look up a DBI.
   * `:flags` is a set of keywords corresponding to LMDB environment flags,
-   e.g. `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so
-   on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
+   e.g. `:rdonly-env`, `:nosubdir`, and so on. See [[set-env-flags]].
   * `:temp?` a boolean, indicating if this db is temporary, if so, the file
    will be deleted on JVM exit.
   * `:client-opts` is the option map passed to the client if `dir` is a
@@ -1410,6 +1409,38 @@ See also: [[open-kv]], [[sync]]"}
   ([this dbi-name txs k-type v-type callback]
    (a/exec (a/get-executor)
            (->AsyncKVTx this dbi-name txs k-type v-type callback))))
+
+
+(def ^{:arglists '([db ks on-off])
+       :doc      "Set LMDB environment flags. `ks` is a set of keywords, when `on-off` is truthy, these flags are set, otherwise, they are cleared. These are the keywords:
+
+         * `:fixedmap`, mmap at a fixed address (experimental)
+
+         * `:nosubdir`, no environment directory, DB is just a file
+
+         * `:nosync`, don't fsync after commit
+
+         * `:rdonly-env`, read only DB
+
+         * `:nometasync`, don't fsync metapage after commit
+
+         * `:writemap`, use writable mmap
+
+         * `:mapasync`, use asynchronous msync when `:writemap` is used
+
+         * `:notls`, tie reader locktable slots to txn objects instead of to threads, set in Datalevin by default
+
+         * `:nolock`, don't do any locking, caller must manage their own locks
+
+         * `:nordahead`, don't do readahead (no effect on Windows), set in Datalevin by default
+
+         * `:nomeminit`, don't initialize malloc'd memory before writing to datafile "}
+  set-env-flags l/set-env-flags)
+
+(def ^{:arglists '([db])
+       :doc      "Get LMDB environment flags that are currently in effect. Return a
+set of keywords. See [[set-env-flags]] for their meanings."}
+  get-env-flags l/get-env-flags)
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}

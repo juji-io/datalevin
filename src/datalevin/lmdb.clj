@@ -197,6 +197,10 @@
     [db dbi-name txs k-type]
     [db dbi-name txs k-type v-type]
     "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
+  (set-env-flags [db ks on-off]
+    "Set env flags, ks are flags to be changed, on-off is true to set, false to clear.")
+  (get-env-flags [db]
+    "return the set of flags that are set")
   (sync [db] [db force]
     "force synchronous flush to disk if force (int) is non-zero, otherwise respect env flags")
   (get-value

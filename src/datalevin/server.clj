@@ -1094,6 +1094,8 @@
    'open-transact
    'close-transact
    'abort-transact
+   'set-env-flags
+   'get-env-flags
    'sync
    'fetch
    'populated?
@@ -1967,10 +1969,18 @@
           kv-store (get-kv-store server db-name)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (l/abort-transact-kv kv-store)
         (write-message skey {:type :command-complete})))))
+
+(defn- get-env-flags
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler get-env-flags)))
+
+(defn- set-env-flags
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler set-env-flags)))
 
 (defn- sync
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1980,8 +1990,8 @@
           kv-store (get-kv-store server db-name)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (l/sync kv-store force)
         (write-message skey {:type :command-complete})))))
 

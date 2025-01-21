@@ -72,10 +72,22 @@ public class Env {
     }
 
     /**
-     * Set flags, non-zero onOff set the flags . Otherwise, clear the flags.
+     * Set flags, non-zero onOff set the flags. Otherwise, clear the flags.
      */
     public void setFlags(final int toChange, final int onOff) {
         Util.checkRc(DTLV.mdb_env_set_flags(env, toChange, onOff));
+    }
+
+
+    /**
+     * Get flags.
+     */
+    public int getFlags() {
+        IntPointer fPtr = new IntPointer(1);
+        Util.checkRc(DTLV.mdb_env_get_flags(env, fPtr));
+        int res = (int) fPtr.get();
+        fPtr.close();
+        return res;
     }
 
     public void setMapSize(long size) {

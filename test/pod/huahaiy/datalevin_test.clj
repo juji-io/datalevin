@@ -1,5 +1,6 @@
 (ns ^:no-doc pod.huahaiy.datalevin-test
   (:require [datalevin.util :as u]
+            [datalevin.constants :as c]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
             [datalevin.test.core :as tdc :refer [db-fixture]]
@@ -9,6 +10,7 @@
 (use-fixtures :each db-fixture)
 
 (pods/load-pod ["lein" "run" "-m" "pod.huahaiy.datalevin"])
+;; This doesn't work on Java 17.
 ;; (pods/load-pod ["clj" "-Xpod"])
 
 (require '[pod.huahaiy.datalevin :as pd])
@@ -284,6 +286,10 @@
         misc-table "misc-test-table"
         date-table "date-test-table"]
     (is (not (pd/closed-kv? db)))
+    (is (= c/default-env-flags (pd/get-env-flags db)))
+    (pd/set-env-flags db #{:nosync} true)
+    (is (= (conj c/default-env-flags :nosync) (pd/get-env-flags db)))
+
     (pd/open-dbi db misc-table)
     (pd/open-dbi db date-table)
     (pd/transact-kv

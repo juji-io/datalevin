@@ -38,52 +38,70 @@
   (k [_] (.outBuf kp))
   (v [_] (.outBuf vp)))
 
-(defprotocol IFlag
-  (value [this flag-key]))
+(defn- flag-value
+  "flag key to int value, cover all flags"
+  [k]
+  (case k
+    :fixedmap   DTLV/MDB_FIXEDMAP
+    :nosubdir   DTLV/MDB_NOSUBDIR
+    :rdonly-env DTLV/MDB_RDONLY
+    :writemap   DTLV/MDB_WRITEMAP
+    :nometasync DTLV/MDB_NOMETASYNC
+    :nosync     DTLV/MDB_NOSYNC
+    :mapasync   DTLV/MDB_MAPASYNC
+    :notls      DTLV/MDB_NOTLS
+    :nolock     DTLV/MDB_NOLOCK
+    :nordahead  DTLV/MDB_NORDAHEAD
+    :nomeminit  DTLV/MDB_NOMEMINIT
 
-(deftype Flag []
-  IFlag
-  (value  [_ flag-key]
-    (case flag-key
-      :fixedmap   DTLV/MDB_FIXEDMAP
-      :nosubdir   DTLV/MDB_NOSUBDIR
-      :rdonly-env DTLV/MDB_RDONLY
-      :writemap   DTLV/MDB_WRITEMAP
-      :nometasync DTLV/MDB_NOMETASYNC
-      :nosync     DTLV/MDB_NOSYNC
-      :mapasync   DTLV/MDB_MAPASYNC
-      :notls      DTLV/MDB_NOTLS
-      :nolock     DTLV/MDB_NOLOCK
-      :nordahead  DTLV/MDB_NORDAHEAD
-      :nomeminit  DTLV/MDB_NOMEMINIT
+    :cp-compact DTLV/MDB_CP_COMPACT
 
-      :cp-compact DTLV/MDB_CP_COMPACT
+    :reversekey DTLV/MDB_REVERSEKEY
+    :dupsort    DTLV/MDB_DUPSORT
+    :integerkey DTLV/MDB_INTEGERKEY
+    :dupfixed   DTLV/MDB_DUPFIXED
+    :integerdup DTLV/MDB_INTEGERDUP
+    :reversedup DTLV/MDB_REVERSEDUP
+    :create     DTLV/MDB_CREATE
 
-      :reversekey DTLV/MDB_REVERSEKEY
-      :dupsort    DTLV/MDB_DUPSORT
-      :integerkey DTLV/MDB_INTEGERKEY
-      :dupfixed   DTLV/MDB_DUPFIXED
-      :integerdup DTLV/MDB_INTEGERDUP
-      :reversedup DTLV/MDB_REVERSEDUP
-      :create     DTLV/MDB_CREATE
+    :nooverwrite DTLV/MDB_NOOVERWRITE
+    :nodupdata   DTLV/MDB_NODUPDATA
+    :current     DTLV/MDB_CURRENT
+    :reserve     DTLV/MDB_RESERVE
+    :append      DTLV/MDB_APPEND
+    :appenddup   DTLV/MDB_APPENDDUP
+    :multiple    DTLV/MDB_MULTIPLE
 
-      :nooverwrite DTLV/MDB_NOOVERWRITE
-      :nodupdata   DTLV/MDB_NODUPDATA
-      :current     DTLV/MDB_CURRENT
-      :reserve     DTLV/MDB_RESERVE
-      :append      DTLV/MDB_APPEND
-      :appenddup   DTLV/MDB_APPENDDUP
-      :multiple    DTLV/MDB_MULTIPLE
-
-      :rdonly-txn DTLV/MDB_RDONLY)))
+    :rdonly-txn DTLV/MDB_RDONLY))
 
 (defn- kv-flags
   [flags]
   (if (seq flags)
-    (let [flag (Flag.)]
-      (reduce (fn [r f] (bit-or ^int r ^int f))
-              0 (map #(value ^Flag flag %) flags)))
+    (reduce (fn [r f] (bit-or ^int r ^int f))
+            0 (mapv flag-value flags))
     (int 0)))
+
+(defonce env-flag-map
+  {0x01      :fixedmap
+   0x4000    :nosubdir
+   0x10000   :nosync
+   0x20000   :rdonly-env
+   0x40000   :nometasync
+   0x80000   :writemap
+   0x100000  :mapasync
+   0x200000  :notls
+   0x400000  :nolock
+   0x800000  :nordahead
+   0x1000000 :nomeminit})
+
+(defn- env-flag-keys
+  [v]
+  (reduce-kv
+    (fn [s i k]
+      (if (not= 0 (bit-and i v))
+        (conj s k)
+        s))
+    #{} env-flag-map))
 
 (defn- put-bufval
   [^BufVal vp k kt]
@@ -739,6 +757,10 @@
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " e {}))))))
+
+  (set-env-flags [_ ks on-off] (.setFlags env (kv-flags ks) (if on-off 1 0)))
+
+  (get-env-flags [_] (env-flag-keys (.getFlags env)))
 
   (sync [_] (.sync env 1))
   (sync [_ force] (.sync env force))

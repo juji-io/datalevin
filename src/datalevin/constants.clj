@@ -393,7 +393,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Change ratio of an attribute's values, beyond which re-sampling will be done"}
-  sample-change-ratio 0.1)
+  sample-change-ratio 0.05)
 
 ;; search engine
 

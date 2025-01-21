@@ -1,6 +1,6 @@
 (ns ^:no-doc pod.huahaiy.datalevin
   "Implement babashka pod"
-  (:refer-clojure :exclude [read read-string])
+  (:refer-clojure :exclude [sync read read-string])
   (:require
    [bencode.core :as bencode]
    [sci.core :as sci]
@@ -340,6 +340,13 @@
    (when-let [d (get-kv db)] (d/stat d dbi-name))))
 
 (defn entries [db dbi-name] (when-let [d (get-kv db)] (d/entries d dbi-name)))
+
+(defn sync [db] (when-let [d (get-kv db)] (d/sync d)))
+
+(defn get-env-flags [db] (when-let [d (get-kv db)] (d/get-env-flags d)))
+
+(defn set-env-flags [db ks on-off]
+  (when-let [d (get-kv db)] (d/set-env-flags d ks on-off)))
 
 (defn open-transact-kv [{:keys [::kv-db] :as db}]
   (when-let [d (get @kv-dbs kv-db)]
@@ -792,6 +799,9 @@
    'stat                      stat
    'entries                   entries
    'open-transact-kv          open-transact-kv
+   'sync                      sync
+   'set-env-flags             set-env-flags
+   'get-env-flags             get-env-flags
    'close-transact-kv         close-transact-kv
    'abort-transact-kv         abort-transact-kv
    'open-transact             open-transact

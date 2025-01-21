@@ -102,12 +102,6 @@
             "type": "datalevin.binding.cpp.DBI"
         },
         {
-            "type": "datalevin.binding.cpp.Flag"
-        },
-        {
-            "type": "datalevin.binding.cpp.IFlag"
-        },
-        {
             "type": "datalevin.binding.cpp.KV"
         },
         {

@@ -20,6 +20,10 @@
         store (sut/open-kv dir)]
     (is (instance? datalevin.remote.KVStore store))
 
+    (is (= c/default-env-flags (l/get-env-flags store)))
+    (l/set-env-flags store #{:nosync} true)
+    (is (= (conj c/default-env-flags :nosync) (l/get-env-flags store)))
+
     (l/open-dbi store "a")
     (l/open-dbi store "b")
     (l/open-dbi store "c" {:key-size (inc Long/BYTES)
@@ -133,8 +137,8 @@
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)
               pred (i/inter-fn [kv]
-                               (let [^long k (dc/read-buffer (dc/k kv) :long)]
-                                 (< 10 k 20)))
+                     (let [^long k (dc/read-buffer (dc/k kv) :long)]
+                       (< 10 k 20)))
               fks  (range 11 20)
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)

@@ -340,12 +340,12 @@
   (entries [_ dbi-name]
     (cl/normal-request client :entries [db-name dbi-name] writing?))
 
-  ;; (turn-off-sync [_]
-  ;;   (cl/normal-request client :turn-off-sync [db-name] writing?))
-  ;; (turn-on-sync [_]
-  ;;   (cl/normal-request client :turn-on-sync [db-name] writing?))
-  ;; (sync? [_]
-  ;;   (cl/normal-request client :sync? [db-name] writing?))
+  (set-env-flags [_ ks on-off]
+    (cl/normal-request client :set-env-flags [db-name ks on-off] writing?))
+
+  (get-env-flags [_]
+    (cl/normal-request client :get-env-flags [db-name] writing?))
+
   (sync [this] (.sync this 1))
   (sync [_ force]
     (cl/normal-request client :sync [db-name force] writing?))

@@ -23,9 +23,10 @@
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir
-                        {:spill-opts {:spill-threshold 50}
-                         :flags      (conj c/default-env-flags :nosync)})]
+        lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
+
+    (l/set-env-flags lmdb #{:nosync} true)
+    (is (= (l/get-env-flags lmdb) (conj c/default-env-flags :nosync)))
 
     (is (= c/version (:version (l/opts lmdb))))
 
