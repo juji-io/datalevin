@@ -26,7 +26,7 @@
 
 (def pod-ns "pod.huahaiy.datalevin")
 
-(def debug? true)
+(def debug? false)
 
 (defn debug [& args]
   (when debug?
