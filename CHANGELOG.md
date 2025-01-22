@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.18 (2025-01-20)
 
 ## Added
 - [KV] `set-env-flags` and `get-env-flags`, so users may change the env flags
