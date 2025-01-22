@@ -25,4 +25,10 @@
                    :main-opts  ["-m" "datalevin-bench.core"]
                    :ns-default datalevin-bench.core
                    :exec-fn    write}
+           :mixed {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "-Dclojure.compiler.direct-linking=true"]
+                   :main-opts  ["-m" "datalevin-bench.core"]
+                   :ns-default datalevin-bench.core
+                   :exec-fn    mixed}
            }}

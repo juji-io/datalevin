@@ -1,19 +1,26 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Benchmark] [`write-bench`](benchmarks/write-bench) that compares durable
+  Datalog write with Sqlite durable write performance; and studies KV write
+  performance under various conditions.
+
 ## 0.9.18 (2025-01-20)
 
-## Added
+### Added
 - [KV] `set-env-flags` and `get-env-flags`, so users may change the env flags
   after the DB is open. This is useful for adjusting transaction durability
   settings on the fly.
 
-## Fixed
+### Fixed
 - [Platform] Clojure compiler adds `java.util.SequencedCollection` automatically
   when compiled on JDK 21 and above, which does not exist in earlier JDK.
   Compile library with JDK 17 instead.
 - [KV] Type validation and coercion for `:bytes`.
 
-## Improved
+### Improved
 - [Feature] Streamline async transactions so it respects env flags.
 - [Datalog] Reduce default sample change ratio to `0.05`.
 

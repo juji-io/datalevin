@@ -26,14 +26,14 @@ There are two tasks that are done sequentially.
 The first task writes a 8 bytes integer as key and a 36 bytes random UUID string
 as value. In Datalevin, this means an entitiy of two attributes, one is a long,
 marked as `:db.unique/identity`, and the other a string. In Sqlite, this is a
-row of two fields, one is an integer ``PRIMARY KEY``, and another `TEXT`.
+row of two fields, one is an integer `PRIMARY KEY`, and another a `TEXT`.
 
 The pure write task is to write 10 millions such data to an empty DB. The integers
 are all even numbers between 1 and 20 millions, so the next task can have 50%
 chance of hitting existing data initially.
 
 Write data in batches generrally improve throughput, so we vary the batch sizes
-in pure write task: 10, 100, 1k, and 10k, to test the batching speed up effect.
+in this task: 1, 10, 100, 1k, and 10k, to test the batching speed up effect.
 
 #### Mixed Read/Write
 
@@ -57,18 +57,34 @@ For every 100K writes, a set of measures are recorded:
 
 The results are written into a CSV file.
 
-For example, the command below runs benchmark for `transact-async` with batch
-size 10, and save the results in `dl-async-10.csv`:
+### Run
+
+Clojure command line is needed to run the benchmarks.
+
+For example, the command below runs pure write benchmark for `transact-async`
+with batch size 10, and save the results in `dl-async-10.csv`:
 
 ```bash
 time clj -Xwrite :base-dir \"/tmp/dl/\" :batch 10 :f dl-async > dl-10-async.csv
 ```
 
-The command below runs benchmark for Sqlite `INSERT`  with batch size
-100, and save the results in `sqlite-100.csv`
+This command runs mixed read/write benchmark following the pure write task above:
 
 ```bash
-time clj -Xwrite :base-dir \"/tmp/sql/\" :batch 100 :f sql-tx > sqlite-100.csv
+time clj -Xmixed :dir \"/tmp/dl/dl-async-10\" :f dl-async > dl-10-async-mixed.csv
+```
+
+The command below runs pure write benchmark for Sqlite `INSERT`  with batch size
+1, and save the results in `sqlite-1.csv`
+
+```bash
+time clj -Xwrite :base-dir \"/tmp/sql/\" :batch 1 :f sql-tx > sqlite-1.csv
+```
+
+This command runs the read/write mixed task following the pure write above:
+
+```bash
+time clj -Xmixed :dir \"/tmp/sql/sqlite-1\" :f sql-tx > sqlite-1-mixed.csv
 ```
 
 The total wall clock time, system time and user time are also reported.
@@ -88,7 +104,7 @@ Datalevin has two Datalog transaction functions:
 * `transact-async`
 
 Both are durable by default. In the case of `transact-async`, the returned
-future is only realized when the data are flushed to disk.
+future is only realized after the data are flushed to disk.
 
 `transact` is just the blocked version of `transact-async` so it is not tested.
 There are two faster `init-db` and `fill-db` functions that directly load

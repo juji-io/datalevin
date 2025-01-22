@@ -79,7 +79,7 @@
         dl?      (s/starts-with? (name f) "dl")
         sql?     (s/starts-with? (name f) "sql")
         kvdb     (when kv?
-                   (doto (d/open-kv (str base-dir "/max-write-db-" f "-" batch)
+                   (doto (d/open-kv (str base-dir "/" f "-" batch)
                                     {:mapsize 60000
                                      :flags   (-> c/default-env-flags
                                                   ;; (conj :writemap)
@@ -98,7 +98,7 @@
         kv-add   (fn [^FastList txs]
                    (.add txs [:put (vswap! id + 2) (str (random-uuid))]))
         conn     (when dl?
-                   (d/get-conn (str base-dir "/max-write-db-" f "-" batch)
+                   (d/get-conn (str base-dir "/" f "-" batch)
                                {:k {:db/valueType :db.type/long}
                                 :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 60000}}))
@@ -185,7 +185,8 @@
                    (jdbc/execute-one! sql-conn
                                       ["SELECT v FROM my_table WHERE k = ?"
                                        (rand-int keyspace)])
-                   (measure (jdbc/execute! sql-conn [tx (first txs)])))
+                   (let [vs (first txs)]
+                     (measure (jdbc/execute! sql-conn [tx (first vs) (peek vs)]))))
         sql-add  (fn [^FastList txs]
                    (.add txs [(rand-int keyspace) (str (random-uuid))]))
         tx-fn    (case f
