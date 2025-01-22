@@ -10,9 +10,9 @@ embedded relational store.
 
 ## Setup
 
-The benchmark is conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores,
-64GB RAM, 1TB SSD. The OS is Debian 12.9, kernel 6.1.0-28-amd64, running OpenJDK
-version "17.0.13" 2024-10-15, and Clojure version is 1.12.0.
+The benchmark is conducted on a 2016 Intel Core i7-6850K CPU @ 3.60GHz with 6
+cores, 64GB RAM, 1TB SSD. The OS is Debian 12.9, kernel 6.1.0-28-amd64, running
+OpenJDK version "17.0.13" 2024-10-15, and Clojure version is 1.12.0.
 
 To avoid exhausting system resources, the number of asynchronous write requests
 in flight is always capped at 1K using a Semaphore.
@@ -28,8 +28,8 @@ as value. In Datalevin, this means an entitiy of two attributes, one is a long,
 marked as `:db.unique/identity`, and the other a string. In Sqlite, this is a
 row of two fields, one is an integer `PRIMARY KEY`, and another a `TEXT`.
 
-The pure write task is to write 10 millions such data to an empty DB. The integers
-are all even numbers between 1 and 20 millions, so the next task can have 50%
+The pure write task is to write 1 million such data to an empty DB. The integers
+are all even numbers between 1 and 2 millions, so the next task can have 50%
 chance of hitting existing data initially.
 
 Write data in batches generrally improve throughput, so we vary the batch sizes
@@ -37,18 +37,18 @@ in this task: 1, 10, 100, 1k, and 10k, to test the batching speed up effect.
 
 #### Mixed Read/Write
 
-With 10 millions items in DB, we then do 2 million additional operations, with
+With 1 million items in DB, we then do 2 million additional operations, with
 1 million reads and 1 million writes. Read and write are interleaved. These
 reads/writes are individual operations, not batched.
 
-The read/write integers are random number between 1 and 20 millions. So initally
+The read/write integers are random number between 1 and 2 millions. So initally
 write has a 50% chance of being an addition and 50% chance of being an
-overwrite. The chance of being an overwrite increases slightly as more items are
+overwrite. The chance of being an overwrite increases as more items are
 written.
 
 ### Measures
 
-For every 100K writes, a set of measures are recorded:
+For every 10K writes, a set of measures are recorded:
 
 * Time (seconds), time since benchmark run starts.
 * Throughput (writes/second), average throughput at the moment.

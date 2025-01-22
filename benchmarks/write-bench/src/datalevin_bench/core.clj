@@ -6,6 +6,7 @@
    [next.jdbc :as jdbc]
    [next.jdbc.sql :as sql])
   (:import
+   [java.util Random]
    [java.util.concurrent Semaphore]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -17,12 +18,12 @@
 (def in-flight 1000)
 
 ;; total number of writes
-(def total 10000000)
+(def total 1000000)
 
 (def keyspace (* 2 total))
 
 ;; print numbers every this number of writes
-(def report 100000)
+(def report 10000)
 
 (defn max-write-bench
   [batch-size tx-fn add-fn]
@@ -48,13 +49,13 @@
                    (not= 0 counter) (not= 0 @sync-count))
           (let [duration (- @sync-time start-time)]
             (println (str
-                       (long (/ duration 1000))
+                       (format "%.1f" (double (/ duration 1000)))
                        ","
                        (format "%.1f" (double (* (/ @inserted duration) 1000)))
                        ","
-                       (format "%.4f" (double (/ @write-time @sync-count)))
+                       (format "%.1f" (double (/ @write-time @sync-count)))
                        ","
-                       (format "%.4f" (double (/ (- @sync-time @prev-time)
+                       (format "%.1f" (double (/ (- @sync-time @prev-time)
                                                  @sync-count))))))
           (vreset! write-time 0)
           (vreset! prev-time @sync-time)
@@ -132,6 +133,10 @@
     (when conn (d/close conn))
     (when sql-conn (.close sql-conn))))
 
+(def random (Random.))
+
+(defn random-int [] (.nextInt random keyspace))
+
 (defn mixed
   [{:keys [dir f]}]
   (let [kv?      (s/starts-with? (name f) "kv")
@@ -149,15 +154,15 @@
                                      })
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
-                   (d/get-value kvdb max-write-dbi (rand-int keyspace) :id)
+                   (d/get-value kvdb max-write-dbi (random-int) :id)
                    (d/transact-kv-async kvdb max-write-dbi txs
                                         :id :string measure))
         kv-sync  (fn [txs measure]
-                   (d/get-value kvdb max-write-dbi (rand-int keyspace) :id)
+                   (d/get-value kvdb max-write-dbi (random-int) :id)
                    (measure (d/transact-kv kvdb max-write-dbi txs
                                            :id :string)))
         kv-add   (fn [^FastList txs]
-                   (.add txs [:put (rand-int keyspace) (str (random-uuid))]))
+                   (.add txs [:put (random-int) (str (random-uuid))]))
         conn     (when dl?
                    (d/get-conn dir {:k {:db/valueType :db.type/long}
                                     :v {:db/valueType :db.type/string}}
@@ -166,13 +171,13 @@
                    :in $ ?k
                    :where [?e :k ?k] [?e :v ?v]]
         dl-async (fn [txs measure]
-                   (d/q query (d/db conn) (rand-int keyspace))
+                   (d/q query (d/db conn) (random-int))
                    (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure]
-                   (d/q query (d/db conn) (rand-int keyspace))
+                   (d/q query (d/db conn) (random-int))
                    (measure (d/transact! conn txs nil)))
         dl-add   (fn [^FastList txs]
-                   (.add txs {:k (rand-int keyspace) :v (str (random-uuid))}))
+                   (.add txs {:k (random-int) :v (str (random-uuid))}))
         sql-conn (when sql?
                    (let [conn (jdbc/get-connection {:dbtype "sqlite"
                                                     :dbname dir})]
@@ -184,11 +189,11 @@
         sql-tx   (fn [txs measure]
                    (jdbc/execute-one! sql-conn
                                       ["SELECT v FROM my_table WHERE k = ?"
-                                       (rand-int keyspace)])
+                                       (random-int)])
                    (let [vs (first txs)]
                      (measure (jdbc/execute! sql-conn [tx (first vs) (peek vs)]))))
         sql-add  (fn [^FastList txs]
-                   (.add txs [(rand-int keyspace) (str (random-uuid))]))
+                   (.add txs [(random-int) (str (random-uuid))]))
         tx-fn    (case f
                    kv-async kv-async
                    kv-sync  kv-sync
