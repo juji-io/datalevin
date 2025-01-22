@@ -37,7 +37,8 @@
     (is (thrown-with-msg? Throwable #"Unknown operation" (d/db-with db [["aaa" :name "Ivan"]])))
     (is (thrown-with-msg? Throwable #"Bad entity type at" (d/db-with db [:db/add "aaa" :name "Ivan"])))
     (is (thrown-with-msg? Throwable #"Tempids are allowed in :db/add only" (d/db-with db [[:db/retract -1 :name "Ivan"]])))
-    (is (thrown-with-msg? Throwable #"Bad transaction data" (d/db-with db {:profile "aaa"})))
+    (is (thrown? Throwable (d/db-with db {:profile "aaa"})))
+    (is (thrown? Throwable (d/db-with db 42)))
     (d/close-db db)
     (u/delete-files dir)))
 

@@ -5,6 +5,9 @@ various conditions in Datalevin. Hopefully, this gives users some reference data
 points to help choosing the right transaction function and the right data batch
 size for specific use cases.
 
+We also compare Datalevin's Datalog store with Sqlite, as it is the most popular
+embedded relational store.
+
 ## Setup
 
 The benchmark is conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores,
@@ -14,9 +17,38 @@ version "17.0.13" 2024-10-15, and Clojure version is 1.12.0.
 To avoid exhausting system resources, the number of asynchronous write requests
 in flight is always capped at 1K using a Semaphore.
 
-## Measures
+### Tasks
 
-For every one million writes, a set of measures are taken:
+There are two tasks that are done sequentially.
+
+#### Pure Writes
+
+The first task writes a 8 bytes integer as key and a 36 bytes random UUID string
+as value. In Datalevin, this means an entitiy of two attributes, one is a long,
+marked as `:db.unique/identity`, and the other a string. In Sqlite, this is a
+row of two fields, one is an integer ``PRIMARY KEY``, and another `TEXT`.
+
+The pure write task is to write 10 millions such data to an empty DB. The integers
+are all even numbers between 1 and 20 millions, so the next task can have 50%
+chance of hitting existing data initially.
+
+Write data in batches generrally improve throughput, so we vary the batch sizes
+in pure write task: 10, 100, 1k, and 10k, to test the batching speed up effect.
+
+#### Mixed Read/Write
+
+With 10 millions items in DB, we then do 2 million additional operations, with
+1 million reads and 1 million writes. Read and write are interleaved. These
+reads/writes are individual operations, not batched.
+
+The read/write integers are random number between 1 and 20 millions. So initally
+write has a 50% chance of being an addition and 50% chance of being an
+overwrite. The chance of being an overwrite increases slightly as more items are
+written.
+
+### Measures
+
+For every 100K writes, a set of measures are recorded:
 
 * Time (seconds), time since benchmark run starts.
 * Throughput (writes/second), average throughput at the moment.
@@ -25,34 +57,54 @@ For every one million writes, a set of measures are taken:
 
 The results are written into a CSV file.
 
-For example, the command below runs benchmark for `transact-kv-async` with batch
-size 10, and save the results in `kv-async-10.csv`:
+For example, the command below runs benchmark for `transact-async` with batch
+size 10, and save the results in `dl-async-10.csv`:
 
 ```bash
-time clj -Xwrite :base-dir \"/tmp/test/\" :batch 10 :f kv-async > kv-10-async.csv
+time clj -Xwrite :base-dir \"/tmp/dl/\" :batch 10 :f dl-async > dl-10-async.csv
 ```
 
-The final wall clock time, system time and user time are also reported.
+The command below runs benchmark for Sqlite `INSERT`  with batch size
+100, and save the results in `sqlite-100.csv`
 
+```bash
+time clj -Xwrite :base-dir \"/tmp/sql/\" :batch 100 :f sql-tx > sqlite-100.csv
+```
+
+The total wall clock time, system time and user time are also reported.
+
+## Datalog Transaction
+
+Because Datalog store of Datalevin is intented to be an operational database, we
+test the default durable write condition for Datalog in Datalevin.
+Correspodingly, we test the default `PRAGMA synchronous=FULL` write condition in
+Sqlite.
+
+### Write Conditions
+
+Datalevin has two Datalog transaction functions:
+
+* `transact!`
+* `transact-async`
+
+Both are durable by default. In the case of `transact-async`, the returned
+future is only realized when the data are flushed to disk.
+
+`transact` is just the blocked version of `transact-async` so it is not tested.
+There are two faster `init-db` and `fill-db` functions that directly load
+prepared datoms and by-pass the expensive process of turning data into datoms.
+These are not tested in this benchmark either, as we are only interested in
+transactions of raw data.
+
+### Results
+
+### Remark
 
 ## Key Value Transaction
 
-### Tasks
-
-#### Random Write
-
-This task writes a 8 bytes even integer between 1 and 200 millions as the key
-and a random UUID string as the value. The pure write task is to write **100
-millions** such data to an empty DB. The keys are all even numbers, so the next
-task can have 50% chance of overwrite existing keys.
-
-#### Mixed Read/Write
-
-With 100 millions items in DB, we then do 20 million additional operations, with
-10 million reads and 10 million writes interleaved. The read/write keys are
-random number between 1 and 200 millions. So initally write has a 50% chance of
-being an addition and 50% chance of being an overwrite. The chance of being an
-overwrite increases slightly as more items are written.
+Datalevin wrap LMDB to offer KV store feature. Here we do not compare Datalevin
+with other KV stores, as there are plenty of such comparison between LMDB and
+others KV stores already.
 
 ### Write Conditions
 
@@ -62,39 +114,17 @@ Datalevin supports these transaction functions for key value store:
 * `transact-kv-async`
 
 In addition to the default durable write condition, Datalevin supports some
-faster, albeit less durable write flags:
+faster, albeit less durable writes, by setting one of these env flags:
 
-* `:nosync`
 * `:nometasync`
+* `:nosync`
 * `:writemap` + `:mapasync`
 
-Write data in batches generrally improve throughput, so we vary the batch sizes
-as well: 1, 10, 100, 1k, and 10k.
-
-We will show how combinations of these conditions affect throughput and latency.
+We are interested in these non-durable write conditions, because there are many
+good use cases for a fast non-durable KV store, such as caching, session
+management, temporary data storage, real-time analytics, message queues,
+configuration, leaderboards, and so on.
 
 ### Results
 
-## Datalog Transaction
-
-Because a Datalog transaction does a lot more work than just writing key values,
-the differences among different env flags in Datalog transactions are not as
-pronounced as in KV stores. We only test durable writes for Datalog transaction.
-
-### Write Conditions
-
-Tested the following functions for Datalog DB:
-
-* `transact!`
-* `transact-async`
-
-`transact` is just the blocked version of `transact-async` so it is not tested.
-There are two faster `init-db` and `fill-db` functions that directly load
-prepared datoms and by-pass the expensive process of turning data into datoms.
-These are not tested in this benchmark either, as we are only interested in
-transactions of raw data.
-
-Similar to KV tasks above, every write transacts an entitiy of two attributes,
-one is a long integer, marked as `:db.unique/identity`, and the other an UUID
-string. 100 millions such entities are writen first, then 20 million mixed query
-and write are conducted. Same measures are also taken.
+### Remark

@@ -1502,9 +1502,6 @@
 
 (defn transact-tx-data
   [initial-report initial-es simulated?]
-  (when-not (or (nil? initial-es) (sequential? initial-es))
-    (raise "Bad transaction data " initial-es ", expected sequential collection"
-           {:error :transact/syntax, :tx-data initial-es}))
   (let [^DB db  (:db-before initial-report)
         store   (.-store db)
         tx-time (System/currentTimeMillis)]
