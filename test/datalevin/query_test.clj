@@ -12,7 +12,8 @@
    [datalevin.query :as sut]
    [datalevin.constants :as c]
    [datalevin.interpret :as i]
-   [datalevin.util :as u])
+   [datalevin.util :as u]
+   [datalevin.db :as db])
   (:import
    [java.util UUID]))
 
@@ -1091,5 +1092,32 @@
              ["Datalog is awesome" "3" "disagree"]
              ["Datalog is awesome" "2" "agree"]
              ["Datalog is awesome" "4" "strongly disagree"]}))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest issue-304-305-test
+  (let [dir  (u/tmp-dir (str "issue-304-" (UUID/randomUUID)))
+        conn (d/get-conn dir {})]
+    (d/transact! conn [{:db/id      -1
+                        :node/title "test"
+                        :block/uid  "test"}])
+    (is (= (d/q '[:find ?node
+                  :where
+                  (or-join [?node]
+                           (and
+                             [?Page :node/title "OpposedBy"]
+                             [?node :block/uid ?target-uid]))]
+                (d/db conn))
+           #{}))
+    (is (= (d/q '[:find ?node
+                  :where
+                  (or-join [?node]
+                           (and
+                             [?node :node/title ?ParentPage-Title]
+                             [(re-pattern "^(.*?)$") ?regex]
+                             [(re-find ?regex ?ParentPage-Title)])
+                           [?node :block/uid ?node-uid])]
+                (d/db conn))
+           #{[1]}))
     (d/close conn)
     (u/delete-files dir)))

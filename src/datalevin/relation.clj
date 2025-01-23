@@ -3,7 +3,7 @@
   (:require
    [clojure.pprint :as pp]
    [datalevin.parser :as dp]
-   [datalevin.util :as u :refer [raise tuple-get]]
+   [datalevin.util :as u :refer [raise tuple-get tuple-add]]
    [datalevin.timeout :as timeout])
   (:import
    [java.util List]
@@ -72,15 +72,15 @@
                           [idx-b (attrs-a sym)]))
         tlen       (->> (vals attrs-a) ^long (reduce max) u/long-inc)]
     (if (seq tuples-b)
-      (let [tg (tuple-get (first tuples-b))]
+      (let [tg (tuple-get (first tuples-b))
+            ta (tuple-add tuples-a)]
         (relation! attrs-a
                    (reduce
                      (fn [acc tuple-b]
                        (let [tuple' (make-array Object tlen)]
                          (doseq [[idx-b idx-a] idxb->idxa]
                            (aset ^objects tuple' idx-a (tg tuple-b idx-b)))
-                         (.add ^List acc tuple')
-                         acc))
+                         (ta acc tuple')))
                      tuples-a tuples-b)))
       (relation! attrs-a tuples-a))))
 

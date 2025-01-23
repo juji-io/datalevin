@@ -2,9 +2,13 @@
 
 ## WIP
 
+### Fixed
+- [Datalog] `and` in `or-join` exception [#304](https://github.com/juji-io/datalevin/issues/304)
+- [Datalog ] `and` join exception. [#305](https://github.com/juji-io/datalevin/issues/305)
+
 ### Added
 - [Benchmark] [`write-bench`](benchmarks/write-bench) that compares durable
-  Datalog write with Sqlite durable write performance; and studies KV write
+  Datalog txn with durable Sqlite txn performance; and studies KV txn
   performance under various conditions.
 
 ## 0.9.18 (2025-01-20)

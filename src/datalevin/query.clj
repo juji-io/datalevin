@@ -861,7 +861,10 @@
            contexts            (map #(-> join-context (resolve-clause %)
                                          (limit-context vars))
                                     branches)
-           rels                (map #(reduce hash-join (:rels %)) contexts)
+           rels                (map #(let [rels (:rels %)]
+                                       (if (seq rels)
+                                         (reduce hash-join (:rels %))
+                                         [])) contexts)
            sum-rel             (reduce r/sum-rel rels)]
        (update context :rels collapse-rels sum-rel))
 
@@ -908,26 +911,19 @@
                                   *lookup-attrs*)]
          (update context :rels collapse-rels relation))))))
 
-(defn short-circuit-empty-rel [context]
-  (if (some #(empty? (:tuples %)) (:rels context))
-    (assoc context
-           :rels
-           [(r/relation!
-              (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
-              [])])
-    context))
-
 (defn resolve-clause
   [context clause]
   (if (->> (:rels context) (some (comp empty? :tuples)))
-    context
-    (short-circuit-empty-rel
-      (if (qu/rule? context clause)
-        (if (qu/source? (first clause))
-          (binding [*implicit-source* (get (:sources context) (first clause))]
-            (resolve-clause context (next clause)))
-          (update context :rels collapse-rels (solve-rule context clause)))
-        (-resolve-clause context clause)))))
+    (assoc context :rels
+           [(r/relation!
+              (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
+              [])])
+    (if (qu/rule? context clause)
+      (if (qu/source? (first clause))
+        (binding [*implicit-source* (get (:sources context) (first clause))]
+          (resolve-clause context (next clause)))
+        (update context :rels collapse-rels (solve-rule context clause)))
+      (-resolve-clause context clause))))
 
 ;; optimizer
 
