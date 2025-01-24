@@ -48,7 +48,7 @@
 
 (defn max-write-bench
   [batch-size tx-fn add-fn async?]
-
+  (print-header)
   (let [sem        (Semaphore. (* in-flight batch-size))
         target     (long (/ report batch-size))
         write-time (volatile! 0)
