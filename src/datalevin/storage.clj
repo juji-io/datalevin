@@ -821,7 +821,9 @@
       (let [scheduler ^ScheduledExecutorService (u/get-scheduler)]
         (.scheduleWithFixedDelay scheduler
                                  ^Runnable
-                                 #(a/exec (a/get-executor) (->SamplingWork this))
+                                 #(let [exe (a/get-executor)]
+                                    (when (a/running? exe)
+                                      (a/exec exe (->SamplingWork this))))
                                  ^long (rand-int c/sample-processing-interval)
                                  ^long c/sample-processing-interval
                                  TimeUnit/SECONDS)
@@ -1248,16 +1250,16 @@
 (defn sampling
   "sample a random changed attribute at a time"
   [^Store store]
-  (when-not (closed? store)
-    (let [counts ^ConcurrentHashMap (.-counts store)
-          aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
-          attr   ((attrs store) aid)]
-      (when attr
-        (let [acount ^long (.get counts aid)]
-          (when (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
-                   acount)
-            (e-sample* store attr aid (actual-a-size store attr))
-            (.put counts aid 0)))))))
+  (let [counts ^ConcurrentHashMap (.-counts store)
+        aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
+        attr   ((attrs store) aid)]
+    (when attr
+      (let [acount ^long (.get counts aid)]
+        (when (and (not (closed? store))
+                   (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
+                      acount))
+          (e-sample* store attr aid (actual-a-size store attr))
+          (.put counts aid 0))))))
 
 (deftype SamplingWork [^Store store]
   IAsyncWork

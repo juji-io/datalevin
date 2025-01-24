@@ -513,24 +513,9 @@
       (when-not (.isClosed env)
         (swap! l/lmdb-dirs disj (l/dir this))
         (when (zero? (count @l/lmdb-dirs))
-          (u/shutdown-scheduler)
           (u/shutdown-query-thread-pool)
+          (u/shutdown-scheduler)
           (a/shutdown-executor))
-        (doseq [^DBI dbi (.values dbis)]
-          (let [^Iterator iter (.iterator
-                                 ^ArrayDeque (.get ^ThreadLocal (.-curs dbi)))]
-            (loop []
-              (when (.hasNext iter)
-                (.close ^Cursor (.next iter))
-                (.remove iter)
-                (recur))))
-          (.close ^Dbi (.-db dbi)))
-        (let [^Iterator iter (.iterator ^ArrayDeque (.get pools))]
-          (loop []
-            (when (.hasNext iter)
-              (.close-rtx ^Rtx (.next iter))
-              (.remove iter)
-              (recur))))
         (.sync env 1)
         (.close env)
         (when (@info :temp?) (u/delete-files (@info :dir)))

@@ -99,7 +99,9 @@
               (when (.get running)
                 (let [k (.take event-queue)]
                   (when-not (.contains event-queue k) ; do nothing when busy
-                    (.submit workers ^Callable #(event-handler work-queues k))))
+                    (when (.get running)
+                      (.submit workers
+                               ^Callable #(event-handler work-queues k)))))
                 (recur)))
             (init []
               (try (event-loop)
@@ -113,9 +115,9 @@
   (stop [_]
     (.set running false)
     (.shutdownNow dispatcher)
-    (.shutdownNow workers)
     (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS)
-    (.awaitTermination workers 5 TimeUnit/MILLISECONDS))
+    (.shutdown workers)
+    (.awaitTermination workers 5000 TimeUnit/MILLISECONDS))
   (exec [_ work]
     (let [k (work-key work)]
       (assert (keyword? k) "work-key should return a keyword")

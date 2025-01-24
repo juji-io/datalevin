@@ -1,4 +1,5 @@
 (ns datalevin-bench.core
+  "Max write throughput benchmark"
   (:require
    [datalevin.core :as d]
    [datalevin.constants :as c]
@@ -10,25 +11,44 @@
    [java.util.concurrent Semaphore]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
-;; max write throughput/latency benchmark
-
+;; for kv
 (def max-write-dbi "test")
 
 ;; limit the number of threads in flight
 (def in-flight 1000)
 
-;; total number of writes
-(def total 1000000)
+;; total number of writes for a task
+(def total 10000000)
 
+;; integer key range
 (def keyspace (* 2 total))
 
-;; print numbers every this number of writes
-(def report 10000)
+;; measure every this number of writes, also when to deref futures for async
+(def report 100000)
+
+(defn print-header []
+  (println
+    "Number of Writes,Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)"))
+
+(defn print-row
+  [written inserted write-time sync-count sync-time prev-time start-time]
+  (let [duration (- @sync-time start-time)]
+    (println
+      (str
+        written
+        ","
+        (format "%.2f" (double (/ duration 1000)))
+        ","
+        (format "%.1f" (double (* (/ @inserted duration) 1000)))
+        ","
+        (format "%.1f" (double (/ @write-time @sync-count)))
+        ","
+        (format "%.1f" (double (/ (- @sync-time @prev-time)
+                                  @sync-count)))))))
 
 (defn max-write-bench
-  [batch-size tx-fn add-fn]
-  (println
-    "Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)")
+  [batch-size tx-fn add-fn async?]
+
   (let [sem        (Semaphore. (* in-flight batch-size))
         target     (long (/ report batch-size))
         write-time (volatile! 0)
@@ -42,45 +62,47 @@
                      (vreset! sync-time (System/currentTimeMillis))
                      (vswap! sync-count inc)
                      (vswap! inserted + batch-size))]
-    (loop [counter 0]
-      (when (<= (* counter batch-size) total)
-        (.acquire sem batch-size)
-        (when (and (= 0 (mod counter target))
-                   (not= 0 counter) (not= 0 @sync-count))
-          (let [duration (- @sync-time start-time)]
-            (println (str
-                       (format "%.1f" (double (/ duration 1000)))
-                       ","
-                       (format "%.1f" (double (* (/ @inserted duration) 1000)))
-                       ","
-                       (format "%.1f" (double (/ @write-time @sync-count)))
-                       ","
-                       (format "%.1f" (double (/ (- @sync-time @prev-time)
-                                                 @sync-count))))))
-          (vreset! write-time 0)
-          (vreset! prev-time @sync-time)
-          (vreset! sync-count 0))
-        (let [txs    (when add-fn
-                       (reduce
-                         (fn [^FastList txs _]
-                           (add-fn txs)
-                           txs)
-                         (FastList. batch-size)
-                         (range 0 batch-size)))
-              before (System/currentTimeMillis)]
-          (tx-fn txs measure)
-          (vswap! write-time + (- (System/currentTimeMillis) before)))
-        (recur (inc counter))))))
+    (loop [counter 0
+           fut     nil]
+      (if (< (* counter batch-size) total)
+        (do
+          (.acquire sem batch-size)
+          (when (and (= 0 (mod counter target))
+                     (not= 0 counter)
+                     (not= 0 @sync-count))
+            (when async? @fut)
+            (print-row (* counter batch-size) inserted write-time sync-count
+                       sync-time prev-time start-time)
+            (vreset! write-time 0)
+            (vreset! prev-time @sync-time)
+            (vreset! sync-count 0))
+          (let [txs    (when add-fn
+                         (reduce
+                           (fn [^FastList txs _]
+                             (add-fn txs)
+                             txs)
+                           (FastList. batch-size)
+                           (range 0 batch-size)))
+                before (System/currentTimeMillis)
+                fut    (tx-fn txs measure)]
+            (vswap! write-time + (- (System/currentTimeMillis) before))
+            (recur (inc counter) fut)))
+        (do
+          (when async? @fut)
+          (print-row (* counter batch-size) inserted write-time sync-count
+                     sync-time prev-time start-time))))))
 
 (def id (volatile! 0))
 
 (defn write
-  [{:keys [base-dir batch f]}]
-  (let [kv?      (s/starts-with? (name f) "kv")
-        dl?      (s/starts-with? (name f) "dl")
-        sql?     (s/starts-with? (name f) "sql")
+  [{:keys [batch f]}]
+  (let [nf       (name f)
+        kv?      (s/starts-with? nf "kv")
+        dl?      (s/starts-with? nf "dl")
+        sql?     (s/starts-with? nf "sql")
+        async?   (s/ends-with? nf "async")
         kvdb     (when kv?
-                   (doto (d/open-kv (str base-dir "/" f "-" batch)
+                   (doto (d/open-kv (str f "-" batch)
                                     {:mapsize 60000
                                      :flags   (-> c/default-env-flags
                                                   ;; (conj :writemap)
@@ -99,7 +121,7 @@
         kv-add   (fn [^FastList txs]
                    (.add txs [:put (vswap! id + 2) (str (random-uuid))]))
         conn     (when dl?
-                   (d/get-conn (str base-dir "/" f "-" batch)
+                   (d/get-conn (str f "-" batch)
                                {:k {:db/valueType :db.type/long}
                                 :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 60000}}))
@@ -108,8 +130,9 @@
         dl-add   (fn [^FastList txs]
                    (.add txs {:k (vswap! id + 2) :v (str (random-uuid))}))
         sql-conn (when sql?
-                   (let [conn (jdbc/get-connection {:dbtype "sqlite"
-                                                    :dbname (str base-dir "/sqlite-" batch)})]
+                   (let [conn (jdbc/get-connection
+                                {:dbtype "sqlite"
+                                 :dbname (str "sqlite-" batch)})]
                      (jdbc/execute! conn
                                     ["CREATE TABLE IF NOT EXISTS my_table (
                      k INTEGER PRIMARY KEY, v TEXT)"])
@@ -128,10 +151,22 @@
                    kv?  kv-add
                    dl?  dl-add
                    sql? sql-add)]
-    (max-write-bench batch tx-fn add-fn)
-    (when kvdb (d/close-kv kvdb))
-    (when conn (d/close conn))
-    (when sql-conn (.close sql-conn))))
+    (max-write-bench batch tx-fn add-fn async?)
+    (when kvdb
+      (when-not (= (d/entries kvdb max-write-dbi) total)
+        (println "Write incomplete!"))
+      (d/close-kv kvdb))
+    (when conn
+      (when-not (= (d/count-datoms (d/db conn) nil nil nil) (* 2 total))
+        (println "Write incomplete!"))
+      (d/close conn))
+    (when sql-conn
+      (when-not (= (-> (jdbc/execute! sql-conn ["SELECT count(1) FROM my_table"])
+                       ffirst
+                       val)
+                   total)
+        (println "Write incomplete!"))
+      (.close sql-conn))))
 
 (def random (Random.))
 
@@ -139,19 +174,14 @@
 
 (defn mixed
   [{:keys [dir f]}]
-  (let [kv?      (s/starts-with? (name f) "kv")
-        dl?      (s/starts-with? (name f) "dl")
-        sql?     (s/starts-with? (name f) "sql")
+  (let [nf       (name f)
+        kv?      (s/starts-with? nf "kv")
+        dl?      (s/starts-with? nf "dl")
+        sql?     (s/starts-with? nf "sql")
         kvdb     (when kv?
                    (doto (d/open-kv dir
                                     {:mapsize 60000
-                                     :flags   (-> c/default-env-flags
-                                                  ;; (conj :writemap)
-                                                  ;; (conj :mapasync)
-                                                  ;; (conj :nosync)
-                                                  ;; (conj :nometasync)
-                                                  )
-                                     })
+                                     :flags   c/default-env-flags})
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/get-value kvdb max-write-dbi (random-int) :id)
@@ -204,7 +234,7 @@
                    kv?  kv-add
                    dl?  dl-add
                    sql? sql-add)]
-    (max-write-bench 1 tx-fn add-fn)
+    (max-write-bench 1 tx-fn add-fn false)
     (when kvdb (d/close-kv kvdb))
     (when conn (d/close conn))
     (when sql-conn (.close sql-conn))))
