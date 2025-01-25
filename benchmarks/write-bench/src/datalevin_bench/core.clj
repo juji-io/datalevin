@@ -133,8 +133,9 @@
                    (let [conn (jdbc/get-connection
                                 {:dbtype "sqlite"
                                  :dbname (str "sqlite-" batch)})]
-                     (jdbc/execute! conn
-                                    ["CREATE TABLE IF NOT EXISTS my_table (
+                     (jdbc/execute! conn ["PRAGMA journal_mode=WAL;"])
+                     (jdbc/execute! conn ["PRAGMA synchronous=FULL;"])
+                     (jdbc/execute! conn ["CREATE TABLE IF NOT EXISTS my_table (
                      k INTEGER PRIMARY KEY, v TEXT)"])
                      conn))
         sql-tx   (fn [txs measure]
