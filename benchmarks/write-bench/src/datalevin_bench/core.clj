@@ -50,7 +50,6 @@
   [batch-size tx-fn add-fn async?]
   (print-header)
   (let [sem        (Semaphore. (* in-flight batch-size))
-        target     (long (/ report batch-size))
         write-time (volatile! 0)
         sync-count (volatile! 0)
         inserted   (volatile! 0)
@@ -64,33 +63,34 @@
                      (vswap! inserted + batch-size))]
     (loop [counter 0
            fut     nil]
-      (if (< (* counter batch-size) total)
-        (do
-          (.acquire sem batch-size)
-          (when (and (= 0 (mod counter target))
-                     (not= 0 counter)
-                     (not= 0 @sync-count))
+      (let [written (* counter batch-size)]
+        (if (< written total)
+          (do
+            (.acquire sem batch-size)
+            (when (and (= 0 (mod written report))
+                       (not= 0 counter)
+                       (not= 0 @sync-count))
+              (when async? @fut)
+              (print-row (* counter batch-size) inserted write-time sync-count
+                         sync-time prev-time start-time)
+              (vreset! write-time 0)
+              (vreset! prev-time @sync-time)
+              (vreset! sync-count 0))
+            (let [txs    (when add-fn
+                           (reduce
+                             (fn [^FastList txs _]
+                               (add-fn txs)
+                               txs)
+                             (FastList. batch-size)
+                             (range 0 batch-size)))
+                  before (System/currentTimeMillis)
+                  fut    (tx-fn txs measure)]
+              (vswap! write-time + (- (System/currentTimeMillis) before))
+              (recur (inc counter) fut)))
+          (do
             (when async? @fut)
-            (print-row (* counter batch-size) inserted write-time sync-count
-                       sync-time prev-time start-time)
-            (vreset! write-time 0)
-            (vreset! prev-time @sync-time)
-            (vreset! sync-count 0))
-          (let [txs    (when add-fn
-                         (reduce
-                           (fn [^FastList txs _]
-                             (add-fn txs)
-                             txs)
-                           (FastList. batch-size)
-                           (range 0 batch-size)))
-                before (System/currentTimeMillis)
-                fut    (tx-fn txs measure)]
-            (vswap! write-time + (- (System/currentTimeMillis) before))
-            (recur (inc counter) fut)))
-        (do
-          (when async? @fut)
-          (print-row (* counter batch-size) inserted write-time sync-count
-                     sync-time prev-time start-time))))))
+            (print-row written inserted write-time sync-count
+                       sync-time prev-time start-time)))))))
 
 (def id (volatile! 0))
 
