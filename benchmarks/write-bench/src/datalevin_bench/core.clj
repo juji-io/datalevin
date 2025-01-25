@@ -18,13 +18,13 @@
 (def in-flight 1000)
 
 ;; total number of writes for a task
-(def total 10000000)
+(def total 1000000)
 
 ;; integer key range
 (def keyspace (* 2 total))
 
 ;; measure every this number of writes, also when to deref futures for async
-(def report 100000)
+(def report 10000)
 
 (defn print-header []
   (println

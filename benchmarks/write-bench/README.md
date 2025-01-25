@@ -11,8 +11,13 @@ embedded relational store.
 ## Setup
 
 The benchmark is conducted on a 2016 Intel Core i7-6850K CPU @ 3.60GHz with 6
-cores, 64GB RAM, 1TB SSD. The OS is Debian 12.9, kernel 6.1.0-28-amd64, running
-OpenJDK version "17.0.13" 2024-10-15, and Clojure version is 1.12.0.
+cores, 64GB RAM, Samsung 860 EVO 1TB SSD. The OS is Debian 12.9, kernel
+6.1.0-28-amd64, running OpenJDK version "17.0.13" 2024-10-15, and Clojure
+version is 1.12.0.
+
+Datalevin is version 0.9.18.
+
+Sqlite is from Sqlite JDBC driver 3.48.0.0, using next.jdbc library 1.3.981.
 
 To avoid exhausting system resources, the number of asynchronous write requests
 in flight is always capped at 1K using a Semaphore.
