@@ -197,9 +197,9 @@
                    (d/get-conn dir {:k {:db/valueType :db.type/long}
                                     :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 60000}}))
-        query    '[:find ?v
+        query    '[:find (pull ?e [:v])
                    :in $ ?k
-                   :where [?e :k ?k] [?e :v ?v]]
+                   :where [?e :k ?k]]
         dl-async (fn [txs measure]
                    (d/q query (d/db conn) (random-int))
                    (d/transact-async conn txs nil measure))
