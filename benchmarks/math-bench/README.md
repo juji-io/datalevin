@@ -1,4 +1,4 @@
-# Math Genealogy Benchmark
+# Math Genealogy Benchmark (WIP)
 
 This directory contains a benchmark of Datalog query performance. This benchmark
 was first introduced in a book chapter [1], which compared two Datalog

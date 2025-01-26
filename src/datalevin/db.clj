@@ -574,11 +574,14 @@
     nil))
 
 (defn- quick-fill
-  [dir schema opts datoms]
-  (let [store (open-store dir schema
-                          (update-in opts [:kv-opts :flags] conj :nosync))]
+  [^Store store datoms]
+  (let [lmdb    (.-lmdb store)
+        flags   (l/get-env-flags lmdb)
+        nosync? (:nosync flags)]
+    (l/set-env-flags lmdb #{:nosync} true)
     (pour store datoms)
-    (s/close store)))
+    (when-not nosync? (l/set-env-flags lmdb #{:nosync} false))
+    (l/sync lmdb)))
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil nil))
@@ -590,20 +593,11 @@
      (raise "init-db expects list of Datoms, got " (type not-datom)
             {:error :init-db}))
    (validate-schema schema)
-   (quick-fill dir schema opts datoms)
-   (new-db (open-store dir schema opts))))
+   (let [^Store store (open-store dir schema opts)]
+     (quick-fill store datoms)
+     (new-db store))))
 
-(defn fill-db
-  [db datoms]
-  (let [store  (.-store ^DB db)
-        dir    (s/dir store)
-        schema (s/schema store)
-        opts   (s/opts store)]
-    (quick-fill dir schema opts datoms)
-    (new-db (open-store dir schema opts))))
-
-(defn db-from-reader [{:keys [schema datoms]}]
-  (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))
+(defn fill-db [db datoms] (quick-fill (.-store ^DB db) datoms) db)
 
 ;; ----------------------------------------------------------------------------
 

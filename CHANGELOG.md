@@ -2,14 +2,22 @@
 
 ## WIP
 
-### Fixed
-- [Datalog] `and` in `or-join` exception [#304](https://github.com/juji-io/datalevin/issues/304)
-- [Datalog ] `and` join exception. [#305](https://github.com/juji-io/datalevin/issues/305)
-
 ### Added
-- [Benchmark] [`write-bench`](benchmarks/write-bench) that compares durable
-  Datalog txn with durable Sqlite txn performance; and studies KV txn
-  performance under various conditions.
+- [Feature] New data type `:vector` for KV and `:db.type/vector` for Datalog
+  that store dense numeric vectors. HNSW index is automatically created for them
+  to allow a function `similar-vectors` to return top K nearest neighhors. This
+  feature is implemented using [usearch](https://github.com/unum-cloud/usearch)
+  library. [#145](https://github.com/juji-io/datalevin/issues/145)
+
+### Fixed
+- [Datalog] `and` in `or-join` exception
+  [#304](https://github.com/juji-io/datalevin/issues/304)
+- [Datalog ] `and` join exception.
+  [#305](https://github.com/juji-io/datalevin/issues/305)
+
+### Improved
+- [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
+  errors. [#306](https://github.com/juji-io/datalevin/issues/306)
 
 ## 0.9.18 (2025-01-20)
 

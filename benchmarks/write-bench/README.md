@@ -19,14 +19,12 @@ Datalevin is version 0.9.18.
 
 Sqlite is from Sqlite JDBC driver 3.48.0.0, using next.jdbc library 1.3.981.
 
-To avoid exhausting system resources, the number of asynchronous write requests
-in flight is always capped at 1K using a Semaphore.
 
 ### Tasks
 
 There are two tasks that are done sequentially.
 
-#### Pure Writes
+#### Pure Write
 
 The first task writes a 8 bytes integer as key and a 36 bytes random UUID string
 as value. In Datalevin, this means an entitiy of two attributes, one is a long,
@@ -51,9 +49,9 @@ write has a 50% chance of being an addition and 50% chance of being an
 overwrite. The chance of being an overwrite increases as more items are
 written.
 
-### Measures
+### Metrics
 
-For every 10K writes, a set of measures are recorded:
+For every 10K write requests, a set of metrics are recorded:
 
 * Time (seconds), time since benchmark run starts.
 * Throughput (writes/second), average throughput at the moment.
@@ -61,6 +59,16 @@ For every 10K writes, a set of measures are recorded:
 * Commit Latency (milliseconds), average latency of transaction commits.
 
 The results are written into a CSV file.
+
+For asynchronous transactions, the metrics are recorded after `deref` is called
+on the last future, which blocks until all data has actually been written.
+
+For consistency and to avoid exhausting system resources, the number of
+asynchronous write requests in flight is capped at 1K using a Semaphore.
+
+At the end of the benchmark, the total number of data items on disk is also
+queried to verify that all data are written, otherwise the benckmark will report
+an error.
 
 ### Run
 
@@ -92,7 +100,7 @@ This command runs the read/write mixed task following the pure write above:
 time clj -Xmixed :dir \"/tmp/sql/sqlite-1\" :f sql-tx > sqlite-1-mixed.csv
 ```
 
-The total wall clock time, system time and user time are also reported.
+The total wall clock time, system time and user time are also recorded.
 
 ## Datalog Transaction
 
@@ -109,15 +117,22 @@ Datalevin has two Datalog transaction functions:
 * `transact-async`
 
 Both are durable by default. In the case of `transact-async`, the returned
-future is only realized after the data are flushed to disk.
+future is only realized after the data are flushed to disk. Both are tested.
 
 `transact` is just the blocked version of `transact-async` so it is not tested.
 There are two faster `init-db` and `fill-db` functions that directly load
-prepared datoms and by-pass the expensive process of turning data into datoms.
-These are not tested in this benchmark either, as we are only interested in
+prepared datoms to by-pass the expensive process of turning data into datoms.
+These are not tested in this benchmark, as we are only interested in
 transactions of raw data.
 
+Sqlite also have two durable transaction mode: default and WAL mode, and both
+are tested.
+
 ### Results
+
+#### Pure Write Task
+
+#### Fixed Read/Write Task
 
 ### Remark
 
@@ -125,7 +140,8 @@ transactions of raw data.
 
 Datalevin wrap LMDB to offer KV store feature. Here we do not compare Datalevin
 with other KV stores, as there are plenty of such comparison between LMDB and
-others KV stores already.
+others KV stores already. We study the throughput and latency of KV writes under
+different combination of transact function, env flags, and batch size.
 
 ### Write Conditions
 
@@ -146,6 +162,12 @@ good use cases for a fast non-durable KV store, such as caching, session
 management, temporary data storage, real-time analytics, message queues,
 configuration, leaderboards, and so on.
 
+The batch sizes are 1, 10, 100, 1k, and 10k.
+
 ### Results
+
+#### Pure Write Task
+
+#### Fixed Read/Write Task
 
 ### Remark

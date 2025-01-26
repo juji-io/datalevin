@@ -154,19 +154,18 @@
                    sql? sql-add)]
     (max-write-bench batch tx-fn add-fn async?)
     (when kvdb
-      (when-not (= (d/entries kvdb max-write-dbi) total)
-        (println "Write incomplete!"))
+      (let [written (d/entries kvdb max-write-dbi)]
+        (when-not (= written total) (println "Write only" written)))
       (d/close-kv kvdb))
     (when conn
-      (when-not (= (d/count-datoms (d/db conn) nil nil nil) (* 2 total))
-        (println "Write incomplete!"))
+      (let [datoms (d/count-datoms (d/db conn) nil nil nil)]
+        (when-not (= datoms (* 2 total)) (println "Write only" datoms)))
       (d/close conn))
     (when sql-conn
-      (when-not (= (-> (jdbc/execute! sql-conn ["SELECT count(1) FROM my_table"])
-                       ffirst
-                       val)
-                   total)
-        (println "Write incomplete!"))
+      (let [written (-> (jdbc/execute! sql-conn ["SELECT count(1) FROM my_table"])
+                        ffirst
+                        val)]
+        (when-not (= written total) (println "Write only" written)))
       (.close sql-conn))))
 
 (def random (Random.))
