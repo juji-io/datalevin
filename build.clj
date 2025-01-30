@@ -11,4 +11,4 @@
   (b/javac {:src-dirs ["src/java"]
             :class-dir class-dir
             :basis basis
-            :javac-opts ["-source" "8" "-target" "8"]}))
+            :javac-opts ["-source" "11" "-target" "11"]}))
