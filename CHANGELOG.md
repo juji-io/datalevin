@@ -3,17 +3,23 @@
 ## WIP
 
 ### Added
-- [Feature] New data type `:vector` for KV and `:db.type/vector` for Datalog
-  that store dense numeric vectors. HNSW index is automatically created for them
-  to allow a function `similar-vectors` to return top K nearest neighhors. This
-  feature is implemented using [usearch](https://github.com/unum-cloud/usearch)
-  library. [#145](https://github.com/juji-io/datalevin/issues/145)
-
+- [Vector] `new-vector-index` function creates an index for equal-length dense
+  float vectors to allow nearest neighhors similarity search. Corresponding
+  `add-vector`, `remove-vector`, and `search-vector` functions to work with
+  vector index. Similar to full-text search, vector search also support domain
+  semantics to allow grouping of vectors into domains. Vector indexing is
+  implemented with [usearch](https://github.com/unum-cloud/usearch).
+- [Datalog] New data type `:db.type/vector` for which vector index is
+  automatically created for them to allow a query function `similar-vectors` to
+  return top K nearest neighhors.
+  [#145](https://github.com/juji-io/datalevin/issues/145)
+- [Datalog] `max-eid` function to return the current maximal entity id.
 ### Fixed
 - [Datalog] `and` in `or-join` exception
   [#304](https://github.com/juji-io/datalevin/issues/304)
 - [Datalog ] `and` join exception.
   [#305](https://github.com/juji-io/datalevin/issues/305)
+- Validation of negative doubles [#308](https://github.com/juji-io/datalevin/issues/308)
 
 ### Improved
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
@@ -114,25 +120,34 @@
 ## 0.9.13 (2024-11-09)
 
 ### Fixed
-- [Datalog] Repeated cardinality many attributes for the same entity. [#284](https://github.com/juji-io/datalevin/issues/284)
+- [Datalog] Repeated cardinality many attributes for the same entity.
+  [#284](https://github.com/juji-io/datalevin/issues/284)
 - [Datalog] Apply type coercion according to scheam to ensure correct storage of
   values. [#285](https://github.com/juji-io/datalevin/issues/285)
-- [Datalog] Correct query caching when referenced content may have changed. [#288](https://github.com/juji-io/datalevin/issues/288)
+- [Datalog] Correct query caching when referenced content may have changed.
+  [#288](https://github.com/juji-io/datalevin/issues/288)
   [Thx @andersmurphy]
-- [Pod] Typos in search code. [#291](https://github.com/juji-io/datalevin/issues/291)
+- [Pod] Typos in search code.
+  [#291](https://github.com/juji-io/datalevin/issues/291)
 
 ### Improved
-- [Pod] Consistent `entity` behavior in pod as in JVM. [#283](https://github.com/juji-io/datalevin/issues/283)
+- [Pod] Consistent `entity` behavior in pod as in JVM.
+  [#283](https://github.com/juji-io/datalevin/issues/283)
 - [Datalog] Allow `:offset 0`.
-- [Datalog] Implement `empty` on Datom so it can be walked. [#286](https://github.com/juji-io/datalevin/issues/286)
-- [Datalog] Query functions resolve their arguments recursively. [#287](https://github.com/juji-io/datalevin/issues/287)
+- [Datalog] Implement `empty` on Datom so it can be walked.
+  [#286](https://github.com/juji-io/datalevin/issues/286)
+- [Datalog] Query functions resolve their arguments recursively.
+  [#287](https://github.com/juji-io/datalevin/issues/287)
 - [Native] Remove `:aot` to avoid potential dependency conflict.
 
 ## 0.9.12 (2024-10-08)
 
 ### Added
-- [Datalog] `:offset` and `:limit` support, [#126](https://github.com/juji-io/datalevin/issues/126), [#117](https://github.com/juji-io/datalevin/issues/117)
-- [Datalog] `:order-by` support, [#116](https://github.com/juji-io/datalevin/issues/116)
+- [Datalog] `:offset` and `:limit` support,
+  [#126](https://github.com/juji-io/datalevin/issues/126),
+  [#117](https://github.com/juji-io/datalevin/issues/117)
+- [Datalog] `:order-by` support,
+  [#116](https://github.com/juji-io/datalevin/issues/116)
 - [Datalog] `count-datoms` function to return the number of datoms of a pattern
 - [Datalog] `cardinality` function to return the number of unique values of an
   attribute
@@ -156,7 +171,7 @@
   defaults, i.e. synchronous flush to disk when commit.
 
 ### Added
-- [KV] Explose `sync` function to force a synchronous flush to disk, useful
+- [KV] Expose `sync` function to force a synchronous flush to disk, useful
   when non-default flags for writes are used.
 - [Pod] added `clear` to bb pod.
 

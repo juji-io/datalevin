@@ -637,6 +637,11 @@ Only usable for debug output.
   [db a]             {:pre [(db/db? db)]}
   (db/-cardinality db a))
 
+(defn max-eid
+  "Return the current maximal entity id of a Datalog db"
+  [db]             {:pre [(db/db? db)]}
+  (s/init-max-eid (:store db)))
+
 (defn seek-datoms
   "Similar to [[datoms]], but will return datoms starting from specified components.
 

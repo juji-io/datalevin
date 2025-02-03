@@ -311,11 +311,11 @@ adjust the priorities based on feedback.
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction;~~ As a vector database: vector indexing and
-  similarity; auto-sharding for Datalog; auto upgrade migration.
-* 0.11.0 Extensible de/serialization for arbitrary data; compressed data storage.
+  similarity search; auto-sharding for Datalog; auto upgrade migration.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
-* 1.1.0 Extended full-text search syntax.
-* 1.2.0 JSON API and library/client for popular languages.
+* 1.1.0 Extensible de/serialization for arbitrary data; compressed data storage.
+* 1.2.0 Extended full-text search syntax.
+* 1.3.0 JSON API and library/client for popular languages.
 * 2.0.0 Transaction log storage and access API.
 * 2.1.0 Read-only replicas for server.
 * 3.0.0 Automatic document indexing.

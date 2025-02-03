@@ -405,6 +405,7 @@
         conn       (dc/create-conn r-uri-str schema)
         local-conn (dc/create-conn l-dir schema)]
     (dc/transact! conn txs)
+    (is (= 22 (dc/max-eid @conn)))
     (dc/transact! local-conn txs)
     (is (= (dc/schema conn) (dc/schema local-conn)))
     (is (= (dc/datoms @conn :eav) (dc/datoms @local-conn :eav)))

@@ -166,6 +166,10 @@
   [dl a]
   (when-let [d (get-db dl)] (d/cardinality d a)))
 
+(defn max-eid
+  [dl]
+  (when-let [d (get-db dl)] (d/max-eid d)))
+
 (defn seek-datoms
   ([dl index]
    (when-let [d (get-db dl)] (map dd/datom-eav (d/seek-datoms d index))))
@@ -767,6 +771,7 @@
    'search-datoms             search-datoms
    'count-datoms              count-datoms
    'cardinality               cardinality
+   'max-eid                   max-eid
    'seek-datoms               seek-datoms
    'fulltext-datoms           fulltext-datoms
    'rseek-datoms              rseek-datoms
