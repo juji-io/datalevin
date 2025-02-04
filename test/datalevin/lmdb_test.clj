@@ -632,7 +632,8 @@
   (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "a" {:validate-data? true})
-    (l/transact-kv lmdb [[:put "a" (byte-array [1 3]) 2 :bytes :id]])
+    (is (l/transact-kv lmdb [[:put "a" (byte-array [1 3]) 2 :bytes :id]]))
+    (is (l/transact-kv lmdb [[:put "a" 1 -0.1 :id :double]]))
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" "a" 2 :bytes]])))
     (is (thrown-with-msg? Exception #"Invalid data"

@@ -13,7 +13,10 @@
   automatically created for them to allow a query function `similar-vectors` to
   return top K nearest neighhors.
   [#145](https://github.com/juji-io/datalevin/issues/145)
+- [Search] Boolean search expression.
+  [#310](https://github.com/juji-io/datalevin/issues/310)
 - [Datalog] `max-eid` function to return the current maximal entity id.
+
 ### Fixed
 - [Datalog] `and` in `or-join` exception
   [#304](https://github.com/juji-io/datalevin/issues/304)

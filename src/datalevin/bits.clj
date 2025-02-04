@@ -1020,8 +1020,8 @@
       (:db.type/bigdec :bigdec)   (<= c/min-bigdec x c/max-bigdec)
       (:db.type/long :db.type/ref
                      :long :id)   (int? x)
-      (:db.type/float :float)     (<= Float/MIN_VALUE x Float/MAX_VALUE)
-      (:db.type/double :double)   (<= Double/MIN_VALUE x Double/MAX_VALUE)
+      (:db.type/float :float)     (<= (- Float/MAX_VALUE) x Float/MAX_VALUE)
+      (:db.type/double :double)   (<= (- Double/MAX_VALUE) x Double/MAX_VALUE)
       (:db.type/bytes :bytes)     (bytes? x)
       (:db.type/keyword :keyword) (keyword? x)
       (:db.type/symbol :symbol)   (symbol? x)
