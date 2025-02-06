@@ -2213,7 +2213,7 @@ engine index."}
 
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` could be a string of
-words or a search data structure. The search data structure is boolean expression,
+words or a search data structure. The search data structure is a boolean expression,
 formally with the following grammar:
 
     <expression> ::= <term> | [ <operator> <operands> ]
@@ -2224,7 +2224,7 @@ formally with the following grammar:
 For example, [:or [:and \"red\" \"fox\" [:not \"lazy\"]] \"jump\"]
 
 If the query is a string of words, e.g. \"word1 word2 word3\", it is equivalent to
-[:or \"word1\" \"word2\" \"word3\"]
+[:or \"word1\" \"word2\" \"word3\"] when using the default analyzer.
 
 `opts` map may have these keys:
 

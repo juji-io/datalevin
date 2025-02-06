@@ -318,9 +318,7 @@
   in DNF form."
   [expr pos?]
   (if (string? expr)
-    (if pos?
-      [#{expr}]
-      [#{}])
+    (if pos? [#{expr}] [#{}])
     (let [[op & args] expr]
       (case op
         :not (process-expr (first args) (not pos?))
@@ -329,8 +327,7 @@
                          (for [clause  clauses
                                clause2 (process-expr arg true)]
                            (set/union clause clause2)))
-                       [#{}]
-                       args)
+                       [#{}] args)
                (mapcat #(process-expr % false) args))
         :or  (if pos?
                (mapcat #(process-expr % true) args)
@@ -338,28 +335,14 @@
                          (for [clause  clauses
                                clause2 (process-expr arg false)]
                            (set/union clause clause2)))
-                       [#{}]
-                       args))))))
+                       [#{}] args))))))
 
-(defn- combine-clauses
-  [clauses]
-  (let [all-pos (set clauses)
-        req     (apply set/intersection all-pos)
-        opt     (apply set/union all-pos)]
-    {:req req :opt (set/difference opt req)}))
-
-(defn required-terms*
-  "Given a boolean expression of terms, select terms into two sets:
-    :req  - terms that are required
-    :opt  - terms that are optional
-  Do not compute forrbiden terms, as it is complicated and expensive,
-  opt to remove thoses docs with bitmap ops"
-  [query]
-  (combine-clauses (process-expr query true)))
-
-(defn- required-terms
+(defn required-terms
+  "Given a boolean expression of terms, select terms that are required.
+   Do not compute excluded terms, as it is complicated and expensive,
+   opt to remove thoses docs with bitmap ops"
   [{:keys [query] :as context}]
-  (merge context (required-terms* query)))
+  (assoc context :req (apply set/union (process-expr query true))))
 
 (defn- collect-tokens
   [{:keys [query] :as context}]
@@ -405,24 +388,44 @@
         query))))
 
 (defn- setup-env
-  [{:keys [qterms req opt max-doc query] :as context}]
-  (let [tids  (mapv :id qterms)
-        sls   (mapv :sl qterms)
-        tms   (mapv :tm qterms)
-        rtms  (zipmap tms tids)
-        req   (set (mapv rtms req))
-        opt   (set (mapv rtms opt))
-        cds   (set/union req opt)
-        mws   (get-ws tids qterms :mw)
-        wqs   (get-ws tids qterms :wq)
-        rtids (into [] (filter cds) tids)
-        bms   (mapv #(.-indices ^SparseIntArrayList %) sls)]
-    (assoc context :tids rtids :wqs wqs :req req :opt opt
+  [{:keys [qterms req max-doc query] :as context}]
+  (let [tids (mapv :id qterms)
+        sls  (mapv :sl qterms)
+        tms  (mapv :tm qterms)
+        wqs  (get-ws tids qterms :wq)
+        bms  (mapv #(.-indices ^SparseIntArrayList %) sls)]
+    (assoc context
+           :wqs wqs
+           :tids (into [] (filter (set (mapv (zipmap tms tids) req))) tids)
            :bms (zipmap tids bms)
            :sls (zipmap tids sls)
            :tms (zipmap tids tms)
-           :mxs (get-mxs tids wqs mws)
+           :mxs (get-mxs tids wqs (get-ws tids qterms :mw))
            :bbm (boolean-bm tms bms max-doc query))))
+
+(defn- all-exclusive
+  [{:keys [bbm]} top]
+  (into []
+        (comp
+          (take top)
+          (map (fn [did] [0.1 did])))
+        bbm))
+
+(defn- tiered-scoring
+  [top scoring this proximity-expansion proximity-max-dist result n]
+  (persistent!
+    (unreduced
+      (reduce
+        (fn [coll tao]
+          (let [to-get (- ^long top (count coll))]
+            (if (< 0 to-get)
+              (let [^PriorityQueue pq (priority-queue to-get)]
+                (scoring this pq tao to-get proximity-expansion
+                         proximity-max-dist)
+                (pouring coll pq result))
+              (reduced coll))))
+        (transient [])
+        (range n 0 -1)))))
 
 (def default-search-opts {:display             :refs
                           :top                 10
@@ -493,25 +496,16 @@
                                collect-tokens
                                hydrate-query
                                setup-env)]
-      (let [{:keys [tms req opt]} context
-            n                     (+ (count req) (count opt))
-            result                (RoaringBitmap.)
-            scoring               (score-docs context n norms result)]
+      (let [{:keys [tms req]} context
+            n                 (count req)]
         (sequence
           (display-xf this doc-filter display tms)
-          (persistent!
-            (unreduced
-              (reduce
-                (fn [coll tao]
-                  (let [to-get (- ^long top (count coll))]
-                    (if (< 0 to-get)
-                      (let [^PriorityQueue pq (priority-queue to-get)]
-                        (scoring this pq tao to-get proximity-expansion
-                                 proximity-max-dist)
-                        (pouring coll pq result))
-                      (reduced coll))))
-                (transient [])
-                (range n 0 -1))))))))
+          (if (zero? n)
+            (all-exclusive context top)
+            (let [result  (RoaringBitmap.)
+                  scoring (score-docs context n norms result)]
+              (tiered-scoring top scoring this proximity-expansion
+                              proximity-max-dist result n)))))))
 
   IAdmin
   (re-index [this opts]

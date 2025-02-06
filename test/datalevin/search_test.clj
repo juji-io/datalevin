@@ -44,44 +44,27 @@
     [:or "red" [:not "fox"]]               [:or "red" [:not "fox"]]
     [:or "red fox back" " fox "]           [:or [:or "red" "fox" "back"] "fox"]
     [:or "fox" "red" [:and "black" "cat"]] [:or "fox" "red" [:and "black" "cat"]])
+
   (are [query]
       (thrown-with-msg? Exception #"Invalid search query"
                         (sut/parse-query* a/en-analyzer query))
     []
+    [:or]
     ["book"]
     ["book" "red"]
     [:none "book"]))
 
 (deftest required-terms-test
-  (testing "Simple OR with literals"
-    (let [expr   [:or "a" "b"]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{} :opt #{"a" "b"}}))))
+  (are [expr result] (= result (:req (sut/required-terms {:query expr})))
+    [:or "a" "b"]  #{"a" "b"}
+    [:and "a" "b"] #{"a" "b"}
+    [:not "a"]     #{}
 
-  (testing "Simple AND with literals"
-    (let [expr   [:and "a" "b"]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{"a" "b"} :opt #{}}))))
+    [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
+    #{"fox" "red" "black" "sheep"}
 
-  (testing "Simple NOT on a literal"
-    (let [expr   [:not "a"]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{} :opt #{}}))))
-
-  (testing "Nested expression mixing OR, AND and NOT (NOT on literal)"
-    (let [expr   [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{} :opt #{"fox" "red" "black" "sheep"}}))))
-
-  (testing "NOT operator on a non-literal expression"
-    (let [expr   [:not [:or "b" "c"]]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{} :opt #{}}))))
-
-  (testing "More complex nested expression"
-    (let [expr   [:and "a" [:or "b" "c"] [:not [:and "d" "e"]]]
-          result (sut/required-terms* expr)]
-      (is (= result {:req #{"a"} :opt #{"b" "c"}})))))
+    [:not [:or "b" "c"]]                           #{}
+    [:and "a" [:or "b" "c"] [:not [:and "d" "e"]]] #{"a" "b" "c"}))
 
 (defn- add-docs
   [f engine]
@@ -120,41 +103,33 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest boolean-expression-tests
+(deftest boolean-expression-test
   (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
-    (let [result (set (sut/search engine [:and "red" [:not "fleece"]]))]
-      (is (= result #{:doc1 :doc5})))
+    (are [query result] (= result (set (sut/search engine query)))
+      [:and "red" [:not "fleece"]] #{:doc1 :doc5}
+      [:and "man" "whale"]         #{:doc3}
+      [:and "red" [:not "dogs"]]   #{:doc2 :doc4}
+      [:or "" "whale"]             #{:doc3}
+      [:not "red"]                 #{:doc3}
+      [:not [:and "red" "fox"]]    #{:doc2 :doc3 :doc4 :doc5}
 
-    (let [result (set (sut/search engine [:and "man" "whale"]))]
-      (is (= result #{:doc3})))
+      [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
+      #{:doc1 :doc2 :doc4 :doc5}
 
-    (let [result (set (sut/search engine [:and "red" [:not "dogs"]]))]
-      (is (= result #{:doc2 :doc4})))
+      [:or "fox" "red" [:and "black" "sheep"] [:not "fleece"]]
+      #{:doc1 :doc2 :doc4 :doc5}
+      )
 
-    (let [result (sut/search
-                   engine
-                   [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]])]
-      (is (= (set result) #{:doc1 :doc2 :doc4 :doc5})))
-
-    (is (empty? (sut/search engine "")))
-
-    (is (empty? (sut/search engine "nonexistentterm")))
-
-    (let [result (set (sut/search engine [:or "" "whale"]))]
-      (is (= result #{:doc3})))
-
-    (let [result (sut/search engine [:and "red" [:not "red"]])]
-      ;; Conflicting condition; no document should satisfy this.
-      (is (empty? result)))
-
-    (let [result (sut/search engine [:or "" ""])]
-      (is (empty? result)))
-
-    (is (empty? (sut/search engine "   ")))
+    (are [query] (empty? (sut/search engine query))
+      ""
+      "  "
+      "nonexistentterm"
+      [:and "red" [:not "red"]] ; Conflicting condition
+      [:or "" ""])
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
