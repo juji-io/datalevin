@@ -80,7 +80,7 @@
                        {:text {:db/valueType :db.type/string
                                :db/fulltext  true}}
                        {:auto-entity-time? true
-                        :search-engine     {:analyzer analyzer}})
+                        :search-opts       {:analyzer analyzer}})
                      (d/db-with
                        [{:db/id 1,
                          :text  "The quick red fox jumped over the lazy red dogs."}

@@ -209,7 +209,7 @@ Only usable for debug output.
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-engine {:analyzer blank-space-analyzer}})"}
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-opts {:analyzer blank-space-analyzer}})"}
   empty-db db/empty-db)
 
 (def ^{:arglists '([x])

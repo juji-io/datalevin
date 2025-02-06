@@ -209,9 +209,9 @@
             (merge *data-readers* {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]
-                     (map-indexed (fn [i ^String t]
-                                    [t i (.indexOf text t)])
-                                  (s/split text #"\s")))
+                               (map-indexed (fn [i ^String t]
+                                              [t i (.indexOf text t)])
+                                            (s/split text #"\s")))
           schema   {:a/string   {:db/valueType :db.type/string
                                  :db/fulltext  true}
                     :a/keyword  {:db/valueType :db.type/keyword}
@@ -233,7 +233,7 @@
                                                  :db.type/string
                                                  :db.type/keyword]}}
           opts     {:auto-entity-time? true
-                    :search-engine     {:analyzer analyzer}}
+                    :search-opts       {:analyzer analyzer}}
           src-dir  (u/tmp-dir (str "src-dump-dl-" (UUID/randomUUID)))
           conn     (d/create-conn src-dir schema opts)
           dest-dir (u/tmp-dir (str "dest-load-dl-" (UUID/randomUUID)))
@@ -336,9 +336,9 @@
                    {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]
-                     (map-indexed (fn [i ^String t]
-                                    [t i (.indexOf text t)])
-                                  (s/split text #"\s")))
+                               (map-indexed (fn [i ^String t]
+                                              [t i (.indexOf text t)])
+                                            (s/split text #"\s")))
           schema   {:a/string   {:db/valueType :db.type/string
                                  :db/fulltext  true}
                     :a/keyword  {:db/valueType :db.type/keyword}
@@ -360,7 +360,7 @@
                                                  :db.type/string
                                                  :db.type/keyword]}}
           opts     {:auto-entity-time? true
-                    :search-engine     {:analyzer analyzer}}
+                    :search-opts       {:analyzer analyzer}}
           src-dir  (u/tmp-dir (str "src-dump-dl-nippy-" (UUID/randomUUID)))
           conn     (d/create-conn src-dir schema opts)
           dest-dir (u/tmp-dir (str "dest-load-dl-nippy-" (UUID/randomUUID)))
