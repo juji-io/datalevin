@@ -2,13 +2,15 @@
   "Full-text search engine"
   (:require
    [datalevin.lmdb :as l]
-   [datalevin.util :as u :refer [cond+]]
+   [datalevin.util :as u :refer [raise cond+]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.analyzer :as a]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
-   [clojure.string :as s])
+   [clojure.set :as set]
+   [clojure.string :as s]
+   [clojure.walk :as walk])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
@@ -186,7 +188,7 @@
                (make-array Candidate (.size ~'lst)))))
 
 (defn- first-candidates
-  [sls bms tids ^RoaringBitmap result tao n]
+  [{:keys [sls bms tids bbm]} ^RoaringBitmap result tao n]
   (let [z          (inc (- ^long n ^long tao))
         union-tids (set (take z tids))
         union-bms  (->> (select-keys bms union-tids)
@@ -196,14 +198,13 @@
                      ^"[Lorg.roaringbitmap.RoaringBitmap;" union-bms)]
     (candidate-array
       (doseq [tid tids]
-        (let [bm   ^RoaringBitmap (bms tid)
+        (let [bm   ^FastRankRoaringBitmap (bms tid)
               bm'  (let [iter-bm (.clone bm)]
-                     (if (or (union-tids tid) (= tao 1))
-                       iter-bm
-                       (doto ^RoaringBitmap iter-bm
-                         (.and ^RoaringBitmap union-bm))))
-              bm'  (doto ^RoaringBitmap bm' (.andNot result))
-              iter (.getIntIterator ^RoaringBitmap bm')]
+                     (doto ^FastRankRoaringBitmap iter-bm
+                       (.and ^RoaringBitmap bbm)
+                       (.and ^RoaringBitmap union-bm)
+                       (.andNot result)))
+              iter (.getIntIterator ^FastRankRoaringBitmap bm')]
           (when (.hasNext ^PeekableIntIterator iter)
             (.add lst (Candidate. tid (sls tid) iter))))))))
 
@@ -244,9 +245,9 @@
           (recur (get-did candidate) (current-threshold pq)))))))
 
 (defn- tf-idf-scoring
-  [sls bms tids result tao n pq mxs wqs norms]
+  [{:keys [mxs wqs] :as context} result tao n pq norms]
   (loop [^"[Ldatalevin.search.Candidate;" candidates
-         (first-candidates sls bms tids result tao n)]
+         (first-candidates context result tao n)]
     (let [nc            (alength candidates)
           minimal-score ^double (current-threshold pq)]
       (cond
@@ -275,7 +276,153 @@
   (search [this query] [this query opts]))
 
 (declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
-         get-rawtext new-search-engine)
+         get-rawtext new-search-engine parse-query*)
+
+(defn- parse-string
+  [query-analyzer s]
+  (when-not (s/blank? s)
+    (let [tokens (into []
+                       (comp (map first) (remove s/blank?))
+                       (query-analyzer s))]
+      (case (count tokens)
+        0 nil
+        1 (first tokens)
+        (vec (cons :or tokens))))))
+
+(def operators #{:or :and :not})
+
+(defn- parse-vector
+  [query-analyzer [op & exps]]
+  (if (and (seq exps) (operators op))
+    (let [es (into []
+                   (comp (map #(parse-query* query-analyzer %))
+                      (remove nil?))
+                   exps)]
+      (when (seq es) (vec (cons op es))))
+    (raise "Invalid search query" {:op op})))
+
+(defn parse-query*
+  [query-analyzer query]
+  (cond
+    (string? query) (parse-string query-analyzer query)
+    (vector? query) (parse-vector query-analyzer query)
+    :else           (raise "Invalid search query" {:query query})))
+
+(defn- parse-query
+  [context query-analyzer query]
+  (when-let [q (parse-query* query-analyzer query)]
+    (assoc context :query q)))
+
+(defn- process-expr
+  "Takes an expression and a context flag and returns a sequence of clauses
+  in DNF form."
+  [expr pos?]
+  (if (string? expr)
+    (if pos?
+      [#{expr}]
+      [#{}])
+    (let [[op & args] expr]
+      (case op
+        :not (process-expr (first args) (not pos?))
+        :and (if pos?
+               (reduce (fn [clauses arg]
+                         (for [clause  clauses
+                               clause2 (process-expr arg true)]
+                           (set/union clause clause2)))
+                       [#{}]
+                       args)
+               (mapcat #(process-expr % false) args))
+        :or  (if pos?
+               (mapcat #(process-expr % true) args)
+               (reduce (fn [clauses arg]
+                         (for [clause  clauses
+                               clause2 (process-expr arg false)]
+                           (set/union clause clause2)))
+                       [#{}]
+                       args))))))
+
+(defn- combine-clauses
+  [clauses]
+  (let [all-pos (set clauses)
+        req     (apply set/intersection all-pos)
+        opt     (apply set/union all-pos)]
+    {:req req :opt (set/difference opt req)}))
+
+(defn required-terms*
+  "Given a boolean expression of terms, select terms into two sets:
+    :req  - terms that are required
+    :opt  - terms that are optional
+  Do not compute forrbiden terms, as it is complicated and expensive,
+  opt to remove thoses docs with bitmap ops"
+  [query]
+  (combine-clauses (process-expr query true)))
+
+(defn- required-terms
+  [{:keys [query] :as context}]
+  (merge context (required-terms* query)))
+
+(defn- collect-tokens
+  [{:keys [query] :as context}]
+  (let [tokens (volatile! [])]
+    (walk/postwalk
+      (fn [e]
+        (if (string? e)
+          (vswap! tokens conj e)
+          e))
+      query)
+    (assoc context :tokens @tokens)))
+
+(defn- to-bms
+  [m args]
+  (let [bms (into []
+                  (comp
+                    (remove nil?)
+                    (map #(if (string? %) (m %) %))
+                    (remove nil?))
+                  args)]
+    (when (seq bms) (into-array RoaringBitmap bms))))
+
+(defn- operate-bms
+  [op ^AtomicInteger max-doc ^"[Lorg.roaringbitmap.RoaringBitmap;" bms]
+  (when bms
+    (case op
+      :not (RoaringBitmap/flip ^RoaringBitmap (aget bms 0)
+                               0 (u/long-inc (.get max-doc)))
+      :and (FastAggregation/and bms)
+      :or  (FastAggregation/or bms))))
+
+(defn- boolean-bm
+  [tms bms max-doc query]
+  (let [m (zipmap tms bms)]
+    (if (string? query)
+      (m query)
+      (walk/postwalk
+        (fn [e]
+          (if (vector? e)
+            (let [[op & args] e]
+              (operate-bms op max-doc (to-bms m args)))
+            e))
+        query))))
+
+(defn- setup-env
+  [{:keys [qterms req opt max-doc query] :as context}]
+  (let [tids  (mapv :id qterms)
+        sls   (mapv :sl qterms)
+        tms   (mapv :tm qterms)
+        rtms  (zipmap tms tids)
+        req   (set (mapv rtms req))
+        opt   (set (mapv rtms opt))
+        cds   (set/union req opt)
+        mws   (get-ws tids qterms :mw)
+        wqs   (get-ws tids qterms :wq)
+        rtids (into [] (filter cds) tids)
+        bms   (mapv #(.-indices ^SparseIntArrayList %) sls)]
+    (assoc context :tids rtids :wqs wqs :req req :opt opt
+           :bms (zipmap tids bms)
+           :sls (zipmap tids sls)
+           :tms (zipmap tids tms)
+           :mxs (get-mxs tids wqs mws)
+           :bbm (boolean-bm tms bms max-doc query))))
 
 (def default-search-opts {:display             :refs
                           :top                 10
@@ -340,48 +487,37 @@
                               (:proximity-max-dist search-opts)
                               doc-filter
                               (:doc-filter search-opts)}}]
-    (when-not (s/blank? query)
-      (let [tokens (->> (query-analyzer query)
-                        (mapv first)
-                        (into-array String))
-            qterms (->> (hydrate-query this max-doc tokens)
-                        (sort-by :df)
-                        vec)
-            n      (count qterms)]
-        (when-not (zero? n)
-          (let [tids    (mapv :id qterms)
-                sls     (mapv :sl qterms)
-                bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
-                                           sls))
-                sls     (zipmap tids sls)
-                tms     (zipmap tids (mapv :tm qterms))
-                mws     (get-ws tids qterms :mw)
-                wqs     (get-ws tids qterms :wq)
-                mxs     (get-mxs tids wqs mws)
-                result  (RoaringBitmap.)
-                scoring (score-docs n tids sls bms mxs wqs norms result)]
-            (sequence
-              (display-xf this doc-filter display tms)
-              (persistent!
-                (unreduced
-                  (reduce
-                    (fn [coll tao]
-                      (let [to-get (- ^long top (count coll))]
-                        (if (< 0 to-get)
-                          (let [^PriorityQueue pq (priority-queue to-get)]
-                            (scoring this pq tao to-get proximity-expansion
-                                     proximity-max-dist)
-                            (pouring coll pq result))
-                          (reduced coll))))
-                    (transient [])
-                    (range n 0 -1))))))))))
+    (when-let [context (some-> {:engine this :max-doc max-doc}
+                               (parse-query query-analyzer query)
+                               required-terms
+                               collect-tokens
+                               hydrate-query
+                               setup-env)]
+      (let [{:keys [tms req opt]} context
+            n                     (+ (count req) (count opt))
+            result                (RoaringBitmap.)
+            scoring               (score-docs context n norms result)]
+        (sequence
+          (display-xf this doc-filter display tms)
+          (persistent!
+            (unreduced
+              (reduce
+                (fn [coll tao]
+                  (let [to-get (- ^long top (count coll))]
+                    (if (< 0 to-get)
+                      (let [^PriorityQueue pq (priority-queue to-get)]
+                        (scoring this pq tao to-get proximity-expansion
+                                 proximity-max-dist)
+                        (pouring coll pq result))
+                      (reduced coll))))
+                (transient [])
+                (range n 0 -1))))))))
 
   IAdmin
   (re-index [this opts]
     (if include-text?
       (try
-        (let [d    (l/dir lmdb)
-              coll (HashMap.)]
+        (let [coll (HashMap.)]
           (doseq [[doc-id doc-ref] docs
                   :let             [doc-text (get-rawtext this doc-id)]]
             (.put coll doc-ref doc-text))
@@ -531,13 +667,13 @@
         (.insertWithOverflow ^PriorityQueue pq [tscore did])))))
 
 (defn- score-docs
-  [n tids sls bms mxs wqs norms result]
+  [{:keys [tids wqs] :as context} n norms result]
   (fn [engine pq tao to-get expansion max-dist]
     (if (.-index-position? ^SearchEngine engine)
       (let [pq0 (priority-queue (* ^long to-get ^long expansion))]
-        (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
+        (tf-idf-scoring context result tao n pq0 norms)
         (proximity-scoring engine max-dist tids wqs norms pq0 pq))
-      (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
+      (tf-idf-scoring context result tao n pq norms))))
 
 (defn- get-term-info
   [^SearchEngine engine term]
@@ -657,7 +793,7 @@
       (l/transact-kv (.-lmdb engine) txs)))
   :doc-added)
 
-(defn- hydrate-query
+(defn- hydrate-query*
   [^SearchEngine engine ^AtomicInteger max-doc tokens]
   (into []
         (comp
@@ -678,6 +814,14 @@
                              ^double (idf df (.get max-doc)))}))))
           (filter map?))
         (frequencies tokens)))
+
+(defn- hydrate-query
+  [{:keys [engine max-doc tokens] :as context}]
+  (let [qterms (->> (hydrate-query* engine max-doc tokens)
+                    (sort-by :df)
+                    vec)]
+    (when (seq qterms)
+      (assoc context :qterms qterms))))
 
 (defn- get-doc-ref
   [^SearchEngine engine doc-filter [_ doc-id]]

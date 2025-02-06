@@ -17,7 +17,7 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [clojure.test :refer [deftest testing is use-fixtures]])
+   [clojure.test :refer [deftest testing are is use-fixtures]])
   (:import
    [java.util UUID ]
    [datalevin.sparselist SparseIntArrayList]
@@ -34,6 +34,55 @@
     (is (= (subs s1 10 (+ 10 (.length "datalevin-analyzers")))
            "Datalevin-Analyzers" ))))
 
+(deftest parse-query-test
+  (are [query result] (= (sut/parse-query* a/en-analyzer query) result)
+    " "                                    nil
+    "red"                                  "red"
+    " red "                                "red"
+    "red fox"                              [:or "red" "fox"]
+    [:or " " "red"]                        [:or "red"]
+    [:or "red" [:not "fox"]]               [:or "red" [:not "fox"]]
+    [:or "red fox back" " fox "]           [:or [:or "red" "fox" "back"] "fox"]
+    [:or "fox" "red" [:and "black" "cat"]] [:or "fox" "red" [:and "black" "cat"]])
+  (are [query]
+      (thrown-with-msg? Exception #"Invalid search query"
+                        (sut/parse-query* a/en-analyzer query))
+    []
+    ["book"]
+    ["book" "red"]
+    [:none "book"]))
+
+(deftest required-terms-test
+  (testing "Simple OR with literals"
+    (let [expr   [:or "a" "b"]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{} :opt #{"a" "b"}}))))
+
+  (testing "Simple AND with literals"
+    (let [expr   [:and "a" "b"]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{"a" "b"} :opt #{}}))))
+
+  (testing "Simple NOT on a literal"
+    (let [expr   [:not "a"]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{} :opt #{}}))))
+
+  (testing "Nested expression mixing OR, AND and NOT (NOT on literal)"
+    (let [expr   [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{} :opt #{"fox" "red" "black" "sheep"}}))))
+
+  (testing "NOT operator on a non-literal expression"
+    (let [expr   [:not [:or "b" "c"]]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{} :opt #{}}))))
+
+  (testing "More complex nested expression"
+    (let [expr   [:and "a" [:or "b" "c"] [:not [:and "d" "e"]]]
+          result (sut/required-terms* expr)]
+      (is (= result {:req #{"a"} :opt #{"b" "c"}})))))
+
 (defn- add-docs
   [f engine]
   (f engine :doc0 "")
@@ -42,8 +91,16 @@
   (f engine :doc3 "Moby Dick is a story of a whale and a man obsessed.")
   (f engine :doc4 "The robber wore a red fleece jacket and a baseball cap.")
   (f engine :doc5
-     "The English Springer Spaniel is the best of all red dogs I know.")
-  )
+     "The English Springer Spaniel is the best of all red dogs I know."))
+
+(deftest default-analyzer-test
+  (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        engine (sut/new-search-engine lmdb)]
+    (add-docs sut/add-doc engine)
+    (is (= [:doc1 :doc5] (sut/search engine "dogs")))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest blank-analyzer-test
   (let [blank-analyzer (fn [^String text]
@@ -60,6 +117,45 @@
     (is (= [[:doc1 [["dogs." [43]]]]]
            (sut/search engine "dogs." {:display :offsets})))
     (is (= [:doc5] (sut/search engine "dogs")))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest boolean-expression-tests
+  (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        engine (sut/new-search-engine lmdb)]
+    (add-docs sut/add-doc engine)
+
+    (let [result (set (sut/search engine [:and "red" [:not "fleece"]]))]
+      (is (= result #{:doc1 :doc5})))
+
+    (let [result (set (sut/search engine [:and "man" "whale"]))]
+      (is (= result #{:doc3})))
+
+    (let [result (set (sut/search engine [:and "red" [:not "dogs"]]))]
+      (is (= result #{:doc2 :doc4})))
+
+    (let [result (sut/search
+                   engine
+                   [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]])]
+      (is (= (set result) #{:doc1 :doc2 :doc4 :doc5})))
+
+    (is (empty? (sut/search engine "")))
+
+    (is (empty? (sut/search engine "nonexistentterm")))
+
+    (let [result (set (sut/search engine [:or "" "whale"]))]
+      (is (= result #{:doc3})))
+
+    (let [result (sut/search engine [:and "red" [:not "red"]])]
+      ;; Conflicting condition; no document should satisfy this.
+      (is (empty? result)))
+
+    (let [result (sut/search engine [:or "" ""])]
+      (is (empty? result)))
+
+    (is (empty? (sut/search engine "   ")))
+
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
