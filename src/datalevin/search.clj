@@ -357,12 +357,16 @@
 
 (defn- to-bms
   [m args]
-  (let [bms (into []
-                  (comp
-                    (remove nil?)
-                    (map #(if (string? %) (m %) %))
-                    (remove nil?))
-                  args)]
+  (let [to-bm #(if (string? %)
+                 (if-let [bm (m %)]
+                   bm
+                   (RoaringBitmap.))
+                 %)
+        bms   (into []
+                   (comp
+                     (remove nil?)
+                     (map to-bm))
+                   args)]
     (when (seq bms) (into-array RoaringBitmap bms))))
 
 (defn- operate-bms

@@ -110,12 +110,14 @@
     (add-docs sut/add-doc engine)
 
     (are [query result] (= result (set (sut/search engine query)))
-      [:and "red" [:not "fleece"]] #{:doc1 :doc5}
-      [:and "man" "whale"]         #{:doc3}
-      [:and "red" [:not "dogs"]]   #{:doc2 :doc4}
-      [:or "" "whale"]             #{:doc3}
-      [:not "red"]                 #{:doc3}
-      [:not [:and "red" "fox"]]    #{:doc2 :doc3 :doc4 :doc5}
+      [:and "red" [:not "fleece"]]          #{:doc1 :doc5}
+      [:and "red" [:not "nonexistentterm"]] #{:doc1 :doc2 :doc4 :doc5}
+      [:and "man" "whale"]                  #{:doc3}
+      [:and "red" [:not "dogs"]]            #{:doc2 :doc4}
+      [:or "" "whale"]                      #{:doc3}
+      [:or "nonexistentterm" "whale"]       #{:doc3}
+      [:not "red"]                          #{:doc3}
+      [:not [:and "red" "fox"]]             #{:doc2 :doc3 :doc4 :doc5}
 
       [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
       #{:doc1 :doc2 :doc4 :doc5}
@@ -128,6 +130,7 @@
       ""
       "  "
       "nonexistentterm"
+      [:and "nonexistentterm" "red"]
       [:and "red" [:not "red"]] ; Conflicting condition
       [:or "" ""])
 
