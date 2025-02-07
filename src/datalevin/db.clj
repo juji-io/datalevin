@@ -37,8 +37,12 @@
   (-e-datoms [db e])
   (-av-datoms [db attr v])
   (-range-datoms [db index start-datom end-datom])
-  (-seek-datoms [db index c1 c2 c3])
-  (-rseek-datoms [db index c1 c2 c3])
+  (-seek-datoms
+    [db index c1 c2 c3]
+    [db index c1 c2 c3 n])
+  (-rseek-datoms
+    [db index c1 c2 c3]
+    [db index c1 c2 c3 n])
   (-cardinality [db attr])
   (-index-range [db attr start end])
   (-index-range-size [db attr start end] [db attr start end cap]))
@@ -326,10 +330,17 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store [:seek index c1 c2 c3]
-      (s/slice store index
-               (components->pattern db index c1 c2 c3 e0)
-               (datom emax c1 nil))))
+     store [:seek index c1 c2 c3]
+     (s/slice store index
+              (components->pattern db index c1 c2 c3 e0)
+              (datom emax c1 nil))))
+  (-seek-datoms
+    [db index c1 c2 c3 n]
+     (wrap-cache
+         store [:seek index c1 c2 c3 n]
+         (s/slice store index
+                  (components->pattern db index c1 c2 c3 e0)
+                  (datom emax c1 nil) n)))
 
   (-rseek-datoms
     [db index c1 c2 c3]
@@ -338,6 +349,13 @@
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 c1 nil))))
+  (-rseek-datoms
+    [db index c1 c2 c3 n]
+    (wrap-cache
+        store [:rseek index c1 c2 c3 n]
+      (s/rslice store index
+                (components->pattern db index c1 c2 c3 emax)
+                (datom e0 c1 nil) n)))
 
   (-cardinality
     [db attr]

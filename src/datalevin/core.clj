@@ -678,7 +678,8 @@ Only usable for debug output.
    (db/-seek-datoms db index c1 c2 nil))
   ([db index c1 c2 c3]    {:pre [(db/db? db)]}
    (db/-seek-datoms db index c1 c2 c3))
-  )
+  ([db index c1 c2 c3 n]    {:pre [(db/db? db)]}
+   (db/-seek-datoms db index c1 c2 c3 n)))
 
 
 (defn rseek-datoms
@@ -691,7 +692,8 @@ Only usable for debug output.
    (db/-rseek-datoms db index c1 c2 nil))
   ([db index c1 c2 c3]    {:pre [(db/db? db)]}
    (db/-rseek-datoms db index c1 c2 c3))
-  )
+  ([db index c1 c2 c3 n]    {:pre [(db/db? db)]}
+   (db/-rseek-datoms db index c1 c2 c3 n)))
 
 (defn fulltext-datoms
   "Return datoms that found by the given fulltext search query"

@@ -249,9 +249,13 @@
     "Return the first datom within the given range (inclusive)")
   (tail [this index high-datom low-datom]
     "Return the last datom within the given range (inclusive)")
-  (slice [this index low-datom high-datom]
+  (slice
+    [this index low-datom high-datom]
+    [this index low-datom high-datom n]
     "Return a range of datoms within the given range (inclusive).")
-  (rslice [this index high-datom low-datom]
+  (rslice
+    [this index high-datom low-datom]
+    [this index high-datom low-datom n]
     "Return a range of datoms in reverse within the given range (inclusive)")
   (e-datoms [this e] "Return datoms with given e value")
   (e-first-datom [this e] "Return the first datom with given e value")
@@ -871,7 +875,17 @@
   (slice [_ index low-datom high-datom]
     (mapv #(retrieved->datom lmdb attrs %)
           (lmdb/list-range
-            lmdb (index->dbi index)
+           lmdb (index->dbi index)
+           [:closed (index->k index schema low-datom false)
+            (index->k index schema high-datom true)]
+           (index->ktype index)
+           [:closed (datom->indexable schema low-datom false)
+            (datom->indexable schema high-datom true)]
+           (index->vtype index))))
+  (slice [_ index low-datom high-datom n]
+     (mapv #(retrieved->datom lmdb attrs %)
+           (scan/list-range-first-n
+            lmdb (index->dbi index) n
             [:closed (index->k index schema low-datom false)
              (index->k index schema high-datom true)]
             (index->ktype index)
@@ -883,6 +897,17 @@
     (mapv #(retrieved->datom lmdb attrs %)
           (lmdb/list-range
             lmdb (index->dbi index)
+            [:closed-back (index->k index schema high-datom true)
+             (index->k index schema low-datom false)]
+            (index->ktype index)
+            [:closed-back
+             (datom->indexable schema high-datom true)
+             (datom->indexable schema low-datom false)]
+            (index->vtype index))))
+  (rslice [_ index high-datom low-datom n]
+    (mapv #(retrieved->datom lmdb attrs %)
+          (lmdb/list-range-first-n
+            lmdb (index->dbi index) n
             [:closed-back (index->k index schema high-datom true)
              (index->k index schema low-datom false)]
             (index->ktype index)
