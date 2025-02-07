@@ -40,7 +40,8 @@
   (inter-fn [t] (a/en-stop-words-token-filter t)))
 
 (def prefix-token-filter
-  "Produces a series of every possible prefixes in a token and replace it with them. For example: vault -> v, va, vau, vaul, vault
+  "Produces a series of every possible prefixes in a token and replace it with
+  them. For example: vault -> v, va, vau, vaul, vault
 
   Takes a vector `[word position start-offset]`.
 

@@ -170,10 +170,6 @@ Specifically, the following LMDB sub-databases are created for search supposes:
   of the term in the document. This storage is optional, where user set it with
   `:index-position?` option.
 
-The inverted list implementation leverages the `DUPSORT` feature of LMDB, where
-multiple values (i.e. the list) of the same key are stored together in sorted
-order, allowing efficient iteration, count and update.
-
 Most information needed for scoring documents were pre-calculated during
 indexing, and loaded into memory on demand. For example, the norms of all
 documents were loaded into memory during search engine initialization, the same
@@ -217,7 +213,8 @@ terms. Not only is it efficient, this approach also addresses an often felt user
 frustration with search engines: a document containing all query terms
 may be ranked much lower than a document containing only partial query terms. In
 our algorithm, the documents containing more query terms are considered first
-and are guaranteed to return earlier than those documents with poorer term coverage.
+and are guaranteed to return earlier than those documents with poorer term
+coverage.
 
 #### T-Wand algorithm
 
@@ -226,27 +223,27 @@ The details of the *T-Wand* algorithm is the following.
 First, we want to consider documents containing all `n` user specified query
 terms. Instead of looping over all `n` inverted lists of all query terms, we
 first pick the query term with the least edit distance (i.e. with the least
-amount of typos) and the least document frequency (i.e. the most rare term), use its
-inverted list of documents as the candidates, and forgo all other documents.
+amount of typos) and the least document frequency (i.e. the most rare term), use
+its inverted list of documents as the candidates, and forgo all other documents.
 This is sufficient, because, for a document to contain all `n` query terms, it
 must contains the rarest one among them. More generally, there is a simple
 (trivial?) mathematical property that can be stated as the following [3]:
 
 ```
 Let there be a set X with size n and a set Y with any size. For any subset Z in
-X of size (n-t+1), if the size of the intersection of X and Y is greater or equal
-to t, then Z must intersect with Y.
+X of size (n-t+1), if the size of the intersection of X and Y is greater or
+equal to t, then Z must intersect with Y.
 ```
 
-This property allows us to develop search algorithms that use the inverted lists of any
- `n-t+1` terms alone as the candidates, in order to find documents that contain `t`
- query terms. We will of course choose the rarest ones (i.e. shortest lists) to
- start with. For example, to search for documents with all `n` query terms, it
- is sufficient to search in documents containing the rarest term; to search for
- documents with `n-1` terms, it is sufficient to search in the union of the
- rarest and the second rarest term's documents; so on and so forth. When there
- are very rare terms in the query, very few candidate documents need to be
- examined.
+This property allows us to develop search algorithms that use the inverted lists
+of any `n-t+1` terms alone as the candidates, in order to find documents that
+contain `t` query terms. We will of course choose the rarest ones (i.e. shortest
+lists) to start with. For example, to search for documents with all `n` query
+terms, it is sufficient to search in documents containing the rarest term; to
+search for documents with `n-1` terms, it is sufficient to search in the union
+of the rarest and the second rarest term's documents; so on and so forth. When
+there are very rare terms in the query, very few candidate documents need to be
+examined.
 
 We loop over this list of candidate documents, for each document, check if it
 appears in the inverted lists of subsequent query terms.
@@ -295,7 +292,7 @@ list, indexed by a bitmap of document ids. The access of a term frequency is
 through the `rank` method of Roaring Bitmaps, which seems to be an innovation,
 as far as I can tell. When stored, the integer list is compressed with
 [JavaFastPFOR](https://github.com/lemire/JavaFastPFOR), another excellent
-library by Prof. Daniel Lemire, the same author of Roaring Bitmaps.
+library by Daniel Lemire, the same author of Roaring Bitmaps.
 
 [Eclipse Collections](https://www.eclipse.org/collections/) is used to reduce
 memory footprint whenever appropriate.
@@ -331,10 +328,24 @@ A span based proximity scoring algorithm is used to calculate the proximity
 contribution of individual terms, and they are then plugged into the Okapi
 ranking function to arrive at the final score [5].
 
+### Boolean Search Expression
+
+Since the boolean search expression is just a Clojure data structure, we just
+walk the boolean expression as a tree, and apply the corresponding boolean
+operators on the bitmaps of the operand terms' `doc-freq-sparse-list`. This is
+done prior to the tf-idf scoring of documents, effectively pre-filtering
+documents using the boolean expression.
+
+### Phrase Search
+
+
+
 ## Benchmark
 
-The details of benchmark comparison with Lucene is [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench). The
-summary is that Datalevin search engine beats Lucene in search speed, but lags in write speed, as expected.
+The details of benchmark comparison with Lucene is
+[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench).
+The summary is that Datalevin search engine beats Lucene in search speed, but
+lags in write speed, as expected.
 
 ## References
 

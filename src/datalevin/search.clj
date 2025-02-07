@@ -244,27 +244,38 @@
         (when (has-next? (advance candidate))
           (recur (get-did candidate) (current-threshold pq)))))))
 
+(defn- failed-phrases
+  [engine phrases did]
+  false)
+
 (defn- tf-idf-scoring
-  [{:keys [mxs wqs] :as context} result tao n pq norms]
+  [{:keys [mxs wqs phrases engine] :as context} result tao n pq norms]
   (loop [^"[Ldatalevin.search.Candidate;" candidates
          (first-candidates context result tao n)]
-    (let [nc            (alength candidates)
-          minimal-score ^double (current-threshold pq)]
-      (cond
+    (let [nc (alength candidates)]
+      (cond+
         (or (= nc 0) (< nc ^long tao)) :finish
+        ;; (seq phrases) (check-phrases phrases )
+
+        :let [minimal-score ^double (current-threshold pq)]
+
         (= nc 1)
         (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
+
+        :do (Arrays/sort candidates candidate-comp)
+
         :else
-        (let [_                   (Arrays/sort candidates candidate-comp)
-              [mxscore pivot did] (find-pivot mxs (dec ^long tao)
+        (let [[mxscore pivot did] (find-pivot mxs (dec ^long tao)
                                               minimal-score
                                               candidates)]
           (if (= ^int did ^int (get-did (aget candidates 0)))
-            (let [score (score-pivot wqs mxs norms did minimal-score
-                                     mxscore tao n candidates)]
-              (when-not (= score :prune)
-                (.insertWithOverflow ^PriorityQueue pq [score did]))
-              (recur (next-candidates did candidates)))
+            (if (and (seq phrases) (failed-phrases engine phrases did))
+              (recur (next-candidates did candidates))
+              (let [score (score-pivot wqs mxs norms did minimal-score
+                                       mxscore tao n candidates)]
+                (when-not (= score :prune)
+                  (.insertWithOverflow ^PriorityQueue pq [score did]))
+                (recur (next-candidates did candidates))))
             (recur (skip-candidates pivot did candidates))))))))
 
 (defprotocol ISearchEngine
@@ -276,14 +287,18 @@
   (search [this query] [this query opts]))
 
 (declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
-         get-rawtext new-search-engine parse-query*)
+         get-rawtext new-search-engine parse-query* parse-query)
+
+(defn- to-tokens
+  [query-analyzer s]
+  (into []
+        (comp (map first) (remove s/blank?))
+        (query-analyzer s)))
 
 (defn- parse-string
   [query-analyzer s]
   (when-not (s/blank? s)
-    (let [tokens (into []
-                       (comp (map first) (remove s/blank?))
-                       (query-analyzer s))]
+    (let [tokens (to-tokens query-analyzer s)]
       (case (count tokens)
         0 nil
         1 (first tokens)
@@ -295,8 +310,9 @@
   [query-analyzer [op & exps]]
   (if (and (seq exps) (operators op))
     (let [es (into []
-                   (comp (map #(parse-query* query-analyzer %))
-                      (remove nil?))
+                   (comp
+                     (map #(parse-query* query-analyzer %))
+                     (remove nil?))
                    exps)]
       (when (seq es) (vec (cons op es))))
     (raise "Invalid search query" {:op op})))
@@ -304,36 +320,32 @@
 (defn parse-query*
   [query-analyzer query]
   (cond
-    (string? query) (parse-string query-analyzer query)
-    (vector? query) (parse-vector query-analyzer query)
-    :else           (raise "Invalid search query" {:query query})))
+    (string? query)  (parse-string query-analyzer query)
+    (vector? query)  (parse-vector query-analyzer query)
+    (keyword? query) query
+    :else            (raise "Invalid search query" {:query query})))
 
-(defn- parse-query
-  [context query-analyzer query]
-  (when-let [q (parse-query* query-analyzer query)]
-    (assoc context :query q)))
-
-(defn- process-expr
-  "Takes an expression and a context flag and returns a sequence of clauses
-  in DNF form."
+(defn- required-terms*
   [expr pos?]
-  (if (string? expr)
-    (if pos? [#{expr}] [#{}])
+  (cond
+    (string? expr)  (if pos? [#{expr}] [#{}])
+    (keyword? expr) [#{}]
+    :else
     (let [[op & args] expr]
       (case op
-        :not (process-expr (first args) (not pos?))
+        :not (required-terms* (first args) (not pos?))
         :and (if pos?
                (reduce (fn [clauses arg]
                          (for [clause  clauses
-                               clause2 (process-expr arg true)]
+                               clause2 (required-terms* arg true)]
                            (set/union clause clause2)))
                        [#{}] args)
-               (mapcat #(process-expr % false) args))
+               (mapcat #(required-terms* % false) args))
         :or  (if pos?
-               (mapcat #(process-expr % true) args)
+               (mapcat #(required-terms* % true) args)
                (reduce (fn [clauses arg]
                          (for [clause  clauses
-                               clause2 (process-expr arg false)]
+                               clause2 (required-terms* arg false)]
                            (set/union clause clause2)))
                        [#{}] args))))))
 
@@ -342,7 +354,7 @@
    Do not compute excluded terms, as it is complicated and expensive,
    opt to remove thoses docs with bitmap ops"
   [{:keys [query] :as context}]
-  (assoc context :req (apply set/union (process-expr query true))))
+  (assoc context :req (apply set/union (required-terms* query true))))
 
 (defn- collect-tokens
   [{:keys [query] :as context}]
@@ -357,16 +369,12 @@
 
 (defn- to-bms
   [m args]
-  (let [to-bm #(if (string? %)
-                 (if-let [bm (m %)]
-                   bm
-                   (RoaringBitmap.))
-                 %)
-        bms   (into []
-                   (comp
-                     (remove nil?)
-                     (map to-bm))
-                   args)]
+  (let [to-bm (fn [e]
+                (cond
+                  (string? e)           (if-let [bm (m e)] bm (RoaringBitmap.))
+                  (identical? e :empty) (RoaringBitmap.)
+                  :else                 e))
+        bms   (into [] (map to-bm) args)]
     (when (seq bms) (into-array RoaringBitmap bms))))
 
 (defn- operate-bms
@@ -527,6 +535,80 @@
         (catch Exception e
           (u/raise "Unable to re-index search. " e {:dir (l/dir lmdb)})))
       (u/raise "Can only re-index search when :include-text? is true" {}))))
+
+(defn- collect-phrases
+  [query]
+  (let [phrases (volatile! #{})]
+    (walk/postwalk
+      (fn [e]
+        (if (:phrase e)
+          (vswap! phrases conj e)
+          e))
+      query)
+    @phrases))
+
+(defn- required-phrases
+  [expr pos?]
+  (cond
+    (string? expr) [#{}]
+    (:phrase expr) (if pos? [#{expr}] [#{}])
+    (:term expr)   [#{}]
+    (map? expr)    (raise "Invalid search query" {:map expr})
+    :else
+    (let [[op & args] expr]
+      (case op
+        :not (required-phrases (first args) (not pos?))
+        :and (if pos?
+               (reduce (fn [clauses arg]
+                         (for [clause  clauses
+                               clause2 (required-phrases arg true)]
+                           (set/union clause clause2)))
+                       [#{}] args)
+               (mapcat #(required-phrases % false) args))
+        :or  (if pos?
+               (mapcat #(required-phrases % true) args)
+               (reduce (fn [clauses arg]
+                         (for [clause  clauses
+                               clause2 (required-phrases arg false)]
+                           (set/union clause clause2)))
+                       [#{}] args))))))
+
+(defn- convert-phrase
+  "convert positive phrase to [:and tokens], negative phrase to :empty"
+  [{:keys [phrase]} analyzer phrases req?]
+  (let [tokens (to-tokens analyzer phrase)]
+    (vswap! phrases assoc tokens req?)
+    (if req? (vec (cons :and tokens)) :empty)))
+
+(defn- handle-maps
+  [position? phrases analyzer query]
+  (let [all (collect-phrases query)]
+    (if (seq all)
+      (if (not position?)
+        (raise "Phrase search requires :index-position? true" {})
+        (let [req (apply set/union (required-phrases query true))
+              fbd (set/difference all req)]
+          (walk/postwalk
+            (fn [e]
+              (cond
+                (req e)   (convert-phrase e analyzer phrases true)
+                (fbd e)   (convert-phrase e analyzer phrases false)
+                (:term e) (:term e)
+                :else     e))
+            query)))
+      query)))
+
+(handle-maps true (volatile! {}) a/en-analyzer
+             [:not {:phrase "give up"}])
+
+(defn- parse-query
+  [{:keys [engine] :as context} query-analyzer query]
+  (let [position? (.-index-position? ^SearchEngine engine)
+        phrases   (volatile! {})]  ; [ tokens ] -> required?
+    (when-let [q (some->> query
+                          (handle-maps position? phrases query-analyzer)
+                          (parse-query* query-analyzer))]
+      (assoc context :query q :phrases @phrases))))
 
 (defmacro wrap-cache
   [engine k v]

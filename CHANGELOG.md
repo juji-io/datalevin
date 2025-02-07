@@ -14,15 +14,18 @@
   return top K nearest neighhors.
   [#145](https://github.com/juji-io/datalevin/issues/145)
 - [Search] Boolean search expression.
+  [#104](https://github.com/juji-io/datalevin/issues/104)
   [#310](https://github.com/juji-io/datalevin/issues/310)
+- [Search] Phrase search. [#311](https://github.com/juji-io/datalevin/issues/311)
 - [Datalog] `max-eid` function to return the current maximal entity id.
 
 ### Fixed
 - [Datalog] `and` in `or-join` exception
   [#304](https://github.com/juji-io/datalevin/issues/304)
-- [Datalog ] `and` join exception.
+- [Datalog] `and` join exception.
   [#305](https://github.com/juji-io/datalevin/issues/305)
-- Validation of negative doubles [#308](https://github.com/juji-io/datalevin/issues/308)
+- [Datalog] Validation of negative doubles
+  [#308](https://github.com/juji-io/datalevin/issues/308)
 
 ### Improved
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
