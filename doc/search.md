@@ -73,15 +73,18 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 (d/add-doc engine 2 (docs 2))
 (d/add-doc engine 3 (docs 3))
 
-;; search by default return a list of `doc-ref` ordered by relevance to query
+;; search by default returns a list of `doc-ref` ordered by relevance to query
 (d/search engine "red")
 ;=> (1 2)
+
+;; search syntax supports nested boolean expression and phrases
+(d/search engine [:and {:phrase "little lamb"} "fleece"])
+;=> (2)
 
 ;; we can alter the display to show offets of term occurrences as well, useful
 ;; e.g. to highlight matched terms in documents
 (d/search engine "red" {:display :offsets})
 ;=> ([1 (["red" [10 39]])] [2 (["red" [40]])])
-
 ```
 
 ### Search in Datalog
@@ -318,17 +321,22 @@ perform a two stage procedure: we search by tf-idf based scoring first as usual,
 then calculate proximity score only for the top results, and finally produce the
 top `k` results according to the proximity score.
 
-For the first tf-idf stage, instead of producing top `k` results only, we produce top
-`m * k` results, where `m` is user configurable as `:proximity-expansion`
-(default is `2`) search option. This parameter reflects a search quality vs. time
-trade-off. The larger is `m`, the better is the search quality, while the search
-time would be longer.
+For the first tf-idf stage, instead of producing top `k` results only, we
+produce top `m * k` results, where `m` is user configurable as
+`:proximity-expansion` (default is `2`) search option. This parameter reflects a
+search quality vs. time trade-off. The larger is `m`, the better is the search
+quality, while the search time would be longer.
 
 A span based proximity scoring algorithm is used to calculate the proximity
 contribution of individual terms, and they are then plugged into the Okapi
 ranking function to arrive at the final score [5].
 
 ### Boolean Search Expression
+
+Boolean operators `:and`, `:or`, and `:not` can be arbitrarily nested to form
+complex boolean expressions. For example:
+
+`[:or "fox" "red" [:and "black" "sheep" [:not "yellow"]]]`
 
 Since the boolean search expression is just a Clojure data structure, we just
 walk the boolean expression as a tree, and apply the corresponding boolean
@@ -338,7 +346,19 @@ documents using the boolean expression.
 
 ### Phrase Search
 
+Phrases can be encoded in a map, e.g. `{:phrase "computer science"}`. The
+phrases can be embedded in a boolean expression, for example,
 
+`[:or [:not [:and {:phrase "fleece jacket"} "robber"]] [:not {:phrase "red fox"}]]`
+
+Phrase search feature is only available when `:index-position? true`. Using
+phrases in the query without this option enabled for the search engine will
+generate an error.
+
+Phrase matching is done after documnt scoring and right before a document is
+about to be put into the result priority queue, so the document will not be
+added to the results if it does not have the required phrases or has the
+forbidden phrases.
 
 ## Benchmark
 

@@ -2226,10 +2226,10 @@ formally with the following grammar:
     <pair>       ::= <key> string
     <key>        ::= :phrase | :term
 
-For example, [:or [:and \"red\" \"fox\" [:not \"lazy\"]] {:phrase \"jump over\"}]
+For example, `[:or [:and \"red\" \"fox\" [:not \"lazy\"]] {:phrase \"jump over\"}]`
 
-If the query is a string of words, e.g. \"word1 word2 word3\", it is equivalent to
-[:or \"word1\" \"word2\" \"word3\"] when using the default analyzer.
+If the query is a string of words, e.g. `\"word1 word2 word3\"`, it is equivalent
+to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
 
 `opts` map may have these keys:
 
