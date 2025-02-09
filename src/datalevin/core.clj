@@ -647,6 +647,8 @@ Only usable for debug output.
 
    If no datom matches passed arguments exactly, iterator will start from first datom that could be considered “greater” in index order.
 
+   If `n` is specified, only up to `n` datoms will be returned.
+
    Usage:
 
        (seek-datoms db :eav 1)
@@ -680,7 +682,6 @@ Only usable for debug output.
    (db/-seek-datoms db index c1 c2 c3))
   ([db index c1 c2 c3 n]    {:pre [(db/db? db)]}
    (db/-seek-datoms db index c1 c2 c3 n)))
-
 
 (defn rseek-datoms
   "Same as [[seek-datoms]], but goes backwards."

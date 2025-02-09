@@ -30,6 +30,9 @@
 ### Improved
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
   errors. [#306](https://github.com/juji-io/datalevin/issues/306)
+- [Datalog] Added arity to `seek-datoms` and `rseek-datoms` to specify the
+  number of datoms desired. [Thx @jeremy302]
+  [#312](https://github.com/juji-io/datalevin/issues/312)
 - [Compress] Background sampler periodically save a sample of key
   bytes, in preparation for data compression.
 

@@ -94,6 +94,10 @@
               [2 :age 25]
               [1 :age 44]])))
 
+    (testing "N"
+      (is (= (map dvec (d/seek-datoms db :ave :age 10 nil 1))
+             [ [3 :age 11] ])))
+
     (testing "Closest value lookup"
       (is (= (map dvec (d/seek-datoms db :ave :name "P"))
              [
@@ -165,6 +169,10 @@
       (is (= (map dvec (d/rseek-datoms db :ave :name "Petr"))
              [ [1 :name "Petr"]
               [2 :name "Ivan"]])))
+
+    (testing "N"
+      (is (= (map dvec (d/rseek-datoms db :ave :name "Petr" nil 1))
+             [ [1 :name "Petr"] ])))
 
     (testing "Closest value lookup"
       (is (= (map dvec (d/rseek-datoms db :ave :age 26))

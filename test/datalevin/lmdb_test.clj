@@ -500,7 +500,6 @@
            (l/list-range-first-n lmdb "list" 2 [:closed "a" "c"] :string
                                  [:closed 1 5] :long)))
 
-
     (is (= [3 6 9]
            (l/get-list lmdb "list" "c" :string :long)))
 

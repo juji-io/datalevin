@@ -182,9 +182,9 @@
   ([dl index c1 c2 c3]
    (when-let [d (get-db dl)]
      (map dd/datom-eav (d/seek-datoms d index c1 c2 c3))))
-  ([dl index c1 c2 c3 c4]
+  ([dl index c1 c2 c3 n]
    (when-let [d (get-db dl)]
-     (map dd/datom-eav (d/seek-datoms d index c1 c2 c3 c4)))))
+     (map dd/datom-eav (d/seek-datoms d index c1 c2 c3 n)))))
 
 (defn fulltext-datoms
   ([dl query]
@@ -206,9 +206,9 @@
   ([dl index c1 c2 c3]
    (when-let [d (get-db dl)]
      (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3))))
-  ([dl index c1 c2 c3 c4]
+  ([dl index c1 c2 c3 n]
    (when-let [d (get-db dl)]
-     (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3 c4)))))
+     (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3 n)))))
 
 (defn index-range [dl attr start end]
   (when-let [d (get-db dl)]

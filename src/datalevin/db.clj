@@ -37,12 +37,8 @@
   (-e-datoms [db e])
   (-av-datoms [db attr v])
   (-range-datoms [db index start-datom end-datom])
-  (-seek-datoms
-    [db index c1 c2 c3]
-    [db index c1 c2 c3 n])
-  (-rseek-datoms
-    [db index c1 c2 c3]
-    [db index c1 c2 c3 n])
+  (-seek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
+  (-rseek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
   (-cardinality [db attr])
   (-index-range [db attr start end])
   (-index-range-size [db attr start end] [db attr start end cap]))
