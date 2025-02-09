@@ -52,7 +52,7 @@
 
 (def default-env-flags
   "Default LMDB env flag is `#{:nordahead :notls}`. See
-  http://www.lmdb.tech/doc/group__mdb__env.html for full list of flags.
+  [[datalevin.core/set-env-flags]] for a full list of flags.
 
   Passed as `:flags` option value to `open-kv` function."
   #{:nordahead :notls})

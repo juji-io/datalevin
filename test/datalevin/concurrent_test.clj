@@ -80,7 +80,7 @@
 (deftest test-multi-threads-read
   (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
         conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n     100000
+        n     10000
         all   (range n)
         tx    (map (fn [i] {:id i}) (range n))
         query (fn [i]
@@ -88,11 +88,13 @@
                        :in $ ?i
                        :where [?e :id ?i]]
                      @conn i))
-        pull  (fn [i] (:id (d/pull @conn '[*] (inc i))))]
+        pull  (fn [^long i] (:id (d/pull @conn '[*] (inc i))))]
     (d/transact! conn tx)
     (is (= n (d/count-datoms @conn nil nil nil)))
-    (let [futs (mapv #(future (pull %)) all)]
-      (is (= all (for [f futs] @f))))
-    (is (= (range 1 (inc n)) (pmap query all)))
-    (is (= all (pmap pull all)))
+
+    (dotimes [_ 100]
+      (let [futs (mapv #(future (pull %)) all)]
+        (is (= all (for [f futs] @f))))
+      (is (= (range 1 (inc n)) (pmap query all)))
+      (is (= all (pmap pull all))))
     (d/close conn)))

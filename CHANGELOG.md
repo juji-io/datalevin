@@ -33,6 +33,8 @@
 - [Datalog] Added arity to `seek-datoms` and `rseek-datoms` to specify the
   number of datoms desired. [Thx @jeremy302]
   [#312](https://github.com/juji-io/datalevin/issues/312)
+- [KV] Prevent "MDB_READERS_FULL: Environment maxreaders limit reached" error
+  when running hundreds of concurrent readers.
 - [Compress] Background sampler periodically save a sample of key
   bytes, in preparation for data compression.
 

@@ -21,15 +21,30 @@
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
+   [java.util.concurrent Semaphore]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer]
    [clojure.lang IObj]))
 
+(defprotocol IPool
+  (pool-add [_ x])
+  (pool-take [_]))
+
+(deftype Pool [^Semaphore sem ^ThreadLocal que]
+  IPool
+  (pool-add [_ x]
+    (.add ^ArrayDeque (.get que) x)
+    (.release sem 1))
+  (pool-take [_]
+    (.acquire sem 1)
+    (.poll ^ArrayDeque (.get que))))
+
 (defn- new-pools
-  []
-  (ThreadLocal/withInitial
-    (reify Supplier
-      (get [_] (ArrayDeque.)))))
+  [limit]
+  (Pool. (Semaphore. limit)
+         (ThreadLocal/withInitial
+           (reify Supplier
+             (get [_] (ArrayDeque.))))))
 
 (defn- new-bufval [size] (BufVal. size))
 
@@ -150,9 +165,9 @@
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
-  (close-rtx [_] (locking txn (.close txn)))
-  (reset [this] (locking txn (.reset txn)) this)
-  (renew [this] (locking txn (.renew txn)) this))
+  (close-rtx [_] (.close txn))
+  (reset [this] (.reset txn) this)
+  (renew [this] (.renew txn) this))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.ms_psize ^DTLV$MDB_stat (.get stat))
@@ -166,7 +181,7 @@
          ->ListFullValIterable ->ListSampleIterable)
 
 (deftype DBI [^Dbi db
-              ^ThreadLocal curs
+              ^Pool curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
               ^boolean dupsort?
@@ -242,13 +257,13 @@
     (let [^Rtx rtx rtx
           ^Txn txn (.-txn rtx)]
       (or (when (.isReadOnly txn)
-            (when-let [^Cursor cur (.poll ^ArrayDeque (.get curs))]
+            (when-let [^Cursor cur (pool-take curs)]
               (.renew cur txn)
               cur))
           (Cursor/create txn db (.-kp rtx) (.-vp rtx)))))
   (cursor-count [_ cur] (.count ^Cursor cur))
   (close-cursor [_ cur] (.close ^Cursor cur))
-  (return-cursor [_ cur] (.add ^ArrayDeque (.get curs) cur)))
+  (return-cursor [_ cur] (pool-add curs cur)))
 
 (defn- dtlv-bool [x] (if x DTLV/DTLV_TRUE DTLV/DTLV_FALSE))
 
@@ -481,7 +496,7 @@
 
 (deftype CppLMDB [^Env env
                   info
-                  ^ThreadLocal pools
+                  ^Pool pools
                   ^HashMap dbis
                   ^BufVal kp-w
                   ^BufVal vp-w
@@ -554,7 +569,7 @@
               vp   (new-bufval val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools) kp vp
+              db   (DBI. dbi (new-pools (dec (@info :max-readers))) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -612,7 +627,7 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
-    (or (when-let [^Rtx rtx (.poll ^ArrayDeque (.get pools))]
+    (or (when-let [^Rtx rtx (pool-take pools)]
           (try
             (.renew rtx)
             (catch Util$BadReaderLockException _
@@ -634,7 +649,7 @@
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
       (.reset ^Rtx rtx)
-      (.add ^ArrayDeque (.get pools) rtx)))
+      (pool-add pools rtx)))
 
   (stat [_]
     (try
@@ -1145,7 +1160,7 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               (new-pools)
+                               (new-pools (dec max-readers))
                                (HashMap.)
                                (new-bufval c/+max-key-size+)
                                (new-bufval 0)
