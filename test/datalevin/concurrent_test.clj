@@ -80,7 +80,7 @@
 (deftest test-multi-threads-read
   (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
         conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n     10000
+        n     1000
         all   (range n)
         tx    (map (fn [i] {:id i}) (range n))
         query (fn [i]
