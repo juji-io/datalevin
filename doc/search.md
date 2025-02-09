@@ -77,7 +77,7 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 (d/search engine "red")
 ;=> (1 2)
 
-;; search syntax supports nested boolean expression and phrases
+;; search syntax supports arbitrary boolean expression and phrases
 (d/search engine [:and {:phrase "little lamb"} "fleece"])
 ;=> (2)
 
