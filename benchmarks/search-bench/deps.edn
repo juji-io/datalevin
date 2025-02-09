@@ -5,11 +5,11 @@
          com.fasterxml.jackson.core/jackson-databind   {:mvn/version "2.17.0"}
          com.taoensso/nippy                            {:mvn/version "3.4.2"}
          datalevin/datalevin                           {:local/root "../.."}
-         org.clojars.huahaiy/dtlvnative-macosx-arm64   {:mvn/version "0.12.1"}
-         org.clojars.huahaiy/dtlvnative-macosx-x86_64  {:mvn/version "0.12.1"}
-         org.clojars.huahaiy/dtlvnative-linux-arm64    {:mvn/version "0.12.1"}
-         org.clojars.huahaiy/dtlvnative-linux-x86_64   {:mvn/version "0.12.1"}
-         org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version "0.12.1"}
+         org.clojars.huahaiy/dtlvnative-macosx-arm64   {:mvn/version "0.11.4"}
+         org.clojars.huahaiy/dtlvnative-macosx-x86_64  {:mvn/version "0.11.4"}
+         org.clojars.huahaiy/dtlvnative-linux-arm64    {:mvn/version "0.11.4"}
+         org.clojars.huahaiy/dtlvnative-linux-x86_64   {:mvn/version "0.11.4"}
+         org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version "0.11.4"}
          ;; datalevin/datalevin                         {:mvn/version "0.9.5"}
          me.lemire.integercompression/JavaFastPFOR     {:mvn/version "0.1.12"}
          org.clojure/clojure                           {:mvn/version "1.12.0"}

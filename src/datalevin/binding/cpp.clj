@@ -41,7 +41,7 @@
 
 (defn- new-pools
   [limit]
-  (Pool. (Semaphore. limit)
+  (Pool. (Semaphore. (int limit))
          (ThreadLocal/withInitial
            (reify Supplier
              (get [_] (ArrayDeque.))))))
@@ -569,7 +569,7 @@
               vp   (new-bufval val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools (dec (@info :max-readers))) kp vp
+              db   (DBI. dbi (new-pools (dec ^long (@info :max-readers))) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -1160,7 +1160,7 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               (new-pools (dec max-readers))
+                               (new-pools (dec ^long max-readers))
                                (HashMap.)
                                (new-bufval c/+max-key-size+)
                                (new-bufval 0)
