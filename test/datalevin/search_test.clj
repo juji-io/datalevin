@@ -141,42 +141,40 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-#_(deftest phrase-test
-    (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-          lmdb   (l/open-kv dir)
-          engine (sut/new-search-engine lmdb {:index-position? true})]
-      (add-docs sut/add-doc engine)
+(deftest phrase-test
+  (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        engine (sut/new-search-engine lmdb {:index-position? true})]
+    (add-docs sut/add-doc engine)
 
-      (are [query result] (= result (set (sut/search engine query)))
-        [:and "red" [:not {:phrase "red fox"}]] #{:doc1 :doc5}
-        ;; [:and "red" [:not "nonexistentterm"]] #{:doc1 :doc2 :doc4 :doc5}
-        ;; [:and "man" "whale"]                  #{:doc3}
-        ;; [:and "red" [:not "dogs"]]            #{:doc2 :doc4}
-        ;; [:or "" "whale"]                      #{:doc3}
-        ;; [:or "nonexistentterm" "whale"]       #{:doc3}
-        ;; [:not "red"]                          #{:doc3}
-        ;; [:not [:and "red" "fox"]]             #{:doc2 :doc3 :doc4 :doc5}
-        ;; [:not "red fox"]                      #{:doc3}
-        ;; "red fox"                             #{:doc1 :doc2 :doc4 :doc5}
+    (are [query result] (= result (set (sut/search engine query)))
+      {:phrase "red dogs"}                               #{:doc1 :doc5}
+      [:and "red" [:not {:phrase "red fox"}]]            #{:doc2 :doc4 :doc5}
+      [:and {:phrase "red dogs"} {:phrase "red fox"}]    #{:doc1}
+      [:or {:phrase "little lamb"} {:phrase "red dogs"}] #{:doc1 :doc2 :doc5}
+      [:or {:phrase "little lamb"} {:phrase "none dog"}] #{:doc2}
+      [:and {:term "red"} {:phrase "baseball cap"}]      #{:doc4}
 
-        ;; [:or "fox" "red" [:and "black" "sheep"] [:not "yellow"]]
-        ;; #{:doc1 :doc2 :doc4 :doc5}
+      [:or {:phrase "little lamb"} [:not {:phrase "none dog"}]] #{:doc2}
 
-        ;; [:or "fox" "red" [:and "black" "sheep"] [:not "fleece"]]
-        ;; #{:doc1 :doc2 :doc4 :doc5}
-        )
+      [:not {:phrase "english springer spaniel"}] #{:doc1 :doc2 :doc3 :doc4}
 
-      #_(are [query] (empty? (sut/search engine query))
-          ;; ""
-          ;; "  "
-          ;; "nonexistentterm"
-          ;; [:and "nonexistentterm" "red"]
-          ;; [:and "red" [:not "red"]] ; Conflicting condition
-          ;; [:or "" ""]
-          )
+      [:and {:phrase "red dogs"} [:or "fleece" {:phrase "red fox"}]] #{:doc1}
 
-      (l/close-kv lmdb)
-      (u/delete-files dir)))
+      [:or {:phrase "fleece jacket"} {:phrase "baseball cap"} "story"] #{:doc3 :doc4}
+
+      [:or [:not [:and {:phrase "fleece jacket"} "robber"]] [:not {:phrase "red dogs"}]]
+      #{:doc2 :doc3}
+      )
+
+    (are [query] (empty? (sut/search engine query))
+      {:phrase "nonexistent phrase"}
+      [:and "red" {:phrase "nonexistent term"}]
+      [:and "fleece" {:phrase "red dogs"}]
+      )
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest index-test
   (let [dir           (u/tmp-dir (str "index-" (UUID/randomUUID)))

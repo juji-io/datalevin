@@ -76,3 +76,23 @@
              (is (= (* ^long i ^long j) (d/q q* (d/db conn) i j)))))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-multi-threads-read
+  (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
+        conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
+        n     100000
+        all   (range n)
+        tx    (map (fn [i] {:id i}) (range n))
+        query (fn [i]
+                (d/q '[:find ?e .
+                       :in $ ?i
+                       :where [?e :id ?i]]
+                     @conn i))
+        pull  (fn [i] (:id (d/pull @conn '[*] (inc i))))]
+    (d/transact! conn tx)
+    (is (= n (d/count-datoms @conn nil nil nil)))
+    (let [futs (mapv #(future (pull %)) all)]
+      (is (= all (for [f futs] @f))))
+    (is (= (range 1 (inc n)) (pmap query all)))
+    (is (= all (pmap pull all)))
+    (d/close conn)))

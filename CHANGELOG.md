@@ -30,6 +30,8 @@
 ### Improved
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
   errors. [#306](https://github.com/juji-io/datalevin/issues/306)
+- [Compress] Background sampler periodically save a sample of key
+  bytes, in preparation for data compression.
 
 ## 0.9.18 (2025-01-20)
 

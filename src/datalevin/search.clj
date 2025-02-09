@@ -2,7 +2,7 @@
   "Full-text search engine"
   (:require
    [datalevin.lmdb :as l]
-   [datalevin.util :as u :refer [raise cond+]]
+   [datalevin.util :as u :refer [raise cond+ conjs]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.analyzer :as a]
@@ -233,50 +233,203 @@
     -0.1
     (nth (.top pq) 0)))
 
+(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
+         get-rawtext new-search-engine parse-query* parse-query get-pos-info)
+
+(defprotocol IPositions
+  (cur-pos [this] "return the current position, or nil if there is no more")
+  (go-next [this] "move cursor to the next position"))
+
+(deftype Positions [^int tid
+                    ^ints positions
+                    ^:unsynchronized-mutable cur]
+  IPositions
+  (cur-pos [_] (when (< ^long cur (alength positions)) (aget positions cur)))
+  (go-next [_] (set! cur (u/long-inc cur))))
+
+(defn- get-positions
+  [engine doc-id term-id]
+  (when-let [pos-info (get-pos-info engine doc-id term-id)]
+    (Positions. term-id (first pos-info) 0)))
+
+(defprotocol ISpan
+  (get-n [this] "return the number of terms in the span")
+  (get-width [this max-dist] "return the width of the span")
+  (add-term [this tid position] "add a term to the span")
+  (find-term [this tid] "return the index of a term, or return nil")
+  (get-ith-pos [this i] "return the ith position")
+  (get-next-pos [this i] "return the i+1'th position")
+  (split [this i] "split span into two after ith term"))
+
+(deftype Span [^FastList hits]
+  ISpan
+  (get-n [_] (.size hits))
+  (get-width [_ max-dist]
+    (if (= 1 (.size hits))
+      max-dist
+      (inc (- ^long (peek (.getLast hits)) ^long (peek (.getFirst hits))))))
+  (add-term [_ tid position] (.add hits [tid position]))
+  (find-term [_ tid] (u/index-of #(= tid (first %)) hits))
+  (get-ith-pos [_ i] (peek (.get hits i)))
+  (get-next-pos [_ i] (peek (.get hits (inc ^long i))))
+  (split [_ i] [(Span. (.take hits ^int i)) (Span. (.drop hits ^int i))]))
+
+(defmethod print-method Span [^Span s, ^Writer w]
+  (.write w "[")
+  (.write w (str (with-out-str
+                   (let [^FastList hits (.-hits s)]
+                     (dotimes [i (.size hits)]
+                       (print (.get hits i))
+                       (print " "))))))
+  (.write w "]"))
+
+(defn- segment-doc
+  [engine did tids ^long max-dist]
+  (let [pos-lst (FastList.)
+        spans   (FastList.)]
+    (doseq [tid tids]
+      (when-let [poss (get-positions engine did tid)]
+        (.add pos-lst poss)))
+    (when (seq pos-lst)
+      (loop [cur-poss (apply min-key cur-pos pos-lst)
+             cur-span (Span. (FastList.))]
+        (let [^long cpos (cur-pos cur-poss)
+              ctid       (.-tid ^Positions cur-poss)]
+          (add-term cur-span ctid cpos)
+          (go-next cur-poss)
+          (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
+          (if (.isEmpty pos-lst)
+            (.add spans cur-span)
+            (let [next-poss  (apply min-key cur-pos pos-lst)
+                  ^long npos (cur-pos next-poss)
+                  ntid       (.-tid ^Positions next-poss)
+                  ndist      (- npos cpos)]
+              (cond+
+                (or (< max-dist ndist) (= ctid ntid))
+                (let [next-span (Span. (FastList.))]
+                  (.add spans cur-span)
+                  (recur next-poss next-span))
+                :let [found (find-term cur-span ntid)]
+                found
+                (let [[cur-span next-span]
+                      (if (< ndist (- ^long (get-next-pos cur-span found)
+                                      ^long (get-ith-pos cur-span found)))
+                        (split cur-span found)
+                        [cur-span (Span. (FastList.))])]
+                  (.add spans cur-span)
+                  (recur next-poss next-span))
+                :else
+                (recur next-poss cur-span)))))))
+    spans))
+
+(defn- proximity-score*
+  [max-dist did spans ^IntDoubleHashMap wqs ^IntShortHashMap norms tid]
+  (let [^double rc (reduce
+                     (fn [^double score span]
+                       (if (find-term span tid)
+                         (+ score
+                            (let [^long n (get-n span)
+                                  ^long w (get-width span max-dist)]
+                              (* (Math/pow (/ n w) 0.25)
+                                 (Math/pow n 0.3))))
+                         score))
+                     0.0 spans)]
+    (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
+
+(defn- proximity-score
+  [engine max-dist tids did wqs norms]
+  (when-let [spans (segment-doc engine did tids max-dist)]
+    (transduce (map #(proximity-score* max-dist did spans wqs norms %))
+               + 0.0 tids)))
+
+(defn- proximity-scoring
+  [engine max-dist tids wqs norms ^PriorityQueue pq0 ^PriorityQueue pq]
+  (dotimes [_ (.size pq0)]
+    (let [[tscore did] (.pop pq0)]
+      (if-let [pscore (proximity-score engine max-dist tids did wqs norms)]
+        (.insertWithOverflow pq [pscore did])
+        (.insertWithOverflow pq [tscore did])))))
+
+(defn- tid-positions
+  [engine did tid]
+  (when tid
+    (when-let [poss (get-positions engine did tid)]
+      (.-positions ^Positions poss))))
+
+(defn- match-phrase
+  [did phrase engine tmid]
+  (when-let [poss (reduce
+                    (fn [coll token]
+                      (if-let [ps (tid-positions engine did (tmid token))]
+                        (conj coll ps)
+                        (reduced nil)))
+                    [] phrase)]
+    (let [rbms (mapv (fn [i bm] [i bm])
+                     (range 1 (count poss))
+                     (mapv #(RoaringBitmap/bitmapOf %) (rest poss)))]
+      (some (fn [^long fp]
+              (every? (fn [[^long i ^RoaringBitmap bm]]
+                        (.contains bm (int (+ fp i))))
+                      rbms))
+            (first poss)))))
+
+(defn- match-phrases*
+  [did phrases engine tmid req?]
+  (when did
+    (let [match #(match-phrase did % engine tmid)]
+      (if req?
+        (when (every? match phrases) did)
+        (when (not-any? match phrases) did)))))
+
+(defn- match-phrases
+  [{:keys [engine phrases tmid]} did]
+  (let [{:keys [req fbd]} phrases]
+    (cond-> did
+      req (match-phrases* req engine tmid true)
+      fbd (match-phrases* fbd engine tmid false))))
+
 (defn- score-term
-  [^Candidate candidate ^IntDoubleHashMap mxs wqs norms minimal-score pq]
-  (let [tid (.-tid candidate)]
+  [{:keys [^IntDoubleHashMap mxs wqs phrases] :as context} ^Candidate candidate
+   norms minimal-score pq]
+  (let [no-phrases? (empty? phrases)
+        tid         (.-tid candidate)]
     (when (< ^double minimal-score (.get mxs tid))
       (loop [did (get-did candidate) minscore minimal-score]
         (let [score (real-score tid did (get-tf candidate did) wqs norms)]
-          (when (< ^double minscore ^double score)
+          (when (and (< ^double minscore ^double score)
+                     (or no-phrases? (match-phrases context did)))
             (.insertWithOverflow ^PriorityQueue pq [score did])))
         (when (has-next? (advance candidate))
           (recur (get-did candidate) (current-threshold pq)))))))
 
-(defn- failed-phrases
-  [engine phrases did]
-  false)
-
 (defn- tf-idf-scoring
-  [{:keys [mxs wqs phrases engine] :as context} result tao n pq norms]
-  (loop [^"[Ldatalevin.search.Candidate;" candidates
-         (first-candidates context result tao n)]
-    (let [nc (alength candidates)]
-      (cond+
-        (or (= nc 0) (< nc ^long tao)) :finish
-        ;; (seq phrases) (check-phrases phrases )
+  [{:keys [mxs wqs phrases] :as context} result tao n pq norms]
+  (let [no-phrases? (empty? phrases)]
+    (loop [^"[Ldatalevin.search.Candidate;" candidates
+           (first-candidates context result tao n)]
+      (let [nc (alength candidates)]
+        (cond+
+          (or (= nc 0) (< nc ^long tao)) :finish
 
-        :let [minimal-score ^double (current-threshold pq)]
+          :let [minimal-score ^double (current-threshold pq)]
 
-        (= nc 1)
-        (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
+          (= nc 1)
+          (score-term context (aget candidates 0) norms minimal-score pq)
 
-        :do (Arrays/sort candidates candidate-comp)
+          :do (Arrays/sort candidates candidate-comp)
 
-        :else
-        (let [[mxscore pivot did] (find-pivot mxs (dec ^long tao)
-                                              minimal-score
-                                              candidates)]
-          (if (= ^int did ^int (get-did (aget candidates 0)))
-            (if (and (seq phrases) (failed-phrases engine phrases did))
-              (recur (next-candidates did candidates))
+          :else
+          (let [[mxscore pivot did] (find-pivot mxs (dec ^long tao)
+                                                minimal-score
+                                                candidates)]
+            (if (= ^int did ^int (get-did (aget candidates 0)))
               (let [score (score-pivot wqs mxs norms did minimal-score
                                        mxscore tao n candidates)]
-                (when-not (= score :prune)
+                (when (and (not (identical? score :prune))
+                           (or no-phrases? (match-phrases context did)))
                   (.insertWithOverflow ^PriorityQueue pq [score did]))
-                (recur (next-candidates did candidates))))
-            (recur (skip-candidates pivot did candidates))))))))
+                (recur (next-candidates did candidates)))
+              (recur (skip-candidates pivot did candidates)))))))))
 
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text] [this doc-ref doc-text check-exist?])
@@ -285,9 +438,6 @@
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (search [this query] [this query opts]))
-
-(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
-         get-rawtext new-search-engine parse-query* parse-query)
 
 (defn- to-tokens
   [query-analyzer s]
@@ -357,7 +507,7 @@
   (assoc context :req (apply set/union (required-terms* query true))))
 
 (defn- collect-tokens
-  [{:keys [query] :as context}]
+  [{:keys [query phrases] :as context}]
   (let [tokens (volatile! [])]
     (walk/postwalk
       (fn [e]
@@ -365,7 +515,7 @@
           (vswap! tokens conj e)
           e))
       query)
-    (assoc context :tokens @tokens)))
+    (assoc context :tokens (into @tokens cat (:fbd phrases)))))
 
 (defn- to-bms
   [m args]
@@ -405,23 +555,29 @@
         sls  (mapv :sl qterms)
         tms  (mapv :tm qterms)
         wqs  (get-ws tids qterms :wq)
-        bms  (mapv #(.-indices ^SparseIntArrayList %) sls)]
+        bms  (mapv #(.-indices ^SparseIntArrayList %) sls)
+        tmid (zipmap tms tids)]
     (assoc context
            :wqs wqs
-           :tids (into [] (filter (set (mapv (zipmap tms tids) req))) tids)
+           :tmid tmid
+           :tids (into [] (filter (set (mapv tmid req))) tids)
            :bms (zipmap tids bms)
            :sls (zipmap tids sls)
            :tms (zipmap tids tms)
            :mxs (get-mxs tids wqs (get-ws tids qterms :mw))
            :bbm (boolean-bm tms bms max-doc query))))
 
-(defn- all-exclusive
-  [{:keys [bbm]} top]
-  (into []
-        (comp
-          (take top)
-          (map (fn [did] [0.1 did])))
-        bbm))
+(defn- all-docs
+  [{:keys [bbm phrases] :as context} top]
+  (let [no-phrases? (empty? phrases)]
+    (into []
+          (comp
+            (map (fn [did]
+                   (when (or no-phrases? (match-phrases context did))
+                     [0.1 did])))
+            (remove nil?)
+            (take top))
+          bbm)))
 
 (defn- tiered-scoring
   [top scoring this proximity-expansion proximity-max-dist result n]
@@ -513,7 +669,7 @@
         (sequence
           (display-xf this doc-filter display tms)
           (if (zero? n)
-            (all-exclusive context top)
+            (all-docs context top)
             (let [result  (RoaringBitmap.)
                   scoring (score-docs context n norms result)]
               (tiered-scoring top scoring this proximity-expansion
@@ -575,10 +731,14 @@
 
 (defn- convert-phrase
   "convert positive phrase to [:and tokens], negative phrase to :empty"
-  [{:keys [phrase]} analyzer phrases req?]
+  [{:keys [phrase]} analyzer phrases status]
   (let [tokens (to-tokens analyzer phrase)]
-    (vswap! phrases assoc tokens req?)
-    (if req? (vec (cons :and tokens)) :empty)))
+    (case status
+      :opt (vec (cons :and tokens))
+      :req (do (vswap! phrases update :req conjs tokens)
+               (vec (cons :and tokens)))
+      :fbd (do (vswap! phrases update :fbd conjs tokens)
+               :empty))))
 
 (defn- handle-maps
   [position? phrases analyzer query]
@@ -586,25 +746,26 @@
     (if (seq all)
       (if (not position?)
         (raise "Phrase search requires :index-position? true" {})
-        (let [req (apply set/union (required-phrases query true))
-              fbd (set/difference all req)]
+        (let [found (required-phrases query true)
+              opt   (apply set/union found)
+              fbd   (set/difference all opt)
+              req   (apply set/intersection found)
+              opt   (set/difference opt req)]
           (walk/postwalk
             (fn [e]
               (cond
-                (req e)   (convert-phrase e analyzer phrases true)
-                (fbd e)   (convert-phrase e analyzer phrases false)
+                (opt e)   (convert-phrase e analyzer phrases :opt)
+                (req e)   (convert-phrase e analyzer phrases :req)
+                (fbd e)   (convert-phrase e analyzer phrases :fbd)
                 (:term e) (:term e)
                 :else     e))
             query)))
       query)))
 
-(handle-maps true (volatile! {}) a/en-analyzer
-             [:not {:phrase "give up"}])
-
 (defn- parse-query
   [{:keys [engine] :as context} query-analyzer query]
   (let [position? (.-index-position? ^SearchEngine engine)
-        phrases   (volatile! {})]  ; [ tokens ] -> required?
+        phrases   (volatile! {})]  ; :req|:fbd => #{ [ tokens ] }
     (when-let [q (some->> query
                           (handle-maps position? phrases query-analyzer)
                           (parse-query* query-analyzer))]
@@ -627,124 +788,8 @@
                  [doc-id term-id] :int-int :pos-info)))
 
 (defn- get-offsets
-  [^SearchEngine engine doc-id term-id]
-  (peek (get-pos-info engine doc-id term-id)))
-
-(defprotocol IPositions
-  (cur-pos [this] "return the current position, or nil if there is no more")
-  (go-next [this] "move cursor to the next position")
-  (get-tid [this] "return the term id"))
-
-(deftype Positions [^int tid
-                    ^ints positions
-                    ^:unsynchronized-mutable cur]
-  IPositions
-  (cur-pos [_] (when (< ^long cur (alength positions)) (aget positions cur)))
-  (go-next [_] (set! cur (u/long-inc cur)))
-  (get-tid [_] tid))
-
-(defn- get-positions
   [engine doc-id term-id]
-  (when-let [pos-info (get-pos-info engine doc-id term-id)]
-    (Positions. term-id (first pos-info) 0)))
-
-(defprotocol ISpan
-  (get-n [this] "return the number of terms in the span")
-  (get-width [this max-dist] "return the width of the span")
-  (add-term [this tid position] "add a term to the span")
-  (find-term [this tid] "return the index of a term, or return nil")
-  (get-ith-pos [this i] "return the ith position")
-  (get-next-pos [this i] "return the i+1'th position")
-  (split [this i] "split span into two after ith term"))
-
-(deftype Span [^FastList hits]
-  ISpan
-  (get-n [_] (.size hits))
-  (get-width [_ max-dist]
-    (if (= 1 (.size hits))
-      max-dist
-      (inc (- ^long (peek (.getLast hits)) ^long (peek (.getFirst hits))))))
-  (add-term [_ tid position] (.add hits [tid position]))
-  (find-term [_ tid] (u/index-of #(= tid (first %)) hits))
-  (get-ith-pos [_ i] (peek (.get hits i)))
-  (get-next-pos [_ i] (peek (.get hits (inc ^long i))))
-  (split [_ i] [(Span. (.take hits ^int i)) (Span. (.drop hits ^int i))]))
-
-(defmethod print-method Span [^Span s, ^Writer w]
-  (.write w "[")
-  (.write w (str (with-out-str
-                   (let [^FastList hits (.-hits s)]
-                     (dotimes [i (.size hits)]
-                       (print (.get hits i))
-                       (print " "))))))
-  (.write w "]"))
-
-(defn- segment-doc
-  [engine did tids ^long max-dist]
-  (let [pos-lst (FastList.)
-        spans   (FastList.)]
-    (doseq [tid tids]
-      (when-let [poss (get-positions engine did tid)]
-        (.add pos-lst poss)))
-    (when (seq pos-lst)
-      (loop [cur-poss (apply min-key cur-pos pos-lst)
-             cur-span (Span. (FastList.))]
-        (let [^long cpos (cur-pos cur-poss)
-              ctid       (get-tid cur-poss)]
-          (add-term cur-span ctid cpos)
-          (go-next cur-poss)
-          (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
-          (if (.isEmpty pos-lst)
-            (.add spans cur-span)
-            (let [next-poss  (apply min-key cur-pos pos-lst)
-                  ^long npos (cur-pos next-poss)
-                  ntid       (get-tid next-poss)
-                  ndist      (- npos cpos)]
-              (cond+
-                (or (< max-dist ndist) (= ctid ntid))
-                (let [next-span (Span. (FastList.))]
-                  (.add spans cur-span)
-                  (recur next-poss next-span))
-                :let [found (find-term cur-span ntid)]
-                found
-                (let [[cur-span next-span]
-                      (if (< ndist (- ^long (get-next-pos cur-span found)
-                                      ^long (get-ith-pos cur-span found)))
-                        (split cur-span found)
-                        [cur-span (Span. (FastList.))])]
-                  (.add spans cur-span)
-                  (recur next-poss next-span))
-                :else
-                (recur next-poss cur-span)))))))
-    spans))
-
-(defn- proximity-score*
-  [max-dist did spans ^IntDoubleHashMap wqs ^IntShortHashMap norms tid]
-  (let [^double rc (reduce
-                     (fn [^double score span]
-                       (if (find-term span tid)
-                         (+ score
-                            (let [^long n (get-n span)
-                                  ^long w (get-width span max-dist)]
-                              (* (Math/pow (/ n w) 0.25)
-                                 (Math/pow n 0.3))))
-                         score))
-                     0.0 spans)]
-    (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
-
-(defn- proximity-score
-  [engine max-dist tids did wqs norms]
-  (when-let [spans (segment-doc engine did tids max-dist)]
-    (transduce (map #(proximity-score* max-dist did spans wqs norms %))
-               + 0.0 tids)))
-
-(defn- proximity-scoring
-  [engine max-dist tids wqs norms pq0 pq]
-  (dotimes [_ (.size ^PriorityQueue pq0)]
-    (let [[tscore did] (.pop ^PriorityQueue pq0)]
-      (if-let [pscore (proximity-score engine max-dist tids did wqs norms)]
-        (.insertWithOverflow ^PriorityQueue pq [pscore did])
-        (.insertWithOverflow ^PriorityQueue pq [tscore did])))))
+  (peek (get-pos-info engine doc-id term-id)))
 
 (defn- score-docs
   [{:keys [tids wqs] :as context} n norms result]
