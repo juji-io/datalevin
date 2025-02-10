@@ -28,7 +28,7 @@
 (deftype WorkQueue [^ConcurrentLinkedQueue items  ; [WorkItem ...]
                     fw ; first work
                     ^FastList stage ; for combining work
-                    cb])
+                    ])
 
 (defn- do-work*
   [work]
@@ -39,7 +39,7 @@
 (defn- handle-result
   [p cb]
   (let [[status payload] @p]
-    (when cb (locking cb (cb payload)))
+    (when cb (cb payload))
     (if (identical? status :ok)
       payload
       (throw payload))))
@@ -76,11 +76,9 @@
 
 (defn- new-workqueue
   [work]
-  (let [cmb (combine work)
-        cb  (callback work)]
+  (let [cmb (combine work)]
     (assert (or (nil? cmb) (ifn? cmb)) "combine should be nil or a function")
-    (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
-    (->WorkQueue (ConcurrentLinkedQueue.) work (when cmb (FastList.)) cb)))
+    (->WorkQueue (ConcurrentLinkedQueue.) work (when cmb (FastList.)))))
 
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
@@ -119,8 +117,10 @@
     (.shutdown workers)
     (.awaitTermination workers 5000 TimeUnit/MILLISECONDS))
   (exec [_ work]
-    (let [k (work-key work)]
+    (let [k  (work-key work)
+          cb (callback work)]
       (assert (keyword? k) "work-key should return a keyword")
+      (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
       (.putIfAbsent work-queues k (new-workqueue work))
       (let [p                        (promise)
             item                     (->WorkItem work p)
@@ -128,7 +128,7 @@
             ^ConcurrentLinkedQueue q (.-items wq)]
         (.offer q item)
         (.offer event-queue k)
-        (future (handle-result p (.-cb wq)))))))
+        (future (handle-result p cb))))))
 
 (defn- new-async-executor
   []

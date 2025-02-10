@@ -126,12 +126,24 @@
   (combine [_] nil)
   (callback [_] cb))
 
-(deftest callback-test
+(deftest same-callback-test
   (let [executor (a/get-executor)
         input    (vec (shuffle (range 100)))
-        sum      (volatile! 0)
-        cb       (fn [x] (vswap! sum #(+ ^long % ^long x)))
+        sum      (atom 0)
+        cb       (fn [x] (swap! sum #(+ ^long % ^long x)))
         futs     (mapv #(a/exec executor (CallbackWork. % cb)) input)]
     (is (= input (mapv deref futs)))
     (is (= @sum 4950))
+    (a/shutdown-executor)))
+
+(deftest diff-callback-test
+  (let [executor (a/get-executor)
+        total    (atom 0)
+        input    (range 100)
+        cb1      (fn [_] (swap! total inc))
+        cb2      (fn [_] (swap! total dec))
+        futs     (map #(a/exec executor (CallbackWork. %1 %2))
+                      input (interleave (repeat 100 cb1) (repeat 100 cb2)))]
+    (is (= input (mapv deref futs)))
+    (is (= @total 0))
     (a/shutdown-executor)))

@@ -8,6 +8,9 @@
   [#310](https://github.com/juji-io/datalevin/issues/310)
 - [Search] Phrase search. [#311](https://github.com/juji-io/datalevin/issues/311)
 - [Datalog] `max-eid` function to return the current maximal entity id.
+- [Benchmark] `write-bench` that compare Datalevin with Sqlite on durable
+  transactions, and study Datalevin KV write performance under various
+  conditions.
 
 ### Fixed
 - [Datalog] `and` in `or-join` exception
@@ -18,13 +21,16 @@
   [#308](https://github.com/juji-io/datalevin/issues/308)
 
 ### Improved
+- [Async] Individual callback of each call is respected.
+- [Datalog] Improve caching of query plans
+  [#309](https://github.com/juji-io/datalevin/issues/309)
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
   errors. [#306](https://github.com/juji-io/datalevin/issues/306)
 - [Datalog] Added arity to `seek-datoms` and `rseek-datoms` to specify the
   number of datoms desired. [Thx @jeremy302]
   [#312](https://github.com/juji-io/datalevin/issues/312)
 - [KV] Prevent "MDB_READERS_FULL: Environment maxreaders limit reached" error
-  when running hundreds of concurrent readers.
+  when running hundreds of concurrent reading threads.
 
 ## 0.9.18 (2025-01-20)
 

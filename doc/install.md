@@ -21,10 +21,19 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 {:deps {datalevin/datalevin {:mvn/version "0.9.18"}}}
 ```
 
+The `master` branch of this project is always kept fully functional, so if you
+need to use some yet-to-be released fixes or features, you can declare the
+dependency like so (remember to change `:sha`):
+
+```Clojure
+{:deps {:git/url "https://github.com/juji-io/datalevin.git"
+        :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}
+```
+
 This library supports Java 11 and above.
 
 **Performance Tip:**  To obtain better performance (about 5% to 20%), you may
-want to add the following JVM options:
+want to add the following JVM options to your project:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
@@ -109,13 +118,13 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 Or download the executable binary from github:
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.18/dtlv-0.9.18-ubuntu-latest-amd64.zip)
-  on x86-64 (AMD64)
+  on x86_64 (AMD64)
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.18/dtlv-0.9.18-ubuntu-latest-aarch64.zip)
   on arm64 (AARCH64)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.18/dtlv-0.9.18-macos-latest-aarch64.zip)
   on arm64 (AARCH64)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.18/dtlv-0.9.18-macos-latest-amd64.zip)
-  on x86-64 (AMD64)
+  on x86_64 (AMD64)
 * [Windows](https://github.com/juji-io/datalevin/releases/download/0.9.18/dtlv-0.9.18-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip to get a `dtlv` executable, put it on your path.
@@ -128,9 +137,8 @@ A JVM
 [uberjar](https://github.com/juji-io/datalevin/releases/download/0.9.18/datalevin-0.9.18-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
-image is AOT and not as efficient as JVM for long running programs, or when a
-pre-built native version is not available for your platform. For example,
-assuming your Java is newer than version 11:
+image is not as efficient as Hotspot JVM for long running programs, or when a
+pre-built native version is not available for your platform. For example:
 
 ```console
 java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.18-standalone.jar
@@ -173,7 +181,7 @@ user=> (require '[babashka.pods :as pods])
 nil
 user=> (pods/load-pod "dtlv")
 #:pod{:id "pod.huahaiy.datalevin"}
-user=>  (require '[pod.huahaiy.datalevin :as d])
+user=> (require '[pod.huahaiy.datalevin :as d])
 nil
 user=> (d/defpodfn custom-fn [n] (str "hello " n))
 #:pod.huahaiy.datalevin{:inter-fn custom-fn}
