@@ -245,14 +245,14 @@ hovers around 15k to 40k per second regardless the batch sizes on the same
 hardware. SQLite is very good at batch transaction, but individual transaction
 fails short.
 
-Note that Datalevin build index at transaction time so it is maintenance free,
+It should be mentioned that for bulk loading of large amount of data,  Datalevin
+has the option to use `init-db` and `fill-db` functions. For example, took 5.6
+seconds to load this data set using `init-db` and \fill-db``, only slightly
+slower the fastest SQLite 3.2 seconds at batch size 10000.
+
+Note that Datalevin build index at data load time so it is maintenance free,
 whereas SQLite does not build index at transaction time so users have to manage
 indices.
-
-It should be mentioned that for bulk loading of large amount of data,  Datalevin
-has the option to use `init-db` and `fill-db` functions. For example, `init-db`
-took only 4.1 seconds to load this data set, about 2.5X faster than the fastest
-SQLite 10.4 seconds at batch size 1000.
 
 ## Key Value Transaction
 

@@ -246,16 +246,15 @@
 
 (defn dl-init
   [{:keys [dir]}]
-  (let [datoms (doall (sequence
-                        (comp
-                          (map (fn [e k v] [(d/datom e :k k) (d/datom e :v v)]) )
-                          cat)
-                        (range 1 (inc total))
-                        (repeatedly total random-int)
-                        (repeatedly total #(str (random-uuid)))))
-        start  (System/currentTimeMillis)
-        db     (d/init-db datoms dir {:k {:db/valueType :db.type/long}
-                                      :v {:db/valueType :db.type/string}}
-                          {:kv-opts {:mapsize 60000}})]
+  (let [es      (range 1 (inc total))
+        datoms1 (mapv (fn [e k] (d/datom e :k k))
+                      es (repeatedly total random-int))
+        datoms2 (mapv (fn [e v] (d/datom e :v v))
+                      es (repeatedly total #(str (random-uuid))))
+        start   (System/currentTimeMillis)
+        db      (-> (d/init-db datoms1 dir {:k {:db/valueType :db.type/long}
+                                            :v {:db/valueType :db.type/string}}
+                               {:kv-opts {:mapsize 60000}})
+                    (d/fill-db datoms2))]
     (println "took" (- (System/currentTimeMillis) start) "milliseconds")
     (d/close-db db)))
