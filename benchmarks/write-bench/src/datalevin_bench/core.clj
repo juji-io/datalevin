@@ -28,7 +28,7 @@
 
 (defn print-header []
   (println
-    "Number of Writes,Time (seconds),Throughput (writes/second),Write Latency (milliseconds),Commit Latency (milliseconds)"))
+    "Number of Writes,Time (seconds),Throughput (writes/second),Call Latency (milliseconds),Commit Latency (milliseconds)"))
 
 (defn print-row
   [written inserted write-time sync-count sync-time prev-time start-time]

@@ -39,12 +39,12 @@ test the batching speed up effect.
 
 #### Mixed Read/Write
 
-With 1 million items in DB, we then do 2 million additional operations, with
+With 1 million entities in DB, we then do 2 million additional operations, with
 1 million reads and 1 million writes. Read and write are interleaved. These
 reads/writes are individual operations, not batched.
 
 The read/write integers are random number between 1 and 2 millions. So initally
-write has a 50% chance of being an addition and 50% chance of being an
+write has a 50% chance of being an append and 50% chance of being an
 overwrite. The chance of being an overwrite increases as more items are
 written.
 
@@ -53,7 +53,7 @@ written.
 For every 10K write requests, a set of metrics are recorded:
 
 * Throughput (writes/second), average throughput at the moment.
-* Write Latency (milliseconds), average latency of transact function calls.
+* Call Latency (milliseconds), average latency of write function calls.
 * Commit Latency (milliseconds), average latency of transaction commits.
 
 The results are written into a CSV file.
@@ -62,7 +62,7 @@ For asynchronous transactions, the metrics are recorded after `deref` is called
 on the last future, which blocks until all data has actually been written.
 
 For consistency and to avoid exhausting system resources, the number of
-asynchronous write requests in flight is capped at 1K using a Semaphore.
+asynchronous write requests in flight is capped at 1000 using a Semaphore.
 
 At the end of the benchmark, the total number of data items on disk is also
 queried to verify that all data are written, otherwise the benckmark will report
@@ -120,18 +120,17 @@ future is only realized after the data are flushed to disk. Both are tested.
 `transact` is just the blocked version of `transact-async` so it is not tested.
 There are two faster `init-db` and `fill-db` functions that directly load
 prepared datoms to bypass the expensive process of verifying integrity of
-everything. These are not tested in this benchmark, as we are only interested in
-transactions of raw data.
+everything. These are not formally tested in this benchmark, as we are only
+interested in transactions of raw data.
 
 SQLite also have two durable transaction mode: default and WAL mode, and both
 are tested.
 
 ### Results
 
-We presents throughput and commit latency. The write latencies are as expected,
-they are close to commit latencies in synchronous writes, while asynchronous
-write latencies are close to zero. So write latencies are omitted from this
-presentation.
+We presents throughput and commit latency. The call latencies are close to
+commit latencies in synchronous writes, while close to zero for asynchronous
+writes. So call latencies are omitted from this presentation.
 
 #### Pure Write Task
 
@@ -141,7 +140,7 @@ per second) is on the log scale. The X axis is every 10000 writes per tick.
 ##### Batch size 1 throughput
 
 <p align="center">
-<img src="benchmarks/write-bench/throughput-1.png" alt="throughput batch size 1" height="300"></img>
+<img src="throughput-1.png" alt="throughput batch size 1" height="300"></img>
 </p>
 
 When data are not batched, Datalevin default writes are much faster than
@@ -150,12 +149,13 @@ mode. At one million writes mark, the throughput numbers (writes per second)
 are:
 
 |SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
+|---|---|---|---|
 |93.5|770.2|482.5|16829.2|
 
 ##### Batch size 10 throughput
 
 <p align="center">
-<img src="benchmarks/write-bench/throughput-10.png" alt="throughput batch size 10" height="300"></img>
+<img src="throughput-10.png" alt="throughput batch size 10" height="300"></img>
 </p>
 
 When data are batched at size 10, the same relative positions remain, but the
@@ -164,12 +164,13 @@ gaps narrow.
 At one million writes, the throughput numbers (writes per second) are:
 
 |SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
+|---|---|---|---|
 |2006.8|7074.7|3141.5|30132.2|
 
 ##### Batch size 100 throughput
 
 <p align="center">
-<img src="benchmarks/write-bench/throughput-100.png" alt="throughput batch size 100" height="300"></img>
+<img src="throughput-100.png" alt="throughput batch size 100" height="300"></img>
 </p>
 
 At batch size 100, SQLite's default mode writes are now faster than Datalevin's
@@ -181,12 +182,13 @@ that of batch size 10.
 At one million writes, the throughput numbers (writes per second) are:
 
 |SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
+|---|---|---|---|
 |18448.8|41583.5|11806.8|29416.8|
 
 ##### Batch size 1000 throughput
 
 <p align="center">
-<img src="benchmarks/write-bench/throughput-1000.png" alt="throughput batch size 1000" height="300"></img>
+<img src="throughput-1000.png" alt="throughput batch size 1000" height="300"></img>
 </p>
 
 At batch size 1000, SQLite's default writes are now faster than Datalevin's
@@ -195,6 +197,7 @@ Async writes in all cases.
 At one million writes, the throughput numbers (writes per second) are:
 
 |SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
+|---|---|---|---|
 |120496.4|149588.6|22400.9|39231.6|
 
 ##### Average commit latency
@@ -218,8 +221,8 @@ The wallclock time to finish the 2 millions mixed reads/writes is plotted on
 the left, and the CPU times are plotted at right:
 
 <p align="center">
-<img src="benchmarks/write-bench/mixed-wallclock.png" alt="Mixed Read/Write Wallclock Time" height="300"></img>
-<img src="benchmarks/write-bench/mixed-cpu.png" alt="Mixed Read/Write CPU Time" height="300"></img>
+<img src="mixed-wallclock.png" alt="Mixed Read/Write Wallclock Time" height="300"></img>
+<img src="mixed-cpu.png" alt="Mixed Read/Write CPU Time" height="300"></img>
 </p>
 
 For mixed read/write task, Datalevin default is much faster than SQLite default,
@@ -241,14 +244,12 @@ wait time.
 
 In general, Datalevin's transaction speed is more stable and less sensitive to
 batch size variations. Particularly, the throughput of Async transaction
-hovers around 15k to 40k per second regardless the batch sizes on the same
-hardware. SQLite is very good at batch transaction, but individual transaction
-fails short.
+hovers around 15k to 40k per second regardless the batch sizes. SQLite is very
+good at batch transaction, but individual transaction fails short.
 
 It should be mentioned that for bulk loading of large amount of data,  Datalevin
-has the option to use `init-db` and `fill-db` functions. For example, took 5.6
-seconds to load this data set using `init-db` and \fill-db``, only slightly
-slower the fastest SQLite 3.2 seconds at batch size 10000.
+has the option to use `init-db` and `fill-db` functions. For example, it took 5.3
+seconds to load this data set using `init-db` and `fill-db`.
 
 Note that Datalevin build index at data load time so it is maintenance free,
 whereas SQLite does not build index at transaction time so users have to manage
@@ -264,10 +265,6 @@ We study the throughput and latency of KV writes under different combination of
 transact function and env flags, using the same tasks as above. For pure write
 task, we write 1 million pairs of key and value; 2 millions of reads/writes for
 mixed read/write task, the same as Datalog transaction.
-
-From the above results, we already know that the batching speed up effect in
-Datalevin is moderate, so we will focus on single key value transaction in this
-study.
 
 ### Write Conditions
 
