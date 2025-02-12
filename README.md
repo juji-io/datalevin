@@ -269,15 +269,11 @@ in production at [Juji](https://juji.io), among other companies.
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench),
-which write 100K random datoms in several conditions, and run several queries on
-them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive,
-here is how it looks.
+which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
 
 <p align="center">
 <img src="benchmarks/datascript-bench/Read.png" alt="query benchmark" height="300"></img>
-<img src="benchmarks/datascript-bench/Write.png" alt="write benchmark" height="300"></img>
 </p>
-
 
 In all benchmarked queries, Datalevin is the fastest among the three tested
 systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
@@ -295,9 +291,28 @@ the average times:
 </p>
 
 Datalevin is about 1.3X faster than PostgreSQL on average in running the complex
-queries in this benchmark. The gain is mainly in better query execution time due
-to higher quality of generated query plans. For more details, see
-[here](benchmarks/JOB-bench).
+queries that involves many joins. The gain is mainly due to shorter query
+execution time as Datalevin's query optimizer generates better plans. Details of
+the analysis can be found in [this
+article](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
+
+For durable transaction performance, we compared Datalevin with
+SQLite using [this write benchmark](benchmark/write-bench) on a 2016 Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive.
+
+<p align="center">
+<img src="benchmarks/write-bench/throughput-1.png" alt="Throughput at 1" height="300"></img>
+</p>
+
+When transacting one entity (equivalently, one row in SQLite) at a time,
+Datalevin's default transaction function is over 8X faster than SQLite's
+default; while Datlevin's asynchronous transaction mode is 86X faster than
+SQLite's WAL mode.
+
+On the otherhand, when transacting ever larger number of rows at a time, SQLite
+gains on Datalevin and eventually surpasses it. For bulk loading data, it is
+recommended to use `init-db` and `fill-db` functions, instead of doing
+transactions in Datalevin. See [transaction](doc/transact.md) for more
+discussions.
 
 ## :earth_americas: Roadmap
 
@@ -305,20 +320,19 @@ These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 ~~Native networked server mode with role based access control.~~ [Done 2021/09/06]
+* 0.5.0 ~~Networked server mode with role based access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 0.10.0 ~~Async transaction;~~ extended full-text search syntax; as a vector
-  database; auto upgrade migration.
+* 0.10.0 ~~Async transaction; boolean search expression and phrase search;~~  as a
+  vector database; auto upgrade migration.
 * 0.11.0 Compressed data storage; extensible de/serialization for arbitrary data.
+* 0.12.0 Transaction log storage and access API; read-only replicas for server.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
 * 1.1.0 JSON API and library/client for popular languages.
-* 2.0.0 Transaction log storage and access API.
-* 2.1.0 Read-only replicas for server.
-* 3.0.0 Automatic document indexing.
-* 4.0.0 Distributed mode.
+* 2.0.0 Automatic document indexing.
+* 3.0.0 Distributed mode.
 
 
 ## :arrows_clockwise: Contact

@@ -15,20 +15,26 @@
          org.xerial/sqlite-jdbc                        {:mvn/version "3.48.0.0"}
          }
 
- :aliases {:dev   {:extra-paths ["target/classes"]
-                   :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                                 "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                                 "-Dclojure.compiler.direct-linking=true"]}
-           :write {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                                "-Dclojure.compiler.direct-linking=true"]
-                   :main-opts  ["-m" "datalevin-bench.core"]
-                   :ns-default datalevin-bench.core
-                   :exec-fn    write}
-           :mixed {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                                "-Dclojure.compiler.direct-linking=true"]
-                   :main-opts  ["-m" "datalevin-bench.core"]
-                   :ns-default datalevin-bench.core
-                   :exec-fn    mixed}
+ :aliases {:dev     {:extra-paths ["target/classes"]
+                     :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                   "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                   "-Dclojure.compiler.direct-linking=true"]}
+           :write   {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                  "-Dclojure.compiler.direct-linking=true"]
+                     :main-opts  ["-m" "datalevin-bench.core"]
+                     :ns-default datalevin-bench.core
+                     :exec-fn    write}
+           :mixed   {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                  "-Dclojure.compiler.direct-linking=true"]
+                     :main-opts  ["-m" "datalevin-bench.core"]
+                     :ns-default datalevin-bench.core
+                     :exec-fn    mixed}
+           :dl-init {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                  "-Dclojure.compiler.direct-linking=true"]
+                     :main-opts  ["-m" "datalevin-bench.core"]
+                     :ns-default datalevin-bench.core
+                     :exec-fn    dl-init}
            }}

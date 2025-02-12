@@ -181,7 +181,12 @@
         kvdb     (when kv?
                    (doto (d/open-kv dir
                                     {:mapsize 60000
-                                     :flags   c/default-env-flags})
+                                     :flags   (-> c/default-env-flags
+                                                  ;; (conj :writemap)
+                                                  ;; (conj :mapasync)
+                                                  ;; (conj :nosync)
+                                                  ;; (conj :nometasync)
+                                                  )})
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/get-value kvdb max-write-dbi (random-int) :id)
@@ -238,3 +243,19 @@
     (when kvdb (d/close-kv kvdb))
     (when conn (d/close conn))
     (when sql-conn (.close sql-conn))))
+
+(defn dl-init
+  [{:keys [dir]}]
+  (let [datoms (doall (sequence
+                        (comp
+                          (map (fn [e k v] [(d/datom e :k k) (d/datom e :v v)]) )
+                          cat)
+                        (range 1 (inc total))
+                        (repeatedly total random-int)
+                        (repeatedly total #(str (random-uuid)))))
+        start  (System/currentTimeMillis)
+        db     (d/init-db datoms dir {:k {:db/valueType :db.type/long}
+                                      :v {:db/valueType :db.type/string}}
+                          {:kv-opts {:mapsize 60000}})]
+    (println "took" (- (System/currentTimeMillis) start) "milliseconds")
+    (d/close-db db)))
