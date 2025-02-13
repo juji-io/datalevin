@@ -2,8 +2,8 @@
 
 The purpose of this benchmark is to study the write throughput and latency under
 various conditions in Datalevin. Hopefully, this gives users some reference data
-points to help choosing the right transaction function and the right data batch
-size for specific use cases.
+points to help choosing the right transaction function, the right data batch
+size and environment flags for specific use cases.
 
 We also compare Datalevin's transaction speed with SQLite, as it is the most
 widely deployed embedded database that has a reputation for being fast.
@@ -58,8 +58,9 @@ For every 10K write requests, a set of metrics are recorded:
 
 The results are written into a CSV file.
 
-For asynchronous transactions, the metrics are recorded after `deref` is called
-on the last future, which blocks until all data has actually been written.
+For asynchronous transactions, the measures are taken in the callback function,
+which is only called after the commit is finished, so its commit latency includes
+the time for flushing to disk, so as to ensure all comparisons are fair.
 
 For consistency and to avoid exhausting system resources, the number of
 asynchronous write requests in flight is capped at 1000 using a Semaphore.
@@ -103,9 +104,9 @@ The total wall clock time, system time and user time are also recorded.
 ## Datalog Transaction
 
 Because Datalog store of Datalevin is intended to be an operational database, we
-test the default durable write condition (i.e. each commit synchronously flushes
+test the default durable write conditions (i.e. each commit synchronously flushes
 to disk) in Datalevin. Correspondingly, we test the same default
-`PRAGMA synchronous=FULL` write condition in SQLite.
+`PRAGMA synchronous=FULL` write conditions in SQLite.
 
 ### Write Conditions
 
@@ -115,12 +116,12 @@ Datalevin has two Datalog transaction functions:
 * `transact-async`
 
 Both are durable by default. In the case of `transact-async`, the returned
-future is only realized after the data are flushed to disk. Both are tested.
+`future` is only realized after the data are flushed to disk. Both are tested.
 
 `transact` is just the blocked version of `transact-async` so it is not tested.
 There are two faster `init-db` and `fill-db` functions that directly load
 prepared datoms to bypass the expensive process of verifying integrity of
-everything. These are not formally tested in this benchmark, as we are only
+everything. These are not formally tested in this benchmark, as we are mainly
 interested in transactions of raw data.
 
 SQLite also have two durable transaction mode: default and WAL mode, and both
@@ -205,7 +206,7 @@ At one million writes, the throughput numbers (writes per second) are:
 The average latency of commits (milliseconds) for all conditions are plotted:
 
 <p align="center">
-<img src="benchmarks/write-bench/commit-latency.png" alt="Commit Latency" height="300"></img>
+<img src="commit-latency.png" alt="Commit Latency" height="300"></img>
 </p>
 
 Datalevin's commit latency goes up as the batch size goes up. The same pattern
@@ -233,7 +234,7 @@ As to CPU time, the differences among different conditions are not big. We can
 see that Aysnc in Datalevin and WAL mode in SQLite do save CPU time compared
 with respective default conditions.
 
-Notice that most of the time is spent on waiting for I/O for the three
+Notice that most of the time is spent on waiting for I/O in the three
 synchronous conditions, where CPU times are relatively small compared with the
 wallclock time. The exception is Datalevin Async, where the total CPU
 time (227.89 seconds) is actually greater than wallclock time (111.04 seconds),
@@ -249,9 +250,10 @@ good at batch transaction, but individual transaction fails short.
 
 It should be mentioned that for bulk loading of large amount of data,  Datalevin
 has the option to use `init-db` and `fill-db` functions. For example, it took 5.3
-seconds to load this data set using `init-db` and `fill-db`.
+seconds to load this data set using `init-db` and `fill-db`, slightly better
+than the fastest SQLite's 6.7 seconds at WAL batch size 1000.
 
-Note that Datalevin build index at data load time so it is maintenance free,
+Finally, Datalevin builds index at data load time so it is maintenance free,
 whereas SQLite does not build index at transaction time so users have to manage
 indices.
 

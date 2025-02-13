@@ -189,11 +189,11 @@
                                                   )})
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
-                   (d/get-value kvdb max-write-dbi (random-int) :id)
+                   (d/get-value kvdb max-write-dbi (random-int) :id :string)
                    (d/transact-kv-async kvdb max-write-dbi txs
                                         :id :string measure))
         kv-sync  (fn [txs measure]
-                   (d/get-value kvdb max-write-dbi (random-int) :id)
+                   (d/get-value kvdb max-write-dbi (random-int) :id :string)
                    (measure (d/transact-kv kvdb max-write-dbi txs
                                            :id :string)))
         kv-add   (fn [^FastList txs]
