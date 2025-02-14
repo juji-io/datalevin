@@ -1,4 +1,4 @@
-# Write Benchmark (WIP)
+# Write Benchmark
 
 The purpose of this benchmark is to study the write throughput and latency under
 various conditions in Datalevin. Hopefully, this gives users some reference data
@@ -216,14 +216,14 @@ size 10.
 None of SQLite's commit latency goes under 1 milliseconds, while Datalevin's
 Async transaction can go way below 1 milliseconds at batch size 1 and 10.
 
-#### Fixed Read/Write Task
+#### Mixed Read/Write Task
 
 The wallclock time to finish the 2 millions mixed reads/writes is plotted on
 the left, and the CPU times are plotted at right:
 
 <p align="center">
-<img src="mixed-wallclock.png" alt="Mixed Read/Write Wallclock Time" height="300"></img>
-<img src="mixed-cpu.png" alt="Mixed Read/Write CPU Time" height="300"></img>
+<img src="wallclock-time.png" alt="Mixed Read/Write Wallclock Time" height="300"></img>
+<img src="cpu-time.png" alt="Mixed Read/Write CPU Time" height="300"></img>
 </p>
 
 For mixed read/write task, Datalevin default is much faster than SQLite default,
@@ -238,7 +238,7 @@ Notice that most of the time is spent on waiting for I/O in the three
 synchronous conditions, where CPU times are relatively small compared with the
 wallclock time. The exception is Datalevin Async, where the total CPU
 time (227.89 seconds) is actually greater than wallclock time (111.04 seconds),
-indicating the effective utilization of multicore and the apparent hiding of I/O
+indicating an effective utilization of multicore and the apparent hiding of I/O
 wait time.
 
 ### Remark
@@ -257,7 +257,7 @@ Finally, Datalevin builds index at data load time so it is maintenance free,
 whereas SQLite does not build index at transaction time so users have to manage
 indices.
 
-## Key Value Transaction
+## Key Value Transaction (WIP)
 
 Datalevin wrap LMDB to offer KV store feature. Here we do not compare Datalevin
 with other KV stores, as there are plenty of such comparison between LMDB and
