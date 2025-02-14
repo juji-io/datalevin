@@ -39,12 +39,11 @@
         ","
         (format "%.2f" (double (/ duration 1000)))
         ","
-        (format "%.1f" (double (* (/ @inserted duration) 1000)))
+        (format "%.2f" (double (* (/ @inserted duration) 1000)))
         ","
-        (format "%.1f" (double (/ @write-time @sync-count)))
+        (format "%.2f" (double (/ @write-time @sync-count)))
         ","
-        (format "%.1f" (double (/ (- @sync-time @prev-time)
-                                  @sync-count)))))))
+        (format "%.2f" (double (/ (- @sync-time @prev-time) @sync-count)))))))
 
 (defn max-write-bench
   [batch-size tx-fn add-fn async?]

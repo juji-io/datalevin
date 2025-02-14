@@ -259,7 +259,7 @@ indices.
 
 ## Key Value Transaction (WIP)
 
-Datalevin wrap LMDB to offer KV store feature. Here we do not compare Datalevin
+Datalevin wraps LMDB to offer KV store feature. Here we do not compare Datalevin
 with other KV stores, as there are plenty of such comparison between LMDB and
 others KV stores already.
 
