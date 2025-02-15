@@ -618,7 +618,7 @@
 
 (deftype Store [lmdb
                 search-engines
-                ^ConcurrentHashMap counts
+                ^ConcurrentHashMap counts   ; aid -> touched times
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
@@ -875,16 +875,16 @@
   (slice [_ index low-datom high-datom]
     (mapv #(retrieved->datom lmdb attrs %)
           (lmdb/list-range
-           lmdb (index->dbi index)
-           [:closed (index->k index schema low-datom false)
-            (index->k index schema high-datom true)]
-           (index->ktype index)
-           [:closed (datom->indexable schema low-datom false)
-            (datom->indexable schema high-datom true)]
-           (index->vtype index))))
+            lmdb (index->dbi index)
+            [:closed (index->k index schema low-datom false)
+             (index->k index schema high-datom true)]
+            (index->ktype index)
+            [:closed (datom->indexable schema low-datom false)
+             (datom->indexable schema high-datom true)]
+            (index->vtype index))))
   (slice [_ index low-datom high-datom n]
-     (mapv #(retrieved->datom lmdb attrs %)
-           (scan/list-range-first-n
+    (mapv #(retrieved->datom lmdb attrs %)
+          (scan/list-range-first-n
             lmdb (index->dbi index) n
             [:closed (index->k index schema low-datom false)
              (index->k index schema high-datom true)]
