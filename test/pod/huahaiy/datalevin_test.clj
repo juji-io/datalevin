@@ -140,6 +140,7 @@
                             {:name "De Morgan", :db/id -3, :nation "English"}])]
     (is (= 8 (count (:tx-data rp))))
     (is (= 3 (pd/max-eid (pd/db conn))))
+    (is (pd/analyze (pd/db conn)))
     (is (= #{["France"]}
            (pd/q '[:find ?nation
                    :in $ ?alias

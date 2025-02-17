@@ -1471,7 +1471,7 @@
       (let [^long c (cond
                       (some? val) (db/-count db [nil attr val] mcount)
                       range       (range-count db attr range mcount)
-                      :else       (db/-count db [nil attr nil]))]
+                      :else       (db/-count db [nil attr nil] mcount))]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
           (< c ^long mcount) (-> node
@@ -1480,7 +1480,7 @@
           :else              (assoc-in node [k i :count] c))))
     (assoc node :mcount Long/MAX_VALUE)
     (let [flat (fn [k m] (map-indexed (fn [i clause] [k i clause]) m))]
-      (sort-by (fn [[_ _ {:keys [attr]}]] (db/-count db [nil attr nil]))
+      (sort-by (fn [[_ _ {:keys [attr]}]] (db/-cardinality db attr))
                (concat (flat :bound bound) (flat :free free) )))))
 
 (defn- count-known-e-datoms
@@ -1966,16 +1966,17 @@
         (fn [c src nodes]
           (let [^DB db (sources src)
                 k      [(.-store db) nodes]]
-            (if-let [cached (.get ^LRUCache *plan-cache* k)]
-              (assoc-in c [:plan src] cached)
-              (let [nodes (update-nodes db nodes)
-                    plans (if (< 1 (count nodes))
-                            (build-plan* db nodes)
-                            [[(base-plan db nodes (ffirst nodes) true)]])]
-                (if (some #(some nil? %) plans)
-                  (reduced (assoc c :result-set #{}))
-                  (do (.put ^LRUCache *plan-cache* k (strip-result plans))
-                      (assoc-in c [:plan src] plans)))))))
+            (let [nodes (update-nodes db nodes)
+                  plans (if (< 1 (count nodes))
+                          (build-plan* db nodes)
+                          [[(base-plan db nodes (ffirst nodes) true)]])]
+              (if (some #(some nil? %) plans)
+                (reduced (assoc c :result-set #{}))
+                (do #_(.put ^LRUCache *plan-cache* k (strip-result plans))
+                    (assoc-in c [:plan src] plans))))
+            #_(if-let [cached (.get ^LRUCache *plan-cache* k)]
+                (assoc-in c [:plan src] cached)
+                )))
         context graph))
     context))
 
@@ -2079,13 +2080,16 @@
     (vswap! *explain* assoc :planning-time
             (- (System/nanoTime) ^long *start-time*))))
 
+(defn- planning
+  [context]
+  (-> context
+      build-graph
+      build-plan))
 
 (defn -q
   [context run?]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (let [{:keys [result-set] :as context} (-> context
-                                               build-graph
-                                               build-plan)]
+    (let [{:keys [result-set] :as context} (planning context)]
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c
@@ -2390,7 +2394,8 @@
     (if-let [store (some #(when (db/-searchable? %) (.-store^DB %)) inputs)]
       (let [k [(-> (update parsed-q :qwhere-qualified-fns
                            resolve-qualified-fns)
-                   (dissoc :limit :offset)) inputs]]
+                   (dissoc :limit :offset))
+               inputs]]
         (if-let [cached (db/cache-get store k)]
           cached
           (let [res (q* parsed-q inputs)]

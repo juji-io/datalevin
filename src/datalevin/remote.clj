@@ -178,6 +178,9 @@
   (start-sampling [_]
     (cl/normal-request client :start-sampling [db-name] writing?))
 
+  (analyze [_ attr]
+    (cl/normal-request client :analyze [db-name attr]))
+
   (av-datoms [_ a v]
     (cl/normal-request client :av-datoms [db-name a v] writing?))
 

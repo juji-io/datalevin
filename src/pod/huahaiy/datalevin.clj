@@ -170,6 +170,12 @@
   [dl]
   (when-let [d (get-db dl)] (d/max-eid d)))
 
+(defn analyze
+  ([dl]
+   (when-let [d (get-db dl)] (d/analyze d nil)))
+  ([dl attr]
+   (when-let [d (get-db dl)] (d/analyze d attr))))
+
 (defn seek-datoms
   ([dl index]
    (when-let [d (get-db dl)] (map dd/datom-eav (d/seek-datoms d index))))
@@ -772,6 +778,7 @@
    'count-datoms              count-datoms
    'cardinality               cardinality
    'max-eid                   max-eid
+   'analyze                   analyze
    'seek-datoms               seek-datoms
    'fulltext-datoms           fulltext-datoms
    'rseek-datoms              rseek-datoms

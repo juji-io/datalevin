@@ -1105,6 +1105,7 @@
    'slice
    'rslice
    'start-sampling
+   'analyze
    'e-datoms
    'e-first-datom
    'av-datoms
@@ -1688,6 +1689,10 @@
 (defn- start-sampling
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler start-sampling)))
+
+(defn- analyze
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler analyze)))
 
 (defn- e-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

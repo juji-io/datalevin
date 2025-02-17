@@ -3274,7 +3274,7 @@
 
 (defn grid [&opts]
   (doseq [f [2.5]
-          s [4.0 4.5]
+          s [4.0]
           v [2.0]
           ]
     (let [start (System/currentTimeMillis)]
@@ -3287,7 +3287,9 @@
                     c/magic-cost-val-eq-scan-e s
                     c/magic-cost-init-scan-e   v
                     q/*cache?*                 false]
-            (d/q query (d/db conn)))))
+            (let [start (System/currentTimeMillis)]
+              (d/q query (d/db conn))
+              (println q "took" (- (System/currentTimeMillis) start))))))
       (println "f" f "s" s  "v" v
                (format
                  "%.2f"
@@ -3298,11 +3300,24 @@
 
   (d/explain {:run? true} q-25c (d/db conn))
 
+  (def store (.-store (d/db conn)))
 
+  (require '[datalevin.storage :as st])
+  (time (st/size store :ave (d/datom c/e0 :cast-info/movie c/v0) (d/datom c/emax :cast-info/movie c/vmax)))
+  (time (st/size store :ave (d/datom c/e0 :person-info/person c/v0) (d/datom c/emax :person-info/person c/vmax)))
+  (time (st/size store :ave (d/datom c/e0 :title/title c/v0) (d/datom c/emax :title/title c/vmax)))
 
+  (time (st/actual-a-size store :cast-info/movie))
+  (time (st/actual-a-size store :person-info/person))
+  (time (st/actual-a-size store :title/title))
+;; => 2528312
 
-
-
+  (time (st/cardinality store :cast-info/person-role))
+  ;; => 3140339
+  (time (st/cardinality store :person-info/person))
+  ;; => 550720
+  (time (st/cardinality store :title/title))
+;; => 1483632
 
 
   )

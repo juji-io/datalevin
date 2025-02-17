@@ -39,7 +39,7 @@
   (-range-datoms [db index start-datom end-datom])
   (-seek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
   (-rseek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
-  (-cardinality [db attr])
+  (-cardinality [db attr] [db attr actual?])
   (-index-range [db attr start end])
   (-index-range-size [db attr start end] [db attr start end cap]))
 
@@ -326,17 +326,17 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-     store [:seek index c1 c2 c3]
-     (s/slice store index
-              (components->pattern db index c1 c2 c3 e0)
-              (datom emax c1 nil))))
+        store [:seek index c1 c2 c3]
+      (s/slice store index
+               (components->pattern db index c1 c2 c3 e0)
+               (datom emax c1 nil))))
   (-seek-datoms
     [db index c1 c2 c3 n]
-     (wrap-cache
-         store [:seek index c1 c2 c3 n]
-         (s/slice store index
-                  (components->pattern db index c1 c2 c3 e0)
-                  (datom emax c1 nil) n)))
+    (wrap-cache
+        store [:seek index c1 c2 c3 n]
+      (s/slice store index
+               (components->pattern db index c1 c2 c3 e0)
+               (datom emax c1 nil) n)))
 
   (-rseek-datoms
     [db index c1 c2 c3]
@@ -353,10 +353,11 @@
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 c1 nil) n)))
 
+  (-cardinality [db attr] (-cardinality db attr false))
   (-cardinality
-    [db attr]
-    (wrap-cache store [:cardinality attr]
-      (s/cardinality store attr)))
+    [db attr actual?]
+    (wrap-cache store [:cardinality attr actual?]
+      (if actual? (s/actual-cardinality store attr) (s/cardinality store attr))))
 
   (-index-range
     [db attr start end]

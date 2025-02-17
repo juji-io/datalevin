@@ -106,7 +106,7 @@
                                      :flags   (-> c/default-env-flags
                                                   ;; (conj :writemap)
                                                   ;; (conj :mapasync)
-                                                  ;; (conj :nosync)
+                                                  (conj :nosync)
                                                   ;; (conj :nometasync)
                                                   )
                                      })

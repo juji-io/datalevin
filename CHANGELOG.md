@@ -7,9 +7,11 @@
   [#104](https://github.com/juji-io/datalevin/issues/104)
   [#310](https://github.com/juji-io/datalevin/issues/310)
 - [Search] Phrase search. [#311](https://github.com/juji-io/datalevin/issues/311)
+- [Datalog] `analyze` function to collect statistics that helps with query
+  planner.
 - [Datalog] `max-eid` function to return the current maximal entity id.
 - [Benchmark] [write-bench](benchmarks/write-bench) that compares Datalevin with
-  SQLite on durable transaction performance, and studies Datalevin KV write
+  SQLite on transaction performance, and studies Datalevin KV write
   performance under various conditions.
 
 ### Fixed
@@ -26,6 +28,9 @@
 - [Datalog] Added arity to `seek-datoms` and `rseek-datoms` to specify the
   number of datoms desired. [Thx @jeremy302]
   [#312](https://github.com/juji-io/datalevin/issues/312)
+- [Datalog] Faster attribute size count by selecting different counters based on
+  cardinality.
+- [Datalog] Sort by cardinality when picking minimal attribute.
 - [KV] Prevent "MDB_READERS_FULL: Environment maxreaders limit reached" error
   when running hundreds of concurrent reading threads.
 - [Async] Resepct individual callback of each async call.

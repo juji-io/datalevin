@@ -31,6 +31,7 @@
            (sut/schema store)))
     (is (= c/e0 (sut/init-max-eid store)))
     (is (= c/tx0 (sut/max-tx store)))
+    (is (sut/analyze store nil))
     (let [a   :a/b
           v   (UUID/randomUUID)
           d   (d/datom c/e0 a v)
@@ -337,9 +338,11 @@
         ]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
     (is (= 6 (sut/cardinality store :a)))
+    (is (= 6 (sut/actual-cardinality store :a)))
     (is (= 6 (sut/a-size store :a)))
 
     (is (= 7 (sut/cardinality store :b)))
+    (is (= 7 (sut/actual-cardinality store :b)))
     (is (= 9 (sut/a-size store :b)))
 
     (is (= 1 (sut/av-size store :a "8a")))

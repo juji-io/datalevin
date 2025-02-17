@@ -635,12 +635,22 @@ Only usable for debug output.
 (defn cardinality
   "Count the number of unique values of an attribute in a Datalog db. "
   [db a]             {:pre [(db/db? db)]}
-  (db/-cardinality db a))
+  (db/-cardinality db a true))
 
 (defn max-eid
   "Return the current maximal entity id of a Datalog db"
   [db]             {:pre [(db/db? db)]}
   (s/init-max-eid (:store db)))
+
+(defn analyze
+  "Collect statistics for an attribute `attr` that are helpful for Datalog query planner.
+  When `attr` is not given, collect statistics for all attributes. Return `:done`.
+
+  Datalevin runs this function in the background periodically. "
+  ([db]             {:pre [(db/db? db)]}
+   (s/analyze (:store db) nil))
+  ([db attr]        {:pre [(db/db? db)]}
+   (s/analyze (:store db) attr)))
 
 (defn seek-datoms
   "Similar to [[datoms]], but will return datoms starting from specified components.

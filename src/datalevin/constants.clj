@@ -173,6 +173,8 @@
 
 (def ^:no-doc ^:const normal 0)  ; non-giant datom
 
+(def ^:no-doc ^:const list-dbi-count-divider 1000) ; sum counts or direct count
+
 ;; dbi-names
 
 ;; kv
@@ -376,7 +378,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 2.0)
+  magic-cost-merge-scan-v 2.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}

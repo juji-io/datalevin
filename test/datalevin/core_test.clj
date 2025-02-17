@@ -592,6 +592,7 @@
                              {:name "Peirce", :db/id -2, :nation "france"}
                              {:name "De Morgan", :db/id -3, :nation "English"}])]
       (is (= 8 (count (:tx-data rp))))
+      (is (sut/analyze (sut/db conn)))
       (is (= 3 (sut/max-eid (sut/db conn)))))
     (is (= #{["France"]}
            (sut/q '[:find ?nation

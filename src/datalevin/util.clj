@@ -465,35 +465,21 @@
       `(with-meta ~sym {:tag ~tag}))
     sym))
 
-(definline fast-assoc
-  "Like assoc but only takes one kv pair. Slightly faster."
-  [a k v]
-  (if (symbol? a)
-    (let [a (as clojure.lang.Associative a)]
-      `(.assoc ~a ~k ~v))
-    `(let [a# ~a] (fast-assoc a# ~k ~v))))
-
-(defn kvreduce
-  {:inline
-   (fn kvreduce [f init amap]
-     (if (symbol? amap)
-       (let [amap (as IKVReduce amap)]
-         `(.kvreduce ~amap ~f ~init))
-       `(let [amap# ~amap] (kvreduce ~f ~init amap#))))}
-  [f init IKVReduce amap]
-  (kvreduce amap f init))
-
 (defn merge-with
   [f & maps]
-  (when (some identity maps)
-    (let [merge-entry (fn [m k v]
-			                  (if (contains? m k)
-			                    (fast-assoc m k (f (m k) v))
-			                    (fast-assoc m k v)))
-          merge2      (fn [m1 m2]
-		                    (kvreduce merge-entry m1 m2))]
-      (reduce merge2 maps))))
-
+  (if (empty? maps)
+    {}
+    (persistent!
+      (reduce
+        (fn [acc m]
+          (reduce-kv
+            (fn [acc k v]
+              (if (contains? acc k)
+                (assoc! acc k (f (get acc k) v))
+                (assoc! acc k v)))
+            acc m))
+        (transient (first maps))
+        (rest maps)))))
 
 (defn idxs-of
   [pred coll]
