@@ -312,6 +312,15 @@
                (components->pattern db index c1 c2 c3 e0 v0)
                (components->pattern db index c1 c2 c3 emax vmax))))
 
+  (-datoms
+    [db index c1 c2 c3 n]
+    (wrap-cache
+        store [:datoms index c1 c2 c3 n]
+      (s/slice store index
+               (components->pattern db index c1 c2 c3 e0 v0)
+               (components->pattern db index c1 c2 c3 emax vmax)
+               n)))
+
   (-e-datoms [db e] (wrap-cache store [:e-datoms e] (s/e-datoms store e)))
 
   (-av-datoms

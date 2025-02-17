@@ -149,9 +149,9 @@
   ([dl index c1 c2 c3]
    (when-let [d (get-db dl)]
      (map dd/datom-eav (d/datoms d index c1 c2 c3))))
-  ([dl index c1 c2 c3 c4]
+  ([dl index c1 c2 c3 n]
    (when-let [d (get-db dl)]
-     (map dd/datom-eav (d/datoms d index c1 c2 c3 c4)))))
+     (map dd/datom-eav (d/datoms d index c1 c2 c3 n)))))
 
 (defn search-datoms
   [dl e a v]

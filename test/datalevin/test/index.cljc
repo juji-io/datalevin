@@ -51,6 +51,11 @@
               [3 :age 11]]
              (map dvec (d/datoms db :eav))))
 
+      (is (= [[1 :name "Petr"]
+              [1 :age 44]
+              [2 :name "Ivan"]]
+             (map dvec (d/datoms db :eav nil nil nil 3))))
+
       (is (= [[2 :name "Ivan"]
               [1 :name "Petr"]
               [3 :name "Sergey"]

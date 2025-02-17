@@ -524,6 +524,8 @@ Only usable for debug output.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
 
+   `n` is the number of datoms desired.
+
    Usage:
 
        ; find all datoms for entity id == 1 (any attrs and values)
@@ -575,7 +577,8 @@ Only usable for debug output.
    (db/-datoms db index c1 c2 nil))
   ([db index c1 c2 c3]    {:pre [(db/db? db)]}
    (db/-datoms db index c1 c2 c3))
-  )
+  ([db index c1 c2 c3 n]  {:pre [(db/db? db)]}
+   (db/-datoms db index c1 c2 c3 n)))
 
 (defn search-datoms
   "Datom lookup in Datalog db. Returns a sequence of datoms matching the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function chooses the most efficient index to look up the datoms. The order of the returned datoms depends on the index chosen.
