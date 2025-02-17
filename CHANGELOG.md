@@ -21,6 +21,7 @@
   [#305](https://github.com/juji-io/datalevin/issues/305)
 - [Datalog] Validation of negative doubles
   [#308](https://github.com/juji-io/datalevin/issues/308)
+- [Datalog] `seek-datom` and `rseek-datom` broken for `:eav` index
 
 ### Improved
 - [Datalog] `fill-db` no longer creates a new DB, to reduce chance of user
@@ -28,6 +29,7 @@
 - [Datalog] Added arity to `seek-datoms` and `rseek-datoms` to specify the
   number of datoms desired. [Thx @jeremy302]
   [#312](https://github.com/juji-io/datalevin/issues/312)
+- [Datalog] All index scan functions take an extra `n` argument as well.
 - [Datalog] Faster attribute size count by selecting different counters based on
   cardinality.
 - [Datalog] Sort by cardinality when picking minimal attribute.

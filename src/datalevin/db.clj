@@ -5,7 +5,7 @@
    [clojure.walk]
    [clojure.data]
    [clojure.set]
-   [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
+   [datalevin.constants :as c :refer [e0 tx0 emax txmax v0 vmax]]
    [datalevin.datom :as d :refer [datom datom-added datom?]]
    [datalevin.util :as u
     :refer [case-tree raise defrecord-updatable cond+ conjv conjs concatv]]
@@ -33,7 +33,7 @@
 
 (defprotocol IIndexAccess
   (-populated? [db index c1 c2 c3])
-  (-datoms [db index c1 c2 c3])
+  (-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
   (-e-datoms [db e])
   (-av-datoms [db attr v])
   (-range-datoms [db index start-datom end-datom])
@@ -70,7 +70,8 @@
 
 ;; ----------------------------------------------------------------------------
 
-(declare empty-db resolve-datom validate-attr components->pattern)
+(declare empty-db resolve-datom validate-attr components->pattern
+         components->end-datom)
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
@@ -300,16 +301,16 @@
     (wrap-cache
         store [:populated? index c1 c2 c3]
       (s/populated? store index
-                    (components->pattern db index c1 c2 c3 e0)
-                    (components->pattern db index c1 c2 c3 emax))))
+                    (components->pattern db index c1 c2 c3 e0 v0)
+                    (components->pattern db index c1 c2 c3 emax vmax))))
 
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
         store [:datoms index c1 c2 c3]
       (s/slice store index
-               (components->pattern db index c1 c2 c3 e0)
-               (components->pattern db index c1 c2 c3 emax))))
+               (components->pattern db index c1 c2 c3 e0 v0)
+               (components->pattern db index c1 c2 c3 emax vmax))))
 
   (-e-datoms [db e] (wrap-cache store [:e-datoms e] (s/e-datoms store e)))
 
@@ -328,30 +329,32 @@
     (wrap-cache
         store [:seek index c1 c2 c3]
       (s/slice store index
-               (components->pattern db index c1 c2 c3 e0)
-               (datom emax c1 nil))))
+               (components->pattern db index c1 c2 c3 e0 v0)
+               (components->end-datom db index c1 c2 c3 emax vmax))))
   (-seek-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
         store [:seek index c1 c2 c3 n]
       (s/slice store index
-               (components->pattern db index c1 c2 c3 e0)
-               (datom emax c1 nil) n)))
+               (components->pattern db index c1 c2 c3 e0 v0)
+               (components->end-datom db index c1 c2 c3 emax vmax)
+               n)))
 
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
         store [:rseek index c1 c2 c3]
       (s/rslice store index
-                (components->pattern db index c1 c2 c3 emax)
-                (datom e0 c1 nil))))
+                (components->pattern db index c1 c2 c3 emax vmax)
+                (components->end-datom db index c1 c2 c3 e0 v0))))
   (-rseek-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
         store [:rseek index c1 c2 c3 n]
       (s/rslice store index
-                (components->pattern db index c1 c2 c3 emax)
-                (datom e0 c1 nil) n)))
+                (components->pattern db index c1 c2 c3 emax vmax)
+                (components->end-datom db index c1 c2 c3 e0 v0)
+                n)))
 
   (-cardinality [db attr] (-cardinality db attr false))
   (-cardinality
@@ -364,8 +367,8 @@
     (wrap-cache
         store [:index-range attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
-          (s/slice store :ave (resolve-datom db nil attr start e0)
-                   (resolve-datom db nil attr end emax)))))
+          (s/slice store :ave (resolve-datom db nil attr start e0 v0)
+                   (resolve-datom db nil attr end emax vmax)))))
 
   (-index-range-size
     [db attr start end]
@@ -618,20 +621,32 @@
 
 (declare entid-strict entid-some ref?)
 
-(defn- resolve-datom [db e a v default-e ]
-  (when a (validate-attr a (list 'resolve-datom 'db e a v default-e)))
-  (datom
-    (or (entid-some db e) default-e)  ;; e
-    a                                 ;; a
-    (if (and (some? v) (ref? db a))   ;; v
-      (entid-strict db v)
-      v)))
+(defn- resolve-datom
+  [db e a v default-e default-v]
+  (when a (validate-attr a (list 'resolve-datom 'db e a v default-e default-v)))
+  (let [v? (some? v)]
+    (datom
+      (or (entid-some db e) default-e)  ;; e
+      a                                 ;; a
+      (if (and v? (ref? db a))          ;; v
+        (entid-strict db v)
+        (if v? v default-v)))))
 
-(defn- components->pattern [db index c0 c1 c2 default-e]
+(defn- components->pattern
+  [db index c0 c1 c2 default-e default-v]
   (case index
-    :eav (resolve-datom db c0 c1 c2 default-e)
-    :ave (resolve-datom db c2 c0 c1 default-e)
-    :vae (resolve-datom db c2 c1 c0 default-e)))
+    :eav (resolve-datom db c0 c1 c2 default-e default-v)
+    :ave (resolve-datom db c2 c0 c1 default-e default-v)
+    :vae (resolve-datom db c2 c1 c0 default-e default-v)))
+
+(defn- components->end-datom
+  [db index c0 c1 c2 default-e default-v]
+  (datom default-e
+         (case index
+           :eav c1
+           :ave c0
+           :vae c1 )
+         default-v))
 
 ;; ----------------------------------------------------------------------------
 

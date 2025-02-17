@@ -88,6 +88,11 @@
                              [:db/add 3 :name "Sergey"]
                              [:db/add 3 :age 11]]))]
 
+    (testing "EAV"
+      (is (= (map dvec (d/seek-datoms db :eav 3))
+             [[3 :name "Sergey"]
+              [3 :age 11]])))
+
     (testing "Non-termination"
       (is (= (map dvec (d/seek-datoms db :ave :age 10))
              [ [3 :age 11]
@@ -164,6 +169,12 @@
                              [:db/add 2 :age 25]
                              [:db/add 3 :name "Sergey"]
                              [:db/add 3 :age 11]]))]
+    (testing "EAV"
+      (is (= (map dvec (d/rseek-datoms db :eav 2))
+             [[2 :age 25]
+              [2 :name "Ivan"]
+              [1 :age 44]
+              [1 :name "Petr"]])))
 
     (testing "Non-termination"
       (is (= (map dvec (d/rseek-datoms db :ave :name "Petr"))
@@ -234,5 +245,31 @@
             [2 :age 20]
             [5 :age 20]
             [4 :age 45] ]))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-eav
+  (let [dir  (u/tmp-dir (str "test-eav-" (UUID/randomUUID)))
+        dvec #(vector (:e %) (:a %) (:v %))
+        db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
+                                  :age  {:db/valueType :db.type/long}})
+                 (d/db-with [ [:db/add 1 :name "Petr"]
+                             [:db/add 1 :age 44]
+                             [:db/add 2 :name "Ivan"]
+                             [:db/add 2 :age 25]
+                             [:db/add 3 :name "Sergey"]
+                             [:db/add 3 :age 11] ]))]
+
+    (is (= [[1 :name "Petr"]
+            [1 :age 44]]
+           (map dvec (d/datoms db :eav 1))))
+
+    (is (= [[1 :name "Petr"]
+            [1 :age 44]
+            [2 :name "Ivan"]
+            [2 :age 25]
+            [3 :name "Sergey"]
+            [3 :age 11]]
+           (map dvec (d/seek-datoms db :eav 1))))
     (d/close-db db)
     (u/delete-files dir)))

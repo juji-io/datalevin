@@ -157,7 +157,9 @@
         (b/indexable e c/a0 c/v0 nil gm))
       (let [am (if high? c/amax c/a0)]
         (if-some [v (.-v d)]
-          (if (integer? v)
+          (if (or (integer? v)
+                  (identical? v :db.value/sysMax)
+                  (identical? v :db.value/sysMin))
             (if e
               (b/indexable e am v :db.type/ref gm)
               (b/indexable (if high? c/emax c/e0) am v :db.type/ref gm))
