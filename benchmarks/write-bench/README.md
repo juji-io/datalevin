@@ -5,8 +5,8 @@ various conditions in Datalevin. Hopefully, this gives users some reference data
 points to help choosing the right transaction function, the right data batch
 size and environment flags for specific use cases.
 
-We also compare Datalevin's transaction speed with SQLite, as it is the most
-widely deployed embedded database that has a reputation for being fast.
+We also compare Datalevin's Datalog transaction speed with SQLite, as it is the
+most widely deployed embedded database that has a reputation for being fast.
 
 ## Setup
 
@@ -103,11 +103,6 @@ The total wall clock time, system time and user time are also recorded.
 
 ## Datalog Transaction
 
-Because Datalog store of Datalevin is intended to be an operational database, we
-test the default durable write conditions (i.e. each commit synchronously flushes
-to disk) in Datalevin. Correspondingly, we test the same default
-`PRAGMA synchronous=FULL` write conditions in SQLite.
-
 ### Write Conditions
 
 Datalevin has two Datalog transaction functions:
@@ -124,14 +119,28 @@ prepared datoms to bypass the expensive process of verifying integrity of
 everything. These are not formally tested in this benchmark, as we are mainly
 interested in transactions of raw data.
 
-SQLite also have two durable transaction mode: default and WAL mode, and both
-are tested.
+In addition to the default durable write condition, Datalevin supports some
+faster, albeit less durable writes, by setting one of these env flags:
 
-### Results
+* `:nometasync`
+* `:nosync`
+* `:writemap` + `:mapasync`
 
-We presents throughput and commit latency. The call latencies are close to
-commit latencies in synchronous writes, while close to zero for asynchronous
-writes. So call latencies are omitted from this presentation.
+We are interested in these non-durable write conditions, because there are many
+good use cases for a fast non-durable store, such as caching, session
+management, temporary data storage, real-time analytics, message queues,
+configuration, leaderboards, and so on.
+
+SQLite have two durable transaction mode in FULL sync mode: default and
+WAL. SQLite can also use non-durable sync setting NORMAL and OFF. We test these
+as well.
+
+### Durable Write Results
+
+We will first focus on durable writes. We presents throughput and commit
+latency. The call latencies are close to commit latencies in synchronous writes,
+while close to zero for asynchronous writes. So call latencies are omitted from
+this presentation.
 
 #### Pure Write Task
 
@@ -146,12 +155,7 @@ per second) is on the log scale. The X axis is every 10000 writes per tick.
 
 When data are not batched, Datalevin default writes are much faster than
 SQLite's default, and Datalevin async writes are much faster than SQLite's WAL
-mode. At one million writes mark, the throughput numbers (writes per second)
-are:
-
-|SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
-|---|---|---|---|
-|93.5|770.2|482.5|16829.2|
+mode.
 
 ##### Batch size 10 throughput
 
@@ -161,12 +165,6 @@ are:
 
 When data are batched at size 10, the same relative positions remain, but the
 gaps narrow.
-
-At one million writes, the throughput numbers (writes per second) are:
-
-|SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
-|---|---|---|---|
-|2006.8|7074.7|3141.5|30132.2|
 
 ##### Batch size 100 throughput
 
@@ -180,12 +178,6 @@ default writes, and WAL mode is faster than async writes.
 Notice that Datalevin's async writes at batch 100 are not faster than
 that of batch size 10.
 
-At one million writes, the throughput numbers (writes per second) are:
-
-|SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
-|---|---|---|---|
-|18448.8|41583.5|11806.8|29416.8|
-
 ##### Batch size 1000 throughput
 
 <p align="center">
@@ -194,12 +186,6 @@ At one million writes, the throughput numbers (writes per second) are:
 
 At batch size 1000, SQLite's default writes are now faster than Datalevin's
 Async writes in all cases.
-
-At one million writes, the throughput numbers (writes per second) are:
-
-|SQLite Default|SQLite WAL|Datalevin Default|Datalevin Async|
-|---|---|---|---|
-|120496.4|149588.6|22400.9|39231.6|
 
 ##### Average commit latency
 
@@ -241,6 +227,14 @@ time (227.89 seconds) is actually greater than wallclock time (111.04 seconds),
 indicating an effective utilization of multicore and the apparent hiding of I/O
 wait time.
 
+### Non-durable Writes Results
+
+For each batch size, we plot everything together.
+
+#### Pure Write Task
+
+#### Mixed Read/Write Task
+
 ### Remark
 
 In general, Datalevin's transaction speed is more stable and less sensitive to
@@ -270,26 +264,31 @@ mixed read/write task, the same as Datalog transaction.
 
 ### Write Conditions
 
-Datalevin supports these transaction functions for key value store:
+All combinations of batch size, transaction function and environment flags are
+tested:
 
-* `transact-kv`
-* `transact-kv-async`
-
-In addition to the default durable write condition, Datalevin supports some
-faster, albeit less durable writes, by setting one of these env flags:
-
-* `:nometasync`
-* `:nosync`
-* `:writemap` + `:mapasync`
-
-We are interested in these non-durable write conditions, because there are many
-good use cases for a fast non-durable KV store, such as caching, session
-management, temporary data storage, real-time analytics, message queues,
-configuration, leaderboards, and so on.
+* sync-default: `transact-kv`, with default flags
+* sync-nometa: `transact-kv`, with `:nometasync` flag
+* sync-nosync: `transact-kv`, with `:nosync` flag
+* sync-wm: `transact-kv`, with `:writemap` and `:mapasync` flags
+* async-default: `transact-kv-async`, with default flags
+* async-nometa: `transact-kv-async`, with `:nometasync` flag
+* async-nosync: `transact-kv-async`, with `:nosync` flag
+* async-wm: `transact-kv-async`, with `:writemap` and `:mapasync` flags
 
 ### Results
 
+Throughput is in writes per second and latency in milliseconds.
+
 #### Pure Write Task
+
+Batch size 1:
+
+| |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
+|---|---|---|---|---|---|---|---|---|
+|Throughput|232.27	|1013.77	|109134.56	|230149.6	|109973.73	|173688.4	|179371.47	|174347.78|
+Latency	|5.8	|0.99	|0.01	|0	|0.01	|0.01	|0.01	|0.01|
+
 
 #### Mixed Read/Write Task
 
