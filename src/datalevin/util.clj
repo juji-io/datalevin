@@ -475,7 +475,7 @@
           (reduce-kv
             (fn [acc k v]
               (if (contains? acc k)
-                (assoc! acc k (f (get acc k) v))
+                (assoc! acc k (f (acc k) v))
                 (assoc! acc k v)))
             acc m))
         (transient (first maps))
@@ -628,6 +628,7 @@
   {:pre [(<= r n)]}
   (/ ^long (factorial n) ^long (factorial (- n r))))
 
+;; (def map+ map)
 (defn map+
   "parallel map using query-thread-pool"
   ([f coll]

@@ -3298,6 +3298,8 @@
 
 (comment
 
+  (time (d/analyze (d/db conn)))
+
   (d/explain {:run? true} q-25c (d/db conn))
 
   (def store (.-store (d/db conn)))
@@ -3310,14 +3312,14 @@
   (time (st/actual-a-size store :cast-info/movie))
   (time (st/actual-a-size store :person-info/person))
   (time (st/actual-a-size store :title/title))
-;; => 2528312
+  ;; => 2528312
 
   (time (st/cardinality store :cast-info/person-role))
   ;; => 3140339
   (time (st/cardinality store :person-info/person))
   ;; => 550720
   (time (st/cardinality store :title/title))
-;; => 1483632
+  ;; => 1483632
 
 
   )
