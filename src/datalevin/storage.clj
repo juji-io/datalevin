@@ -211,7 +211,6 @@
   (advance-max-gt [this])
   (max-tx [this])
   (advance-max-tx [this])
-  (aid [this attr])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (rschema [this] "Return the reverse schema map")
@@ -613,10 +612,9 @@
             (mapv first attrs-v)))
 
 (defn- ea->r
-  [store e a]
-  (when-let [aid (aid store a)]
-    (when-let [^ByteBuffer bf (lmdb/near-list (.-lmdb store) c/eav e aid
-                                              :id :int)]
+  [schema lmdb e a]
+  (when-let [aid (:db/aid (schema a))]
+    (when-let [^ByteBuffer bf (lmdb/near-list lmdb c/eav e aid :id :int)]
       (when (= ^int aid ^int (b/read-buffer bf :int))
         (b/read-buffer (.rewind bf) :avg)))))
 
@@ -666,8 +664,6 @@
   (max-tx [_] max-tx)
 
   (advance-max-tx [_] (set! max-tx (inc ^long max-tx)))
-
-  (aid [_ attr] (get (schema attr) :db/aid))
 
   (max-aid [_] max-aid)
 
@@ -721,7 +717,7 @@
     (if (populated?
           this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
-      (let [aid (.aid this attr)]
+      (let [aid ((schema attr) :db/aid)]
         (lmdb/transact-kv
           lmdb [(lmdb/kv-tx :del c/schema attr :attr)
                 (lmdb/kv-tx :put c/meta :last-modified
@@ -800,14 +796,14 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [this a]
-    (if-let [aid (.aid this a)]
+    (if-let [aid (:db/aid (schema a))]
       (let [^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
         (or (when (and ms (not (zero? ms))) ms)
             (.actual-a-size this a)))
       0))
 
   (actual-a-size [this a]
-    (if-let [aid (.aid this a)]
+    (if-let [aid (:db/aid (schema a))]
       (let [c  (.cardinality this a)
             as (if (< c c/list-dbi-count-divider)
                  (lmdb/key-range-list-count
@@ -821,7 +817,7 @@
       0))
 
   (e-sample [this a]
-    (let [aid (.aid this a)]
+    (let [aid ( :db/aid (schema a))]
       (or (when-let [res (not-empty
                            (lmdb/get-range lmdb c/meta
                                            [:closed-open [aid 0]
@@ -868,15 +864,15 @@
       (size this :ave (d/datom c/e0 a lv) (d/datom c/emax a hv) cap)))
 
   (cardinality [this a]
-    (if-let [aid (.aid this a)]
+    (if-let [aid (:db/aid (schema a))]
       (let [^long c (lmdb/get-value lmdb c/meta [aid :cardinality]
                                     [:long :keyword] :id)]
         (or (when (and c (not (zero? c))) c)
             (.actual-cardinality this a)))
       0))
 
-  (actual-cardinality [this a]
-    (if-let [aid (.aid this a)]
+  (actual-cardinality [_ a]
+    (if-let [aid (:db/aid (schema a)) ]
       (let [c (lmdb/key-range-count
                 lmdb c/ave
                 [:closed
@@ -971,12 +967,12 @@
   (av-first-datom [this a v]
     (when-let [e (.av-first-e this a v)] (d/datom e a v)))
 
-  (ea-first-datom [store e a]
-    (when-let [r (ea->r store e a)]
+  (ea-first-datom [_ e a]
+    (when-let [r (ea->r schema lmdb e a)]
       (avg-retrieved->datom lmdb attrs e r)))
 
-  (ea-first-v [store e a]
-    (when-let [r (ea->r store e a)] (avg-retrieved->v lmdb r)))
+  (ea-first-v [_ e a]
+    (when-let [r (ea->r schema lmdb e a)] (avg-retrieved->v lmdb r)))
 
   (v-datoms [_ v]
     (mapv #(ae-retrieved->datom attrs v %)
@@ -1083,9 +1079,9 @@
       out))
 
   (eav-scan-v
-    [store in out eid-idx attrs-v]
+    [_ in out eid-idx attrs-v]
     (when (seq attrs-v)
-      (let [attr->aid #(aid store %)
+      (let [attr->aid #(:db/aid (schema %))
             get-aid   (comp attr->aid first)
             attrs-v   (sort-by get-aid attrs-v)
             aids      (mapv get-aid attrs-v)
@@ -1123,9 +1119,9 @@
            (b/indexable nil (aget aids (dec (alength aids)))
                         c/vmax nil c/gmax)] :avg))))
 
-  (eav-scan-v-list [store in eid-idx attrs-v]
+  (eav-scan-v-list [_ in eid-idx attrs-v]
     (when (seq attrs-v)
-      (let [attr->aid #(aid store %)
+      (let [attr->aid #(:db/aid (schema %))
             get-aid   (comp attr->aid first)
             attrs-v   (sort-by get-aid attrs-v)
             aids      (mapv get-aid attrs-v)
@@ -1306,7 +1302,7 @@
 
 (defn- analyze*
   [store attr]
-  (when-let [aid (aid store attr)]
+  (when-let [aid (:db/aid ((schema store) attr))]
     (actual-cardinality store attr)
     (e-sample* store attr aid (actual-a-size store attr))))
 
