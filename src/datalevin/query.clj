@@ -35,8 +35,7 @@
 
 (def ^:dynamic *query-cache* (LRUCache. 128))
 
-;; TODO
-;; (def ^:dynamic *plan-cache* (LRUCache. 128))
+(def ^:dynamic *plan-cache* (LRUCache. 128))
 
 (def ^:dynamic *explain* nil)
 
@@ -1936,6 +1935,16 @@
       [(plan-component db nodes (first cc))]
       (map+ #(plan-component db nodes %) cc))))
 
+(defn- strip-result
+  [plans]
+  (mapv (fn [[f & r]]
+          (vec
+            (cons (update f :steps
+                          (fn [steps]
+                            (mapv #(assoc % :result nil :sample nil) steps)))
+                  r)))
+        plans))
+
 (defn- build-plan
   "Generate a query plan that looks like this:
 
@@ -1957,13 +1966,16 @@
         (fn [c src nodes]
           (let [^DB db (sources src)
                 k      [(.-store db) nodes]]
-            (let [nodes (update-nodes db nodes)
-                  plans (if (< 1 (count nodes))
-                          (build-plan* db nodes)
-                          [[(base-plan db nodes (ffirst nodes) true)]])]
-              (if (some #(some nil? %) plans)
-                (reduced (assoc c :result-set #{}))
-                (assoc-in c [:plan src] plans)))))
+            (if-let [cached (.get ^LRUCache *plan-cache* k)]
+              (assoc-in c [:plan src] cached)
+              (let [nodes (update-nodes db nodes)
+                    plans (if (< 1 (count nodes))
+                            (build-plan* db nodes)
+                            [[(base-plan db nodes (ffirst nodes) true)]])]
+                (if (some #(some nil? %) plans)
+                  (reduced (assoc c :result-set #{}))
+                  (do (.put ^LRUCache *plan-cache* k (strip-result plans))
+                      (assoc-in c [:plan src] plans)))))))
         context graph))
     context))
 
@@ -2067,7 +2079,7 @@
     (vswap! *explain* assoc :planning-time
             (- (System/nanoTime) ^long *start-time*))))
 
-;; TODO cache placen
+;; TODO improve plan cache
 (defn- planning
   [context]
   (-> context
