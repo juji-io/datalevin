@@ -833,7 +833,7 @@
                                  ^Runnable
                                  #(let [exe (a/get-executor)]
                                     (when (a/running? exe)
-                                      (a/exec exe (->SamplingWork this))))
+                                      (a/exec exe (->SamplingWork this exe))))
                                  ^long (rand-int c/sample-processing-interval)
                                  ^long c/sample-processing-interval
                                  TimeUnit/SECONDS)
@@ -1320,10 +1320,10 @@
           (analyze* store attr)
           (.put counts aid 0))))))
 
-(deftype SamplingWork [^Store store]
+(deftype SamplingWork [^Store store exe]
   IAsyncWork
   (work-key [_] (->> (db-name store) hash (str "sampling") keyword))
-  (do-work [_] (sampling store))
+  (do-work [_] (when (a/running? exe) (sampling store)))
   (combine [_] nil)
   (callback [_] nil))
 

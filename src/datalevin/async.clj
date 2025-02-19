@@ -83,7 +83,7 @@
 (defprotocol IAsyncExecutor
   (start [_] "Start the async event loop")
   (stop [_] "Stop the async event loop")
-  (running? [_] "Return true if this is running")
+  (running? [_] "Return true if AsyncExecutor is running")
   (exec [_ work] "Submit a work, get back a future"))
 
 (deftype AsyncExecutor [^ExecutorService dispatcher
