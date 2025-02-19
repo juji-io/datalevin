@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Datalog] Able to disable background sampling.
+
 ## 0.9.19 (2025-02-19)
 
 ### Added
