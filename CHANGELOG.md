@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.19 (2025-02-19)
 
 ### Added
 - [Search] Boolean search expression.
