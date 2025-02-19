@@ -829,7 +829,6 @@
 
   (start-sampling [this]
     (when (:background-sampling? opts)
-      (println "start background-sampling")
       (when-not @scheduled-sampling
         (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
               fut       (.scheduleWithFixedDelay
@@ -844,7 +843,6 @@
 
   (stop-sampling [_]
     (when-let [fut @scheduled-sampling]
-      (println "stop background-sampling")
       (.cancel ^ScheduledFuture fut true)
       (vreset! scheduled-sampling nil)))
 
@@ -1322,7 +1320,6 @@
         aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
         attr   ((attrs store) aid)]
     (when attr
-      (println "sampling" attr)
       (let [acount ^long (.get counts aid)]
         (when (and (not (closed? store))
                    (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
