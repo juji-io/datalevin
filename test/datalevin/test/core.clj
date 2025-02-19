@@ -43,21 +43,24 @@
 (defn server-fixture
   [f]
   (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
-        server (srv/create {:port c/default-port
-                            :root dir})]
+        server (binding [c/*db-background-sampling?* false]
+                 (srv/create {:port c/default-port
+                              :root dir}))]
     ;; (log/set-min-level! :debug)
     (log/set-min-level! :report)
-    (try
-      (srv/start server)
-      (f)
-      (catch Exception e (throw e))
-      (finally
-        (srv/stop server)
-        (u/delete-files dir))))
+    (binding [c/*db-background-sampling?* false]
+      (try
+        (srv/start server)
+        (f)
+        (catch Exception e (throw e))
+        (finally
+          (srv/stop server)
+          (u/delete-files dir)))))
   (System/gc))
 
 (defn db-fixture
   [f]
   (log/set-min-level! :report)
-  (f)
+  (binding [c/*db-background-sampling?* false]
+    (f))
   (System/gc))

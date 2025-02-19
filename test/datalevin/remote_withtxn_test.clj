@@ -16,7 +16,8 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/new-value"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts              {:flags (conj c/default-env-flags :nosync)}
+                :background-sampling? false})]
     (d/transact! conn [{:db/id 1 :counter 0}])
     (is (= 0 (d/q query @conn 1)))
 
@@ -32,7 +33,8 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/abort"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts              {:flags (conj c/default-env-flags :nosync)}
+                :background-sampling? false})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (d/with-transaction [cn conn]
       (d/transact! cn [{:db/id 1 :counter 2}])
@@ -45,7 +47,8 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/same-client"
         conn (d/create-conn
                dir nil
-               {:client-opts {:pool-size 1}})]
+               {:client-opts          {:pool-size 1}
+                :background-sampling? false})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (let [count-f
           #(d/with-transaction [cn conn]
@@ -61,7 +64,8 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/diff-client"
         conn (d/create-conn
                dir nil
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts              {:flags (conj c/default-env-flags :nosync)}
+                :background-sampling? false})]
     (d/transact! conn [{:db/id 1 :counter 4}])
     (let [count-f
           #(d/with-transaction [cn (d/create-conn
@@ -82,8 +86,9 @@
   (let [dir    "dtlv://datalevin:datalevin@localhost/map-resize"
         conn   (d/create-conn
                  dir nil
-                 {:kv-opts {:mapsize 1
-                            :flags   (conj c/default-env-flags :nosync)}})
+                 {:kv-opts              {:mapsize 1
+                                         :flags   (conj c/default-env-flags :nosync)}
+                  :background-sampling? false})
         query1 '[:find ?d .
                  :in $ ?e
                  :where [?e :content ?d]]

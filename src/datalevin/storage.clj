@@ -17,7 +17,7 @@
   (:import
    [java.util List Comparator Collection HashMap UUID]
    [java.util.concurrent LinkedBlockingQueue TimeUnit ScheduledExecutorService
-    ConcurrentHashMap]
+    ConcurrentHashMap ScheduledFuture]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -237,6 +237,7 @@
   (actual-a-size [this a]
     "Return the number of datoms with the given attribute")
   (start-sampling [this])
+  (stop-sampling [this])
   (analyze [this a])
   (e-sample [this a]
     "Return a sample of eids sampled from full value range of an attribute")
@@ -631,7 +632,7 @@
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-tx
-                sample-started
+                scheduled-sampling
                 write-txn]
 
   IWriting
@@ -827,17 +828,25 @@
           (e-sample* this a aid (.a-size this a)))))
 
   (start-sampling [this]
-    (when-not @sample-started
-      (let [scheduler ^ScheduledExecutorService (u/get-scheduler)]
-        (.scheduleWithFixedDelay scheduler
-                                 ^Runnable
-                                 #(let [exe (a/get-executor)]
-                                    (when (a/running? exe)
-                                      (a/exec exe (->SamplingWork this exe))))
-                                 ^long (rand-int c/sample-processing-interval)
-                                 ^long c/sample-processing-interval
-                                 TimeUnit/SECONDS)
-        (vreset! sample-started true))))
+    (when (:background-sampling? opts)
+      (println "start background-sampling")
+      (when-not @scheduled-sampling
+        (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
+              fut       (.scheduleWithFixedDelay
+                          scheduler
+                          ^Runnable #(let [exe (a/get-executor)]
+                                       (when (a/running? exe)
+                                         (a/exec exe (->SamplingWork this exe))))
+                          ^long (rand-int c/sample-processing-interval)
+                          ^long c/sample-processing-interval
+                          TimeUnit/SECONDS)]
+          (vreset! scheduled-sampling fut)))))
+
+  (stop-sampling [_]
+    (when-let [fut @scheduled-sampling]
+      (println "stop background-sampling")
+      (.cancel ^ScheduledFuture fut true)
+      (vreset! scheduled-sampling nil)))
 
   (analyze [this a]
     (if a
@@ -1313,6 +1322,7 @@
         aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
         attr   ((attrs store) aid)]
     (when attr
+      (println "sampling" attr)
       (let [acount ^long (.get counts aid)]
         (when (and (not (closed? store))
                    (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
@@ -1563,11 +1573,12 @@
      (open-dbis lmdb)
      (let [opts0   (load-opts lmdb)
            opts1   (if (empty opts0)
-                     {:validate-data?    false
-                      :auto-entity-time? false
-                      :closed-schema?    false
-                      :db-name           (str (UUID/randomUUID))
-                      :cache-limit       512}
+                     {:validate-data?       false
+                      :auto-entity-time?    false
+                      :closed-schema?       false
+                      :background-sampling? c/*db-background-sampling?*
+                      :db-name              (str (UUID/randomUUID))
+                      :cache-limit          512}
                      opts0)
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)
@@ -1584,7 +1595,7 @@
                 (init-max-aid schema)
                 (init-max-gt lmdb)
                 (init-max-tx lmdb)
-                (volatile! false)
+                (volatile! nil)
                 (volatile! :storage-mutex))))))
 
 (defn- transfer-engines
@@ -1605,5 +1616,5 @@
            (max-aid old)
            (max-gt old)
            (max-tx old)
-           (.-sample-started old)
+           (.-scheduled-sampling old)
            (.-write-txn old)))

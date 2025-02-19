@@ -355,8 +355,12 @@
 ;; datalog db
 
 (def ^{:dynamic true
-       :doc     "batch size (# of datoms) when filling DB"}
+       :doc     "Batch size (# of datoms) when filling Datalog DB"}
   *fill-db-batch-size* 1048576)
+
+(def ^{:dynamic true
+       :doc     "Datalog DB starts background sampling or not"}
+  *db-background-sampling?* true)
 
 ;; datalog query engine
 

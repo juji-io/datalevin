@@ -502,7 +502,6 @@
 (defn new-db
   [^IStore store]
   (refresh-cache store)
-  (s/start-sampling store)
   (let [db (map->DB
              {:store         store
               :max-eid       (s/init-max-eid store)
@@ -512,6 +511,7 @@
               :vaet          (TreeSortedSet. ^Comparator d/cmp-datoms-vaet)
               :pull-patterns (LRUCache. 64)})]
     (swap! dbs assoc (s/db-name store) db)
+    (s/start-sampling store)
     db))
 
 (defn transfer
@@ -595,6 +595,7 @@
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
+    (s/stop-sampling store)
     (.remove ^ConcurrentHashMap caches (s/dir store))
     (swap! dbs dissoc (s/db-name store))
     (s/close store)

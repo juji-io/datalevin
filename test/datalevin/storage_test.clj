@@ -5,10 +5,11 @@
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [datalevin.lmdb :as lmdb]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [clojure.test :refer [deftest testing is are]]
+   [clojure.test :refer [deftest use-fixtures is are]]
    [clojure.walk :as w]
    [clojure.string :as s])
   (:import
@@ -17,6 +18,8 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.storage Store]
    [datalevin.datom Datom]))
+
+(use-fixtures :each db-fixture)
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
