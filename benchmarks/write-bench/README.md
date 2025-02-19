@@ -101,7 +101,9 @@ time clj -Xmixed :dir \"/tmp/sql/sqlite-1\" :f sql-tx > sqlite-1-mixed.csv
 
 The total wall clock time, system time and user time are also recorded.
 
-## Datalog Transaction
+## Durable Datalog Transaction vs. SQLite
+
+This is the write conditions that matter for an OLTP store.
 
 ### Write Conditions
 
@@ -119,23 +121,9 @@ prepared datoms to bypass the expensive process of verifying integrity of
 everything. These are not formally tested in this benchmark, as we are mainly
 interested in transactions of raw data.
 
-In addition to the default durable write condition, Datalevin supports some
-faster, albeit less durable writes, by setting one of these env flags:
+SQLite has two durable transaction mode: default and WAL in FULL sync mode.
 
-* `:nometasync`
-* `:nosync`
-* `:writemap` + `:mapasync`
-
-We are interested in these non-durable write conditions, because there are many
-good use cases for a fast non-durable store, such as caching, session
-management, temporary data storage, real-time analytics, message queues,
-configuration, leaderboards, and so on.
-
-SQLite have two durable transaction mode in FULL sync mode: default and
-WAL. SQLite can also use non-durable sync setting NORMAL and OFF. We test these
-as well.
-
-### Durable Write Results
+### Results
 
 We will first focus on durable writes. We presents throughput and commit
 latency. The call latencies are close to commit latencies in synchronous writes,
@@ -227,20 +215,13 @@ time (227.89 seconds) is actually greater than wallclock time (111.04 seconds),
 indicating an effective utilization of multicore and the apparent hiding of I/O
 wait time.
 
-### Non-durable Writes Results
+#### Remark
 
-For each batch size, we plot everything together.
-
-#### Pure Write Task
-
-#### Mixed Read/Write Task
-
-### Remark
-
-In general, Datalevin's transaction speed is more stable and less sensitive to
-batch size variations. Particularly, the throughput of Async transaction
-hovers around 15k to 40k per second regardless the batch sizes. SQLite is very
-good at batch transaction, but individual transaction fails short.
+In general, Datalevin's Datalog transaction speed is more stable and less
+sensitive to batch size variations. Particularly, the throughput of Async
+transaction hovers around 15k to 40k per second regardless the batch sizes.
+SQLite is very good at batch transaction, but individual transaction fails
+short.
 
 It should be mentioned that for bulk loading of large amount of data,  Datalevin
 has the option to use `init-db` and `fill-db` functions. For example, it took 5.3
@@ -251,7 +232,130 @@ Finally, Datalevin builds index at data load time so it is maintenance free,
 whereas SQLite does not build index at transaction time so users have to manage
 indices.
 
-## Key Value Transaction (WIP)
+## Non-durable Datalog Transaction vs. SQLite
+
+These are generally faster than durable writes, and can be used when durability
+is not a top priority.
+
+We are interested in these non-durable write conditions, because there are many
+good use cases for a fast non-durable store, such as caching, session
+management, temporary data storage, real-time analytics, message queues,
+configuration, leaderboards, and so on.
+
+### Write Conditions
+
+Datalevin supports faster, albeit less durable writes, by setting some
+environment flags (either when openning the DB, or call `set-env-flags`).
+These are the conditions:
+
+* dl-sync-nometa: `transact!`, with `:nometasync` flag
+* dl-sync-nosync: `transact!`, with `:nosync` flag
+* dl-sync-wm: `transact!`, with `:writemap` and `:mapasync` flags
+* dl-async-nometa: `transact-async`, with `:nometasync` flag
+* dl-async-nosync: `transact-async`, with `:nosync` flag
+* dl-async-wm: `transact-async`, with `:writemap` and `:mapasync` flags
+
+SQLite also has several non-durable write modes. We test these combinations:
+
+* sql-default-normal: default journal mode, and sync mode normal
+* sql-default-off: default journal mode, and sync mode off
+* sql-wal-normal: WAL journal mode, and sync mode normal
+* sql-wal-off: WAL journal mode, and sync mode off
+
+### Results
+
+We list the throughput and latency for all conditions.
+
+#### Pure Write Task
+
+Batch size 1:
+
+|Condition |Throughput|Latency|
+|---|---|---|
+| dl-sync-nometa| 291.39| 	3.62|
+| dl-sync-nosync| 15453.56|	0.07|
+| dl-sync-wm| 22460.30|	0.05|
+| dl-async-nometa| 16917.77|	0.07|
+| dl-async-nosync| 37697.74|	0.02|
+| dl-async-wm| 41457.29|	0.02|
+| sql-default-normal|83.62|	12.16|
+| sql-default-off|9163.72	|0.11|
+| sql-wal-normal| 18353.00|	0.05|
+| sql-wal-off| 24986.88|	0.04|
+
+Batch size 10:
+
+|Condition |Throughput|Latency|
+|---|---|---|
+| dl-sync-nometa|1965.79|	5.09|
+| dl-sync-nosync|41523.07|	0.24|
+| dl-sync-wm|52222.05|	0.19|
+| dl-async-nometa|30974.74|	0.41|
+| dl-async-nosync|50495.61|	0.19|
+| dl-async-wm|54961.35|	0.17|
+| sql-default-normal|1040.87|	12.06|
+| sql-default-off|67222.37	|0.14|
+| sql-wal-normal|107158.17|	0.08|
+| sql-wal-off|134934.56|	0.08|
+
+Batch size 100:
+
+|Condition |Throughput|Latency|
+|---|---|---|
+| dl-sync-nometa|9120.43|	17.57|
+| dl-sync-nosync|53256.64	|1.83|
+| dl-sync-wm|61682.7	|1.52|
+| dl-async-nometa|27368.42	|3.82|
+| dl-async-nosync|44844.06	|2.16|
+| dl-async-wm|50626.12	|1.67|
+| sql-default-normal|7865.47|	12.72|
+| sql-default-off|243961.94	|0.4|
+| sql-wal-normal|248942.00|	0.31|
+| sql-wal-off|294724.43|	0.28|
+
+Batch size 1000:
+
+|Condition |Throughput|Latency|
+|---|---|---|
+| dl-sync-nometa|15622.31|	|69.30|
+| dl-sync-nosync|55242.51	|18.10|
+| dl-sync-wm|61774.15	|15.80|
+| dl-async-nometa|39931.57|	71.00|
+| dl-async-nosync|41811.15	|25.00|
+| dl-async-wm|44209.15	|21.69|
+| sql-default-normal|65044.88|	15.20|
+| sql-default-off|371747.21	|2.4|
+| sql-wal-normal|338409.48|	2.30|
+| sql-wal-off|376364.32|	2.30|
+
+#### Mixed Read/Write Task
+
+|Condition |Throughput|Latency|
+|---|---|---|
+| dl-sync-nometa|269.14|	3.85|
+| dl-sync-nosync|5968.12|	0.17|
+| dl-sync-wm|6955.55|	0.14|
+| dl-async-nometa|8545.21|	0.13|
+| dl-async-nosync|11424.13|	0.09|
+| dl-async-wm|11339.99|	0.09|
+| sql-default-normal|82.48|	12.15|
+| sql-default-off|7715.45	|0.13|
+| sql-wal-normal|8290.71|0.16|
+| sql-wal-off|19112.05|	0.05|
+
+### Remark
+
+Patterns similar to durable writes seems to apply to non-durable writes:
+Datalevin is less sensitive to batching and is better at individual
+transactions, whereas SQLite is better at batch transactions.
+
+For mixed read/write task, Datalevin is slightly better overall, except that
+sql-wal-off performs the best. The most commonly used SQLite write mode,
+sql-wal-normal, performs slightly worse than the equivalent Datalevin write
+mode, dl-async-nometa, where both behave similarly: the last transaction may
+be lost at an untimely system crash but the database is saved from corruption.
+
+## Key Value Transaction
 
 Datalevin wraps LMDB to offer KV store feature. Here we do not compare Datalevin
 with other KV stores, as there are plenty of such comparison between LMDB and
@@ -287,9 +391,44 @@ Batch size 1:
 | |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
 |---|---|---|---|---|---|---|---|---|
 |Throughput|232.27	|1013.77	|109134.56	|230149.6	|109973.73	|173688.4	|179371.47	|174347.78|
-Latency	|5.8	|0.99	|0.01	|0	|0.01	|0.01	|0.01	|0.01|
+|Latency	|5.8	|0.99	|0.01	|0	|0.01	|0.01	|0.01	|0.01|
 
+Batch size 10:
+
+| |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
+|---|---|---|---|---|---|---|---|---|
+|Throughput| 5147.9	| 6738.41	| 520833.33	| 743494.42	| 390767.41	| 570534.48	| 759197.86	| 767131.84|
+|Latency|1.96	|3.45	|0.02	|0.01	|0.02	|0.02	|0.01	|0.01|
+
+Batch size 100:
+
+| |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
+|---|---|---|---|---|---|---|---|---|
+|Throughput|32795.49|	45132.46|	913242.01|	1012145.75|	400225.73|	462968.75|	1246203.35|	1256516.13|
+|Latency|2.95|	2.16|	0.1|	0.08|	0.21|	0.19|	0.05|	0.06|
+
+Batch size 1000:
+
+| |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
+|---|---|---|---|---|---|---|---|---|
+|Throughput|223914.02|	251762.34|	1109877.91|	1131221.72|	366345.71|	467817.9|	619602.47|	652868.55|
+|Latency|5.2|	3.7|	0.8|	0.8|	2.33|	1.78|	1|	1.86|
 
 #### Mixed Read/Write Task
 
+| |sync-default|sync-nometa|sync-nosync|sync-wm|async-default|async-nometa|async-nosync|async-wm|
+|---|---|---|---|---|---|---|---|---|
+|Throughput|216.01|	991.07|	67078.08|	106112.05|	25952.69|	27631.68|	80696.16|	84061.15|
+|Latency|5.83|	1|	0.01|	0.01|	0.05|	0.04|	0.01|	0.01|
+
 ### Remark
+
+It is interesting to see that for durable writes, asynchronous writes can
+usually perform about half as fast as the fastest non-durable writes.
+
+For non-durable writes, synchronous transaction with `:writemap` and `mapasync`
+flags is the best performing method, while asynchronous writes can actually
+be little behind sometimes, perhaps due to the overhead of asynchronous processing.
+
+Unlike Datalog store, batching in KV store has more impact, and the growth seem
+to be linear with batch size increases.
