@@ -264,7 +264,8 @@ SQLite also has several non-durable write modes. We test these combinations:
 
 ### Results
 
-We list the throughput and latency for all conditions.
+We list the throughput and latency for all conditions. Throughput is in writes
+per second and latency in milliseconds.
 
 #### Pure Write Task
 
@@ -426,7 +427,7 @@ Batch size 1000:
 It is interesting to see that for durable writes, asynchronous writes can
 usually perform about half as fast as the fastest non-durable writes.
 
-For non-durable writes, synchronous transaction with `:writemap` and `mapasync`
+For non-durable writes, synchronous transaction with `:writemap` and `:mapasync`
 flags is the best performing method, while asynchronous writes can actually
 be little behind sometimes, perhaps due to the overhead of asynchronous processing.
 
