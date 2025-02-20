@@ -28,7 +28,7 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '23'
+          java-version: '17'
 
       - name: Install Lein
         uses: knicknic/os-specific-run@v1.0.3
