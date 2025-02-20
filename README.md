@@ -233,11 +233,8 @@ for EDN data.
 
 ;; This allows you to iterate over all DB keys inside a transaction.
 ;; You can perform writes inside the transaction.
-;; kv is of of type https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/CursorIterable.KeyVal.html
 ;; Avoid long-lived transactions. Read transactions prevent reuse of pages freed by newer write transactions, thus the database can grow quickly.
 ;; Write transactions prevent other write transactions, since writes are serialized.
-;; LMDB advice: http://www.lmdb.tech/doc/index.html
-;; Conclusion: It's ok to have long transactions if using a single thread.
 (d/visit db misc-table
             (fn [kv]
                (let [k (d/read-buffer (d/k kv) :data)]
@@ -305,14 +302,14 @@ SQLite using [this write benchmark](benchmark/write-bench) on a 2016 Ubuntu Linu
 </p>
 
 When transacting one entity (equivalently, one row in SQLite) at a time,
-Datalevin's default transaction function is over 8X faster than SQLite's
-default; while Datlevin's asynchronous transaction mode is 86X faster than
+Datalevin's default transaction function is over 5X faster than SQLite's
+default; while Datlevin's asynchronous transaction mode is over 20X faster than
 SQLite's WAL mode.
 
-On the otherhand, when transacting ever larger number of rows at a time, SQLite
-gains on Datalevin and eventually surpasses it. For bulk loading data, it is
-recommended to use `init-db` and `fill-db` functions, instead of doing
-transactions in Datalevin. See [transaction](doc/transact.md) for more
+On the other hand, when transacting ever larger number of entities (rows) at a
+time, SQLite gains on Datalevin and eventually surpasses it. For bulk loading
+data, it is recommended to use `init-db` and `fill-db` functions, instead of
+doing transactions in Datalevin. See [transaction](doc/transact.md) for more
 discussions.
 
 ## :earth_americas: Roadmap
