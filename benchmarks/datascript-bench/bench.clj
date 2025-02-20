@@ -117,7 +117,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src\" \"src-datomic\"]"
-                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7180" version) "\"}}"
+                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7277" version) "\"}}"
                 "}")
            "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
