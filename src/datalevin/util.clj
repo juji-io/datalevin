@@ -161,13 +161,13 @@
        total)
      (+ total (.length file)))))
 
-(def +tmp+ "/mnt/tmpfs/")
-#_(def +tmp+
-    (s/escape (let [path (System/getProperty "java.io.tmpdir")]
-                (if-not (s/ends-with? path +separator+)
-                  (str path +separator+)
-                  path))
-              char-escape-string))
+;;(def +tmp+ "/mnt/tmpfs/")
+(def +tmp+
+  (s/escape (let [path (System/getProperty "java.io.tmpdir")]
+              (if-not (s/ends-with? path +separator+)
+                (str path +separator+)
+                path))
+            char-escape-string))
 
 (defn tmp-dir
   "Given a directory name as a string, returns an platform

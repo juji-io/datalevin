@@ -117,7 +117,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src\" \"src-datomic\"]"
-                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7180" version) "\"}}"
+                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7277" version) "\"}}"
                 "}")
            "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
@@ -136,9 +136,9 @@
    "q2-switch"
    "q3"
    "q4"
-   "q5"
    "qpred1"
    "qpred2"
+   ;; "q5"
    ;; "rules-wide-3x3"
    ;; "rules-wide-5x3"
    ;; "rules-wide-7x3"

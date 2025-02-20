@@ -41,8 +41,10 @@ be called after the data is flushed to disk.
 
 `transact` function is a blocked version of `transact-async`, that will block
 until the future is realized. One can call a sequence of `transact-async`,
-followed by a `transact` to achieve good batching effect and determinstic commit
-at the same time. Or one can `deref` the future of the last asynchronous calls
+followed by a `transact` to achieve good batching effect and deterministic commit
+at the same time, for the asynchronous transactions are still committed in
+order, so the last realized future indicates all the prior calls are
+already committed. Or one can `deref` the future of the last asynchronous calls
 manually, or put in a callback for the last call.
 
 The batching of asynchronous transactions is adaptive to write load. The higher
