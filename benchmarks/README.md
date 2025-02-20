@@ -15,4 +15,4 @@ The following benchmarks are included:
 * [Math Genealogy](math-bench)  compares Datascript, Datomic and Datalevin on
   recursive rule processing using Math Genealogy data set.
 * [Write](write-bench) studies writing synthetic data to measure Datalevin's write
-  performance in various conditions.
+  performance in various conditions, and compare with SQLite.
