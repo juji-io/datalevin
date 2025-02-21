@@ -1,5 +1,24 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Datalog] New data type `:db.type/vector` for which vector index is
+  automatically created for them to allow a query function `similar-vectors` to
+  return top K nearest neighbors.
+  [#145](https://github.com/juji-io/datalevin/issues/145)
+- [Vector] `new-vector-index` function creates an index for equal-length dense
+  float vectors to allow nearest neighhors similarity search. Corresponding
+  `add-vector`, `remove-vector`, and `search-vector` functions to work with
+  vector index. Similar to full-text search, vector search also support domain
+  semantics to allow grouping of vectors into domains. Vector indexing is
+  implemented with [usearch](https://github.com/unum-cloud/usearch).
+
+### Improved
+- [Search] Don't throw when attempting to index docs in parallel. We cannot
+  prevent users from accidentally running `add-doc` in parallel.
+
+
 ## 0.9.20 (2025-02-19)
 
 ### Improved

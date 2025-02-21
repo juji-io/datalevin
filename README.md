@@ -320,15 +320,17 @@ adjust the priorities based on feedback.
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Networked server mode with role based access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
-* 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
-* 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
+* 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk
+  when memory is low.~~ [Done 2022/12/15]
+* 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~
+  [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search;~~  as a
-  vector database; auto upgrade migration.
-* 0.11.0 Compressed data storage; extensible de/serialization for arbitrary data.
-* 0.12.0 Transaction log storage and access API; read-only replicas for server.
+  vector database; extensible de/serialization for arbitrary data; auto upgrade
+  migration; compressed data storage.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
-* 1.1.0 JSON API and library/client for popular languages.
+* 1.1.0 Transaction log storage and access API; read-only replicas for server.
+* 1.2.0 JSON API and library/client for popular languages.
 * 2.0.0 Automatic document indexing.
 * 3.0.0 Distributed mode.
 
