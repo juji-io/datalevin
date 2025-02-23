@@ -7,7 +7,7 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
-   [cloud.unum/usearch "2.17.2"]
+   ;; [cloud.unum/usearch "2.8.12"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "1.0.5"]
    [com.taoensso/nippy "3.4.2"]
@@ -22,11 +22,11 @@
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
-   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.11.4"]
-   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.11.4"]
-   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.11.4"]
-   [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.11.4"]
-   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.11.4"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.12.4"]
    [org.roaringbitmap/RoaringBitmap "1.3.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
@@ -47,7 +47,9 @@
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
-   [com.cognitect/transit-clj]]
+   [com.cognitect/transit-clj]
+   ;; [cloud.unum/usearch]
+   ]
   :source-paths ["src" "test"]
   :java-source-paths ["src/java"]
   :profiles

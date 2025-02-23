@@ -39,32 +39,17 @@ keys in compressed form when enough keys are seen.
 The computation of dictionary and building all necessary encoding and
 decoding tables takes less than one second on today's CPU.
 
-### Value Compression
+## Value Compression
 
 LZ4 is used to compress values, as it has a good balance of speed and
 compression ratio. It is enabled when `:compress?` is set to true.
 
-## Wire compression
+## Wire Compression
 
 By default, lz4 compression is used for data sent between client and server. Set
 `:compress-message?` option to `false` on the client to disable compression,
-e.g. to work with versions of the server prior to `0.9.0`.
+e.g. to work with versions of the server prior to `0.10.0`.
 
-## Triple Compression
-
-Literal representation of triples in an index incurs significant redundant
-storage. For example, in `:eav` index, there are many repeated values of `e`,
-and in `:ave` index, there are many repeated values of `a`. These repetitions of
-head elements not just increase the storage size, but also add processing
-overhead during query.
-
-Taking advantage of LMDB's dupsort capability, we store the head element value
-only once, by treating them as keys. The values are the remaining two elements
-of the triple, plus a reference to the full datom if the datom is larger than
-the maximal key size allowed by LMDB.
-
-In this scheme, the values are also keys, and they are also compressed using the
-same key compression method described above.
 
 ## Benchmark
 
@@ -78,14 +63,19 @@ same key compression method described above.
 
 ## References
 
-[1] Zhang, et al. "Order-preserving key compression for in-memory search trees." SIGMOD 2020.
+[1] Zhang, et al. "Order-preserving key compression for in-memory search trees."
+SIGMOD 2020.
 
-[2] Hu, Te C., and Alan C. Tucker. "Optimal computer search trees and variable-length alphabetical codes." SIAM Journal on Applied Mathematics 21.4 (1971): 514-532.
+[2] Hu, Te C., and Alan C. Tucker. "Optimal computer search trees and
+variable-length alphabetical codes." SIAM Journal on Applied Mathematics 21.4
+(1971): 514-532.
 
 [3] Davis, Sashka, "Hu-Tucker algorithm for building optimal alphabetic binary
 search trees" (1998). Master Thesis. Rochester Institute of Technology.
 
-[4] Bergman, Eyal, and Shmuel T. Klein. "Fast decoding of prefix encoded texts." IEEE Data Compression Conference 2005.
+[4] Bergman, Eyal, and Shmuel T. Klein. "Fast decoding of prefix encoded texts."
+IEEE Data Compression Conference 2005.
 
 [5] Li, Kim-Hung. "Reservoir-Sampling Algorithms of Time Complexity
-O(n(1+log(N/n)))". ACM Transactions on Mathematical Software. 20.4 (1994): 481–493.
+O(n(1+log(N/n)))". ACM Transactions on Mathematical Software. 20.4 (1994):
+481–493.
