@@ -151,9 +151,9 @@
 
 (def default-versions
   [
-   ["latest" "datomic"]
-   ["latest" "datascript"]
-   ["0.9.20" "datalevin"]
+   ;; ["latest" "datomic"]
+   ;; ["latest" "datascript"]
+   ;; ["0.9.20" "datalevin"]
    ["latest" "datalevin"]
    ])
 
@@ -172,7 +172,8 @@
       (doseq [[version vm] versions]
         (print (str version "-" vm) "\t")
         (flush)
-        (run-benchmarks version vm benchmarks)))))
+        (run-benchmarks version vm benchmarks)
+        ))))
 
 (shutdown-agents)
 (System/exit 0)

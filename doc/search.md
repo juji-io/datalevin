@@ -1,4 +1,4 @@
-# Datalevin Search Engine
+# Datalevin Full-text Search Engine
 
 Datalevin includes a built-in full-text search engine.
 
@@ -48,7 +48,7 @@ The full-text search functionalities are available to use in all supported
 Datalevin modes: key-value store, Datalog store, embedded, client/server, or
 Babashka pods.
 
-### Standalone search
+### Standalone Full-text Search
 
 Datalevin can be used as a standalone search engine. The standalone search API
 involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and

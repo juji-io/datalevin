@@ -101,7 +101,7 @@ Here are some examples of passing the env flags:
 
 Setting these flags improves write speed signficantly, users can then manually
 call `sync` function at appropriate time to force flusing to disk in application
-code. Timely backups may also migigate some potential data loss. Combining these
+code. Timely backups may also mitigate some potential data loss. Combining these
 techniques may achieve desirable write speed and durability trade-off.
 
 ## Explicit Synchronous Transaction

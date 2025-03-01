@@ -7,7 +7,6 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
-   ;; [cloud.unum/usearch "2.8.12"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "1.0.5"]
    [com.taoensso/nippy "3.4.2"]
@@ -48,10 +47,10 @@
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
    [com.cognitect/transit-clj]
-   ;; [cloud.unum/usearch]
    ]
   :source-paths ["src" "test"]
   :java-source-paths ["src/java"]
+  ;; :aot :all
   :profiles
   {:uberjar        {:main datalevin.main
                     :aot  [datalevin.main]}
