@@ -4,7 +4,7 @@
 
 ### Added
 - [Datalog] New data type `:db.type/vector` for which vector index is
-  automatically created for them to allow a query function `similar-vectors` to
+  automatically created for them to allow a query function `search-vectors` to
   return top K nearest neighbors.
   [#145](https://github.com/juji-io/datalevin/issues/145)
 - [Vector] `new-vector-index` function creates an index for equal-length dense
@@ -15,9 +15,16 @@
   implemented with [usearch](https://github.com/unum-cloud/usearch).
 
 ### Improved
+- [Datalog] Query optimization: move calling of independent query function (i.e.
+  not depending on other variables) ahead of planning if the results are
+  assigned to a single variable, i.e. turn it into a predicate.
+- [Datalog] Handle pathological case of redundant clauses about the same
+  attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
+- [Search] boosting terms in search expression
+  [#317](https://github.com/juji-io/datalevin/issues/317)
 - [Search] Don't throw when attempting to index docs in parallel. We cannot
   prevent users from accidentally running `add-doc` in parallel.
-
+  [#315](https://github.com/juji-io/datalevin/issues/315)
 
 ## 0.9.20 (2025-02-19)
 
