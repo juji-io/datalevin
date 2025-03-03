@@ -25,6 +25,7 @@
 - [Search] Don't throw when attempting to index docs in parallel. We cannot
   prevent users from accidentally running `add-doc` in parallel.
   [#315](https://github.com/juji-io/datalevin/issues/315)
+- [KV] More robust prevention of "Environment maxreaders limit reached" error.
 
 ## 0.9.20 (2025-02-19)
 
