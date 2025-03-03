@@ -569,7 +569,7 @@
               vp   (new-bufval val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools (- ^long (@info :max-readers) 10)) kp vp
+              db   (DBI. dbi (new-pools (/ ^long (@info :max-readers) 2)) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -1162,7 +1162,7 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               (new-pools (- ^long max-readers 10))
+                               (new-pools (/ ^long max-readers 2))
                                (HashMap.)
                                (new-bufval c/+max-key-size+)
                                (new-bufval 0)
