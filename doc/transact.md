@@ -79,10 +79,10 @@ Here are some examples of passing the env flags:
 
 ```Clojure
 (require '[datalevin.core :as d])
-(require '[datalevin.constant :as c])
+(require '[datalevin.constants :as c])
 
 ;; Pass :nosync to my-kvdb KV store
-(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/defaultl-env-flags :nosync))))})
+(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/default-env-flags :nosync))))})
 
 ;; Turn off :nosync
 (d/set-env-flags kv-db [:nosync] false)

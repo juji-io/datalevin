@@ -28,16 +28,16 @@
 
 (defprotocol IPool
   (pool-add [_ x])
-  (pool-take [_]))
+  (pool-take [_])
+  (release [_])
+  (acquire [_]))
 
 (deftype Pool [^Semaphore sem ^ThreadLocal que]
   IPool
-  (pool-add [_ x]
-    (.add ^ArrayDeque (.get que) x)
-    (.release sem 1))
-  (pool-take [_]
-    (.acquire sem 1)
-    (.poll ^ArrayDeque (.get que))))
+  (pool-add [_ x] (.add ^ArrayDeque (.get que) x))
+  (pool-take [_] (.poll ^ArrayDeque (.get que)))
+  (release [_] (.release sem 1))
+  (acquire [_] (.acquire sem 1)))
 
 (defn- new-pools
   [limit]
@@ -627,6 +627,7 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
+    (acquire pools)
     (or (when-let [^Rtx rtx (pool-take pools)]
           (try
             (.renew rtx)
@@ -649,7 +650,8 @@
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
       (.reset ^Rtx rtx)
-      (pool-add pools rtx)))
+      (pool-add pools rtx)
+      (release pools)))
 
   (stat [_]
     (try
