@@ -80,7 +80,7 @@
 (deftest test-multi-threads-read
   (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
         conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n     1000
+        n     10000
         all   (range n)
         tx    (map (fn [i] {:id i}) (range n))
         query (fn [i]
@@ -97,4 +97,34 @@
         (is (= all (for [f futs] @f))))
       (is (= (range 1 (inc n)) (pmap query all)))
       (is (= all (pmap pull all))))
+    (d/close conn)))
+
+(deftest test-multi-threads-read-1
+  (let [dir  (u/tmp-dir (str "concurrent-read1-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:children {:db/valueType   :db.type/ref
+                                         :db/cardinality :db.cardinality/many}})
+        n    10000
+        rng  (range 1 n)
+        tx   (mapv (fn [i]
+                     (let [id (* -1 i)]
+                       {:db/id    id
+                        :children [{:db/id  (dec id)
+                                    :string "test"}]}))
+                   (range 1 n))
+        pull (fn [id] (d/pull @conn '[:db/id
+                                     :string
+                                     {:children 100}] id))]
+    (d/transact! conn tx)
+    (is (= (* 2 (dec n)) (d/count-datoms @conn nil nil nil)))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+    (is (= (dec n) (count (pmap pull rng))))
+
     (d/close conn)))
