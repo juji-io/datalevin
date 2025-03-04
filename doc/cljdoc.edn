@@ -8,4 +8,5 @@
   ["Server/Client" {:file "doc/server.md"}]
   ["Query Engine" {:file "doc/query.md"}]
   ["Search Engine" {:file "doc/search.md"}]
+  ["Vector Database" {:file "doc/vector.md"}]
   ["Limitations" {:file "doc/limits.md"}]]}
