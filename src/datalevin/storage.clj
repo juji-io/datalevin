@@ -806,7 +806,7 @@
   (actual-a-size [this a]
     (if-let [aid (:db/aid (schema a))]
       (let [c  (.cardinality this a)
-            as (if (< c c/list-dbi-count-divider)
+            as (if (< ^long c ^long c/list-dbi-count-divider)
                  (lmdb/key-range-list-count
                    lmdb c/ave
                    [:closed
@@ -861,7 +861,7 @@
 
   (av-range-size ^long [this a lv hv] (.av-range-size this a lv hv nil))
   (av-range-size ^long [this a lv hv cap]
-    (if (< (.cardinality this a) c/list-dbi-count-divider)
+    (if (< ^long (.cardinality this a) ^long c/list-dbi-count-divider)
       (lmdb/key-range-list-count
         lmdb c/ave
         [:closed
@@ -1525,8 +1525,7 @@
                      (if-let [opts (m domain)]
                        (merge opts new-opts)
                        new-opts))))
-          dms
-          domains))
+          dms domains))
 
 (defn- init-domains
   [search-domains0 schema search-opts search-domains]
@@ -1546,8 +1545,7 @@
                                (merge opts new-opts)
                                new-opts))))))
         dms))
-    (or search-domains0 {})
-    schema))
+    (or search-domains0 {}) schema))
 
 (defn- init-engines
   [lmdb domains]

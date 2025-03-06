@@ -105,7 +105,7 @@
                                          :db/cardinality :db.cardinality/many}})
         n    10000
         rng  (range 1 n)
-        tx   (mapv (fn [i]
+        tx   (mapv (fn [^long i]
                      (let [id (* -1 i)]
                        {:db/id    id
                         :children [{:db/id  (dec id)

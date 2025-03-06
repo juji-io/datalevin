@@ -1,3 +1,7 @@
+.classpath
+.dir-locals.el
+.project
+.settings/
 */JOB-bench/data/*.csv
 */JOB-bench/*.dat
 */JOB-bench/*.sql

@@ -1,23 +1,25 @@
 # Datalevin Vector Indexing and Similarity Search
 
 Datalevin has specialized index for equal-length dense numeric numbers
-(vectors), and supports efficient exact and approximate nearest neighbors search
+(vectors), and supports efficient approximate nearest neighbors search
 on these vectors based on various similarity metrics.
 
 This functionality is developed on the basis of
 [usearch](https://github.com/unum-cloud/usearch) library, which is an
 implementation of Hierarchical Navigable Small World (HNSW) graph algorithm [1].
 usearch leverages vector instructions in CPUs and is used in several OLAP
-databases, such as clickhouse, DuckDB, and so on.
+stores, such as clickhouse, DuckDB, and so on.
 
 With this feature, Datalevin can be used as a vector database to support
 applications such as semantic search, image search, retrieval augmented
 generation (RAG), and so on. This feature is currently available on Linux and
-MacosX on both x86_64 and arm64 CPUs.
+MacOS on both x86_64 and arm64 CPUs.
 
 ## Configurations
 
-These configurable options can be set when creating the index:
+These configurable options can be set when creating the vector index:
+
+* `:dimensions`, the number of dimensions of the vectors. Required, no default.
 
 * `:metric-type` is the type of similarity metrics. Custom metric may be
   supported in the future.
@@ -52,16 +54,15 @@ These configurable options can be set when creating the index:
     score, combination of precision and recall, or intersection over bitwise union.
 
 * `:quantization` is the scalar type of the vector elements. More types may be
-  supported in the future:
+  supported in the future.
   - `:float`, 32 bits float point number, the default.
   - `:double`, 64 bits double float point number
-  - `:float16`, 16 bit float, e.g. `org.apache.arrow.memory.util.Float16` or
-    `jdk.incubator.vector.Float16` since Java 24
-  - `:short`, 8 bit integer
+  - `:float16`, 16 bit float, i.e. IEEE 754 floating-point binary16, we expect
+    the representation is already converted into a Java Short bit format, e.g.
+    using `org.apache.arrow.memory.util.Float16/toFloat16`, or
+    `jdk.incubator.vector.Float16/float16ToRawShortBits`
+  - `:int8`, 8 bit integer, the representation is the same as byte
   - `:byte`, raw byte
-
-* `dimensions`, the number of dimensions of the vectors. No default. This is
-  required.
 
 * `:connectivity`, the number of connections per node in the index graph
   structure, i.e. the `M` parameter in the HNSW paper [1]. The default is 16. The
@@ -82,10 +83,6 @@ These configurable options can be set when creating the index:
   the `ef` parameter in the paper. It controls the search speed/quality
   tradeoff, similar to the above. The default is 64.
 
-* `:multi?`, whether or not multiple vectors can map to the same `vec-ref`, i.e.
-  whether the same semantic identifier can be associated with multiple vectors.
-  The default is `false`.
-
 ## Usage
 
 The vector indexing and search functionalities are available to use in all
@@ -95,37 +92,58 @@ Babashka pods.
 ### Standalone Vector Indexing and Search
 
 Datalevin can be used as a standalone vector database. The standalone vector API
-involves only a few functions: `new-vector-index`, `add-vector`,
-`remove-vector`, `search-vectors`.
+involves only a few functions: `new-vector-index`, `add-vec`,
+`remove-vec`, `search-vec`, `persist-vecs`.
+
+Each vector is identified with a `vec-ref` that can be any Clojure data (less
+than maximal key size of 512 bytes), which should be semantically meaningful for
+the application, e.g. a document id, an image id, or a tag.
+
+Multiple vectors can be associated with the same `vec-ref`. For example, you may
+have a `vec-ref` `"cat"` for many vectors that are the embedding of different cat
+images. Another example: each chunk of a large document (e.g. for RAG) has its
+own vector embedding and these vectors are all associated with the same document
+id.
 
 ```Clojure
 (require '[datalevin.core :as d])
 
-;; Vector indexing uses a key-value store to store meta information
+;; Vector indexing uses a key-value store to store mapping between vec-ref and
+;; vector id
 (def lmdb (d/open-kv "/tmp/vector-db"))
 
 ;; Create the vector index. The dimensions of the vectors need to be specified.
 ;; Other options use defaults here.
 (def index (d/new-vector-index lmdb {:dimensions 300}))
 
-;; User needs to supply the vectors. Here we load word2vec vectors from a CSV
-;; file, each row contains a word, followed by the elements of the vector,
+;; User needs to supply the vectors. Here we some load word2vec vectors from a
+;; CSV file, each row contains a word, followed by the elements of the vector,
 ;; return a map of words to vectors
 (def data (reduce
             (fn [m [w & vs]] (assoc m w (mapv #(Float/parseFloat %) vs)))
             {} (d/read-csv "test/data/word2vec.csv")))
 
-;; Add the vectors to the vector index. `add-rector` takes a `vec-ref`, which
-;; can be anything that uniquely identifies a vector, in this case, a word
-(doseq [[w vs] data] (d/add-vector index w vs))
+;; Add the vectors to the vector index. `add-vec` takes a `vec-ref`, in this
+;; case, a word; and the actual vector, which can be anything castable as a
+;; Clojure seq, e,g. Clojure vector, array, etc.
+(doseq [[w vs] data] (d/add-vec index w vs))
 
-;; Search by a query vector. return  a list of `top` `vec-ref` ordered by
+;; Search by a query vector. return  a list of `:top` `vec-ref` ordered by
 ;; similarity to the query vector
-(d/search-vectors index (data "king") {:top 1})
+(d/search-vec index (data "king") {:top 1})
 ;=> ("queen")
 ```
 
 ### Vector Indexing and Search in Datalog Store
+
+Vectors can be stored in Datalog as attribute values of data type
+`:db.type/vec`. This data type has a property `:db.vec/opts`,
+whose value is a map that is the same as the standalone vector index options
+described above.
+
+The attribute may also have a property `:db.vec/domains`, indicating which
+vector search domains the attribute should be participate.
+
 
 ## References
 

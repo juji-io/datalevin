@@ -249,6 +249,10 @@
   "dbi name suffix for search engine raw text is `rawtext`"
   "rawtext")
 
+(def ^:const vec-refs
+  "dbi name suffix for vec-ref -> vec-id map is `vec-refs`"
+  "vec-refs")
+
 (def ^:const +max-term-length+
   "The full text search engine ignores exceedingly long strings. The maximal
   allowed term length is 128 characters"
@@ -308,6 +312,30 @@
 
 (def ^:no-doc ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:no-doc ^:const message-format-nippy (unchecked-byte 0x02))
+
+(def ^:const default-metric-type
+  "Default vector index metric type is :euclidean"
+  :euclidean)
+
+(def ^:const default-quantization
+  "Default vector index quantization is :float"
+  :float)
+
+(def ^:const default-connectivity
+  "Default vector index connectivity is 16"
+  16)
+
+(def ^:const default-expansion-add
+  "Default vector index expansion-add is 128"
+  128)
+
+(def ^:const default-expansion-search
+  "Default vector index expansion-search is 64"
+  64)
+
+(def ^:const default-multi?
+  "Default vector index multi? flag is false"
+  false)
 
 ;;-------------------------------------------------------------
 ;; user configurable

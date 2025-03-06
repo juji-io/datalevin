@@ -19,7 +19,7 @@
    [clojure.test.check.properties :as prop]
    [clojure.test :refer [deftest testing are is use-fixtures]])
   (:import
-   [java.util UUID ]
+   [java.util UUID]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.search SearchEngine IndexWriter]))
 
