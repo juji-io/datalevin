@@ -22,10 +22,10 @@
    [org.clojure/test.check "1.1.1"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.12.5"]
-   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.12.4"]
-   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.12.5"]
+   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.12.5"]
    [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.12.5"]
-   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.12.4"]
+   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.12.5"]
    [org.roaringbitmap/RoaringBitmap "1.3.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
