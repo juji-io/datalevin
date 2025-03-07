@@ -7,12 +7,9 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b])
   (:import
-   [datalevin.dtlvnative DTLV DTLV$usearch_init_options_t DTLV$usearch_index_t
-    DTLV$usearch_metric_t]
-   [datalevin.cpp VecIdx]
+   [datalevin.dtlvnative DTLV DTLV$usearch_index_t]
+   [datalevin.cpp VecIdx VecIdx$SearchResult]
    [datalevin.spill SpillableMap]
-   [org.bytedeco.javacpp BytePointer ShortPointer FloatPointer DoublePointer
-    PointerPointer]
    [java.util Map]
    [java.util.concurrent.atomic AtomicLong]))
 
@@ -41,39 +38,20 @@
          :int8    DTLV/usearch_scalar_i8_k
          :byte    DTLV/usearch_scalar_b1_k)))
 
-(defmacro wrap-error
-  [call]
-  `(let [~'error  (.put (PointerPointer. 1) 0 nil)
-         res#     ~call
-         err-out# (.get ~'error BytePointer)]
-     (.close ~'error)
-     (if err-out#
-       (raise "Failed usearch call:" (.getString ^BytePointer err-out#) {})
-       res#)))
-
 (defn- index-fname [lmdb domain] (str (l/dir lmdb) u/+separator+ domain ".vi"))
 
 (defn- init-index
-  [fname dimensions metric-key quantization connectivity expansion-add
+  [^String fname dimensions metric-key quantization connectivity expansion-add
    expansion-search]
-  (let [^VecIdx index (VecIdx. ^long dimensions
-                               ^int (metric-key->type metric-key)
-                               ^int (scalar-kind quantization)
-                               ^long connectivity
-                               ^long expansion-add
-                               ^long expansion-search)]
-    #_(when (u/file-exists fname)
-        (wrap-error
-          (DTLV/usearch_load ^DTLV$usearch_index_t index ^String fname error)))
+  (let [^DTLV$usearch_index_t index (VecIdx/create
+                                      ^long dimensions
+                                      ^int (metric-key->type metric-key)
+                                      ^int (scalar-kind quantization)
+                                      ^long connectivity
+                                      ^long expansion-add
+                                      ^long expansion-search)]
+    (when (u/file-exists fname) (VecIdx/load index fname))
     index))
-
-(defn- valid-scalar?
-  [quantization scalar]
-  (case quantization
-    :double       (double? scalar)
-    :float        (float? scalar)
-    :float16      (instance? Short scalar)
-    (:int8 :byte) (instance? Byte scalar)))
 
 (defn- ->array
   [quantization vec-data]
@@ -83,25 +61,45 @@
     :float16      (short-array vec-data)
     (:int8 :byte) (byte-array vec-data)))
 
-(defn- ->ptr
+(defn- arr-len
   [quantization arr]
   (case quantization
-    :double       (DoublePointer. ^doubles arr)
-    :float        (FloatPointer. ^floats arr)
-    :float16      (ShortPointer. ^shorts arr)
-    (:int8 :byte) (BytePointer. ^bytes arr)))
+    :double       (alength ^doubles arr)
+    :float        (alength ^floats arr)
+    :float16      (alength ^shorts arr)
+    (:int8 :byte) (alength ^bytes arr)))
 
-(defn- vec->ptr
+(defn- validate-arr
+  [^long dimensions quantization arr]
+  (if (== dimensions ^long (arr-len quantization arr))
+    arr
+    (raise "Expect a " dimensions " dimensions vector" {})))
+
+(defn- vec->arr
   [^long dimensions quantization vec-data]
   (if (u/array? vec-data)
-    (if (== dimensions ^long (alength vec-data))
-      (if (valid-scalar? quantization (aget vec-data 0))
-        (->ptr quantization vec-data)
-        (raise "Invalid scalar, expect" quantization {}))
-      (raise "Expect a " dimensions " dimensions vector" {}))
+    (validate-arr dimensions quantization vec-data)
     (if (== dimensions (count vec-data))
-      (->>  vec-data (->array quantization) (->ptr quantization))
+      (->array quantization vec-data)
       (raise "Expect a " dimensions " dimensions vector" {}))))
+
+(defn- add
+  [index quantization ^long k arr]
+  (case quantization
+    :double  (VecIdx/addDouble index k ^doubles arr)
+    :float   (VecIdx/addFloat index k ^floats arr)
+    :float16 (VecIdx/addShort index k ^shorts arr)
+    :int8    (VecIdx/addInt8 index k ^bytes arr)
+    :byte    (VecIdx/addByte index k ^bytes arr)))
+
+(defn- search
+  [index query quantization top vec-ids dists]
+  (case quantization
+    :double  (VecIdx/searchDouble index query top vec-ids dists)
+    :float   (VecIdx/searchFloat index query top vec-ids dists)
+    :float16 (VecIdx/searchShort index query top vec-ids dists)
+    :int8    (VecIdx/searchInt8 index query top vec-ids dists)
+    :byte    (VecIdx/searchByte index query top vec-ids dists)))
 
 (defn- open-dbi
   [lmdb vecs-dbi]
@@ -132,15 +130,16 @@
   (remove-vec [this vec-ref] "remove vector from in memory index")
   (persist-vecs [this] "persistent index on disk")
   (close-vecs [this] "close the index")
-  (clear-vecs [this])
-  (vec-indexed? [this vec-ref])
-  (vec-count [this])
-  (search-vec [this query-vec] [this query-vec opts]))
+  (clear-vecs [this] "close and remove this index")
+  (vec-indexed? [this vec-ref] "test if a rec-ref is in the index")
+  (vec-count [this] "return the number of vectors in the index")
+  (search-vec [this query-vec] [this query-vec opts]
+    "search vector, return found vec-refs"))
 
 (declare display-xf)
 
 (deftype VectorIndex [lmdb
-                      ^VecIdx index
+                      ^DTLV$usearch_index_t index
                       ^String fname
                       ^long dimensions
                       ^clojure.lang.Keyword metric-type
@@ -154,30 +153,23 @@
                       ^Map search-opts]
   IVectorIndex
   (add-vec [_ vec-ref vec-data]
-    (locking vecs
-      (let [vec-id (.incrementAndGet max-vec)
-            ;; vec-ptr (vec->ptr dimensions quantization vec-data)
-            ]
-        (println "vec-id ->" vec-id)
-        (println "vec-data ->" (vec vec-data))
-        (.addFloat index vec-id vec-data)
-        #_(wrap-error
-            (DTLV/usearch_add index vec-id vec-ptr
-                              (scalar-kind quantization) error))
-        (.put vecs vec-id vec-ref)
-        (l/transact-kv
-          lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)]))))
+    (let [vec-id  (.incrementAndGet max-vec)
+          vec-arr (vec->arr dimensions quantization vec-data)]
+      (add index quantization vec-id vec-arr)
+      (.put vecs vec-id vec-ref)
+      (l/transact-kv
+        lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])))
 
   (remove-vec [_ vec-ref]
     (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
-      (doseq [id ids]
-        (wrap-error (DTLV/usearch_remove index id error))
+      (doseq [^long id ids]
+        (VecIdx/remove index id)
         (.remove vecs id))
       (l/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
 
-  (persist-vecs [_] (wrap-error (DTLV/usearch_save index fname error)))
+  (persist-vecs [_] (VecIdx/save index fname))
 
-  (close-vecs [_] (wrap-error (DTLV/usearch_free index error)))
+  (close-vecs [_] (VecIdx/free index))
 
   (clear-vecs [this]
     (.close-vecs this)
@@ -195,24 +187,23 @@
                                :or   {display    (:display search-opts)
                                       top        (:top search-opts)
                                       vec-filter (:vec-filter search-opts)}}]
-    (let [vec-ids (long-array top)
-          dists   (float-array top)
-          query   (vec->ptr dimensions quantization query-vec)]
-      (wrap-error
-        (DTLV/usearch_search
-          index query (scalar-kind quantization) top vec-ids dists error))
+    (let [query                    (vec->arr dimensions quantization query-vec)
+          ^VecIdx$SearchResult res (search index query quantization top
+                                           (long-array top) (float-array top))
+          res-ids                  (.getKeys res)
+          res-dists                (.getDists res)]
       (sequence
         (display-xf this vec-filter display)
-        vec-ids dists))))
+        res-ids res-dists))))
 
 (defn- get-ref
   [^VectorIndex index vec-filter vec-id _]
-  (let [vec-ref ((.-vecs index) vec-id)]
+  (when-let [vec-ref ((.-vecs index) vec-id)]
     (when (vec-filter vec-ref) vec-ref)))
 
 (defn- get-ref-dist
   [^VectorIndex index vec-filter vec-id dist]
-  (let [vec-ref ((.-vecs index) vec-id)]
+  (when-let [vec-ref ((.-vecs index) vec-id)]
     (when (vec-filter vec-ref) [vec-ref dist])))
 
 (defn- display-xf
