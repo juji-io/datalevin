@@ -5,14 +5,15 @@
    [clojure.set :as set]
    [clojure.edn :as edn]
    [clojure.string :as str]
-   [clojure.walk :as walk]
+   [clojure+.walk :as w]
+   [clojure+.core :refer [cond+]]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
    [datalevin.query-util :as qu]
    [datalevin.relation :as r]
    [datalevin.storage :as s]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+ conjv concatv tuple-get map+]]
+   [datalevin.util :as u :refer [raise conjv concatv tuple-get map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -200,7 +201,7 @@
     (for [branch branches
           :let   [[[_ & rule-args] & clauses] branch
                   replacements (zipmap rule-args call-args)]]
-      (walk/postwalk
+      (w/postwalk
         #(if (qu/free-var? %)
            (u/some-of
              (replacements %)
@@ -953,7 +954,7 @@
     [(assoc parsed-q
             :qwhere (reduce-kv
                       (fn [ws s v]
-                        (walk/postwalk
+                        (w/postwalk
                           (fn [e]
                             (if (and (instance? Variable e)
                                      (= s (:symbol e)))
@@ -961,7 +962,7 @@
                               e))
                           ws))
                       (:qwhere parsed-q) smap)
-            :qorig-where (walk/postwalk-replace smap owheres)
+            :qorig-where (w/postwalk-replace smap owheres)
             :qin (u/remove-idxs rm-idxs qins))
      (u/remove-idxs rm-idxs inputs)]))
 
@@ -1359,7 +1360,7 @@
 
 (defn- add-pred-clause
   [graph clause v]
-  (walk/postwalk
+  (w/postwalk
     (fn [m]
       (if (= (:var m) v)
         (let [[f & args :as pred] (first clause)]
@@ -1380,7 +1381,7 @@
   "cases where free var can be rewritten as bound.
   * like pattern is free of wildcards"
   [graph clause v]
-  (walk/postwalk
+  (w/postwalk
     (fn [m]
       (if-let [free (:free m)]
         (if-let [[new k]
@@ -2291,14 +2292,14 @@
                :planning-time (format "%.3f" pt)
                :execution-time (format "%.3f" et)
                :opt-clauses opt-clauses
-               :query-graph (walk/postwalk
+               :query-graph (w/postwalk
                               (fn [e]
                                 (if (map? e)
                                   (apply dissoc e
                                          (for [[k v] e
                                                :when (nil? v)] k))
                                   e)) graph)
-               :plan (walk/postwalk
+               :plan (w/postwalk
                        (fn [e]
                          (if (instance? Plan e)
                            (let [{:keys [steps] :as plan} e]

@@ -7,8 +7,7 @@
    [clojure.test.check.properties :as prop]
    [datalevin.core :as d]
    [datalevin.util :as u]
-   [datalevin.async :as a]
-   )
+   [datalevin.async :as a])
   (:import
    [datalevin.async IAsyncWork WorkItem]
    [java.util UUID]))

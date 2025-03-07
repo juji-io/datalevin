@@ -42,7 +42,6 @@
     (is (= [:ok] (sut/search-vec index v1)))
     (is (= [[:ok 0.0]] (sut/search-vec index v1 {:display :refs+dists})))
 
-    (sut/persist-vecs index)
     (sut/close-vecs index)
 
     (let [index1 ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})]
@@ -65,7 +64,6 @@
       (is (= [[:nice 0.0]] (sut/search-vec index1 v2 {:display :refs+dists})))
       (is (= [:nice] (sut/search-vec index1 v2)))
 
-      (sut/persist-vecs index1)
       (sut/close-vecs index1))
 
     (let [index2 ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})]

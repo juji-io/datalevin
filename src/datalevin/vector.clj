@@ -1,15 +1,17 @@
-(ns datalevin.vector
+(ns ^:no-doc datalevin.vector
   "Vector indexing and search"
   (:require
    [datalevin.lmdb :as l]
    [datalevin.util :as u :refer [raise]]
    [datalevin.spill :as sp]
    [datalevin.constants :as c]
+   [datalevin.async :as a]
    [datalevin.bits :as b])
   (:import
    [datalevin.dtlvnative DTLV DTLV$usearch_index_t]
    [datalevin.cpp VecIdx VecIdx$SearchResult]
    [datalevin.spill SpillableMap]
+   [datalevin.async IAsyncWork]
    [java.util Map]
    [java.util.concurrent.atomic AtomicLong]))
 
@@ -136,6 +138,17 @@
   (search-vec [this query-vec] [this query-vec opts]
     "search vector, return found vec-refs"))
 
+(defn- vec-save-key* [fname] (->> fname hash (str "vec-save-") keyword))
+
+(def vec-save-key (memoize vec-save-key*))
+
+(deftype AsyncVecSave [vec-index fname]
+  IAsyncWork
+  (work-key [_] (vec-save-key fname))
+  (do-work [_] (persist-vecs vec-index))
+  (combine [_] first)
+  (callback [_] nil))
+
 (declare display-xf)
 
 (deftype VectorIndex [lmdb
@@ -152,24 +165,28 @@
                       ^AtomicLong max-vec
                       ^Map search-opts]
   IVectorIndex
-  (add-vec [_ vec-ref vec-data]
+  (add-vec [this vec-ref vec-data]
     (let [vec-id  (.incrementAndGet max-vec)
           vec-arr (vec->arr dimensions quantization vec-data)]
       (add index quantization vec-id vec-arr)
+      (a/exec (a/get-executor) (AsyncVecSave. this fname))
       (.put vecs vec-id vec-ref)
       (l/transact-kv
         lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])))
 
-  (remove-vec [_ vec-ref]
+  (remove-vec [this vec-ref]
     (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
       (doseq [^long id ids]
         (VecIdx/remove index id)
         (.remove vecs id))
+      (a/exec (a/get-executor) (AsyncVecSave. this fname))
       (l/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
 
   (persist-vecs [_] (VecIdx/save index fname))
 
-  (close-vecs [_] (VecIdx/free index))
+  (close-vecs [this]
+    (.persist_vecs this)
+    (VecIdx/free index))
 
   (clear-vecs [this]
     (.close-vecs this)

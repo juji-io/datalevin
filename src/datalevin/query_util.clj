@@ -2,9 +2,8 @@
   "Some utility functions for Datalog query processing"
   (:require
    [clojure.string :as str]
-   [clojure.set :as set]
-   [datalevin.util :as u :refer [raise cond+ conjv concatv]]
-   ))
+   [clojure+.core :refer [cond+]]
+   [datalevin.util :as u :refer [raise]]))
 
 (defn single
   [coll]

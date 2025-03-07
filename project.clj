@@ -21,6 +21,8 @@
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
+   ;; TODO see status of https://github.com/tonsky/clojure-plus/pull/3
+   [org.clojars.huahaiy/clojure-plus "1.1.1"]
    [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.12.5"]
    [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.12.5"]
    [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.12.5"]
@@ -37,6 +39,7 @@
    [com.github.clj-easy/graal-build-time]
    [com.taoensso/nippy]
    [com.taoensso/timbre]
+   [org.clojars.huahaiy/clojure-plus]
    [org.babashka/sci]
    [nrepl/bencode]
    [org.clojure/tools.cli]
