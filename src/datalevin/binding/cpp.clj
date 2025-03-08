@@ -18,6 +18,9 @@
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
+   [datalevin.async IAsyncWork]
+   [java.util.concurrent LinkedBlockingQueue TimeUnit ScheduledExecutorService
+    ConcurrentHashMap ScheduledFuture]
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
@@ -488,10 +491,41 @@
                         (.me_mapsize ^DTLV$MDB_envinfo (.get info))))
     (.close info)))
 
+
+(defn- sync-key* [dir] (->> dir hash (str "lmdb-sync-") keyword))
+
+(def sync-key (memoize sync-key*))
+
+(deftype AsyncSync [dir ^Env env]
+  IAsyncWork
+  (work-key [_] (sync-key dir))
+  (do-work [_] (.sync env 1))
+  (combine [_] first)
+  (callback [_] nil))
+
+(defn- start-scheduled-sync
+  [scheduled-sync dir ^Env env]
+  (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
+        fut       (.scheduleWithFixedDelay
+                    scheduler
+                    ^Runnable #(let [exe (a/get-executor)]
+                                 (when (a/running? exe)
+                                   (a/exec exe (AsyncSync. dir env))))
+                    ^long (rand-int c/lmdb-sync-interval)
+                    ^long c/lmdb-sync-interval
+                    TimeUnit/SECONDS)]
+    (vreset! scheduled-sync fut)))
+
+(defn- stop-scheduled-sync [scheduled-sync]
+  (when-let [fut @scheduled-sync]
+    (.cancel ^ScheduledFuture fut true)
+    (vreset! scheduled-sync nil)))
+
 (deftype CppLMDB [^Env env
                   info
                   ^Pool pools
                   ^HashMap dbis
+                  scheduled-sync
                   ^BufVal kp-w
                   ^BufVal vp-w
                   ^BufVal start-kp-w
@@ -509,7 +543,7 @@
 
   (mark-write [_]
     (->CppLMDB
-      env info pools dbis kp-w vp-w start-kp-w
+      env info pools dbis scheduled-sync kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
@@ -519,6 +553,7 @@
   ILMDB
   (close-kv [this]
     (when-not (.isClosed env)
+      (stop-scheduled-sync scheduled-sync)
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
@@ -1135,42 +1170,44 @@
          :as   opts}]
    (assert (string? dir) "directory should be a string.")
    (try
-     (let [file     (u/file dir)
-           mapsize  (* (long (if (u/empty-dir? file)
-                               mapsize
-                               (c/pick-mapsize dir)))
-                       1024 1024)
-           flags    (if temp?
-                      (conj flags :nosync)
-                      flags)
-           ^Env env (Env/create dir mapsize max-readers max-dbs
-                                (kv-flags flags))
-           info     (merge opts {:dir         dir
-                                 :version     c/version
-                                 :flags       flags
-                                 :max-readers max-readers
-                                 :max-dbs     max-dbs
-                                 :temp?       temp?})
-           lmdb     (->CppLMDB env
-                               (volatile! info)
-                               (new-pools)
-                               (HashMap.)
-                               (new-bufval c/+max-key-size+)
-                               (new-bufval 0)
-                               (new-bufval c/+max-key-size+)
-                               (new-bufval c/+max-key-size+)
-                               (new-bufval c/+max-key-size+)
-                               (new-bufval c/+max-key-size+)
-                               (volatile! nil)
-                               false
-                               nil)]
+     (let [file          (u/file dir)
+           mapsize       (* (long (if (u/empty-dir? file)
+                                    mapsize
+                                    (c/pick-mapsize dir)))
+                            1024 1024)
+           flags         (if temp?
+                           (conj flags :nosync)
+                           flags)
+           ^Env env      (Env/create dir mapsize max-readers max-dbs
+                                     (kv-flags flags))
+           info          (merge opts {:dir         dir
+                                      :version     c/version
+                                      :flags       flags
+                                      :max-readers max-readers
+                                      :max-dbs     max-dbs
+                                      :temp?       temp?})
+           ^CppLMDB lmdb (->CppLMDB env
+                                    (volatile! info)
+                                    (new-pools)
+                                    (HashMap.)
+                                    (volatile! nil)
+                                    (new-bufval c/+max-key-size+)
+                                    (new-bufval 0)
+                                    (new-bufval c/+max-key-size+)
+                                    (new-bufval c/+max-key-size+)
+                                    (new-bufval c/+max-key-size+)
+                                    (new-bufval c/+max-key-size+)
+                                    (volatile! nil)
+                                    false
+                                    nil)]
        (swap! l/lmdb-dirs conj dir)
        (l/open-dbi lmdb c/kv-info)
        (if temp?
          (u/delete-on-exit file)
          (do (init-info lmdb info)
              (.addShutdownHook (Runtime/getRuntime)
-                               (Thread. #(l/close-kv lmdb)))))
+                               (Thread. #(l/close-kv lmdb)))
+             (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
        lmdb)
      (catch Exception e
        (stt/print-stack-trace e)

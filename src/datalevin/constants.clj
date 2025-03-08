@@ -355,7 +355,7 @@
   *max-dbs* 128)
 
 (def ^{:dynamic true
-       :doc     "Maximum number of readers allowed for a db file"}
+       :doc     "Default number of readers allowed for a DB file is 256."}
   *max-readers* 256)
 
 (def ^{:dynamic true
@@ -379,6 +379,10 @@
 (def ^{:dynamic true
        :doc     "The number of samples considered when build the key compression dictionary is 65536"}
   *compress-sample-size* 65536)
+
+(def ^{:dynamic true
+       :doc     "Time interval between automatic LMDB sync to disk, in seconds, default is 300"}
+  lmdb-sync-interval 300)
 
 ;; datalog db
 

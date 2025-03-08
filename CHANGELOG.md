@@ -30,9 +30,12 @@
 - [Search] Don't throw when attempting to index docs in parallel. We cannot
   prevent users from accidentally running `add-doc` in parallel.
   [#315](https://github.com/juji-io/datalevin/issues/315)
+- [KV] Periodically flush to disk, with an interval set by dynamic var
+  `datalevin.constants/lmdb-sync-interval` in seconds, default is 300. This also
+  cleans up dead readers.
 - [KV] Remove the semaphore for preventing "Environment maxreaders limit
   reached" error, as it decreases read performance. User should be careful with
-  functions such as `pmap` for parallel read operation, as it they use unbounded
+  functions such as `pmap` for parallel read operation, as they use unbounded
   thread pools. User can use a semaphore to limit the number of read threads in
   flight, or use a bounded thread pool. If needed, `:max-readers` KV option can
   also be set to increase the limit.
