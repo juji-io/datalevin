@@ -3,29 +3,39 @@
 ## WIP
 
 ### Added
-- [Datalog] New data type `:db.type/vec` for which vector index is
-  automatically created for them to allow a query function `search-vec` to
-  return top K nearest neighbors.
+- [Vector] `new-vector-index` function creates an on-disk index for equal-length
+  dense numeric vectors to allow similarity search, and related functions
+  `close-vector-index`, `clear-vector-index` and `vector-index-info`. Vector
+  indexing is implemented with [usearch](https://github.com/unum-cloud/usearch).
+- [Vector] Corresponding `add-vec`, `remove-vec`, and `search-vec` functions to
+  work with vector index. Similar to full-text search, vector search also
+  support domain semantics to allow grouping of vectors into domains.
+- [Datalog] New data type `:db.type/vec` for which a vector index is
+  automatically created for them to allow a query function `vec-neighbors` to
+  return the datoms with neighboring vector values.
   [#145](https://github.com/juji-io/datalevin/issues/145)
-- [Vector] `new-vector-index` function creates an index for equal-length dense
-  float vectors to allow nearest neighhors similarity search. Corresponding
-  `add-vec`, `remove-vec`, and `search-vec` functions to work with
-  vector index. Similar to full-text search, vector search also support domain
-  semantics to allow grouping of vectors into domains. Vector indexing is
-  implemented with [usearch](https://github.com/unum-cloud/usearch).
+
+###  Fixed
+- [Datalog] Failure to unify in certain case
+  [#320](https://github.com/juji-io/datalevin/issues/320)
 
 ### Improved
+- [Datalog] Handle pathological case of redundant clauses about the same
+  attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
 - [Datalog] Query optimization: move calling of independent query function (i.e.
   not depending on other variables) ahead of planning if the results are
   assigned to a single variable, i.e. turn it into a predicate.
-- [Datalog] Handle pathological case of redundant clauses about the same
-  attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
 - [Search] boosting terms in search expression
   [#317](https://github.com/juji-io/datalevin/issues/317)
 - [Search] Don't throw when attempting to index docs in parallel. We cannot
   prevent users from accidentally running `add-doc` in parallel.
   [#315](https://github.com/juji-io/datalevin/issues/315)
-- [KV] More robust prevention of "Environment maxreaders limit reached" error.
+- [KV] Remove the semaphore for preventing "Environment maxreaders limit
+  reached" error, as it decreases read performance. User should be careful with
+  functions such as `pmap` for parallel read operation, as it they use unbounded
+  thread pools. User can use a semaphore to limit the number of read threads in
+  flight, or use a bounded thread pool. If needed, `:max-readers` KV option can
+  also be set to increase the limit.
 
 ## 0.9.20 (2025-02-19)
 

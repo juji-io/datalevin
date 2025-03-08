@@ -21,28 +21,22 @@
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
-   [java.util.concurrent Semaphore]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer]
    [clojure.lang IObj]))
 
 (defprotocol IPool
   (pool-add [_ x])
-  (pool-take [_])
-  (release [_])
-  (acquire [_]))
+  (pool-take [_]))
 
-(deftype Pool [^Semaphore sem ^ThreadLocal que]
+(deftype Pool [^ThreadLocal que]
   IPool
   (pool-add [_ x] (.add ^ArrayDeque (.get que) x))
-  (pool-take [_] (.poll ^ArrayDeque (.get que)))
-  (release [_] (.release sem 1))
-  (acquire [_] (.acquire sem 1)))
+  (pool-take [_] (.poll ^ArrayDeque (.get que))))
 
 (defn- new-pools
-  [limit]
-  (Pool. (Semaphore. (int limit))
-         (ThreadLocal/withInitial
+  []
+  (Pool. (ThreadLocal/withInitial
            (reify Supplier
              (get [_] (ArrayDeque.))))))
 
@@ -524,17 +518,16 @@
 
   ILMDB
   (close-kv [this]
-    (locking write-txn
-      (when-not (.isClosed env)
-        (swap! l/lmdb-dirs disj (l/dir this))
-        (when (zero? (count @l/lmdb-dirs))
-          (a/shutdown-executor)
-          (u/shutdown-query-thread-pool)
-          (u/shutdown-scheduler))
-        (.sync env 1)
-        (.close env)
-        (when (@info :temp?) (u/delete-files (@info :dir)))
-        nil)))
+    (when-not (.isClosed env)
+      (swap! l/lmdb-dirs disj (l/dir this))
+      (when (zero? (count @l/lmdb-dirs))
+        (a/shutdown-executor)
+        (u/shutdown-query-thread-pool)
+        (u/shutdown-scheduler))
+      (.sync env 1)
+      (.close env)
+      (when (@info :temp?) (u/delete-files (@info :dir)))
+      nil))
 
   (closed-kv? [_] (.isClosed env))
 
@@ -569,7 +562,7 @@
               vp   (new-bufval val-size)
               dbi  (Dbi/create env dbi-name
                                (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools (/ ^long (@info :max-readers) 2)) kp vp
+              db   (DBI. dbi (new-pools) kp vp
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
@@ -627,7 +620,6 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
-    (acquire pools)
     (or (when-let [^Rtx rtx (pool-take pools)]
           (try
             (.renew rtx)
@@ -650,8 +642,7 @@
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
       (.reset ^Rtx rtx)
-      (pool-add pools rtx)
-      (release pools)))
+      (pool-add pools rtx)))
 
   (stat [_]
     (try
@@ -1162,7 +1153,7 @@
                                  :temp?       temp?})
            lmdb     (->CppLMDB env
                                (volatile! info)
-                               (new-pools (/ ^long max-readers 2))
+                               (new-pools)
                                (HashMap.)
                                (new-bufval c/+max-key-size+)
                                (new-bufval 0)
