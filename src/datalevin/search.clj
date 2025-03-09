@@ -8,6 +8,7 @@
    [datalevin.analyzer :as a]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
+   [taoensso.nippy :as nippy]
    [clojure.set :as set]
    [clojure.string :as s]
    [clojure+.walk :as walk]
@@ -20,7 +21,8 @@
    [datalevin.utl LRUCache]
    [java.util ArrayList Map$Entry Arrays HashMap]
    [java.util.concurrent.atomic AtomicInteger]
-   [java.io Writer]
+   [java.io Writer FileOutputStream FileInputStream DataOutputStream
+    DataInputStream]
    [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
     IntDoubleHashMap]
    [org.eclipse.collections.impl.set.mutable.primitive IntHashSet]
@@ -680,15 +682,20 @@
   (re-index [this opts]
     (if include-text?
       (try
-        (let [coll (HashMap.)]
-          (doseq [[doc-id doc-ref] docs
-                  :let             [doc-text (get-rawtext this doc-id)]]
-            (.put coll doc-ref doc-text))
+        (let [dfname (str (l/dir lmdb) u/+separator+ "search.dump")
+              dos    (DataOutputStream. (FileOutputStream. ^String dfname))]
+          (nippy/freeze-to-out!
+            dos (for [[doc-id doc-ref] docs]
+                  [doc-ref (get-rawtext this doc-id)]))
+          (.flush dos)
+          (.close dos)
           (.clear-docs this)
-          (let [^SearchEngine engine (new-search-engine lmdb opts)]
-            (doseq [^Map$Entry kv (.entrySet coll)]
-              (.add-doc engine (.getKey kv) (.getValue kv) false))
-            engine))
+          (let [new (new-search-engine lmdb opts)
+                dis (DataInputStream. (FileInputStream. ^String dfname))]
+            (doseq [[doc-ref rawtext] (nippy/thaw-from-in! dis)]
+              (add-doc new doc-ref rawtext))
+            (u/delete-files dfname)
+            new))
         (catch Exception e
           (u/raise "Unable to re-index search. " e {:dir (l/dir lmdb)})))
       (u/raise "Can only re-index search when :include-text? is true" {}))))
@@ -1132,7 +1139,8 @@
                         c/*index-writer-batch-size-pos*
                         c/*index-writer-batch-size*)]
         (when include-text?
-          (.add txs (l/kv-tx :put rawtext-dbi doc-id doc-text :int :string)))
+          (.add txs (l/kv-tx :put rawtext-dbi doc-id doc-text :int :string
+                             [:append])))
         (doseq [^Map$Entry kv (.entrySet new-terms)]
           (let [term                                            (.getKey kv)
                 [^IntArrayList positions ^IntArrayList offsets] (.getValue kv)

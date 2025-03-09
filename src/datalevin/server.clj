@@ -12,6 +12,7 @@
    [datalevin.protocol :as p]
    [datalevin.storage :as st]
    [datalevin.search :as sc]
+   [datalevin.vector :as v]
    [datalevin.built-ins :as dbq]
    [datalevin.constants :as c]
    [taoensso.timbre :as log]
@@ -512,10 +513,11 @@
                  ;;                stores -> { db-name -> {datalog?
                  ;;                                        dbis -> #{dbi-name}}}
                  ;;                engines -> #{ db-name }
+                 ;;                indices -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
                  ^ConcurrentHashMap clients
                  ;; db state data, a map of
-                 ;; db-name -> { store, search engine
+                 ;; db-name -> { store, search engine, vector index,
                  ;;              datalog db, lock, write txn runner,
                  ;;              and writing variants of stores }
                  dbs]
@@ -557,6 +559,7 @@
                   :last-active (System/currentTimeMillis)
                   :stores      {}
                   :engines     #{}
+                  :indices     #{}
                   :dt-dbs      #{}
                   :roles       roles
                   :permissions perms}]
@@ -913,6 +916,46 @@
                 (search-engine ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
+(defn- vector-index*
+  [^Server server ^SelectionKey skey db-name]
+  (when (get (:indices (get-client server
+                                   (:client-id @(.attachment skey))))
+             db-name)
+    (get-in (.-dbs server) [db-name :index])))
+
+(defn- vector-index
+  [^Server server ^SelectionKey skey db-name]
+  (or (vector-index* server skey db-name)
+      (u/raise "Vector index not found"
+               {:type :reopen :db-name db-name :db-type "index"})))
+
+(defn- new-vector-index
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[db-name opts]      args
+          {:keys [client-id]} @(.attachment skey)
+          index               (or (vector-index* server skey db-name)
+                                  (if-let [store (get-store server db-name)]
+                                    (v/new-vector-index store opts)
+                                    (u/raise "vector store not found"
+                                             {::type   :reopen
+                                              :db-name db-name
+                                              :db-type "kv"})))]
+      (update-client server client-id #(update % :indices conj db-name))
+      (update-db server db-name #(assoc % :index index))
+      (write-message skey {:type :command-complete}))))
+
+(defmacro vector-handler
+  "Handle request to vector index"
+  [f]
+  `(write-message
+     ~'skey
+     {:type   :command-complete
+      :result (apply
+                ~(symbol "datalevin.vector" (str f))
+                (vector-index ~'server ~'skey (nth ~'args 0))
+                (rest ~'args))}))
+
 (defn- open-store
   [root db-name dbis datalog?]
   (let [dir (db-dir root db-name)]
@@ -1000,7 +1043,7 @@
 
 (defn- reopen-dbs
   [root clients ^ConcurrentHashMap dbs]
-  (doseq [[_ {:keys [stores engines dt-dbs]}] clients]
+  (doseq [[_ {:keys [stores engines indices dt-dbs]}] clients]
     (doseq [[db-name {:keys [datalog? dbis]}]
             stores
             :when (not (get-in dbs [db-name :store]))
@@ -1013,6 +1056,12 @@
       (.put dbs db-name
             (assoc m :engine
                    (d/new-search-engine (get-in dbs [db-name :store])))))
+    (doseq [db-name indices
+            :when   (not (get-in dbs [db-name :index]))
+            :let    [m (get dbs db-name {})]]
+      (.put dbs db-name
+            (assoc m :index
+                   (d/new-vector-index (get-in dbs [db-name :store])))))
     (doseq [db-name dt-dbs
             :when   (not (get-in dbs [db-name :dt-db]))
             :let    [m (get dbs db-name {})]]
@@ -1173,6 +1222,16 @@
    'doc-count
    'search
    'search-re-index
+   'new-vector-index
+   'add-vec
+   'remove-vec
+   'persist-vecs
+   'close-vecs
+   'clear-vecs
+   'vecs-info
+   'vec-indexed?
+   'search-vec
+   'vec-re-index
    'kv-re-index
    'datalog-re-index
    ])
@@ -2286,6 +2345,46 @@
     (let [[db-name opts] args
           engine         (l/re-index (search-engine server skey db-name) opts)]
       (update-db server db-name #(assoc % :engine engine))
+      (write-message skey {:type :command-complete}))))
+
+(defn- add-vec
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler add-vec)))
+
+(defn- remove-vec
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler remove-vec)))
+
+(defn- persist-vecs
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler persist-vecs)))
+
+(defn- close-vecs
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler close-vecs)))
+
+(defn- clear-vecs
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler clear-vecs)))
+
+(defn- vec-indexed?
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler vec-indexed?)))
+
+(defn- vecs-info
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler vecs-info)))
+
+(defn- search-vec
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (vector-handler search-vec)))
+
+(defn- vec-re-index
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[db-name opts] args
+          index          (l/re-index (vector-index server skey db-name) opts)]
+      (update-db server db-name #(assoc % :indices index))
       (write-message skey {:type :command-complete}))))
 
 (defn- kv-re-index

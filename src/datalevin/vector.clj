@@ -6,12 +6,15 @@
    [datalevin.spill :as sp]
    [datalevin.constants :as c]
    [datalevin.async :as a]
-   [datalevin.bits :as b])
+   [datalevin.bits :as b]
+   [taoensso.nippy :as nippy])
   (:import
    [datalevin.dtlvnative DTLV DTLV$usearch_index_t]
-   [datalevin.cpp VecIdx VecIdx$SearchResult]
+   [datalevin.cpp VecIdx VecIdx$SearchResult VecIdx$IndexInfo]
    [datalevin.spill SpillableMap]
    [datalevin.async IAsyncWork]
+   [datalevin.lmdb IAdmin]
+   [java.io FileOutputStream FileInputStream DataOutputStream DataInputStream]
    [java.util Map]
    [java.util.concurrent.atomic AtomicLong]))
 
@@ -40,7 +43,7 @@
          :int8    DTLV/usearch_scalar_i8_k
          :byte    DTLV/usearch_scalar_b1_k)))
 
-(defn- index-fname [lmdb domain] (str (l/dir lmdb) u/+separator+ domain ".vi"))
+(defn index-fname [lmdb domain] (str (l/dir lmdb) u/+separator+ domain ".vid"))
 
 (defn- init-index
   [^String fname dimensions metric-key quantization connectivity expansion-add
@@ -95,13 +98,22 @@
     :byte    (VecIdx/addByte index k ^bytes arr)))
 
 (defn- search
-  [index query quantization top vec-ids dists]
+  [index query quantization top]
   (case quantization
-    :double  (VecIdx/searchDouble index query top vec-ids dists)
-    :float   (VecIdx/searchFloat index query top vec-ids dists)
-    :float16 (VecIdx/searchShort index query top vec-ids dists)
-    :int8    (VecIdx/searchInt8 index query top vec-ids dists)
-    :byte    (VecIdx/searchByte index query top vec-ids dists)))
+    :double  (VecIdx/searchDouble index query top)
+    :float   (VecIdx/searchFloat index query top)
+    :float16 (VecIdx/searchShort index query top)
+    :int8    (VecIdx/searchInt8 index query top)
+    :byte    (VecIdx/searchByte index query top)))
+
+(defn- get-vec*
+  [index id quantization dimensions]
+  (case quantization
+    :double  (VecIdx/getDouble index id (int dimensions))
+    :float   (VecIdx/getFloat index id (int dimensions))
+    :float16 (VecIdx/getShort index id (int dimensions))
+    :int8    (VecIdx/getInt8 index id (int dimensions))
+    :byte    (VecIdx/getByte index id (int dimensions))))
 
 (defn- open-dbi
   [lmdb vecs-dbi]
@@ -130,11 +142,12 @@
 (defprotocol IVectorIndex
   (add-vec [this vec-ref vec-data] "add vector to in memory index")
   (remove-vec [this vec-ref] "remove vector from in memory index")
+  (get-vec [this vec-ref] "retrieve the vectors of a vec-ref")
   (persist-vecs [this] "persistent index on disk")
   (close-vecs [this] "close the index")
   (clear-vecs [this] "close and remove this index")
+  (vecs-info [this] "return a map of info about this index")
   (vec-indexed? [this vec-ref] "test if a rec-ref is in the index")
-  (vec-count [this] "return the number of vectors in the index")
   (search-vec [this query-vec] [this query-vec opts]
     "search vector, return found vec-refs"))
 
@@ -149,7 +162,7 @@
   (combine [_] first)
   (callback [_] nil))
 
-(declare display-xf)
+(declare display-xf new-vector-index)
 
 (deftype VectorIndex [lmdb
                       ^DTLV$usearch_index_t index
@@ -174,6 +187,11 @@
       (l/transact-kv
         lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])))
 
+  (get-vec [_ vec-ref]
+    (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
+      (for [^long id ids]
+        (get-vec* index id quantization dimensions))))
+
   (remove-vec [this vec-ref]
     (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
       (doseq [^long id ids]
@@ -194,9 +212,21 @@
     (l/clear-dbi lmdb vecs-dbi)
     (u/delete-files fname))
 
-  (vec-indexed? [_ vec-ref] (l/get-value lmdb vecs-dbi vec-ref))
+  (vecs-info [_]
+    (let [^VecIdx$IndexInfo info (VecIdx/info index)]
+      {:size             (.getSize info)
+       :memory           (.getMemory info)
+       :capacity         (.getCapacity info)
+       :hardware         (.getHardware info)
+       :filename         fname
+       :dimensions       dimensions
+       :metric-type      metric-type
+       :quantization     quantization
+       :connectivity     connectivity
+       :expansion-add    expansion-add
+       :expansion-search expansion-search}))
 
-  (vec-count [_] (count vecs))
+  (vec-indexed? [_ vec-ref] (l/get-value lmdb vecs-dbi vec-ref))
 
   (search-vec [this query-vec]
     (.search-vec this query-vec {}))
@@ -205,13 +235,30 @@
                                       top        (:top search-opts)
                                       vec-filter (:vec-filter search-opts)}}]
     (let [query                    (vec->arr dimensions quantization query-vec)
-          ^VecIdx$SearchResult res (search index query quantization top
-                                           (long-array top) (float-array top))
-          res-ids                  (.getKeys res)
-          res-dists                (.getDists res)]
+          ^VecIdx$SearchResult res (search index query quantization (int top))]
       (sequence
         (display-xf this vec-filter display)
-        res-ids res-dists))))
+        (.getKeys res) (.getDists res))))
+
+  IAdmin
+  (re-index [this opts]
+    (try
+      (let [dfname (str fname ".dump")
+            dos    (DataOutputStream. (FileOutputStream. ^String dfname))]
+        (nippy/freeze-to-out!
+          dos (for [[vec-id vec-ref] vecs]
+                [vec-ref (get-vec* index vec-id quantization dimensions)]))
+        (.flush dos)
+        (.close dos)
+        (.clear-vecs this)
+        (let [new (new-vector-index lmdb opts)
+              dis (DataInputStream. (FileInputStream. ^String dfname))]
+          (doseq [[vec-ref vec-data] (nippy/thaw-from-in! dis)]
+            (add-vec new vec-ref vec-data))
+          (u/delete-files dfname)
+          new))
+      (catch Exception e
+        (u/raise "Unable to re-index vectors. " e {:dir (l/dir lmdb)})))))
 
 (defn- get-ref
   [^VectorIndex index vec-filter vec-id _]

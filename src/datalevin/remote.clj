@@ -8,6 +8,7 @@
    [datalevin.storage :as s]
    [datalevin.bits :as b]
    [datalevin.search :as sc]
+   [datalevin.vector :as v]
    [datalevin.lmdb :as l :refer [IWriting]]
    [clojure.string :as str])
   (:import
@@ -15,6 +16,7 @@
    [datalevin.storage IStore]
    [datalevin.lmdb ILMDB IList IAdmin]
    [datalevin.search ISearchEngine]
+   [datalevin.vector IVectorIndex]
    [java.nio.file Files Paths StandardOpenOption LinkOption]
    [java.net URI]))
 
@@ -699,28 +701,27 @@
 
 (deftype SearchEngine [^KVStore store]
   ISearchEngine
-  (add-doc [this doc-ref doc-text]
-    (cl/normal-request
-      (.-client store) :add-doc
-      [(.-db-name store) doc-ref doc-text]))
+  (add-doc [_ doc-ref doc-text]
+    (cl/normal-request (.-client store) :add-doc
+                       [(.-db-name store) doc-ref doc-text]))
 
-  (remove-doc [this doc-ref]
+  (remove-doc [_ doc-ref]
     (cl/normal-request (.-client store) :remove-doc
                        [(.-db-name store) doc-ref]))
 
-  (clear-docs [this]
+  (clear-docs [_]
     (cl/normal-request (.-client store) :clear-docs [(.-db-name store)]))
 
-  (doc-indexed? [this doc-ref]
+  (doc-indexed? [_ doc-ref]
     (cl/normal-request (.-client store) :doc-indexed?
                        [(.-db-name store) doc-ref]))
 
-  (doc-count [this]
+  (doc-count [_]
     (cl/normal-request (.-client store) :doc-count [(.-db-name store)]))
 
   (search [this query]
-    (sc/search this query {}))
-  (search [this query opts]
+    (.search this query {}))
+  (search [_ query opts]
     (cl/normal-request (.-client store) :search
                        [(.-db-name store) query opts]))
 
@@ -737,3 +738,51 @@
    (cl/normal-request (.-client store) :new-search-engine
                       [(.-db-name store) opts])
    (->SearchEngine store)))
+
+;; remote vector index
+
+(declare ->VectorIndex)
+
+(deftype VectorIndex [^KVStore store]
+  IVectorIndex
+  (add-vec [_ vec-ref vec-data]
+    (cl/normal-request (.-client store) :add-vec
+                       [(.-db-name store) vec-ref vec-data]))
+
+  (remove-vec [_ vec-ref]
+    (cl/normal-request (.-client store) :remove-vec
+                       [(.-db-name store) vec-ref]))
+
+  (persist-vecs [_]
+    (cl/normal-request (.-client store) :persist-vecs [(.-db-name store)]))
+
+  (close-vecs [_]
+    (cl/normal-request (.-client store) :close-vecs [(.-db-name store)]))
+
+  (clear-vecs [_]
+    (cl/normal-request (.-client store) :clear-vecs [(.-db-name store)]))
+
+  (vecs-info [_]
+    (cl/normal-request (.-client store) :vecs-info [(.-db-name store)]))
+
+  (vec-indexed? [_ vec-ref]
+    (cl/normal-request (.-client store) :vec-indexed?
+                       [(.-db-name store) vec-ref]))
+
+  (search-vec [this query]
+    (.search-vec this query {}))
+  (search-vec [_ query opts]
+    (cl/normal-request (.-client store) :search-vec
+                       [(.-db-name store) query opts]))
+
+  IAdmin
+  (re-index [this opts]
+    (cl/normal-request (.-client store) :vec-re-index
+                       [(.-db-name store) opts])
+    this))
+
+(defn new-vector-index
+  [^KVStore store opts]
+  (cl/normal-request (.-client store) :new-vector-index
+                     [(.-db-name store) opts])
+  (->VectorIndex store))

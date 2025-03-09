@@ -9,6 +9,7 @@
    [datalevin.csv :as csv]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
+   [datalevin.vector :as v]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
@@ -2067,7 +2068,6 @@ This function is eager and attempts to load all matching data in range into memo
        (let [[old-opts old-schema datoms] (nippy/thaw-from-in! in)
              new-opts                     (merge old-opts opts)
              new-schema                   (merge old-schema schema)]
-
          (db/init-db (for [d datoms] (apply dd/datom d))
                      dir new-schema new-opts))
        (catch Exception e
@@ -2296,6 +2296,61 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
        :doc      "Commit writes to search index, must be called after writing
 all documents. Used only with [[search-index-writer]]"}
   commit sc/commit)
+
+;; -------------------------------------
+;; vector
+
+(defn new-vector-index
+  "Create a vector index. The mapping to semantic references is stored in the
+  passed-in key-value DB opened by [[open-kv]], while the actual index
+  is stored in a file (suffix is `.vid`) under the KV DB directory.
+
+  `opts` is a map that may contain these keys:
+
+   * `:dimensions` is the number of dimensions of the vectors. Required.
+
+   * `:metric-type` is a keyword of the metric used to calculate vector
+     similarity. The following metric is supported:
+      - `:euclidean` This is the default.
+      - `:cosine`
+      - `:dot-product`
+      - `:haversine`
+      - `:divergence`
+      - `:pearson`
+      - `:jaccard`
+      - `:hamming`
+      - `:tanimoto`
+      - `:sorensen`
+
+   * `:quantization` is a keyword of the scalar value type of the vectors:
+      - `:float` This is the default.
+      - `:double`
+      - `:float16`
+      - `:int8`
+      - `:byte`
+
+   * `:connectivity` is the number of connected nodes in the index graph.
+
+   * `:expansion-add` is the number of candidates considered when adding vector
+     to the index.
+
+   * `:expansion-search` is the number of candidates considered when searching
+     the index.
+
+   * `:search-opts` is an option map having these keys:
+      ` `:top` is the number of results desired. Default is 10.
+      - `:display` is a keyword indicating what is in each result. Default is
+         `:refs` returning only semantic reference. The other option is
+         `:refs+dists` returning both semantic reference and vector distance.
+      - `:vec-filter` is a function that takes a semantic reference and returns
+        `true` only for those references that need to be in the results.
+
+   * `:domain` is a string, indicates the domain of this vector index."
+  [lmdb opts]
+  (if (instance? KVStore lmdb)
+    (r/new-vector-index lmdb opts)
+    (v/new-vector-index lmdb opts)))
+
 
 ;; -------------------------------------
 ;; byte buffer
