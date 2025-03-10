@@ -596,8 +596,9 @@
 
 (defn- update-db
   [^Server server db-name f]
-  (let [^Map dbs (.-dbs server)]
-    (.put dbs db-name (f (get dbs db-name {})))))
+  (let [^Map dbs (.-dbs server)
+        new      (f (get dbs db-name {}))]
+    (.put dbs db-name new)))
 
 (defn- add-store
   [^Server server db-name store]
@@ -918,8 +919,7 @@
 
 (defn- vector-index*
   [^Server server ^SelectionKey skey db-name]
-  (when (get (:indices (get-client server
-                                   (:client-id @(.attachment skey))))
+  (when (get (:indices (get-client server (:client-id @(.attachment skey))))
              db-name)
     (get-in (.-dbs server) [db-name :index])))
 
@@ -934,13 +934,12 @@
   (wrap-error
     (let [[db-name opts]      args
           {:keys [client-id]} @(.attachment skey)
-          index               (or (vector-index* server skey db-name)
-                                  (if-let [store (get-store server db-name)]
-                                    (v/new-vector-index store opts)
-                                    (u/raise "vector store not found"
-                                             {::type   :reopen
-                                              :db-name db-name
-                                              :db-type "kv"})))]
+          index               (if-let [store (get-store server db-name)]
+                                (v/new-vector-index store opts)
+                                (u/raise "vector store not found"
+                                         {::type   :reopen
+                                          :db-name db-name
+                                          :db-type "kv"}))]
       (update-client server client-id #(update % :indices conj db-name))
       (update-db server db-name #(assoc % :index index))
       (write-message skey {:type :command-complete}))))
@@ -2383,8 +2382,9 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts] args
-          index          (l/re-index (vector-index server skey db-name) opts)]
-      (update-db server db-name #(assoc % :indices index))
+          old            (vector-index server skey db-name)
+          new            (l/re-index old opts)]
+      (update-db server db-name #(assoc % :index new))
       (write-message skey {:type :command-complete}))))
 
 (defn- kv-re-index

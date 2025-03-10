@@ -5,7 +5,7 @@
             [babashka.pods :as pods]
             [datalevin.test.core :as tdc :refer [db-fixture]]
             [clojure.test :refer [deftest testing is use-fixtures]])
-  (:import [java.util UUID Date]))
+  (:import [java.util UUID Date Random]))
 
 (use-fixtures :each db-fixture)
 
@@ -525,3 +525,109 @@
     (is (= "world" (pd/get-value db dbi "hello" :string :string)))
     (pd/close-kv db)
     (u/delete-files dir)))
+
+(def random (Random.))
+
+(defn- rand-float-vec
+  [^long n]
+  (let [v (float-array n)]
+    (dotimes [i n] (aset v i (.nextFloat ^Random random)))
+    v))
+
+(deftest vector-test
+  (let [dir   (u/tmp-dir (str "pod-vector-test-" (UUID/randomUUID)))
+        db    (pd/open-kv dir)
+        n     200
+        v1    (rand-float-vec n)
+        v2    (rand-float-vec n)
+        index (pd/new-vector-index db {:dimensions n})
+        info  (pd/vector-index-info index)]
+    (is (= (info :size) 0))
+    (is (= (info :capacity) 0))
+    (is (<= 0 (info :memory)))
+    (is (string? (info :hardware)))
+    (is (= (info :dimensions) n))
+    (is (= (info :metric-type) c/default-metric-type))
+    (is (= (info :quantization) c/default-quantization))
+    (is (= (info :connectivity) c/default-connectivity))
+    (is (= (info :expansion-add) c/default-expansion-add))
+    (is (= (info :expansion-search) c/default-expansion-search))
+
+    (pd/add-vec index :ok v1)
+    (let [info1 (pd/vector-index-info index)]
+      (is (= (info1 :size) 1))
+      (is (<= 1 (info1 :capacity)))
+      (is (<= 1 (info1 :memory))))
+    (is (= [:ok] (pd/search-vec index v1)))
+    (is (= [[:ok 0.0]] (pd/search-vec index v1 {:display :refs+dists})))
+
+    (pd/close-vector-index index)
+    (pd/close-vector-index index) ;; close should be idempotent
+
+    (let [index1 (pd/new-vector-index db {:dimensions n})
+          info1  (pd/vector-index-info index1)]
+      (is (= (info1 :size) 1))
+      (is (= [:ok] (pd/search-vec index1 v1)))
+      (is (= [[:ok 0.0]] (pd/search-vec index1 v1 {:display :refs+dists})))
+
+      (pd/add-vec index1 :nice v2)
+      (let [info2 (pd/vector-index-info index1)]
+        (is (= 2 (info2 :size))))
+      (is (= [:nice] (pd/search-vec index1 v2 {:top 1})))
+      (is (= [[:nice 0.0]] (pd/search-vec index1 v2 {:top 1 :display :refs+dists})))
+      (is (= [:nice :ok] (pd/search-vec index1 v2)))
+
+      (pd/remove-vec index1 :ok)
+      (is (= 1 (:size (pd/vector-index-info index1))))
+      (is (= [:nice] (pd/search-vec index1 v2)))
+      (is (= [[:nice 0.0]] (pd/search-vec index1 v2 {:display :refs+dists})))
+
+      (pd/close-vector-index index1))
+
+    (let [index2 (pd/new-vector-index db {:dimensions n})]
+      (is (= 1 (:size (pd/vector-index-info index2))))
+      (is (= [:nice] (pd/search-vec index2 v2)))
+      (is (= [[:nice 0.0]] (pd/search-vec index2 v2 {:display :refs+dists})))
+      (pd/clear-vector-index index2))
+
+    (let [index3 (pd/new-vector-index db {:dimensions n})]
+      (is (= 0 (:size (pd/vector-index-info index3))))
+      (pd/close-vector-index index3))
+    (pd/close-kv db)
+    (u/delete-files dir)))
+
+(deftest vector-re-index-test
+  (when-not (u/windows?)
+    (let [dir   (u/tmp-dir (str "pod-vector-test-" (UUID/randomUUID)))
+          lmdb  (pd/open-kv dir)
+          n     800
+          v1    (rand-float-vec n)
+          v2    (rand-float-vec n)
+          v3    (rand-float-vec n)
+          index (pd/new-vector-index lmdb {:dimensions n})
+          info  (pd/vector-index-info index)]
+      (pd/add-vec index 1 v1)
+      (pd/add-vec index 2 v2)
+      (pd/add-vec index 3 v3)
+      (let [new-index (pd/re-index index {:dimensions   n
+                                          :connectivity 32
+                                          :metric-type  :cosine})
+            new-info  (pd/vector-index-info new-index)]
+        (is (= (new-info :size) 3))
+        (is (<= 3 (new-info :capacity)))
+        (is (<= 0 (new-info :memory)))
+        (is (= (info :hardware) (new-info :hardware)))
+        (is (= (info :filename) (new-info :filename)))
+        (is (= (info :dimensions) (new-info :dimensions)))
+        (is (= (new-info :metric-type) :cosine))
+        (is (= (info :quantization) (new-info :quantization)))
+        (is (= (new-info :connectivity) 32))
+        (is (= (info :expansion-add) (new-info :expansion-add)))
+        (is (= (info :expansion-search) (new-info :expansion-search)))
+
+        (is (= [1] (pd/search-vec new-index v1 {:top 1})))
+        (is (= [2] (pd/search-vec new-index v2 {:top 1})))
+        (is (= [3] (pd/search-vec new-index v3 {:top 1}))))
+
+      (pd/close-kv lmdb)
+      (u/delete-files dir))))

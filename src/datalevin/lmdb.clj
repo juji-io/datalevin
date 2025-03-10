@@ -582,13 +582,17 @@ values;")
 (defn re-index*
   [db opts]
   (try
-    (let [d        (dir db)
-          dumpfile (str d u/+separator+ "kv-dump")]
-      (dump db dumpfile)
+    (let [bk    (when (:backup? opts)
+                  (u/tmp-dir
+                    (str "dtlv-re-index-" (System/currentTimeMillis))))
+          d     (dir db)
+          dfile (str d u/+separator+ "kv-dump")]
+      (when bk (copy db bk true))
+      (dump db dfile)
       (clear db)
       (close-kv db)
       (let [db (open-kv d (update opts :flags conj :nosync))]
-        (load db dumpfile)
+        (load db dfile)
         (close-kv db))
       (open-kv d opts))
     (catch Exception e
@@ -626,8 +630,8 @@ values;")
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
 
+;; for shutting down various executors when the last LMDB exits
 (defonce lmdb-dirs (atom #{}))
 
-;; (System/loadLibrary "lmdb")
-;; (System/loadLibrary "dtlv")
-;; (System/loadLibrary "jniDTLV")
+;; for freeing in memory vector index when a LMDB exits
+(defonce vector-indices (atom {}))  ; fname -> index

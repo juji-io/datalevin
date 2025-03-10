@@ -92,8 +92,8 @@ Babashka pods.
 ### Standalone Vector Indexing and Search
 
 Datalevin can be used as a standalone vector database. The standalone vector API
-involves only a few functions: `new-vector-index`, `add-vec`,
-`remove-vec`, `search-vec`, `persist-vecs`.
+involves only a few functions: `new-vector-index`, `add-vec`, `remove-vec`, and
+`search-vec`.
 
 Each vector is identified with a `vec-ref` that can be any Clojure data (less
 than maximal key size of 512 bytes), which should be semantically meaningful for
@@ -116,7 +116,7 @@ id.
 ;; Other options use defaults here.
 (def index (d/new-vector-index lmdb {:dimensions 300}))
 
-;; User needs to supply the vectors. Here we some load word2vec vectors from a
+;; User needs to supply the vectors. Here we load some word2vec vectors from a
 ;; CSV file, each row contains a word, followed by the elements of the vector,
 ;; return a map of words to vectors
 (def data (reduce

@@ -2121,8 +2121,8 @@ This function is eager and attempts to load all matching data in range into memo
   reload the data and re-index using the given option. Return a new
   re-indexed `db`.
 
-  The `db` can be a Datalog connection, a key-value database, or a
-  search engine.
+  The `db` can be a Datalog connection, a key-value database, a full-text
+  search engine, or a vector index.
 
   The `opts` is the corresponding option map.
 
@@ -2149,15 +2149,16 @@ This function is eager and attempts to load all matching data in range into memo
            (do (l/re-index store schema opts) db)
            (do (when bk (copy @db bk true))
                (re-index-datalog db schema opts))))
-       (do (when (and bk (instance? KVStore db)) (copy db bk true))
-           (l/re-index db opts))))))
+       (l/re-index db opts)))))
 
 ;; -------------------------------------
 ;; Search API
 
 (defn new-search-engine
-  "Create a search engine. The search index is stored in the passed-in
-  key-value database opened by [[open-kv]].
+  "Create a full-text search engine.
+
+   The search index is stored in the passed-in key-value database
+   opened by [[open-kv]].
 
   `opts` is an option map that may contain these keys:
 
@@ -2165,7 +2166,7 @@ This function is eager and attempts to load all matching data in range into memo
      is `false`.
 
    * `:include-text?` indicates whether to store original text in the
-     search engine. Default is `false`.
+     search engine. Required for [[re-index]]. Default is `false`.
 
    * `:domain` is an identifier string, indicates the domain of this search
      engine. This way, multiple independent search engines can reside in the
@@ -2182,12 +2183,11 @@ This function is eager and attempts to load all matching data in range into memo
     query time (and not indexing time). Mostly useful for autocomplete search in
     conjunction with the `datalevin.search-utils/prefix-token-filter`.
 
-  See [[datalevin.search-utils]] for some functions to customize search.
-  "
+  See [[datalevin.search-utils]] for some functions to customize search."
   ([lmdb]
-   (new-search-engine lmdb nil))
+   (new-search-engine lmdb {}))
   ([lmdb opts]
-   (if (instance? KVStore lmdb)
+   (if (instance? datalevin.remote.KVStore lmdb)
      (r/new-search-engine lmdb opts)
      (sc/new-search-engine lmdb opts))))
 
@@ -2228,9 +2228,9 @@ engine index."}
   doc-count sc/doc-count)
 
 (def ^{:arglists '([engine query] [engine query opts])
-       :doc      "Issue a `query` to the search engine. `query` could be a string of
-words or a search data structure. The search data structure is a boolean expression,
-formally with the following grammar:
+       :doc      "Issue a `query` to the search engine. `query` could be a
+       string of words or a search data structure. The search data structure
+       is a boolean expression, formally with the following grammar:
 
     <expression> ::= <term> | [ <operator> <operands> ]
     <operator>   ::= :or | :and | :not
@@ -2264,8 +2264,13 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
   * `:doc-filter` is a boolean function that takes a `doc-ref` and
     determines whether or not to include the corresponding document in the
     results (default is `(constantly true)`)
-  * `proximity-expansion` can be used to adjust the search quality vs. time trade-off: the bigger the number, the higher is the quality, but the longer is the search time. Default value is `2`. It is only applicable when `index-position?` is `true`.
-  * `proximity-max-dist`  can be used to control the maximal distance between terms that would still be considered as belonging to the same span. Default value is `45`. It is only applicable when `index-position?` is `true`"}
+  * `proximity-expansion` can be used to adjust the search quality vs. time
+    trade-off: the bigger the number, the higher is the quality, but the longer is
+    the search time. Default value is `2`. It is only applicable when
+    `index-position?` is `true`.
+  * `proximity-max-dist`  can be used to control the maximal distance between
+    terms that would still be considered as belonging to the same span. Default
+    value is `45`. It is only applicable when `index-position?` is `true`"}
   search sc/search)
 
 (def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
@@ -2285,24 +2290,30 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
      number of the term, and offset is the character offset of this term.
   * `:index-position?` indicating whether to index positions of terms in the
      documents. Default is `false`.
-  * `:include-text?` indicating whether to store original text in the search      engine. Default is `false`."}
+  * `:include-text?` indicating whether to store original text in the search
+     engine. Default is `false`."}
   search-index-writer sc/search-index-writer)
 
 (def ^{:arglists '([writer doc-ref doc-text])
-       :doc      "Write a document to search index. Used only with [[search-index-writer]]"}
+       :doc      "Write a document to search index.
+
+  Used only with [[search-index-writer]]"}
   write sc/write)
 
 (def ^{:arglists '([writer])
        :doc      "Commit writes to search index, must be called after writing
-all documents. Used only with [[search-index-writer]]"}
+  all documents. Used only with [[search-index-writer]]"}
   commit sc/commit)
 
 ;; -------------------------------------
 ;; vector
 
 (defn new-vector-index
-  "Create a vector index. The mapping to semantic references is stored in the
-  passed-in key-value DB opened by [[open-kv]], while the actual index
+  "Create a Hierarchical Navigable Small World (HNSW) graph index
+  for vectors.
+
+  The mapping of semantic references to vectors is stored in the
+  passed-in key-value DB opened by [[open-kv]], while the HNSW index
   is stored in a file (suffix is `.vid`) under the KV DB directory.
 
   `opts` is a map that may contain these keys:
@@ -2339,18 +2350,74 @@ all documents. Used only with [[search-index-writer]]"}
 
    * `:search-opts` is an option map having these keys:
       ` `:top` is the number of results desired. Default is 10.
-      - `:display` is a keyword indicating what is in each result. Default is
-         `:refs` returning only semantic reference. The other option is
-         `:refs+dists` returning both semantic reference and vector distance.
+      - `:display` is a keyword indicating what is in each result.
+         * `:refs` returning only semantic reference. Default.
+         * `:refs+dists` returning both semantic reference and vector distance.
       - `:vec-filter` is a function that takes a semantic reference and returns
         `true` only for those references that need to be in the results.
 
    * `:domain` is a string, indicates the domain of this vector index."
   [lmdb opts]
-  (if (instance? KVStore lmdb)
+  (if (instance? datalevin.remote.KVStore lmdb)
     (r/new-vector-index lmdb opts)
     (v/new-vector-index lmdb opts)))
 
+(def ^{:arglists '([index])
+       :doc      "Close the vector index and free memory"}
+  close-vector-index v/close-vecs)
+
+(def ^{:arglists '([index])
+       :doc      "Close the vector index and delete all vectors"}
+  clear-vector-index v/clear-vecs)
+
+(def ^{:arglists '([index])
+       :doc      "Return a map of information about the vector index:
+
+     * `:size` the number of vectors indexed
+     * `:memory` the memory usage of the vector index in bytes
+     * `:capacity` the capacity of the vector index at the moment
+     * `:hardware` the vector Instruction Set Architecture (ISA) name
+     * `:filename` the full path file name of the vector index
+     * `:dimensions` see [[new-vector-index]]
+     * `:metric-type` see [[new-vector-index]]
+     * `:quantization` see [[new-vector-index]]
+     * `:connectivity`  see [[new-vector-index]]
+     * `:expansion-add` see [[new-vector-index]]
+     * `:expansion-search`see [[new-vector-index]]"}
+  vector-index-info v/vecs-info)
+
+(def ^{:arglists '([index vec-ref vec-data])
+       :doc      "Add a vector to the vector index.
+
+       `vec-ref` can be any Clojure value that is semantically meaningful.
+       `vec-data` is the vector, e.g. a seq or an array of numbers that has
+        consistent dimensions and value type as that of the `index`.
+
+        See [[new-vector-index]]"}
+  add-vec v/add-vec)
+
+(def ^{:arglists '([index vec-ref])
+       :doc      "Remove all the vectors associated with the `vec-ref`
+  from the `index`"}
+  remove-vec v/remove-vec)
+
+(def ^{:arglists '([index query-vec] [index query-vec opts])
+       :doc      "Search the vector index with a query vector, return the
+   `vec-ref` of its nearest neighbors, optionally, the distances.
+
+  `query-vec` is the query vector. It should have the same dimensions and
+  quantization as that of the `index`, see [[new-vector-index]].
+
+  `opts` may have these keys:
+
+   * `:top` is the number of neighbors desired, default is 10.
+   * `:display` indicates what to include in the result:
+      - `:refs` returns only `vec-ref`, and is the default.
+      - `:refs+dists` returns `vec-ref` and distances to the query vector
+        together.
+   * `:vec-filter` is a boolean function that takes the `vec-ref` and decides if
+     it should be in the results."}
+  search-vec v/search-vec)
 
 ;; -------------------------------------
 ;; byte buffer

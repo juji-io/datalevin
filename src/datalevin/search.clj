@@ -694,6 +694,7 @@
                 dis (DataInputStream. (FileInputStream. ^String dfname))]
             (doseq [[doc-ref rawtext] (nippy/thaw-from-in! dis)]
               (add-doc new doc-ref rawtext))
+            (.close dis)
             (u/delete-files dfname)
             new))
         (catch Exception e

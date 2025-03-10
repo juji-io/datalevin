@@ -45,6 +45,7 @@
    datalevin.client-test
    datalevin.remote-withtxnkv-test
    datalevin.remote-search-test
+   datalevin.remote-vector-test
    datalevin.remote-sutil-test
    datalevin.remote-kv-test
    datalevin.remote-test
@@ -103,6 +104,7 @@
           'datalevin.remote-kv-test
           'datalevin.remote-withtxnkv-test
           'datalevin.remote-search-test
+          'datalevin.remote-vector-test
           'datalevin.remote-sutil-test
           'datalevin.remote-transact-test)]
     (System/exit (if (zero? (+ ^long fail ^long error)) 0 1))))

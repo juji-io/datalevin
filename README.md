@@ -65,31 +65,37 @@ databases: when data are deleted, they are gone. Datalevin also follows the
 widely accepted principles of ACID, instead of introducing [unusual
 semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
 
-Datalevin has a [novel cost-based query optimizer](doc/query.md), with a query
-performance [competitive](benchmarks/JOB-bench) with SQL RDBMS such as
-PostgreSQL.
+In addition to support Datomic® flavor of Datalog query language, Datalevin has
+a [novel cost-based query optimizer](doc/query.md) with a much better query
+performance, which is [competitive](benchmarks/JOB-bench) with popular SQL RDBMS
+such as PostgreSQL.
 
-Datalevin can be used as a library, embedded in applications to manage state, e.g.
-used like SQLite; or it can run in a networked
-[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
-mode (default port is 8898) with full-fledged role-based access control (RBAC)
-on the server, e.g. used like PostgreSQL.
+Datalevin provides robust ACID transaction features on the basis of
+[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). With
+built-in support of asynchronous transaction, Datalevin can handle
+[write](benchmarks/write-bench) intensive workload, as well as storing large
+documents.
 
-Datalevin relies on the robust ACID transactional database features of LMDB.
-Designed for concurrent read intensive workloads, LMDB also [performs
-well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB).
-Therefore, it is fine to store documents in Datalevin.
+Datalevin support [vector database](doc/vector.md) features by integrating an
+efficient vector indexing and search
+[library](https://github.com/unum-cloud/usearch).
+
+Datalevin has a [novel full-text search engine](doc/search.md) that has
+[competitive](benchmarks/search-bench) search performance.
 
 Datalevin can be used as a fast key-value store for
 [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. The native
 EDN data capability of Datalevin should be beneficial for Clojure programs.
 
-Moreover, Datalevin has a [built-in full-text search
-engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
-[competitive](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench)
-search performance.
+Datalevin can be used as a library, embedded in applications to manage state,
+e.g. used like SQLite; or it can run in a networked
+[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
+mode (default port is 8898) with full-fledged role-based access control (RBAC)
+on the server, e.g. used like PostgreSQL; or it can be used as a [babashka
+pod](https://github.com/babashka/pod-registry/blob/master/examples/datalevin.clj)
+for shell scripting.
 
-Additional materials in chronological order:
+More information can be found in these articles and presentation:
 
 * [Achieving High Throughput and Low Latency through Adaptive Asynchronous Transaction](https://yyhh.org/blog/2025/02/achieving-high-throughput-and-low-latency-through-adaptive-asynchronous-transaction/)
 * [Competing for the JOB with a Triplestore](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
@@ -100,7 +106,7 @@ Additional materials in chronological order:
 ## :truck: [Installation](doc/install.md)
 
 As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please see details in
+project. There are also several other installation options. Please see details in
 [Installation Documentation](doc/install.md)
 
 ## :birthday: Upgrade
@@ -118,10 +124,10 @@ Datalevin is aimed to be a versatile database.
 ### Use as a Datalog store
 
 In addition to [our API doc](https://cljdoc.org/d/datalevin/datalevin),
-Datalevin has almost the same Datalog API as [Datascript](https://github.com/tonsky/datascript), which in turn has
-almost the same API as Datomic®, please consult the abundant tutorials, guides
-and learning sites available online to learn about the usage of Datomic® flavor
-of Datalog.
+Datalevin has almost the same Datalog API as
+[Datascript](https://github.com/tonsky/datascript), which in turn has almost the
+same API as Datomic®, please consult the abundant tutorials, guides and learning
+sites available online to learn about the usage of Datomic® flavor of Datalog.
 
 Here is a simple code example using Datalevin:
 
@@ -276,8 +282,7 @@ which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux ser
 In all benchmarked queries, Datalevin is the fastest among the three tested
 systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
 Datomic do not. Datalevin also has a caching layer for index access. See
-[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench)
-for a detailed analysis of the results.
+[here](benchmarks/datascript-bench) for a detailed analysis of the results.
 
 We also compared Datalevin and PostgreSQL in handling complex queries, using
 [Join Order Benchmark](benchmarks/JOB-bench). On a
@@ -325,8 +330,8 @@ adjust the priorities based on feedback.
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 0.10.0 ~~Async transaction; boolean search expression and phrase search;~~  as a
-  vector database; extensible de/serialization for arbitrary data; auto upgrade
+* 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
+  vector database;~~  extensible de/serialization for arbitrary data; auto upgrade
   migration; compressed data storage.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
 * 1.1.0 Transaction log storage and access API; read-only replicas for server.

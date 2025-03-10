@@ -313,6 +313,10 @@
 (def ^:no-doc ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:no-doc ^:const message-format-nippy (unchecked-byte 0x02))
 
+(def ^:const vector-index-suffix
+  "File name suffix for vector index is `.vid`"
+  ".vid")
+
 (def ^:const default-metric-type
   "Default vector index metric type is :euclidean"
   :euclidean)

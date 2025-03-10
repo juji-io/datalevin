@@ -741,7 +741,7 @@
 
 ;; remote vector index
 
-(declare ->VectorIndex)
+(declare ->VectorIndex new-vector-index)
 
 (deftype VectorIndex [^KVStore store]
   IVectorIndex

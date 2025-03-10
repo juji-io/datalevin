@@ -21,6 +21,7 @@
    [datalevin.entity Entity]
    [datalevin.db DB]
    [datalevin.search SearchEngine]
+   [datalevin.vector VectorIndex]
    [java.util UUID])
   (:gen-class))
 
@@ -68,6 +69,9 @@
 ;; uuid -> search engine
 (defonce ^:private engines (atom {}))
 
+;; uuid -> vector index
+(defonce ^:private indices (atom {}))
+
 ;; exposed functions
 
 (defn pod-fn [fn-name args & body]
@@ -85,6 +89,8 @@
   (if writing? (get @wkv-dbs kv-db) (get @kv-dbs kv-db)))
 
 (defn- get-engine [{:keys [::engine]}] (get @engines engine))
+
+(defn- get-index [{:keys [::index]}] (get @indices index))
 
 (defn entid [dl eid] (when-let [d (get-db dl)] (d/entid d eid)))
 
@@ -747,16 +753,54 @@
   ([engine query opts]
    (when-let [e (get-engine engine)] (d/search e query opts))))
 
+(defn new-vector-index
+  ([db]
+   (new-vector-index db nil))
+  ([db opts]
+   (when-let [d (get-kv db)]
+     (let [index (d/new-vector-index d opts)
+           id    (UUID/randomUUID)]
+       (swap! indices assoc id index)
+       {::index id}))))
+
+(defn add-vec
+  [index vec-ref vec-data]
+  (when-let [i (get-index index)] (d/add-vec i vec-ref vec-data)))
+
+(defn remove-vec
+  [index vec-ref]
+  (when-let [i (get-index index)] (d/remove-vec i vec-ref)))
+
+(defn close-vector-index
+  [index]
+  (when-let [i (get-index index)] (d/close-vector-index i)))
+
+(defn clear-vector-index
+  [index]
+  (when-let [i (get-index index)] (d/clear-vector-index i)))
+
+(defn vector-index-info
+  [index]
+  (when-let [i (get-index index)] (d/vector-index-info i)))
+
+(defn search-vec
+  ([index query]
+   (when-let [i (get-index index)] (d/search-vec i query)))
+  ([index query opts]
+   (when-let [i (get-index index)] (d/search-vec i query opts))))
+
 (defn re-index
   ([db opts] (re-index db {} opts))
   ([db schema opts]
-   (when-let [e (or (get-cn db) (get-kv db) (get-engine db))]
+   (when-let [e (or (get-cn db) (get-kv db) (get-engine db) (get-index db))]
      (let [e1 (d/re-index e schema opts)]
        (cond
          (d/conn? e1)                (do (swap! dl-conns assoc db e1)
                                          {::conn db})
          (instance? SearchEngine e1) (do (swap! engines assoc db e1)
                                          {::engine db})
+         (instance? VectorIndex e1)  (do (swap! indices assoc db e1)
+                                         {::index db})
          :else                       (do (swap! kv-dbs assoc db e1)
                                          {::kv-db db}))))))
 
@@ -858,6 +902,13 @@
    'doc-indexed?              doc-indexed?
    'doc-count                 doc-count
    'search                    search
+   'new-vector-index          new-vector-index
+   'add-vec                   add-vec
+   'remove-vec                remove-vec
+   'clear-vector-index        clear-vector-index
+   'close-vector-index        close-vector-index
+   'vector-index-info         vector-index-info
+   'search-vec                search-vec
    're-index                  re-index
    })
 

@@ -87,11 +87,13 @@
 
 (defn concatv [& xs] (into [] cat xs))
 
+(defn list-files [f] (.listFiles (io/file f)))
+
 (defn delete-files
   "Recursively delete file"
   [& fs]
   (when-let [f (first fs)]
-    (if-let [cs (seq (.listFiles (io/file f)))]
+    (if-let [cs (seq (list-files f))]
       (recur (concatv cs fs))
       (do (io/delete-file f)
           (recur (rest fs))))))

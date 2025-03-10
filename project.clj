@@ -75,8 +75,7 @@
                     [#"_test" #"\/test\/" #"test\d" #"\/data\.json" #"all\.json"
                      #"\.csv" #"\.edn"  #"\.txt"]
                     :uberjar-name "test1.uberjar.jar"}
-   :dev            {;:main datalevin.test0
-                    :main datalevin.dtlvnative.Test
+   :dev            {:main datalevin.test0
                     :dependencies
                     [[org.clojure/test.check]
                      [joda-time/joda-time]]}}

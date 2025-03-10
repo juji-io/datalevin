@@ -43,7 +43,9 @@
          :int8    DTLV/usearch_scalar_i8_k
          :byte    DTLV/usearch_scalar_b1_k)))
 
-(defn index-fname [lmdb domain] (str (l/dir lmdb) u/+separator+ domain ".vid"))
+(defn index-fname
+  [lmdb domain]
+  (str (l/dir lmdb) u/+separator+ domain c/vector-index-suffix))
 
 (defn- init-index
   [^String fname dimensions metric-key quantization connectivity expansion-add
@@ -144,7 +146,8 @@
   (remove-vec [this vec-ref] "remove vector from in memory index")
   (get-vec [this vec-ref] "retrieve the vectors of a vec-ref")
   (persist-vecs [this] "persistent index on disk")
-  (close-vecs [this] "close the index")
+  (close-vecs [this] "free the in memory index")
+  (closed? [this] "return true if this index is closed")
   (clear-vecs [this] "close and remove this index")
   (vecs-info [this] "return a map of info about this index")
   (vec-indexed? [this vec-ref] "test if a rec-ref is in the index")
@@ -165,6 +168,7 @@
 (declare display-xf new-vector-index)
 
 (deftype VectorIndex [lmdb
+                      closed?
                       ^DTLV$usearch_index_t index
                       ^String fname
                       ^long dimensions
@@ -203,8 +207,13 @@
   (persist-vecs [_] (VecIdx/save index fname))
 
   (close-vecs [this]
-    (.persist_vecs this)
-    (VecIdx/free index))
+    (when-not (.closed? this)
+      (.persist_vecs this)
+      (swap! l/vector-indices dissoc fname)
+      (vreset! closed? true)
+      (VecIdx/free index)))
+
+  (closed? [_] @closed?)
 
   (clear-vecs [this]
     (.close-vecs this)
@@ -236,9 +245,9 @@
                                       vec-filter (:vec-filter search-opts)}}]
     (let [query                    (vec->arr dimensions quantization query-vec)
           ^VecIdx$SearchResult res (search index query quantization (int top))]
-      (sequence
-        (display-xf this vec-filter display)
-        (.getKeys res) (.getDists res))))
+      (doall (sequence
+               (display-xf this vec-filter display)
+               (.getKeys res) (.getDists res)))))
 
   IAdmin
   (re-index [this opts]
@@ -255,6 +264,7 @@
               dis (DataInputStream. (FileInputStream. ^String dfname))]
           (doseq [[vec-ref vec-data] (nippy/thaw-from-in! dis)]
             (add-vec new vec-ref vec-data))
+          (.close dis)
           (u/delete-files dfname)
           new))
       (catch Exception e
@@ -303,7 +313,9 @@
           index             (init-index fname dimensions metric-type
                                         quantization connectivity
                                         expansion-add expansion-search)]
+      (swap! l/vector-indices assoc fname index)
       (->VectorIndex lmdb
+                     (volatile! false)
                      index
                      fname
                      dimensions

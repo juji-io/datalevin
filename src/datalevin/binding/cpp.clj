@@ -8,6 +8,7 @@
    [datalevin.constants :as c]
    [datalevin.async :as a]
    [datalevin.scan :as scan]
+   [datalevin.vector :as v]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
             IListRandKeyValIterable IListRandKeyValIterator]])
@@ -19,8 +20,7 @@
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
-   [java.util.concurrent LinkedBlockingQueue TimeUnit ScheduledExecutorService
-    ConcurrentHashMap ScheduledFuture]
+   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
@@ -554,6 +554,8 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
+      (doseq [idx (keep @l/vector-indices (u/list-files (.dir this)))]
+        (v/close-vecs idx))
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
