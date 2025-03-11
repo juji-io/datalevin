@@ -161,7 +161,7 @@
 (deftype AsyncVecSave [vec-index fname]
   IAsyncWork
   (work-key [_] (vec-save-key fname))
-  (do-work [_] (persist-vecs vec-index))
+  (do-work [_] (when-not (closed? vec-index) (persist-vecs vec-index)))
   (combine [_] first)
   (callback [_] nil))
 
@@ -189,7 +189,8 @@
       (a/exec (a/get-executor) (AsyncVecSave. this fname))
       (.put vecs vec-id vec-ref)
       (l/transact-kv
-        lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])))
+        lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])
+      vec-id))
 
   (get-vec [_ vec-ref]
     (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]

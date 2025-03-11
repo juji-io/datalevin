@@ -137,7 +137,36 @@
         (is (= [(vec v3)] (mapv vec (sut/get-vec new-index 3))))
         (is (= [1] (sut/search-vec new-index v1 {:top 1})))
         (is (= [2] (sut/search-vec new-index v2 {:top 1})))
-        (is (= [3] (sut/search-vec new-index v3 {:top 1}))))
+        (is (= [3] (sut/search-vec new-index v3 {:top 1})))
+        (d/close-vector-index new-index))
 
+      (d/close-kv lmdb)
+      (u/delete-files dir))))
+
+(deftest word2vec-test
+  (when-not (u/windows?)
+    (let [dir   (u/tmp-dir (str "test-" (UUID/randomUUID)))
+          lmdb  (d/open-kv dir)
+          n     300
+          index ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})
+          data  (->> (d/read-csv (slurp "test/data/word2vec.csv"))
+                     (drop 1)
+                     (reduce (fn [m [w & vs]]
+                               (assoc m w (mapv Float/parseFloat vs)))
+                             {}))]
+      (doseq [[w vs] data] (d/add-vec index w vs))
+      (let [info (d/vector-index-info index)]
+        (is (= (info :size) 277))
+        (is (= (info :dimensions) n)))
+
+      (is (= ["king"] (d/search-vec index (data "king") {:top 1})))
+      (is (= ["king" "queen"] (d/search-vec index (data "king") {:top 2})))
+
+      (is (= ["man" "woman"] (d/search-vec index (data "man") {:top 2})))
+      (is (= ["cat" "feline" "animal"]
+             (d/search-vec index (data "cat") {:top 3})))
+      (is (= ["physics" "science" "chemistry"]
+             (d/search-vec index (data "physics") {:top 3})))
+      (d/close-vector-index index)
       (d/close-kv lmdb)
       (u/delete-files dir))))

@@ -1505,37 +1505,35 @@
     lmdb c/vae {:key-size c/+id-bytes+
                 :val-size (+ c/+short-id-bytes+ c/+id-bytes+)}))
 
-(defn- default-domain
+(defn- default-search-domain
   [dms search-opts search-domains]
   (let [new-opts (assoc (or (get search-domains c/default-domain)
                             search-opts
                             {})
                         :domain c/default-domain)]
-    (assoc dms c/default-domain
-           (if-let [opts (dms c/default-domain)]
-             (merge opts new-opts)
-             new-opts))))
+    (assoc dms c/default-domain (if-let [opts (dms c/default-domain)]
+                                  (merge opts new-opts)
+                                  new-opts))))
 
-(defn- listed-domains
+(defn- listed-search-domains
   [dms domains search-domains]
   (reduce (fn [m domain]
             (let [new-opts (assoc (get search-domains domain {})
                                   :domain domain)]
-              (assoc m domain
-                     (if-let [opts (m domain)]
-                       (merge opts new-opts)
-                       new-opts))))
+              (assoc m domain (if-let [opts (m domain)]
+                                (merge opts new-opts)
+                                new-opts))))
           dms domains))
 
-(defn- init-domains
+(defn- init-search-domains
   [search-domains0 schema search-opts search-domains]
   (reduce-kv
     (fn [dms attr
         {:keys [db/fulltext db.fulltext/domains db.fulltext/autoDomain]}]
       (if fulltext
         (cond-> (if (seq domains)
-                  (listed-domains dms domains search-domains)
-                  (default-domain dms search-opts search-domains))
+                  (listed-search-domains dms domains search-domains)
+                  (default-search-domain dms search-opts search-domains))
           autoDomain (#(let [domain (u/keyword->string attr)]
                          (assoc
                            % domain
@@ -1566,22 +1564,22 @@
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (let [opts0   (load-opts lmdb)
-           opts1   (if (empty opts0)
-                     {:validate-data?       false
-                      :auto-entity-time?    false
-                      :closed-schema?       false
-                      :background-sampling? c/*db-background-sampling?*
-                      :db-name              (str (UUID/randomUUID))
-                      :cache-limit          512}
-                     opts0)
-           opts2   (merge opts1 opts)
-           schema  (init-schema lmdb schema)
-           domains (init-domains (:search-domains opts2)
-                                 schema search-opts search-domains)]
+     (let [opts0     (load-opts lmdb)
+           opts1     (if (empty opts0)
+                       {:validate-data?       false
+                        :auto-entity-time?    false
+                        :closed-schema?       false
+                        :background-sampling? c/*db-background-sampling?*
+                        :db-name              (str (UUID/randomUUID))
+                        :cache-limit          512}
+                       opts0)
+           opts2     (merge opts1 opts)
+           schema    (init-schema lmdb schema)
+           s-domains (init-search-domains (:search-domains opts2)
+                                          schema search-opts search-domains)]
        (transact-opts lmdb opts2)
        (->Store lmdb
-                (init-engines lmdb domains)
+                (init-engines lmdb s-domains)
                 (ConcurrentHashMap.)
                 (load-opts lmdb)
                 schema

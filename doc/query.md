@@ -54,9 +54,9 @@ processing overhead during query.
 Taking advantage of LMDB's dupsort capability (i.e. a key can be mapped to a
 list of values, and this list of values are also sorted, essentially it is a two
 level nested B+ trees of B+ trees), we store the head elements only once, by
-treating them as keys. The values are the remaining one or two elements of the
+treating them as keys. The values are the remaining two elements of the
 triple as a list of values mapped to by a key. This nested triple storage
-results in about 20% space reduction, depending on the data.
+results in about 20% space reduction, more or less depending on the data.
 
 The main advantage of this list based triple storage is to facilitate counting
 of elements, which is the most critical input for query planning. Some list
@@ -96,9 +96,7 @@ relation. The bulk of query execution time is spent on this operation.
 The input list of entity IDs may come from a search on `:ave` index that returns
 an entity ID list, a set of linking references from a relation produced
 in the previous step, or the reverse references from the previous step, and so
-on. The tuples are sorted by entity IDs prior to being used to scan the index,
-this reduces LMDB cursor seek time and leverages the cache better, more than
-offsetting the cost of sorting.
+on.
 
 ### Query graph simplification
 
@@ -182,7 +180,7 @@ Sampling is used when result size is expected to be larger than a threshold. To
 ensure representative samples that are specific to the query and data
 distribution, we perform sampling by execution under actual query conditions.
 
-During transaction, each attribute also maintains a representative sample of
+Using a background thread, each attribute maintains a representative sample of
 entity ids that has it. This is used when an attribute has no condition
 constraining it in the query. Otherwise, online sampling is performed during
 query. Both use reservoir sampling methods.
@@ -192,7 +190,7 @@ to obtain base selectivity ratios. Finally, the selectivity of all possible two
 way joins are obtained by counting the number of linked entity ids based on
 these samples. Later joins use these selectivity ratios to estimate result
 sizes. We have found sampling more than 2-way joins (e.g. [6]) to be less
-effective, so we stick with sampling base and 2-way join selectivity only.
+effective, so we sample base and 2-way join selectivity only.
 
 ### Dynamic plan search policy (new)
 
@@ -228,6 +226,8 @@ considered at the moment, future work may consider joins on a hypergraph
 solve the so called diamond problem [11].
 
 ## Benchmarks
+
+Currently we conducted two benchmarks.
 
 ### Datascript Benchmark
 

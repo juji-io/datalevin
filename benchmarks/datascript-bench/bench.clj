@@ -85,7 +85,7 @@
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.2.1\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.3.0\"}
-                  org.clojars.huahaiy/clojure-plus {:mvn/version \"1.1.1\"}
+                  io.github.tonsky/clojure-plus {:mvn/version \"1.2.0\"}
                   org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.12.5\"}
                   org.clojars.huahaiy/dtlvnative-macosx-x86_64 {:mvn/version \"0.12.5\"}
                   org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.12.5\"}

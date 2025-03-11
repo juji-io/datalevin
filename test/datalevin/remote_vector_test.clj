@@ -113,6 +113,7 @@
 
         (is (= [1] (d/search-vec new-index v1 {:top 1})))
         (is (= [2] (d/search-vec new-index v2 {:top 1})))
-        (is (= [3] (d/search-vec new-index v3 {:top 1}))))
+        (is (= [3] (d/search-vec new-index v3 {:top 1})))
+        (d/close-vector-index new-index))
 
       (d/close-kv lmdb))))

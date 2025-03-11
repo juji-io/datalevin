@@ -119,9 +119,11 @@ id.
 ;; User needs to supply the vectors. Here we load some word2vec vectors from a
 ;; CSV file, each row contains a word, followed by the elements of the vector,
 ;; return a map of words to vectors
-(def data (reduce
-            (fn [m [w & vs]] (assoc m w (mapv #(Float/parseFloat %) vs)))
-            {} (d/read-csv "test/data/word2vec.csv")))
+(def data (->> (d/read-csv (slurp "test/data/word2vec.csv"))
+               (drop 1)
+               (reduce
+                 (fn [m [w & vs]] (assoc m w (mapv Float/parseFloat vs)))
+                 {})))
 
 ;; Add the vectors to the vector index. `add-vec` takes a `vec-ref`, in this
 ;; case, a word; and the actual vector, which can be anything castable as a
@@ -131,7 +133,9 @@ id.
 ;; Search by a query vector. return  a list of `:top` `vec-ref` ordered by
 ;; similarity to the query vector
 (d/search-vec index (data "king") {:top 1})
-;=> ("queen")
+;=> ("king")
+(d/search-vec index (data "king") {:top 2})
+;=> ("king" "queen")
 ```
 
 ### Vector Indexing and Search in Datalog Store

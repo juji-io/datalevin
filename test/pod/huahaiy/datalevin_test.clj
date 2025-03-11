@@ -627,7 +627,8 @@
 
         (is (= [1] (pd/search-vec new-index v1 {:top 1})))
         (is (= [2] (pd/search-vec new-index v2 {:top 1})))
-        (is (= [3] (pd/search-vec new-index v3 {:top 1}))))
+        (is (= [3] (pd/search-vec new-index v3 {:top 1})))
+        (pd/close-vector-index new-index))
 
       (pd/close-kv lmdb)
       (u/delete-files dir))))

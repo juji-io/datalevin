@@ -195,6 +195,7 @@ Only usable for debug output.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
+   * `:search-opts` is the default options passed to [[fulltext]] function for the default search domains in case `:search-domains` above is not specified.
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -255,6 +256,8 @@ Only usable for debug output.
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
+
+   * `:search-opts` is the default options passed to [[fulltext]] function for the default search domains in case `:search-domains` above is not specified.
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -775,6 +778,8 @@ Only usable for debug output.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
+   * `:search-opts` is the default options passed to [[fulltext]] function for the default search domains in case `:search-domains` above is not specified.
+
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   "
@@ -799,6 +804,8 @@ Only usable for debug output.
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. [[new-search-engine]]
+
+   * `:search-opts` is the default options passed to [[fulltext]] function for the default search domains in case `:search-domains` above is not specified.
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -2182,6 +2189,8 @@ This function is eager and attempts to load all matching data in range into memo
    * `:query-analyzer` is a similar function that overrides the analyzer at
     query time (and not indexing time). Mostly useful for autocomplete search in
     conjunction with the `datalevin.search-utils/prefix-token-filter`.
+
+   * `:search-opts` is the default options passed to [[search]] function.
 
   See [[datalevin.search-utils]] for some functions to customize search."
   ([lmdb]
