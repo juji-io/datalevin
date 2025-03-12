@@ -19,7 +19,8 @@ MacOS on both x86_64 and arm64 CPUs.
 
 These configurable options can be set when creating the vector index:
 
-* `:dimensions`, the number of dimensions of the vectors. Required, no default.
+* `:dimensions`, the number of dimensions of the vectors. **Required**, no
+  default.
 
 * `:metric-type` is the type of similarity metrics. Custom metric may be
   supported in the future.
@@ -132,8 +133,6 @@ id.
 
 ;; Search by a query vector. return  a list of `:top` `vec-ref` ordered by
 ;; similarity to the query vector
-(d/search-vec index (data "king") {:top 1})
-;=> ("king")
 (d/search-vec index (data "king") {:top 2})
 ;=> ("king" "queen")
 ```
@@ -141,13 +140,49 @@ id.
 ### Vector Indexing and Search in Datalog Store
 
 Vectors can be stored in Datalog as attribute values of data type
-`:db.type/vec`. This data type has a property `:db.vec/opts`,
-whose value is a map that is the same as the standalone vector index options
-described above.
+`:db.type/vec`.
 
-The attribute may also have a property `:db.vec/domains`, indicating which
+The attribute may have a property `:db.vec/domains`, indicating which
 vector search domains the attribute should be participate.
 
+### Search Configurations
+
+The vector search feature can be customized at indexing time and at query time.
+
+#### Search options
+
+`search-vec` and `vec-neighbors` functions support an option map that can be
+passed at run time to customize search:
+
+* `:top`  is the number of results desired, default is 10
+* `display` sepcifies how results are displayed, could be one of these:
+   - `:refs` only returns `vec-ref`, the default.
+   - `:refs+dists` add distances to results.
+* `vec-filter` is a boolean function that takes `vec-ref` and determine if to
+  return it.
+* `:domains` specifies a list of domains to be searched (see below).
+
+#### Vector search domains
+
+Vectors can be added to different vector search domains, each corresponding to a
+vector index of its own. The option map of `new-vector-index` has a `:domain`
+that is a string value. If not specified, the default domain is `datalevin`.
+
+When starting a  Datalog store, a `:vector-domains` option can be added to the
+option map, and its value is a map from domain strings to the option maps of each
+vector search domain, which is the same option map as that of `new-vector-index`.
+
+A `:vector-opts` option can be passed to the Datalog store to give default
+options in case `:vector-domans` are not given. Note that `:dimensions` option
+is required for a vector index.
+
+By default, each attribute with type `:db.type/vec` becomes its own domain
+automatically. Such attribute can also have a `:db.vec/domains` property that
+list additional domains this attribute participates in. Users need to make sure
+the domains an attribute participate in all have the same vector dimensions.
+
+During search, `:domains` can be added to the option map to specify the
+domains to be searched.
 
 ## References
 

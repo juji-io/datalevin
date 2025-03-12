@@ -143,30 +143,62 @@
       (d/close-kv lmdb)
       (u/delete-files dir))))
 
+(def vec-data (->> (d/read-csv (slurp "test/data/word2vec.csv"))
+                   (drop 1)
+                   (reduce (fn [m [w & vs]]
+                             (assoc m w (mapv Float/parseFloat vs)))
+                           {})))
+
+(def dims 300)
+
 (deftest word2vec-test
   (when-not (u/windows?)
     (let [dir   (u/tmp-dir (str "test-" (UUID/randomUUID)))
           lmdb  (d/open-kv dir)
-          n     300
-          index ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})
-          data  (->> (d/read-csv (slurp "test/data/word2vec.csv"))
-                     (drop 1)
-                     (reduce (fn [m [w & vs]]
-                               (assoc m w (mapv Float/parseFloat vs)))
-                             {}))]
-      (doseq [[w vs] data] (d/add-vec index w vs))
+          index ^VectorIndex (sut/new-vector-index lmdb {:dimensions dims})]
+      (doseq [[w vs] vec-data] (d/add-vec index w vs))
       (let [info (d/vector-index-info index)]
         (is (= (info :size) 277))
-        (is (= (info :dimensions) n)))
+        (is (= (info :dimensions) dims)))
 
-      (is (= ["king"] (d/search-vec index (data "king") {:top 1})))
-      (is (= ["king" "queen"] (d/search-vec index (data "king") {:top 2})))
+      (is (= ["king"] (d/search-vec index (vec-data "king") {:top 1})))
+      (is (= ["king" "queen"] (d/search-vec index (vec-data "king") {:top 2})))
 
-      (is (= ["man" "woman"] (d/search-vec index (data "man") {:top 2})))
+      (is (= ["man" "woman"] (d/search-vec index (vec-data "man") {:top 2})))
       (is (= ["cat" "feline" "animal"]
-             (d/search-vec index (data "cat") {:top 3})))
+             (d/search-vec index (vec-data "cat") {:top 3})))
       (is (= ["physics" "science" "chemistry"]
-             (d/search-vec index (data "physics") {:top 3})))
+             (d/search-vec index (vec-data "physics") {:top 3})))
       (d/close-vector-index index)
       (d/close-kv lmdb)
       (u/delete-files dir))))
+
+(deftest vec-neighbors-fns-test
+  (let [dir  (u/tmp-dir (str "vec-fns-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir {:id        {:db/valueType :db.type/string
+                                :db/unique    :db.unique/identity}
+                    :embedding {:db/valueType :db.type/vec}}
+               {:vector-opts {:dimensions  dims
+                              :metric-type :cosine}})]
+    (d/transact! conn [{:id "cat" :embedding (vec-data "cat")}
+                       {:id "rooster" :embedding (vec-data "rooster")}
+                       {:id "jaguar" :embedding (vec-data "jaguar")}
+                       {:id "animal" :embedding (vec-data "animal")}
+                       {:id "physics" :embedding (vec-data "physics")}
+                       {:id "chemistry" :embedding (vec-data "chemistry")}
+                       {:id "history" :embedding (vec-data "history")}])
+    ;; (is (= (d/q '[:find ?v .
+    ;;               :in $ ?q
+    ;;               :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+    ;;             (d/db conn) "brown fox")
+    ;;        s))
+    ;; (is (empty? (d/q '[:find ?v .
+    ;;                    :in $ ?q
+    ;;                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+    ;;                  (d/db conn) "")))
+    ;; (is (= (d/datom-v
+    ;;          (first (d/fulltext-datoms (d/db conn) "brown fox")))
+    ;;        s))
+    (d/close conn)
+    (u/delete-files dir)))

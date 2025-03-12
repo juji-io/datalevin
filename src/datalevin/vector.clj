@@ -329,3 +329,20 @@
                      vecs
                      (AtomicLong. max-vec-id)
                      search-opts))))
+
+(defn transfer
+  [^VectorIndex old lmdb]
+  (->VectorIndex lmdb
+                 (.-closed? old)
+                 (.-index old)
+                 (.-fname old)
+                 (.-dimensions old)
+                 (.-metric-type old)
+                 (.-quantization old)
+                 (.-connectivity old)
+                 (.-expansion-add old)
+                 (.-expansion-search old)
+                 (.-vecs-dbi old)
+                 (.-vecs old)
+                 (.-max-vec old)
+                 (.-search-opts old)))

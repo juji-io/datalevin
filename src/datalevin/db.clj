@@ -413,8 +413,7 @@
 ;; ----------------------------------------------------------------------------
 
 (defn- validate-schema-key [a k v expected]
-  (when-not (or (nil? v)
-                (contains? expected v))
+  (when-not (or (nil? v) (contains? expected v))
     (throw (ex-info (str "Bad attribute specification for "
                          (pr-str {a {k v}}) ", expected one of " expected)
                     {:error     :schema/validation

@@ -5,11 +5,12 @@
    [datalevin.lmdb :as lmdb :refer [IWriting]]
    [datalevin.binding.cpp]
    [datalevin.inline :refer [update assoc]]
-   [datalevin.util :as u :refer [conjs]]
+   [datalevin.util :as u :refer [conjs conjv]]
    [datalevin.relation :as r]
    [datalevin.bits :as b]
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.search :as s]
+   [datalevin.vector :as v]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [datalevin.async :as a]
@@ -619,11 +620,12 @@
       (when (= ^int aid ^int (b/read-buffer bf :int))
         (b/read-buffer (.rewind bf) :avg)))))
 
-(declare insert-datom delete-datom fulltext-index check transact-opts
-         ->SamplingWork e-sample* analyze*)
+(declare insert-datom delete-datom fulltext-index vector-index check
+         transact-opts ->SamplingWork e-sample* analyze*)
 
 (deftype Store [lmdb
                 search-engines
+                vector-indices
                 ^ConcurrentHashMap counts   ; aid -> touched times
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
@@ -748,17 +750,20 @@
           ;; fulltext [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
           ;; or [:r d gt]
           ft-ds  (FastList.)
+          ;; vector, same
+          vi-ds  (FastList.)
           giants (HashMap.)]
       (locking (lmdb/write-txn lmdb)
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds giants)
-            (delete-datom this datom txs ft-ds giants)))
+            (insert-datom this datom txs ft-ds vi-ds giants)
+            (delete-datom this datom txs ft-ds vi-ds giants)))
         (.add txs (lmdb/kv-tx :put c/meta :max-tx
                               (advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
                               (System/currentTimeMillis) :attr :long))
         (fulltext-index search-engines ft-ds)
+        (vector-index vector-indices vi-ds)
         (lmdb/transact-kv lmdb txs))))
 
   (fetch [_ datom]
@@ -1294,6 +1299,19 @@
       :g (s/add-doc engine [:g (nth d 0)] (peek d) false)
       :r (s/remove-doc engine [:g d]))))
 
+(defn vector-index
+  [vector-indices vi-ds]
+  (doseq [res    vi-ds
+          :let   [op (peek res)
+                  d (nth op 1)]
+          domain (nth res 0)
+          :let   [index (vector-indices domain)]]
+    (case (nth op 0)
+      :a (v/add-vec index d (peek d))
+      :d (v/remove-vec index d)
+      :g (v/add-vec index [:g (nth d 0)] (peek d))
+      :r (v/remove-vec index [:g d]))))
+
 (defn- e-sample*
   [^Store store a aid as]
   (let [lmdb (.-lmdb store)
@@ -1405,7 +1423,8 @@
            op])))
 
 (defn- insert-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
+   ^HashMap giants]
   (let [schema (schema store)
         opts   (opts store)
         counts ^ConcurrentHashMap (.-counts store)
@@ -1433,15 +1452,20 @@
         (.put giants gd max-gt)
         (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
                               :id :data [:append]))))
-    (when (identical? :db.type/ref vt)
+
+    (when (identical? vt :db.type/ref)
       (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
+    (when (identical? vt :db.type/vec)
+      (.add vi-ds [(conjv (props :db.vec/domains) (u/keyword->string attr))
+                   (if giant? [:g [max-gt v]] [:a [e aid v]])]))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
                           (if giant? [:g [max-gt v]] [:a [e aid v]]))))))
 
 (defn- delete-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^HashMap giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
+   ^HashMap giants]
   (let [schema (schema store)
         counts ^ConcurrentHashMap (.-counts store)
         e      (.-e d)
@@ -1476,8 +1500,11 @@
       (when gt
         (when gt-cur (.remove giants d-eav))
         (.add txs (lmdb/kv-tx :del c/giants gt :id)))
-      (when (identical? :db.type/ref vt)
-        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
+      (when (identical? vt :db.type/ref)
+        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae)))
+      (when (identical? vt :db.type/vec)
+        (.add vi-ds [(conjv (props :db.vec/domains) (u/keyword->string attr))
+                     (if gt [:r gt] [:d [e aid v]])])))))
 
 (defn- transact-opts
   [lmdb opts]
@@ -1552,6 +1579,36 @@
       (assoc m domain (s/new-search-engine lmdb opts)))
     {} domains))
 
+(defn- listed-vector-domains
+  [dms domains vector-opts vector-domains]
+  (reduce (fn [m domain]
+            (let [new-opts (assoc (get vector-domains domain vector-opts)
+                                  :domain domain)]
+              (assoc m domain (if-let [opts (m domain)]
+                                (merge opts new-opts)
+                                new-opts))))
+          dms domains))
+
+(defn- init-vector-domains
+  [vector-domains0 schema vector-opts vector-domains]
+  (reduce-kv
+    (fn [dms attr {:keys [db/valueType db.vec/domains]}]
+      (if (identical? valueType :db.type/vec)
+        (if (seq domains)
+          (listed-vector-domains dms domains vector-opts vector-domains)
+          (let [domain (u/keyword->string attr)]
+            (assoc dms domain (assoc (get vector-domains domain vector-opts)
+                                     :domain domain))))
+        dms))
+    (or vector-domains0 {}) schema))
+
+(defn- init-indices
+  [lmdb domains]
+  (reduce-kv
+    (fn [m domain opts]
+      (assoc m domain (v/new-vector-index lmdb opts)))
+    {} domains))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -1560,7 +1617,9 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts search-opts search-domains] :as opts}]
+  ([dir schema
+    {:keys [kv-opts search-opts search-domains vector-opts vector-domains]
+     :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
@@ -1576,10 +1635,13 @@
            opts2     (merge opts1 opts)
            schema    (init-schema lmdb schema)
            s-domains (init-search-domains (:search-domains opts2)
-                                          schema search-opts search-domains)]
+                                          schema search-opts search-domains)
+           v-domains (init-vector-domains (:vector-domains opts2)
+                                          schema vector-opts vector-domains)]
        (transact-opts lmdb opts2)
        (->Store lmdb
                 (init-engines lmdb s-domains)
+                (init-indices lmdb v-domains)
                 (ConcurrentHashMap.)
                 (load-opts lmdb)
                 schema
@@ -1595,12 +1657,17 @@
   [engines lmdb]
   (zipmap (keys engines) (map #(s/transfer % lmdb) (vals engines))))
 
+(defn- transfer-indices
+  [indices lmdb]
+  (zipmap (keys indices) (map #(v/transfer % lmdb) (vals indices))))
+
 (defn transfer
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
   [^Store old lmdb]
   (->Store lmdb
            (transfer-engines (.-search-engines old) lmdb)
+           (transfer-indices (.-vector-indices old) lmdb)
            (.-counts old)
            (opts old)
            (schema old)

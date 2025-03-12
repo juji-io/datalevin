@@ -130,25 +130,60 @@ a `doc-filter` function can be supplied in the search option, that takes the
 only return datoms that have attribute `:text`. Or one can opt to put this
 constraint in the Datalog where clause instead.
 
-### Custom Search
+### Search Configurations
 
 The search feature can be customized at indexing time and at query time.
 
-### Custom analyzer
+#### Custom analyzer
 
 When creating the search engine, an `:analyzer` option can be used to supply
 an analyzer function that takes a document as string, and output a list of `[term
 position offset]`. `:query-analyzer` option is for analyzing query.
 
-Some common utility functions for creating analyzers are also provided in
+Many common utility functions for creating analyzers are also provided in
 `datalevin.search-utils`  namespace: stemming, stop words, regular expression,
 ngrams, prefix, and so on.
 
-### Search options
+#### Search options
 
-See documentation for `search` function to see available options that can be
-passed at run time to customize search: top-k, proximity expansion factor,
-results display, and so on.
+In `search` and `fulltext` functions, an option map can be passed as the
+last argument at run time to customize search. It can have these keys:
+
+* `:top`  is the number of results desired, default is 10
+* `:proximity-expansion` is the expansion factor for proximity search, default
+is 2,
+* `:proximity-max-dist` is max distance considered for proximity search, default
+is 45,
+* `display` sepcifies how results are displayed, could be one of these:
+   - `:refs` only returns `doc-ref`, the default.
+   - `:texts` add the raw text of the documents to the results.
+   - `:offsets` add the offsets of the matched tokens to the results.
+   - `:texts+offsets` add both texts and offsets to results.
+* `doc-filter` is a boolean function that takes `doc-ref` and determine if to
+  return the document.
+* `:domains` specifies a list of domains to be searched (see below).
+
+#### Search domains
+
+Documents can be put into different search domains, each corresponding to a
+search engine of its own. The option map of `new-search-engine` has a `:domain`
+that is a string value. If not specified, the default domain is `datalevin`.
+
+When starting a  Datalog store, a `:search-domains` option can be added to the
+option map, and its value is a map from domain strings to the option maps of each
+search domain.
+
+An attribute with `true` `:db/fulltext` can have a `:db.fulltext/domains`
+property that list the domains this attribute participates in. By default, all
+freetext attributes are added to the default `datalevin` domain. In addition, a
+`db.fulltext/autoDomain` property can be set to `true`, so that this attribute
+becomes its own domain automatically.
+
+A `:search-opts` option can be passed to the Datalog store to give default
+search options for `fulltext` function.
+
+During search, `:domains` can be added to the option map to specify the
+domains to be searched.
 
 ## Implementation
 
