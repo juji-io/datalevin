@@ -188,17 +188,28 @@
                        {:id "physics" :embedding (vec-data "physics")}
                        {:id "chemistry" :embedding (vec-data "chemistry")}
                        {:id "history" :embedding (vec-data "history")}])
-    ;; (is (= (d/q '[:find ?v .
-    ;;               :in $ ?q
-    ;;               :where [(fulltext $ ?q) [[?e ?a ?v]]]]
-    ;;             (d/db conn) "brown fox")
-    ;;        s))
-    ;; (is (empty? (d/q '[:find ?v .
-    ;;                    :in $ ?q
-    ;;                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
-    ;;                  (d/db conn) "")))
-    ;; (is (= (d/datom-v
-    ;;          (first (d/fulltext-datoms (d/db conn) "brown fox")))
-    ;;        s))
+    (is (= (set (d/q '[:find [?i ...]
+                       :in $ ?q
+                       :where
+                       [(vec-neighbors $ :embedding ?q {:top 4}) [[?e _ _]]]
+                       [?e :id ?i]]
+                     (d/db conn) (vec-data "cat")))
+           #{"cat" "jaguar" "animal" "rooster"}))
+    (is (= (set (d/q '[:find [?i ...]
+                       :in $ ?q
+                       :where
+                       [(vec-neighbors $ :embedding ?q) [[?e]]]
+                       [?e :id ?i]]
+                     (d/db conn) (vec-data "cat")))
+           #{"cat" "jaguar" "animal" "rooster" "physics"
+             "chemistry" "history"}))
+    (is (= "cat" (d/q '[:find ?i .
+                        :in $ ?q
+                        :where
+                        [(vec-neighbors $ ?q {:domains ["embedding"]
+                                              :top     1})
+                         [[?e]]]
+                        [?e :id ?i]]
+                      (d/db conn) (vec-data "cat"))))
     (d/close conn)
     (u/delete-files dir)))

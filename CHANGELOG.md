@@ -40,6 +40,7 @@
   thread pools. User can use a semaphore to limit the number of read threads in
   flight, or use a bounded thread pool. If needed, `:max-readers` KV option can
   also be set to increase the limit (default is now doubled to 256).
+- [Doc] Add `built-ins` namespace to cljdoc.
 
 ## 0.9.20 (2025-02-19)
 

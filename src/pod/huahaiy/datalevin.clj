@@ -201,10 +201,10 @@
 (defn fulltext-datoms
   ([dl query]
    (when-let [d (get-db dl)]
-     (map dd/datom-eav (d/fulltext-datoms d query))))
+     (d/fulltext-datoms d query)))
   ([dl query opts]
    (when-let [d (get-db dl)]
-     (map dd/datom-eav (d/fulltext-datoms d query opts)))))
+     (d/fulltext-datoms d query opts))))
 
 (defn rseek-datoms
   ([dl index]

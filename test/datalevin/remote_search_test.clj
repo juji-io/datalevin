@@ -71,7 +71,7 @@
 (deftest remote-fulltext-fns-test
   (let [dir      "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
         analyzer (i/inter-fn
-                   [^String text]
+                     [^String text]
                    (map-indexed (fn [i ^String t]
                                   [t i (.indexOf text t)])
                                 (s/split text #"\s")))
@@ -98,8 +98,7 @@
                        :in $ ?q
                        :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                      db "")))
-    (is (= (d/datom-v
-             (first (d/fulltext-datoms db "red fox")))
+    (is (= (peek (first (d/fulltext-datoms db "red fox")))
            "The quick red fox jumped over the lazy red dogs."))
     (d/close-db db)))
 

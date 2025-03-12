@@ -690,10 +690,7 @@
             (aset static-args i (if (fn? tuple-arg)
                                   (tuple-arg tuple)
                                   (tg tuple tuple-arg))))))
-      (let [res (call static-args)]
-        (if (= f 'fulltext)
-          (mapv #(mapv peek %) res)
-          res)))))
+      (call static-args))))
 
 (defn filter-by-pred
   [context clause]

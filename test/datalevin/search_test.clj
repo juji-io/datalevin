@@ -416,7 +416,7 @@
 
 (deftest fulltext-fns-test
   (let [analyzer (i/inter-fn
-                   [^String text]
+                     [^String text]
                    (map-indexed (fn [i ^String t]
                                   [t i (.indexOf text t)])
                                 (s/split text #"\s")))
@@ -424,8 +424,9 @@
         conn     (d/create-conn
                    dir {:a/id     {:db/valueType :db.type/long
                                    :db/unique    :db.unique/identity}
-                        :a/string {:db/valueType :db.type/string
-                                   :db/fulltext  true}
+                        :a/string {:db/valueType           :db.type/string
+                                   :db/fulltext            true
+                                   :db.fulltext/autoDomain true}
                         :b/string {:db/valueType :db.type/string
                                    :db/fulltext  true}}
                    {:auto-entity-time? true
@@ -438,12 +439,26 @@
                   :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                 (d/db conn) "brown fox")
            s))
+    (is (= (d/q '[:find ?v .
+                  :in $ ?q
+                  :where [(fulltext $ ?q {:top 2}) [[?e ?a ?v]]]]
+                (d/db conn) "brown fox")
+           s))
+    (is (= (d/q '[:find ?v .
+                  :in $ ?q
+                  :where [(fulltext $ :a/string ?q) [[?e ?a ?v]]]]
+                (d/db conn) "brown fox")
+           s))
+    (is (= (d/q '[:find ?v .
+                  :in $ ?q
+                  :where [(fulltext $ :a/string ?q {:top 1}) [[?e ?a ?v]]]]
+                (d/db conn) "brown fox")
+           s))
     (is (empty? (d/q '[:find ?v .
                        :in $ ?q
                        :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                      (d/db conn) "")))
-    (is (= (d/datom-v
-             (first (d/fulltext-datoms (d/db conn) "brown fox")))
+    (is (= (peek (first (d/fulltext-datoms (d/db conn) "brown fox")))
            s))
     (d/close conn)
     (u/delete-files dir)))

@@ -139,8 +139,20 @@
                (st/e-aid-v->datom store d))))
       (s/search engine query opts))))
 
+(def ^:no-doc datom->vec-xf
+  (comp (map seq)
+     (map #(mapv peek %))
+     (map #(vec (take 3 %)))))
+
 (defn fulltext
-  "Function that does fulltext search and returns matching datoms.
+  "Function that does fulltext search. Returns matching datoms in the form
+  of [e a v] for convenient vector destructuring.
+
+  The last argument of the 4 arity function is the search option map.
+  See [[datalevin.core.search]].
+
+  When neither an attribute nor a `:domans` is specified, a full DB search
+  is performed.
 
   For example:
 
@@ -150,28 +162,28 @@
 
   * Domain specific search:
 
-    `[(fulltext $ \"red\" {:domains [\"color\"]} [[?e ?a ?v]])]`
-
-  See also [[datalevin.core.search]] function.
-  "
+    `[(fulltext $ \"red\" {:domains [\"color\"]} [[?e ?a ?v]])]`"
   ([db query]
    (fulltext db query nil))
-  ([^DB db arg1 arg2]
+  ([db arg1 arg2]
+   (fulltext db arg1 arg2 nil))
+  ([^DB db arg1 arg2 arg3]
    (let [^Store store (.-store db)
          lmdb         (.-lmdb store)
          engines      (.-search-engines store)
-         datomic?     (keyword? arg1)
-         domains      (if datomic?
+         attr?        (keyword? arg1)
+         domains      (if attr?
                         [(u/keyword->string arg1)]
                         (:domains arg2))
-         query        (if datomic? arg2 arg1)
-         opts         (if datomic? nil arg2)]
-     (when datomic?
+         query        (if attr? arg2 arg1)
+         opts         (if attr? arg3 arg2)]
+     (when attr?
        (when-not (-> store st/schema arg1 :db.fulltext/autoDomain)
          (raise ":db.fulltext/autoDomain is not true for " arg1
                 {})))
      (sequence
-       (mapcat #(fulltext* store lmdb engines query opts %))
+       (comp (mapcat #(fulltext* store lmdb engines query opts %))
+          datom->vec-xf)
        (if (seq domains) domains (keys engines))))))
 
 (defn- vec-neighbors*
@@ -185,34 +197,42 @@
       (v/search-vec index query opts))))
 
 (defn vec-neighbors
-  "Function that does vector similarity search and returns matching datoms.
+  "Function that does vector similarity search. Returns matching datoms in the
+  form of [e a v] for convenient vector destructuring.
+
+  The last argument of the 4 arity function is the search option map.
+  See [[datalevin.core.search-vec]].
+
+  When neither an attribute nor a `:domains` is specified, an exception will
+  be thrown.
 
   For example:
 
-  * Full DB search: `[(fulltext $ \"red\") [[?e ?a ?v]]]`
-
-  * Attribute specific search: `[(fulltext $ :color \"red\") [[?e ?a ?v]]]`
+  * Attribute specific search:
+         `[(vec-neighbors $ :color ?query-vec) [[?e ?a ?v]]]`
 
   * Domain specific search:
-
-  `[(fulltext $ \"red\" {:domains [\"color\"]} [[?e ?a ?v]])]`
-
-  See also [[datalevin.core.search-vec]] function. "
+        `[(vec-neighbors $ ?query-vec {:domains [\"color\"]} [[?e ?a ?v]])]`"
   ([db query]
    (vec-neighbors db query nil))
-  ([^DB db arg1 arg2]
+  ([db arg1 arg2]
+   (vec-neighbors db arg1 arg2 nil))
+  ([^DB db arg1 arg2 arg3]
    (let [^Store store (.-store db)
          lmdb         (.-lmdb store)
          indices      (.-vector-indices store)
-         datomic?     (keyword? arg1)
-         domains      (if datomic?
+         attr?        (keyword? arg1)
+         domains      (if attr?
                         [(u/keyword->string arg1)]
                         (:domains arg2))
-         query        (if datomic? arg2 arg1)
-         opts         (if datomic? nil arg2)]
+         query        (if attr? arg2 arg1)
+         opts         (if attr? arg3 arg2)]
      (sequence
-       (mapcat #(vec-neighbors* store lmdb indices query opts %))
-       (if (seq domains) domains (keys indices))))))
+       (comp (mapcat #(vec-neighbors* store lmdb indices query opts %))
+          datom->vec-xf)
+       (if (and (sequential? domains) (seq domains))
+         domains
+         (raise "Need a vector search domain." {}))))))
 
 (defn- less
   ([_] true)
@@ -612,7 +632,7 @@
   "Aggregation function that calculates the average."
   aggregate-avg)
 
-(defn- aggregate-median ^double [coll]
+(defn- aggregate-median [coll]
   (let [terms (sort coll)
         size  (clojure.core/count coll)
         med   (bit-shift-right size 1)]

@@ -94,10 +94,15 @@ schema, with the `:db/fulltext true` property. The value does not have to be of
  string type, as the indexer will call `str` function on it to convert it to
  string.
 
+Such attribute may have a property `:db.fulltext/domains`, indicating which
+full-text search domains the attribute should participate. If it also has
+`:db.fulltext/autoDomain true`, this attribute becomes its own domain, with
+domain name the same as attribute name.
+
 A query function `fulltext` is provided to allow full-text search in Datalog
 queries. This function takes the db, the query and an optional option map (same
-as `search`), and returns a sequence of matching datoms, ordered by relevance to
-the query.
+as `search`), and returns a sequence of matching datoms in the form of `[e a v]`
+for easy destructuring, ordered by relevance to the query.
 
 ```Clojure
 (let [db (-> (d/empty-db "/tmp/mydb"
@@ -110,19 +115,29 @@ the query.
                    :text  "Mary had a little lamb whose fleece was red as fire."}
                   {:db/id 3,
                    :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    ;; full DB search
     (d/q '[:find ?e ?a ?v
            :in $ ?q
            :where [(fulltext $ ?q) [[?e ?a ?v]]]]
           db
-          "red fox"))
+          "red fox")
 ;=> #{[1 :text "The quick red fox jumped over the lazy red dogs."]
 ;     [2 :text "Mary had a little lamb whose fleece was red as fire."]}
+
+    ;; attribute specific search
+    (d/q '[:find ?e ?a ?v
+           :in $ ?q
+           :where [(fulltext $ :text ?q {:top 1}) [[?e ?a ?v]]]]
+          db
+          "red fox"))
+;=> #{[1 :text "The quick red fox jumped over the lazy red dogs."]}
 ```
-In the above example, we destructure the returned datoms into three variables,
+
+In the above example, we destructure the results into three variables,
 `?e`, `?a` and `?v`.
 
-As can be seen, the search is across the whole database, not limited to an
-individual attribute.
+The search can be across the whole database, specific to an
+attribute, or specific to a list of domains.
 
 To further filter the search results,
 a `doc-filter` function can be supplied in the search option, that takes the

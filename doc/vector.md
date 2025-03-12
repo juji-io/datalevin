@@ -140,10 +140,54 @@ id.
 ### Vector Indexing and Search in Datalog Store
 
 Vectors can be stored in Datalog as attribute values of data type
-`:db.type/vec`.
+`:db.type/vec`. Such attribute may have a property `:db.vec/domains`, indicating
+which vector search domains the attribute should participate. By default, each
+vector attribute is its own domain, with domain name the same as attribute name.
 
-The attribute may have a property `:db.vec/domains`, indicating which
-vector search domains the attribute should be participate.
+A query function `vec-neighbors` is provided to allow vector search in Datalog
+queries. This function takes the DB, the query vector and an optional option map
+(same as `search-vec`), and returns a sequence of matching datoms in the form of
+`[e a v]` for easy destructuring, ordered by similarity to the query vector.
+
+```Clojure
+(let [conn (d/create-conn
+                "/tmp/mydb"
+                {:id        {:db/valueType :db.type/string
+                             :db/unique    :db.unique/identity}
+                 :embedding {:db/valueType :db.type/vec}}
+                {:vector-opts {:dimensions  300
+                               :metric-type :cosine}})]
+    ;; use the same `data` defined above
+    (d/transact! conn [{:id "cat" :embedding (data "cat")}
+                       {:id "rooster" :embedding (data "rooster")}
+                       {:id "jaguar" :embedding (data "jaguar")}
+                       {:id "animal" :embedding (data "animal")}
+                       {:id "physics" :embedding (data "physics")}
+                       {:id "chemistry" :embedding (data "chemistry")}
+                       {:id "history" :embedding (data "history")}])
+    ;; attribute specific search
+    (set (d/q '[:find [?i ...]
+                :in $ ?q
+                :where
+                [(vec-neighbors $ :embedding ?q {:top 4}) [[?e ?a ?v]]]
+                [?e :id ?i]]
+           (d/db conn) (data "cat")))
+
+    ;; domains specific search
+    (set (d/q '[:find [?i ...]
+                :in $ ?q
+                :where
+                [(vec-neighbors $ :?q {:top 4 :domains ["embedding"]}) [[?e _ _]]]
+                [?e :id ?i]]
+           (d/db conn) (data "cat"))))
+;;=>  #{"cat" "jaguar" "animal" "rooster"}
+```
+
+In the above example, we destructure the results into three variables,
+`?e`, `?a` and `?v`.
+
+The search can be specific to an attribute, or specific to a list of domains.
+
 
 ### Search Configurations
 
