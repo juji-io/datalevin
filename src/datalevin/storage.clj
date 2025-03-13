@@ -810,14 +810,11 @@
 
   (actual-a-size [this a]
     (if-let [aid (:db/aid (schema a))]
-      (let [c  (.cardinality this a)
-            as (if (< ^long c ^long c/list-dbi-count-divider)
-                 (lmdb/key-range-list-count
-                   lmdb c/ave
-                   [:closed
-                    (datom->indexable schema (d/datom c/e0 a nil) false)
-                    (datom->indexable schema (d/datom c/emax a nil) true)] :av)
-                 (.size this :ave (d/datom c/e0 a c/v0) (d/datom c/emax a c/vmax)))]
+      (let [as (lmdb/key-range-list-count
+                 lmdb c/ave
+                 [:closed
+                  (datom->indexable schema (d/datom c/e0 a nil) false)
+                  (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
         (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
         as)
       0))
@@ -865,15 +862,13 @@
       lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false) :av))
 
   (av-range-size ^long [this a lv hv] (.av-range-size this a lv hv nil))
-  (av-range-size ^long [this a lv hv cap]
-    (if (< ^long (.cardinality this a) ^long c/list-dbi-count-divider)
-      (lmdb/key-range-list-count
-        lmdb c/ave
-        [:closed
-         (datom->indexable schema (d/datom c/e0 a lv) false)
-         (datom->indexable schema (d/datom c/emax a hv) true)]
-        :av cap)
-      (size this :ave (d/datom c/e0 a lv) (d/datom c/emax a hv) cap)))
+  (av-range-size ^long [_ a lv hv cap]
+    (lmdb/key-range-list-count
+      lmdb c/ave
+      [:closed
+       (datom->indexable schema (d/datom c/e0 a lv) false)
+       (datom->indexable schema (d/datom c/emax a hv) true)]
+      :av cap))
 
   (cardinality [this a]
     (if-let [aid (:db/aid (schema a))]
@@ -1456,7 +1451,7 @@
     (when (identical? vt :db.type/ref)
       (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (identical? vt :db.type/vec)
-      (.add vi-ds [(conjv (props :db.vec/domains) (u/keyword->string attr))
+      (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                    (if giant? [:g [max-gt v]] [:a [e aid v]])]))
     (when (props :db/fulltext)
       (let [v (str v)]
@@ -1503,7 +1498,7 @@
       (when (identical? vt :db.type/ref)
         (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae)))
       (when (identical? vt :db.type/vec)
-        (.add vi-ds [(conjv (props :db.vec/domains) (u/keyword->string attr))
+        (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                      (if gt [:r gt] [:d [e aid v]])])))))
 
 (defn- transact-opts
@@ -1596,7 +1591,7 @@
       (if (identical? valueType :db.type/vec)
         (if (seq domains)
           (listed-vector-domains dms domains vector-opts vector-domains)
-          (let [domain (u/keyword->string attr)]
+          (let [domain (v/attr-domain attr)]
             (assoc dms domain (assoc (get vector-domains domain vector-opts)
                                      :domain domain))))
         dms))

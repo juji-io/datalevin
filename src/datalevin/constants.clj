@@ -173,8 +173,6 @@
 
 (def ^:no-doc ^:const normal 0)  ; non-giant datom
 
-(def ^:no-doc ^:const list-dbi-count-divider 1000) ; sum counts or direct count
-
 ;; dbi-names
 
 ;; kv
@@ -436,6 +434,10 @@ above which, the same number of items will be sampled instead"}
 (def ^{:dynamic true
        :doc     "Change ratio of an attribute's values, beyond which re-sampling will be done"}
   sample-change-ratio 0.05)
+
+(def ^{:dynamic true
+       :doc     "The time budget allocated for counting av ranges, in milliseconds. The counting will stop if it takes longer than this."}
+  range-count-time-budget 20)
 
 ;; search engine
 

@@ -160,7 +160,6 @@
       (let [info (d/vector-index-info index)]
         (is (= (info :size) 277))
         (is (= (info :dimensions) dims)))
-
       (is (= ["king"] (d/search-vec index (vec-data "king") {:top 1})))
       (is (= ["king" "queen"] (d/search-vec index (vec-data "king") {:top 2})))
 
@@ -176,40 +175,47 @@
 (deftest vec-neighbors-fns-test
   (let [dir  (u/tmp-dir (str "vec-fns-" (UUID/randomUUID)))
         conn (d/create-conn
-               dir {:id        {:db/valueType :db.type/string
-                                :db/unique    :db.unique/identity}
-                    :embedding {:db/valueType :db.type/vec}}
+               dir {:chunk/id        {:db/valueType :db.type/string
+                                      :db/unique    :db.unique/identity}
+                    :chunk/embedding {:db/valueType :db.type/vec}}
                {:vector-opts {:dimensions  dims
                               :metric-type :cosine}})]
-    (d/transact! conn [{:id "cat" :embedding (vec-data "cat")}
-                       {:id "rooster" :embedding (vec-data "rooster")}
-                       {:id "jaguar" :embedding (vec-data "jaguar")}
-                       {:id "animal" :embedding (vec-data "animal")}
-                       {:id "physics" :embedding (vec-data "physics")}
-                       {:id "chemistry" :embedding (vec-data "chemistry")}
-                       {:id "history" :embedding (vec-data "history")}])
+    (d/transact! conn [{:chunk/id        "cat"
+                        :chunk/embedding (vec-data "cat")}
+                       {:chunk/id        "rooster"
+                        :chunk/embedding (vec-data "rooster")}
+                       {:chunk/id        "jaguar"
+                        :chunk/embedding (vec-data "jaguar")}
+                       {:chunk/id        "animal"
+                        :chunk/embedding (vec-data "animal")}
+                       {:chunk/id        "physics"
+                        :chunk/embedding (vec-data "physics")}
+                       {:chunk/id        "chemistry"
+                        :chunk/embedding (vec-data "chemistry")}
+                       {:chunk/id        "history"
+                        :chunk/embedding (vec-data "history")}])
     (is (= (set (d/q '[:find [?i ...]
                        :in $ ?q
                        :where
-                       [(vec-neighbors $ :embedding ?q {:top 4}) [[?e _ _]]]
-                       [?e :id ?i]]
+                       [(vec-neighbors $ :chunk/embedding ?q {:top 4}) [[?e _ _]]]
+                       [?e :chunk/id ?i]]
                      (d/db conn) (vec-data "cat")))
            #{"cat" "jaguar" "animal" "rooster"}))
     (is (= (set (d/q '[:find [?i ...]
                        :in $ ?q
                        :where
-                       [(vec-neighbors $ :embedding ?q) [[?e]]]
-                       [?e :id ?i]]
+                       [(vec-neighbors $ :chunk/embedding ?q) [[?e]]]
+                       [?e :chunk/id ?i]]
                      (d/db conn) (vec-data "cat")))
            #{"cat" "jaguar" "animal" "rooster" "physics"
              "chemistry" "history"}))
     (is (= "cat" (d/q '[:find ?i .
                         :in $ ?q
                         :where
-                        [(vec-neighbors $ ?q {:domains ["embedding"]
+                        [(vec-neighbors $ ?q {:domains ["chunk_embedding"]
                                               :top     1})
                          [[?e]]]
-                        [?e :id ?i]]
+                        [?e :chunk/id ?i]]
                       (d/db conn) (vec-data "cat"))))
     (d/close conn)
     (u/delete-files dir)))

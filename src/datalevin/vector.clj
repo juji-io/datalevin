@@ -7,6 +7,7 @@
    [datalevin.constants :as c]
    [datalevin.async :as a]
    [datalevin.bits :as b]
+   [clojure.string :as s]
    [taoensso.nippy :as nippy])
   (:import
    [datalevin.dtlvnative DTLV DTLV$usearch_index_t]
@@ -346,3 +347,5 @@
                  (.-vecs old)
                  (.-max-vec old)
                  (.-search-opts old)))
+
+(defn attr-domain [attr] (s/replace (u/keyword->string attr) "/" "_"))

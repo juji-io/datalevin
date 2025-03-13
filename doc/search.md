@@ -169,12 +169,12 @@ last argument at run time to customize search. It can have these keys:
 is 2,
 * `:proximity-max-dist` is max distance considered for proximity search, default
 is 45,
-* `display` sepcifies how results are displayed, could be one of these:
+* `:display` sepcifies how results are displayed, could be one of these:
    - `:refs` only returns `doc-ref`, the default.
    - `:texts` add the raw text of the documents to the results.
    - `:offsets` add the offsets of the matched tokens to the results.
    - `:texts+offsets` add both texts and offsets to results.
-* `doc-filter` is a boolean function that takes `doc-ref` and determine if to
+* `:doc-filter` is a boolean function that takes `doc-ref` and determine if to
   return the document.
 * `:domains` specifies a list of domains to be searched (see below).
 
@@ -188,11 +188,13 @@ When starting a  Datalog store, a `:search-domains` option can be added to the
 option map, and its value is a map from domain strings to the option maps of each
 search domain.
 
-An attribute with `true` `:db/fulltext` can have a `:db.fulltext/domains`
+An attribute with `:db/fulltext true` can have a `:db.fulltext/domains`
 property that list the domains this attribute participates in. By default, all
-freetext attributes are added to the default `datalevin` domain. In addition, a
-`db.fulltext/autoDomain` property can be set to `true`, so that this attribute
-becomes its own domain automatically.
+freetext attributes are added to the default `datalevin` domain.
+
+These full-text attributes can also be set as `db.fulltext/autoDomain true`, so
+the attribute becomes its own domain automatically, and the domain name is the
+attribute name without `:`.
 
 A `:search-opts` option can be passed to the Datalog store to give default
 search options for `fulltext` function.
