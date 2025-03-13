@@ -177,7 +177,7 @@ queries. This function takes the DB, the query vector and an optional option map
     (set (d/q '[:find [?i ...]
                 :in $ ?q
                 :where
-                [(vec-neighbors $ :?q {:top 4 :domains ["embedding"]}) [[?e _ _]]]
+                [(vec-neighbors $ ?q {:top 4 :domains ["embedding"]}) [[?e _ _]]]
                 [?e :id ?i]]
            (d/db conn) (data "cat"))))
 ;;=>  #{"cat" "jaguar" "animal" "rooster"}
