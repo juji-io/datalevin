@@ -77,9 +77,7 @@
        (= (.-a d) (.-a o))
        (= (.-v d) (.-v o))))
 
-(defn- seq-datom [^Datom d]
-  (list [:e (.-e d)] [:a (.-a d)] [:v (.-v d)] [:tx (datom-tx d)]
-        [:added (datom-added d)]))
+(defn- seq-datom [^Datom d] (list [:e (.-e d)] [:a (.-a d)] [:v (.-v d)]))
 
 (defn- val-at-datom
   [^Datom d k not-found]
@@ -202,20 +200,22 @@
 
 (defn datom-eav [^Datom d] [(.-e d) (.-a d) (.-v d)])
 
+(def datom->vec-xf (map datom-eav))
+
 (nippy/extend-freeze Datom :datalevin/datom
-                     [^Datom x ^DataOutput out]
-                     (.writeLong out (.-e x))
-                     (nippy/freeze-to-out! out (.-a x))
-                     (nippy/freeze-to-out! out (.-v x))
-                     (when-let [tx (.-tx x)]
-                       (nippy/freeze-to-out! out tx)))
+    [^Datom x ^DataOutput out]
+  (.writeLong out (.-e x))
+  (nippy/freeze-to-out! out (.-a x))
+  (nippy/freeze-to-out! out (.-v x))
+  (when-let [tx (.-tx x)]
+    (nippy/freeze-to-out! out tx)))
 
 (nippy/extend-thaw :datalevin/datom
                    [^DataInput in]
-                   (let [vs [(.readLong in)
-                             (nippy/thaw-from-in! in)
-                             (nippy/thaw-from-in! in)]
-                         tx (nippy/thaw-from-in! in)]
+  (let [vs [(.readLong in)
+            (nippy/thaw-from-in! in)
+            (nippy/thaw-from-in! in)]
+        tx (nippy/thaw-from-in! in)]
                      (datom-from-reader (if tx
                                           (conj vs tx)
                                           vs))))

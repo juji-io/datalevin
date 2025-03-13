@@ -1458,9 +1458,29 @@
       (reduce
         (fn [^long sum range]
           (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                           ^long (db/-index-range-size db attr lv hv)))]
-            (if (< s cap) s (reduced cap))))
-        0 ranges))))
+                           ^long (db/-index-range-size db attr lv hv)))
+                ]
+            (if (< s cap)
+              s
+              (reduced cap))))
+        0 ranges))
+    #_(let [start (System/currentTimeMillis)
+            res
+            (unreduced
+              (reduce
+                (fn [^long sum range]
+                  (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                                   ^long (db/-index-range-size db attr lv hv)))
+                        t (- (System/currentTimeMillis) start)]
+                    (if (< s cap)
+                      (if (< t c/range-count-time-budget)
+                        s
+                        (reduced (inc s)))
+                      (reduced cap))))
+                0 ranges))]
+        (println "range-count" attr ":" res "took"
+                 (- (System/currentTimeMillis) start))
+        res)))
 
 (defn- count-node-datoms
   [db {:keys [free bound] :as node}]
@@ -1478,8 +1498,7 @@
           :else              (assoc-in node [k i :count] c))))
     (assoc node :mcount Long/MAX_VALUE)
     (let [flat (fn [k m] (map-indexed (fn [i clause] [k i clause]) m))]
-      (sort-by (fn [[_ _ {:keys [attr]}]] (db/-cardinality db attr))
-               (concat (flat :bound bound) (flat :free free) )))))
+      (concat (flat :bound bound) (flat :free free)))))
 
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
@@ -1647,7 +1666,7 @@
 
 (defn- update-nodes
   [db nodes]
-  (if (= 1 (count nodes))
+  (if (= (count nodes) 1)
     (let [[e node] (first nodes)] {e (count-datoms db e node)})
     (into {} (map+ (fn [e] [e (count-datoms db e (get nodes e))])
                    (keys nodes)))))
@@ -1966,7 +1985,10 @@
                 k      [(.-store db) nodes]]
             (if-let [cached (.get ^LRUCache *plan-cache* k)]
               (assoc-in c [:plan src] cached)
-              (let [nodes (update-nodes db nodes)
+              (let [start (System/currentTimeMillis)
+                    nodes (update-nodes db nodes)
+                    ;; _     (println "update-nodes took"
+                    ;;                (- (System/currentTimeMillis) start))
                     plans (if (< 1 (count nodes))
                             (build-plan* db nodes)
                             [[(base-plan db nodes (ffirst nodes) true)]])]
@@ -2074,14 +2096,25 @@
 (defn- plan-explain
   []
   (when *explain*
-    (vswap! *explain* assoc :planning-time
-            (- (System/nanoTime) ^long *start-time*))))
+    (let [{:keys [^long parsing-time building-time]} @*explain*]
+      (vswap! *explain* assoc :planning-time
+              (- ^long (System/nanoTime)
+                 (+ ^long *start-time* parsing-time building-time))))))
+
+(defn- build-explain
+  []
+  (when *explain*
+    (let [{:keys [^long parsing-time]} @*explain*]
+      (vswap! *explain* assoc :building-time
+              (- ^long (System/nanoTime)
+                 (+ ^long *start-time* parsing-time))))))
 
 ;; TODO improve plan cache
 (defn- planning
   [context]
   (-> context
       build-graph
+      ((fn [c] (build-explain) c))
       build-plan))
 
 (defn -q
@@ -2278,15 +2311,21 @@
    (when *explain* (vswap! *explain* assoc :result result)))
   ([{:keys [graph result-set plan opt-clauses late-clauses run?] :as context}]
    (when *explain*
-     (let [{:keys [^long planning-time]} @*explain*
+     (let [{:keys [^long planning-time ^long parsing-time ^long building-time]}
+           @*explain*
 
-           et (double (/ (- ^long (System/nanoTime)
-                            (+ ^long *start-time* planning-time))
-                         1000000))
-           pt (double (/ planning-time 1000000))]
+           et  (double (/ (- ^long (System/nanoTime)
+                             (+ ^long *start-time* planning-time
+                                parsing-time building-time))
+                          1000000))
+           bt  (double (/ building-time 1000000))
+           plt (double (/ planning-time 1000000))
+           pat (double (/ parsing-time 1000000))]
        (vswap! *explain* assoc
                :actual-result-size (count result-set)
-               :planning-time (format "%.3f" pt)
+               :parsing-time (format "%.3f" pat)
+               :building-time (format "%.3f" bt)
+               :planning-time (format "%.3f" plt)
                :execution-time (format "%.3f" et)
                :opt-clauses opt-clauses
                :query-graph (w/postwalk
@@ -2402,9 +2441,16 @@
       (q* parsed-q inputs))
     (q* parsed-q inputs)))
 
+(defn- parse-explain
+  []
+  (when *explain*
+    (vswap! *explain* assoc :parsing-time
+            (- (System/nanoTime) ^long *start-time*))))
+
 (defn q
   [q & inputs]
   (let [parsed-q (parsed-q q)
+        _        (parse-explain)
         result   (q-result parsed-q inputs)]
     (if (instance? FindRel (:qfind parsed-q))
       (let [limit  (:qlimit parsed-q)
@@ -2417,6 +2463,7 @@
 (defn- plan-only
   [q & inputs]
   (let [parsed-q (parsed-q q)]
+    (parse-explain)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
         (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {})

@@ -24,6 +24,9 @@
 ### Improved
 - [Datalog] Handle pathological case of redundant clauses about the same
   attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
+- [Datalog] Limit the time for counting datoms during planning with a dynamic
+  var `datalevin.constants/range-count-time-budget` in milliseconds, default
+  is 20.
 - [Datalog] Query optimization: move calling of independent query function (i.e.
   not depending on other variables) ahead of planning if the results are
   assigned to a single variable, i.e. turn it into a predicate.

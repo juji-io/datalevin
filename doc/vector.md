@@ -191,18 +191,16 @@ The search can be specific to an attribute, or specific to a list of domains.
 
 ### Search Configurations
 
-The vector search feature can be customized at indexing time and at query time.
-
 #### Search options
 
 `search-vec` and `vec-neighbors` functions support an option map that can be
 passed at run time to customize search:
 
 * `:top`  is the number of results desired, default is 10
-* `display` sepcifies how results are displayed, could be one of these:
+* `:display` sepcifies how results are displayed, could be one of these:
    - `:refs` only returns `vec-ref`, the default.
    - `:refs+dists` add distances to results.
-* `vec-filter` is a boolean function that takes `vec-ref` and determine if to
+* `:vec-filter` is a boolean function that takes `vec-ref` and determine if to
   return it.
 * `:domains` specifies a list of domains to be searched (see below).
 
@@ -210,7 +208,7 @@ passed at run time to customize search:
 
 Vectors can be added to different vector search domains, each corresponding to a
 vector index of its own. The option map of `new-vector-index` has a `:domain`
-that is a string value. If not specified, the default domain is `datalevin`.
+that is a string value. If not specified, the default domain is `"datalevin"`.
 
 When starting a  Datalog store, a `:vector-domains` option can be added to the
 option map, and its value is a map from domain strings to the option maps of each
@@ -221,7 +219,16 @@ options in case `:vector-domans` are not given. Note that `:dimensions` option
 is required for a vector index.
 
 By default, each attribute with type `:db.type/vec` becomes its own domain
-automatically. Such attribute can also have a `:db.vec/domains` property that
+automatically. The domain name follows the following rules:
+
+* for attribute without namespace, the name without `":"` is the domain name,
+  e.g. `:vec` has domain name `"vec"`
+
+* for attribute with namespace, in addition, `"/"` needs to be replaced by
+`"_"`, e.g. `:name/embedding` has domain name `"name_embedding"`.  This is to
+avoid conflict with directory separator `/` on POSIX systems.
+
+Such attribute can also have a `:db.vec/domains` property that
 list additional domains this attribute participates in. Users need to make sure
 the domains an attribute participate in all have the same vector dimensions.
 

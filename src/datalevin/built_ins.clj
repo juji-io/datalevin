@@ -139,11 +139,6 @@
                (st/e-aid-v->datom store d))))
       (s/search engine query opts))))
 
-(def ^:no-doc datom->vec-xf
-  (comp (map seq)
-     (map #(mapv peek %))
-     (map #(vec (take 3 %)))))
-
 (defn fulltext
   "Function that does fulltext search. Returns matching datoms in the form
   of [e a v] for convenient vector destructuring.
@@ -183,12 +178,12 @@
                 {})))
      (sequence
        (comp (mapcat #(fulltext* store lmdb engines query opts %))
-          datom->vec-xf)
+          dd/datom->vec-xf)
        (if (seq domains) domains (keys engines))))))
 
 (defn- vec-neighbors*
   [store lmdb indices query opts domain]
-  (let [index (indices domain)]
+  (when-let [index (indices domain)]
     (sequence
       (map (fn [d]
              (if (clojure.core/= :g (nth d 0))
@@ -223,13 +218,13 @@
          indices      (.-vector-indices store)
          attr?        (keyword? arg1)
          domains      (if attr?
-                        [(u/keyword->string arg1)]
+                        [(v/attr-domain arg1)]
                         (:domains arg2))
          query        (if attr? arg2 arg1)
          opts         (if attr? arg3 arg2)]
      (sequence
        (comp (mapcat #(vec-neighbors* store lmdb indices query opts %))
-          datom->vec-xf)
+          dd/datom->vec-xf)
        (if (and (sequential? domains) (seq domains))
          domains
          (raise "Need a vector search domain." {}))))))
