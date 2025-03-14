@@ -808,7 +808,7 @@
             (.actual-a-size this a)))
       0))
 
-  (actual-a-size [this a]
+  (actual-a-size [_ a]
     (if-let [aid (:db/aid (schema a))]
       (let [as (lmdb/key-range-list-count
                  lmdb c/ave

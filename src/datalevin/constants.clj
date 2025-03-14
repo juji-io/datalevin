@@ -436,8 +436,12 @@ above which, the same number of items will be sampled instead"}
   sample-change-ratio 0.05)
 
 (def ^{:dynamic true
-       :doc     "The time budget allocated for counting av ranges, in milliseconds. The counting will stop if it takes longer than this."}
-  range-count-time-budget 20)
+       :doc     "The time budget allocated for counting av ranges of an attribute, in milliseconds. The counting will stop if it takes longer than this."}
+  range-count-time-budget 10)
+
+(def ^{:dynamic true
+       :doc     "The time measure is taken every this step of iterations when counting."}
+  range-count-iteration-step 1000)
 
 ;; search engine
 

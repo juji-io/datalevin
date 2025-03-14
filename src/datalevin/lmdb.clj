@@ -253,6 +253,7 @@ values;")
   (key-range-list-count
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type cap]
+    [db dbi-name k-range k-type cap budget]
     "Return the total number of list items in the specified key range, does not read values;")
   (range-count
     [db dbi-name k-range]

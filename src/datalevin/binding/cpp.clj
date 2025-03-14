@@ -1002,8 +1002,10 @@
       false))
 
   (key-range-list-count [lmdb dbi-name k-range k-type]
-    (.key-range-list-count lmdb dbi-name k-range k-type nil))
-  (key-range-list-count [lmdb dbi-name [range-type k1 k2] k-type cap]
+    (.key-range-list-count lmdb dbi-name k-range k-type nil nil))
+  (key-range-list-count [lmdb dbi-name k-range k-type cap]
+    (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
+  (key-range-list-count [lmdb dbi-name [range-type k1 k2] k-type cap budget]
     (scan/scan
       (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
             forward           (dtlv-bool (.-forward? ctx))
@@ -1012,11 +1014,18 @@
             sk                (dtlv-val (.-start-bf ctx))
             ek                (dtlv-val (.-stop-bf ctx))]
         (dtlv-c
-          (if cap
+          (cond
+            budget
+            (DTLV/dtlv_key_range_list_count_cap_budget
+              (.ptr ^Cursor cur) cap budget c/range-count-iteration-step
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              forward start end sk ek)
+            cap
             (DTLV/dtlv_key_range_list_count_cap
               (.ptr ^Cursor cur) cap
               (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
               forward start end sk ek)
+            :else
             (DTLV/dtlv_key_range_list_count
               (.ptr ^Cursor cur)
               (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))

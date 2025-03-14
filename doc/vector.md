@@ -165,7 +165,8 @@ queries. This function takes the DB, the query vector and an optional option map
                        {:id "physics" :embedding (data "physics")}
                        {:id "chemistry" :embedding (data "chemistry")}
                        {:id "history" :embedding (data "history")}])
-    ;; attribute specific search
+
+    ;; attribute specific search, `?v` has the retrieved vectors.
     (set (d/q '[:find [?i ...]
                 :in $ ?q
                 :where

@@ -206,13 +206,13 @@
       (a/exec (a/get-executor) (AsyncVecSave. this fname))
       (l/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
 
-  (persist-vecs [_] (VecIdx/save index fname))
+  (persist-vecs [_] (when-not @closed? (VecIdx/save index fname)))
 
   (close-vecs [this]
     (when-not (.closed? this)
       (.persist_vecs this)
-      (swap! l/vector-indices dissoc fname)
       (vreset! closed? true)
+      (swap! l/vector-indices dissoc fname)
       (VecIdx/free index)))
 
   (closed? [_] @closed?)

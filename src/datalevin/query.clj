@@ -1454,33 +1454,23 @@
   [db attr ranges ^long cap]
   (if (identical? ranges :empty-range)
     0
-    (unreduced
-      (reduce
-        (fn [^long sum range]
-          (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                           ^long (db/-index-range-size db attr lv hv)))
-                ]
-            (if (< s cap)
-              s
-              (reduced cap))))
-        0 ranges))
-    #_(let [start (System/currentTimeMillis)
-            res
-            (unreduced
-              (reduce
-                (fn [^long sum range]
-                  (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                                   ^long (db/-index-range-size db attr lv hv)))
-                        t (- (System/currentTimeMillis) start)]
-                    (if (< s cap)
-                      (if (< t c/range-count-time-budget)
-                        s
-                        (reduced (inc s)))
-                      (reduced cap))))
-                0 ranges))]
-        (println "range-count" attr ":" res "took"
-                 (- (System/currentTimeMillis) start))
-        res)))
+    (let [start (System/currentTimeMillis)
+          res
+          (unreduced
+            (reduce
+              (fn [^long sum range]
+                (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                                 ^long (db/-index-range-size db attr lv hv)))
+                      t (- (System/currentTimeMillis) start)]
+                  (if (< s cap)
+                    (if (< t c/range-count-time-budget)
+                      s
+                      (reduced (inc s)))
+                    (reduced cap))))
+              0 ranges))]
+      (println "range-count" attr ":" res "took"
+               (- (System/currentTimeMillis) start))
+      res)))
 
 (defn- count-node-datoms
   [db {:keys [free bound] :as node}]
