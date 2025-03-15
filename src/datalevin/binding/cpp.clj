@@ -236,11 +236,11 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-list-sample [this rtx cur indices [k-range-type k1 k2] k-type
-                        [v-range-type v1 v2] v-type]
+  (iterate-list-sample [this rtx cur indices budget step [k-range-type k1 k2]
+                        k-type [v-range-type v1 v2] v-type]
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
-      (->ListSampleIterable this indices cur rtx ctx)))
+      (->ListSampleIterable this indices budget step cur rtx ctx)))
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
     (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
@@ -340,6 +340,8 @@
 
 (deftype ListSampleIterable [^DBI db
                              ^longs indices
+                             ^long budget
+                             ^long step
                              ^Cursor cur
                              ^Rtx rtx
                              ctx]
@@ -365,7 +367,7 @@
       (dotimes [i samples] (.put sizets i (aget indices i)))
       (Util/checkRc
         (DTLV/dtlv_list_sample_iter_create
-          iter sizets samples (.ptr cur) (.ptr k) (.ptr v)
+          iter sizets samples budget step (.ptr cur) (.ptr k) (.ptr v)
           ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
           ^int forward-val? ^int include-start-val? ^int include-stop-val?
           sv ev))
@@ -1110,13 +1112,13 @@
                            vt raw-pred?))
 
   (visit-list-sample
-    [this list-name indices visitor k-range k-type v-range v-type]
-    (.visit-list-sample this list-name indices visitor k-range k-type v-range
-                        v-type true))
+    [this list-name indices budget step visitor k-range k-type v-range v-type]
+    (.visit-list-sample this list-name indices budget step visitor k-range
+                        k-type v-range v-type true))
   (visit-list-sample
-    [this dbi-name indices visitor k-range kt v-range vt raw-pred?]
-    (scan/visit-list-sample this dbi-name indices visitor k-range kt v-range
-                            vt raw-pred?))
+    [this dbi-name indices budget step visitor k-range kt v-range vt raw-pred?]
+    (scan/visit-list-sample this dbi-name indices budget step visitor k-range
+                            kt v-range vt raw-pred?))
 
   (operate-list-val-range
     [this dbi-name operator v-range vt]

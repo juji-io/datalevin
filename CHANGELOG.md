@@ -18,7 +18,7 @@
   [#317](https://github.com/juji-io/datalevin/issues/317)
 
 ###  Fixed
-- [Datalog] Failure to unify in certain case
+- [Datalog] Failure to unify in certain cases
   [#320](https://github.com/juji-io/datalevin/issues/320)
 
 ### Improved
@@ -29,6 +29,9 @@
   is 10; another dynamic var `datalevin.constants/range-count-iteration-step`
   determines after how many loop iterations to take a time measure, default
   is 1000.
+- [Datalog] Same for sampling with `sample-time-budget` and
+- [Datalog] Reduce the exhaustive plan space to P(n, 2).
+  `sample-iteratioin-step`, defaults are 2 milliseconds and 20000, respectively.
 - [Datalog] Query optimization: move calling of independent query function (i.e.
   not depending on other variables) ahead of planning if the results are
   assigned to a single variable, i.e. turn it into a predicate.

@@ -5,6 +5,7 @@
    [clojure.set :as set]
    [clojure.edn :as edn]
    [clojure.string :as str]
+   [clojure.core.reducers :as rd]
    [clojure+.walk :as w]
    [clojure+.core :refer [cond+]]
    [datalevin.db :as db]
@@ -106,17 +107,18 @@
             db sink attr [[[:closed val] [:closed val]]] nil false)))))
 
   (-sample [_ db _]
-    (let [get-v? (< 1 (count vars))]
-      (if (nil? val)
-        (if range
-          (db/-sample-init-tuples-list db attr mcount range pred get-v?)
-          (cond-> (db/-e-sample db attr)
-            get-v?
-            (#(db/-eav-scan-v-list db % 0 [[attr {:skip? false :pred pred}]]))
-            (not get-v?)
-            (#(db/-eav-scan-v-list db % 0 [[attr {:skip? true :pred pred}]]))))
-        (db/-sample-init-tuples-list
-          db attr mcount [[[:closed val] [:closed val]]] nil false))))
+    (let [get-v? (< 1 (count vars))
+          ]
+      (cond
+        val   (db/-sample-init-tuples-list
+                db attr mcount [[[:closed val] [:closed val]]] nil false)
+        range (db/-sample-init-tuples-list db attr mcount range pred get-v?)
+        :else
+        (cond-> (db/-e-sample db attr)
+          get-v?
+          (#(db/-eav-scan-v-list db % 0 [[attr {:skip? false :pred pred}]]))
+          (not get-v?)
+          (#(db/-eav-scan-v-list db % 0 [[attr {:skip? true :pred pred}]]))))))
 
   (-explain [_ _]
     (str "Initialize " vars " " (cond
@@ -1454,41 +1456,38 @@
   [db attr ranges ^long cap]
   (if (identical? ranges :empty-range)
     0
-    (let [start (System/currentTimeMillis)
-          res
-          (unreduced
-            (reduce
-              (fn [^long sum range]
-                (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                                 ^long (db/-index-range-size db attr lv hv)))
-                      t (- (System/currentTimeMillis) start)]
-                  (if (< s cap)
-                    (if (< t c/range-count-time-budget)
-                      s
-                      (reduced (inc s)))
-                    (reduced cap))))
-              0 ranges))]
-      (println "range-count" attr ":" res "took"
-               (- (System/currentTimeMillis) start))
-      res)))
+    (let [start (System/currentTimeMillis)]
+      (unreduced
+        (reduce
+          (fn [^long sum range]
+            (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                             ^long (db/-index-range-size db attr lv hv)))
+                  t (- (System/currentTimeMillis) start)]
+              (if (< s cap)
+                (if (< t c/range-count-time-budget)
+                  s
+                  (reduced (inc s)))
+                (reduced cap))))
+          0 ranges)))))
 
 (defn- count-node-datoms
-  [db {:keys [free bound] :as node}]
-  (reduce
-    (fn [{:keys [mcount] :as node} [k i {:keys [attr val range]}]]
-      (let [^long c (cond
-                      (some? val) (db/-count db [nil attr val] mcount)
-                      range       (range-count db attr range mcount)
-                      :else       (db/-count db [nil attr nil] mcount))]
-        (cond
-          (zero? c)          (reduced (assoc node :mcount 0))
-          (< c ^long mcount) (-> node
-                                 (assoc-in [k i :count] c)
-                                 (assoc :mcount c :mpath [k i]))
-          :else              (assoc-in node [k i :count] c))))
-    (assoc node :mcount Long/MAX_VALUE)
-    (let [flat (fn [k m] (map-indexed (fn [i clause] [k i clause]) m))]
-      (concat (flat :bound bound) (flat :free free)))))
+  [^DB db {:keys [free bound] :as node}]
+  (let [store (.-store db)]
+    (reduce
+      (fn [{:keys [mcount] :as node} [k i {:keys [attr val range]}]]
+        (let [^long c (cond
+                        (some? val) (s/av-size store attr val) #_ (db/-count db [nil attr val] mcount)
+                        range       (range-count db attr range mcount)
+                        :else       (db/-count db [nil attr nil] mcount))]
+          (cond
+            (zero? c)          (reduced (assoc node :mcount 0))
+            (< c ^long mcount) (-> node
+                                   (assoc-in [k i :count] c)
+                                   (assoc :mcount c :mpath [k i]))
+            :else              (assoc-in node [k i :count] c))))
+      (assoc node :mcount Long/MAX_VALUE)
+      (let [flat (fn [k m] (map-indexed (fn [i clause] [k i clause]) m))]
+        (concat (flat :bound bound) (flat :free free))))))
 
 (defn- count-known-e-datoms
   [db e {:keys [free] :as node}]
@@ -1537,26 +1536,29 @@
 
         know-e? (int? e)
         no-var? (or (not var) (qu/placeholder? var))
-        init    (cond-> (map->InitStep
-                          {:attr attr :vars [e] :out [e]
-                           :mcount (:count clause)})
-                  var     (assoc :pred pred
-                                 :vars (cond-> [e]
-                                         (not no-var?) (conj var))
-                                 :range range)
-                  val     (assoc :val val)
-                  know-e? (assoc :know-e? true)
-                  true    (#(assoc % :cols (if (= 1 (count (:vars %)))
-                                             [e]
-                                             [e #{attr var}])))
-                  (not single?)
-                  (#(if (< ^long c/init-exec-size-threshold ^long mcount)
-                      (assoc % :sample (-sample % db nil))
-                      (assoc % :result (-execute % db nil)))))]
+
+        init (cond-> (map->InitStep
+                        {:attr attr :vars [e] :out [e]
+                         :mcount (:count clause)})
+               var     (assoc :pred pred
+                              :vars (cond-> [e]
+                                      (not no-var?) (conj var))
+                              :range range)
+               val     (assoc :val val)
+               know-e? (assoc :know-e? true)
+               true    (#(assoc % :cols (if (= 1 (count (:vars %)))
+                                          [e]
+                                          [e #{attr var}])))
+
+               (not single?)
+               (#(if (< ^long c/init-exec-size-threshold ^long mcount)
+                   (assoc % :sample (-sample % db nil))
+                   (assoc % :result (-execute % db nil)))))]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [[k i]   mpath
+        (let [
+              [k i]   mpath
               bound1  (mapv (fn [{:keys [val] :as b}]
                               (-> b
                                   (update :pred add-pred #(= val %))
@@ -1754,10 +1756,13 @@
       [step (merge-scan-step db step n-index new-key new-steps)])))
 
 (defn- count-init-follows
-  [db tuples attr index]
-  (reduce
-    (fn [s v] (+ ^long s ^long (db/-count db [nil attr v])))
-    1 (r/projection (s/remove-end-scan tuples) index)))
+  [^DB db tuples attr index]
+  (let [store (.-store db)]
+    (inc
+      (rd/fold
+        +
+        (rd/map #(s/av-size store attr %)
+                (r/projection (s/remove-end-scan tuples) index))))))
 
 (defn- estimate-link-size
   [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
@@ -1832,6 +1837,11 @@
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
   (apply min-key :cost
+         #_(map+ #(binary-plan*
+                    db base-plans ratios prev-plan
+                    (peek (:steps prev-plan)) link-e new-e % new-key)
+                 (filter #(= new-e (:tgt %))
+                         (get-in nodes [link-e :links])))
          (into []
                (comp
                  (filter #(= new-e (:tgt %)))
@@ -1897,18 +1907,23 @@
   (let [n (count component)]
     (if (= n 1)
       [(base-plan db nodes (first component) true)]
-      (let [base-plans (build-base-plans db nodes component)]
+      (let [;start      (System/currentTimeMillis)
+            base-plans (build-base-plans db nodes component)
+            ;; _          (println "base plans took" (- (System/currentTimeMillis) start))
+            ]
         (if (some nil? (vals base-plans))
           [nil]
           (let [pairs  (connected-pairs nodes component)
                 tables (FastList. n)
                 ratios (ConcurrentHashMap.)
                 n-1    (dec n)
-                pn     ^long (u/n-permutations n (if (= n 2) 2 3))]
+                pn     ^long (u/n-permutations n 2)]
             (.add tables base-plans)
             (dotimes [i n-1]
-              (let [plans (plans db nodes pairs base-plans (.get tables i)
+              (let [;start (System/currentTimeMillis)
+                    plans (plans db nodes pairs base-plans (.get tables i)
                                  ratios)]
+                ;; (println "step" i "took" (- (System/currentTimeMillis) start))
                 (if (<= pn (count plans))
                   (.add tables (shrink-space plans))
                   (.add tables plans))))
@@ -1975,13 +1990,14 @@
                 k      [(.-store db) nodes]]
             (if-let [cached (.get ^LRUCache *plan-cache* k)]
               (assoc-in c [:plan src] cached)
-              (let [start (System/currentTimeMillis)
-                    nodes (update-nodes db nodes)
-                    ;; _     (println "update-nodes took"
-                    ;;                (- (System/currentTimeMillis) start))
+              (let [nodes (update-nodes db nodes)
+                    ;; start (System/currentTimeMillis)
                     plans (if (< 1 (count nodes))
                             (build-plan* db nodes)
-                            [[(base-plan db nodes (ffirst nodes) true)]])]
+                            [[(base-plan db nodes (ffirst nodes) true)]])
+                    ;; _     (println "planning " (count nodes) "nodes took"
+                    ;;                (- (System/currentTimeMillis) start))
+                    ]
                 (if (some #(some nil? %) plans)
                   (reduced (assoc c :result-set #{}))
                   (do (.put ^LRUCache *plan-cache* k (strip-result plans))
