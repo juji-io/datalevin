@@ -528,10 +528,11 @@
            {:dbi dbi-name :key-range k-range :val-range v-range})))
 
 (defn visit-list-sample
-  [lmdb dbi-name indices visitor k-range k-type v-range v-type raw-pred?]
+  [lmdb dbi-name indices budget step visitor k-range k-type v-range v-type
+   raw-pred?]
   (scan
-    (let [iterable (l/iterate-list-sample dbi rtx cur indices k-range k-type
-                                          v-range v-type)]
+    (let [iterable (l/iterate-list-sample dbi rtx cur indices budget step
+                                          k-range k-type v-range v-type)]
       (visit* iterable visitor raw-pred? k-type v-type))
     (raise "Fail to visit list sample: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})))

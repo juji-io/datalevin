@@ -445,8 +445,8 @@
   (if sample-indices
     (doseq [val-range val-ranges]
       (lmdb/visit-list-sample
-        lmdb c/ave sample-indices work (ave-key-range aid vt val-range) :av
-        [:all] :eg))
+        lmdb c/ave sample-indices c/sample-time-budget c/sample-iteration-step
+        work (ave-key-range aid vt val-range) :av [:all] :eg))
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
         lmdb c/ave work (ave-key-range aid vt val-range) :av [:all] :eg))))
@@ -808,7 +808,7 @@
             (.actual-a-size this a)))
       0))
 
-  (actual-a-size [this a]
+  (actual-a-size [_ a]
     (if-let [aid (:db/aid (schema a))]
       (let [as (lmdb/key-range-list-count
                  lmdb c/ave
@@ -1311,8 +1311,10 @@
   [^Store store a aid as]
   (let [lmdb (.-lmdb store)
         ts   (FastList.)]
-    (sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
-                       nil false)
+    (binding [c/sample-time-budget    Long/MAX_VALUE
+              c/sample-iteration-step Long/MAX_VALUE]
+      (sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
+                         nil false))
     (lmdb/transact-kv lmdb (map-indexed
                              (fn [i ^objects t]
                                [:put c/meta [aid i] ^long (aget t 0)

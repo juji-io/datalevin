@@ -170,15 +170,17 @@ result size estimation. Instead of relying on statistics based estimations
 using histograms and the like, we count elements directly, because counts in our
 list based triple storage are cheap to obtain. Since the planner is only
 interested in smallest count within one entity class, the counting is capped by
-the current minimum, so the time spent in counting is minimized. Compared with
+the current minimum, so the time spent in counting is minimized. In addition,
+the counting is also bounded by a user configurable time budget. Compared with
 statistics based estimation, counting is simple, accurate and always up to date.
 
 ### Query specific sampling (new)
 
-For large result size, even capped counting is too expensive to perform.
-Sampling is used when result size is expected to be larger than a threshold. To
-ensure representative samples that are specific to the query and data
-distribution, we perform sampling by execution under actual query conditions.
+For large result size, even capped and bounded counting can be too expensive to
+perform. Sampling is used when result size is expected to be larger than a
+threshold. To ensure representative samples that are specific to the query and
+data distribution, we perform sampling by execution under actual query
+conditions.
 
 Using a background thread, each attribute maintains a representative sample of
 entity ids that has it. This is used when an attribute has no condition
