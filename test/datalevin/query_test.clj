@@ -1121,3 +1121,20 @@
            #{[1]}))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest issue-320-test
+  (let [dir  (u/tmp-dir (str "issue-320-" (UUID/randomUUID)))
+        conn (d/get-conn dir)]
+    (d/transact! conn [{:tt 0 :pa "X"}
+                       {:td 0 :pa "X"}])
+    (println (d/datoms (d/db conn) :eav))
+    (is (= (d/q '[:find ?t ?d
+                  :where
+                  [?t :tt]
+                  [?t :pa ?p]
+                  [?d :td]
+                  [?d :pa ?p]]
+                (d/db conn))
+           #{[1 2]}))
+    (d/close conn)
+    (u/delete-files dir)))

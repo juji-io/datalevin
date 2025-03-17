@@ -1464,7 +1464,7 @@
                              ^long (db/-index-range-size db attr lv hv)))
                   t (- (System/currentTimeMillis) start)]
               (if (< s cap)
-                (if (< t c/range-count-time-budget)
+                (if (< t ^long c/range-count-time-budget)
                   s
                   (reduced (inc s)))
                 (reduced cap))))
@@ -1704,7 +1704,7 @@
                                                 true false)
                                        :fidx  nil}])
                      (conj vars v) (conj cols col)])))))
-          (if ip
+          (if (or ip (nil? v1))
             [[[a1 {:pred  ip
                    :skip? (if (and v1 (find-index v1 ncols)) false true)
                    :fidx  nil}]]
@@ -1758,11 +1758,11 @@
 (defn- count-init-follows
   [^DB db tuples attr index]
   (let [store (.-store db)]
-    (inc
+    (u/long-inc
       (rd/fold
         +
-        (rd/map #(s/av-size store attr %)
-                (r/projection (s/remove-end-scan tuples) index))))))
+        (rd/map #(s/av-size store attr (aget ^objects % index))
+                (s/remove-end-scan tuples))))))
 
 (defn- estimate-link-size
   [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
@@ -1907,10 +1907,7 @@
   (let [n (count component)]
     (if (= n 1)
       [(base-plan db nodes (first component) true)]
-      (let [;start      (System/currentTimeMillis)
-            base-plans (build-base-plans db nodes component)
-            ;; _          (println "base plans took" (- (System/currentTimeMillis) start))
-            ]
+      (let [base-plans (build-base-plans db nodes component)]
         (if (some nil? (vals base-plans))
           [nil]
           (let [pairs  (connected-pairs nodes component)
@@ -1920,10 +1917,8 @@
                 pn     ^long (u/n-permutations n 2)]
             (.add tables base-plans)
             (dotimes [i n-1]
-              (let [;start (System/currentTimeMillis)
-                    plans (plans db nodes pairs base-plans (.get tables i)
+              (let [plans (plans db nodes pairs base-plans (.get tables i)
                                  ratios)]
-                ;; (println "step" i "took" (- (System/currentTimeMillis) start))
                 (if (<= pn (count plans))
                   (.add tables (shrink-space plans))
                   (.add tables plans))))
@@ -1991,13 +1986,9 @@
             (if-let [cached (.get ^LRUCache *plan-cache* k)]
               (assoc-in c [:plan src] cached)
               (let [nodes (update-nodes db nodes)
-                    ;; start (System/currentTimeMillis)
                     plans (if (< 1 (count nodes))
                             (build-plan* db nodes)
-                            [[(base-plan db nodes (ffirst nodes) true)]])
-                    ;; _     (println "planning " (count nodes) "nodes took"
-                    ;;                (- (System/currentTimeMillis) start))
-                    ]
+                            [[(base-plan db nodes (ffirst nodes) true)]])]
                 (if (some #(some nil? %) plans)
                   (reduced (assoc c :result-set #{}))
                   (do (.put ^LRUCache *plan-cache* k (strip-result plans))
@@ -2102,7 +2093,7 @@
 (defn- plan-explain
   []
   (when *explain*
-    (let [{:keys [^long parsing-time building-time]} @*explain*]
+    (let [{:keys [^long parsing-time ^long building-time]} @*explain*]
       (vswap! *explain* assoc :planning-time
               (- ^long (System/nanoTime)
                  (+ ^long *start-time* parsing-time building-time))))))
