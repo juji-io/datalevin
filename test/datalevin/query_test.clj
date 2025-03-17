@@ -1127,7 +1127,6 @@
         conn (d/get-conn dir)]
     (d/transact! conn [{:tt 0 :pa "X"}
                        {:td 0 :pa "X"}])
-    (println (d/datoms (d/db conn) :eav))
     (is (= (d/q '[:find ?t ?d
                   :where
                   [?t :tt]
