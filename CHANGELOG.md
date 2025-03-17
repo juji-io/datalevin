@@ -9,46 +9,40 @@
   indexing is implemented with [usearch](https://github.com/unum-cloud/usearch).
 - [Vector] Corresponding `add-vec`, `remove-vec`, and `search-vec` functions to
   work with vector index. Similar to full-text search, vector search also
-  support domain semantics to allow grouping of vectors into domains.
-- [Datalog] New data type `:db.type/vec` for which a vector index is
+  support domain semantics to allow grouping of vectors into domains, see
+  [doc](doc/vector.md).
+- [Datalog] New data type `:db.type/vec`, for which a vector index is
   automatically created for them to allow a query function `vec-neighbors` to
   return the datoms with neighboring vector values.
   [#145](https://github.com/juji-io/datalevin/issues/145)
-- [Search] Support boosting terms in search expression
-  [#317](https://github.com/juji-io/datalevin/issues/317)
 
 ###  Fixed
-- [Datalog] Failure to unify in certain cases
+- [Datalog] Correctly handle certain case of attribute without value.
   [#320](https://github.com/juji-io/datalevin/issues/320)
 
 ### Improved
-- [Datalog] Handle pathological case of redundant clauses about the same
-  attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
 - [Datalog] Limit the time for counting datoms during planning with a dynamic
   var `datalevin.constants/range-count-time-budget` in milliseconds, default
   is 10; another dynamic var `datalevin.constants/range-count-iteration-step`
   determines after how many loop iterations to take a time measure, default
   is 1000.
 - [Datalog] Same for sampling with `sample-time-budget` and
-- [Datalog] Reduce the exhaustive plan space to P(n, 2).
   `sample-iteratioin-step`, defaults are 2 milliseconds and 20000, respectively.
-- [Datalog] Query optimization: move calling of independent query function (i.e.
-  not depending on other variables) ahead of planning if the results are
-  assigned to a single variable, i.e. turn it into a predicate.
-- [Search] Don't throw when attempting to index docs in parallel. We cannot
-  prevent users from accidentally running `add-doc` in parallel.
-  [#315](https://github.com/juji-io/datalevin/issues/315)
+- [Datalog] Reduce the exhaustive plan space to P(n, 2).
+- [Datalog] Add `:parsing-time` for query parsing and `:building-time` for query
+  graph building to `explain` results.
 - [Search] Dump data to file when `re-index` to save memory.
 - [KV] Periodically flush to disk, with an interval set by dynamic var
   `datalevin.constants/lmdb-sync-interval` in seconds, default is 300. This also
   cleans up dead readers.
 - [KV] Remove the semaphore for preventing "Environment maxreaders limit
   reached" error, as it hurts read performance. User should be careful with
-  functions such as `pmap` for parallel read operation, as they use unbounded
-  thread pools. User can use a semaphore to limit the number of read threads in
-  flight, or use a bounded thread pool. If needed, `:max-readers` KV option can
-  also be set to increase the limit (default is now doubled to 256).
-- [Doc] Add `built-ins` namespace to cljdoc.
+  functions such as `pmap` and `future`for parallel read operation, as they use
+  unbounded thread pools. User can use a semaphore to limit the number of read
+  threads in flight, or use a bounded thread pool. If needed, `:max-readers` KV
+  option can also be set to increase the limit (default is now doubled to
+  256).
+- [Doc] Add `built-ins` namespace for query functions to cljdoc.
 
 ## 0.9.20 (2025-02-19)
 
