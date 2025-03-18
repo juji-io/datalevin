@@ -2,7 +2,7 @@
   "Code interpreter, including functions and macros useful for command line
   and query/transaction functions."
   (:require
-   [clojure+.walk :as w]
+   [clojure.walk :as w]
    [clojure.set :as set]
    [clojure.pprint :as p]
    [clojure.java.io :as io]

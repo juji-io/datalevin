@@ -13,7 +13,7 @@
    [datalevin.db :as db]
    [datalevin.storage :as st]
    [clojure.java.io :as io]
-   [clojure+.walk :as w])
+   [clojure.walk :as w])
   (:import
    [java.io PushbackInputStream]
    [java.nio.charset StandardCharsets]

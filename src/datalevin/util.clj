@@ -2,7 +2,7 @@
   "Utility functions"
   (:refer-clojure :exclude [seqable? merge-with find])
   (:require
-   [clojure+.walk :as walk]
+   [clojure.walk :as walk]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
@@ -75,6 +75,14 @@
        (ex-info
          (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))
          ~data))))
+
+(defmacro cond+ [& clauses]
+  (when-some [[test expr & rest] clauses]
+    (case test
+      :do   `(do ~expr (cond+ ~@rest))
+      :let  `(let ~expr (cond+ ~@rest))
+      :some `(or ~expr (cond+ ~@rest))
+      `(if ~test ~expr (cond+ ~@rest)))))
 
 ;; files
 

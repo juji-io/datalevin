@@ -3,8 +3,7 @@
   (:require
    [datalevin.built-ins :as built-ins]
    [datalevin.db :as db]
-   [datalevin.util :as u :refer [raise]]
-   [clojure+.core :refer [cond+]]))
+   [datalevin.util :as u :refer [raise cond+]]))
 
 (defrecord PullAttr [as default limit name pattern recursion-limit recursive?
                      reverse? xform multival? ref? component?])

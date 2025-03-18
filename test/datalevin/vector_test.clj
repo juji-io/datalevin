@@ -13,11 +13,10 @@
 
 (use-fixtures :each db-fixture)
 
-(def random (Random.))
-
 (defn- rand-float-vec
   [^long n]
-  (let [v (float-array n)]
+  (let [random (Random.)
+        v      (float-array n)]
     (dotimes [i n] (aset v i (.nextFloat ^Random random)))
     v))
 

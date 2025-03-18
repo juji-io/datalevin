@@ -6,8 +6,7 @@
    [datalevin.constants :as c]
    [datalevin.datom :as dd]
    [datalevin.timeout :as timeout]
-   [datalevin.util :as u]
-   [clojure+.core :refer [cond+]])
+   [datalevin.util :as u :refer [cond+]])
   (:import
    [datalevin.db DB]
    [datalevin.utl LRUCache]

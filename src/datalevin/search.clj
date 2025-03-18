@@ -2,7 +2,7 @@
   "Full-text search engine"
   (:require
    [datalevin.lmdb :as l]
-   [datalevin.util :as u :refer [raise conjs]]
+   [datalevin.util :as u :refer [cond+ raise conjs]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.analyzer :as a]
@@ -11,8 +11,7 @@
    [taoensso.nippy :as nippy]
    [clojure.set :as set]
    [clojure.string :as s]
-   [clojure+.walk :as walk]
-   [clojure+.core :refer [cond+]])
+   [clojure.walk :as walk])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]

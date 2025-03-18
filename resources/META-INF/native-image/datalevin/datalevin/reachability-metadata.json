@@ -192,6 +192,9 @@
             "type": "datalevin.cpp.Util"
         },
         {
+            "type": "datalevin.cpp.VecIdx"
+        },
+        {
             "type": "datalevin.cpp.Util$BadReaderLockException"
         },
         {

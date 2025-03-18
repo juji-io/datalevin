@@ -2,14 +2,13 @@
   "Datalog DB abstraction"
   (:refer-clojure :exclude [update assoc])
   (:require
-   [clojure+.walk]
-   [clojure+.core :refer [cond+]]
+   [clojure.walk]
    [clojure.data]
    [clojure.set]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax v0 vmax]]
    [datalevin.datom :as d :refer [datom datom-added datom?]]
    [datalevin.util :as u
-    :refer [case-tree raise defrecord-updatable conjv conjs concatv]]
+    :refer [case-tree raise defrecord-updatable conjv conjs concatv cond+]]
    [datalevin.storage :as s]
    [datalevin.lmdb :as l]
    [datalevin.bits :as b]

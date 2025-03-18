@@ -2,11 +2,10 @@
   "Rules evaluation engine"
   (:require
    [clojure.edn :as edn]
-   [clojure+.walk :as walk]
-   [clojure+.core :refer [cond+]]
+   [clojure.walk :as walk]
    [datalevin.parser :as dp]
    [datalevin.query-util :as qu]
-   [datalevin.util :as u :refer [raise conjv concatv]]
+   [datalevin.util :as u :refer [cond+ raise conjv concatv]]
    [datalevin.relation :as r]))
 
 ;; stratification
