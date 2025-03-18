@@ -47,12 +47,12 @@ jobs:
           echo "Generated JAR files:"
           ls -l target/*.jar
 
-      - name: Upload Uberjar
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
-          overwrite: true
+      # - name: Upload Uberjar
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+      #     overwrite: true
 
       - name: Setup Graalvm
         uses: graalvm/setup-graalvm@v1
