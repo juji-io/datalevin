@@ -10,7 +10,6 @@
          nrepl/bencode                                 {:mvn/version "1.2.0"}
          org.babashka/sci                              {:mvn/version "0.9.44"}
          org.clojure/tools.cli                         {:mvn/version "1.1.230"}
-         io.github.tonsky/clojure-plus                 {:mvn/version "1.2.0"}
          org.clojars.huahaiy/dtlvnative-macosx-arm64   {:mvn/version "0.12.8"}
          org.clojars.huahaiy/dtlvnative-macosx-x86_64  {:mvn/version "0.12.8"}
          org.clojars.huahaiy/dtlvnative-linux-arm64    {:mvn/version "0.12.8"}
