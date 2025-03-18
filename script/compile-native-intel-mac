@@ -1,0 +1,37 @@
+#!/bin/bash
+
+set -eou pipefail
+
+if [ -z "$GRAALVM_HOME" ]; then
+    echo "Please set GRAALVM_HOME"
+    exit 1
+fi
+
+export JAVA_HOME=$GRAALVM_HOME
+export PATH=$GRAALVM_HOME/bin:$PATH
+
+echo $JAVA_HOME
+
+args_app=(
+    "--verbose"
+    "--native-compiler-path=/usr/local/opt/llvm/bin/clang"
+    "-jar" "target/main.uberjar.jar"
+    "-H:Name=dtlv"
+)
+
+args_test0=(
+    "--verbose"
+    "--native-compiler-path=/usr/local/opt/llvm/bin/clang"
+    "-jar" "target/test0.uberjar.jar"
+    "-H:Name=dtlv-test0"
+)
+
+lein clean
+lein with-profile native-uberjar uberjar
+
+"$GRAALVM_HOME/bin/native-image" "${args_app[@]}"
+
+lein clean
+lein with-profile test0-uberjar uberjar
+
+"$GRAALVM_HOME/bin/native-image" "${args_test0[@]}"

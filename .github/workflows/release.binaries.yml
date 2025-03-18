@@ -66,7 +66,7 @@ jobs:
         with:
           macos: |
             export DTLV_OS=macos
-            bash script/compile-native
+            bash script/compile-native-intel-mac
           linux: |
             export DTLV_OS=linux
             bash script/compile-native-linux
