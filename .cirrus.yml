@@ -6,16 +6,16 @@ env:
 task:
   name: Linux ARM64 Build
   arm_container:
-    image: ubuntu:focal
+    image: ubuntu:latest
     memory: 8G
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: linux
   script: |
 
     DEBIAN_FRONTEND=noninteractive apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar zlib1g-dev build-essential locales p7zip-full
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl git wget tar zlib1g-dev build-essential locales p7zip-full g++-12 gcc-12
 
     locale-gen en_US en_US.UTF-8
     dpkg-reconfigure locales
@@ -51,19 +51,19 @@ task:
     chmod +x install
     ./install
 
-    bb --config .build/bb.edn release-artifact
+    # bb --config .build/bb.edn release-artifact
 
 task:
   name: MacOS ARM64 Build
   macos_instance:
     image: ghcr.io/cirruslabs/macos-runner:sonoma
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: macos
   script: |
 
-    brew install leiningen
+    brew install leiningen libomp llvm
     lein run
 
     script/install-graalvm
@@ -85,4 +85,4 @@ task:
 
     brew install borkdude/brew/babashka
 
-    bb --config .build/bb.edn release-artifact
+    # bb --config .build/bb.edn release-artifact
