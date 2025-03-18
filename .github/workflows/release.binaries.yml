@@ -34,7 +34,7 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: |
-            brew install leiningen
+            brew install leiningen libomp llvm
           linux: |
             curl -O https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
             chmod a+x lein
