@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+
+### Improved
+
+- [Vector] Defer closing of vector indices until after async executor is
+  shutdown to avoid segfault due to trying to save a closed index.
+
 ## 0.9.21 (2025-03-18)
 
 ### Added
@@ -9,8 +16,9 @@
   indexing is implemented with [usearch](https://github.com/unum-cloud/usearch).
 - [Vector] Corresponding `add-vec`, `remove-vec`, and `search-vec` functions to
   work with vector index. Similar to full-text search, vector search also
-  support domain semantics to allow grouping of vectors into domains, see
-  [doc](doc/vector.md).
+  support domain semantics to allow grouping of vectors into domains.
+- [Doc] [Vector doc](doc/vector.md). **Note**, you may need to install some
+  native dependencies on your system to load Datalevin: OpenMP and Vector Math.
 - [Datalog] New data type `:db.type/vec`, for which a vector index is
   automatically created for them to allow a query function `vec-neighbors` to
   return the datoms with neighboring vector values.

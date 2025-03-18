@@ -56,6 +56,21 @@ For `dep.edn`, this is known to work:
 ```
 Then `clj -A:jvm-base`
 
+### Native Dependencies
+
+For now, Datalevin requires some system libraries to be present, such as `libc`,
+`libomp`, and `libmvec`. These are easy to get:
+
+* Linux needs [OpenMP](https://www.openmp.org/) and [Vectorized
+  Math](https://sourceware.org/glibc/wiki/libmvec) from GCC, e.g. on
+  Debian/Ubuntu, `apt-get install g++-12 gcc-12`
+
+* MacOSX needs the same libraries as the above from Clang, e.g. `brew
+  install libomp llvm`
+
+Otherwise, Datalevin may fail to load and report
+`java.lang.UnsatisfiedLinkError`.
+
 ### Other JVM Languages
 
 Datalevin can be used in other JVM languages than Clojure, such as Java, Scala, Kotlin,

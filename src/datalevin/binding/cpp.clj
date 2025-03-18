@@ -556,8 +556,6 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
-      (doseq [idx (keep @l/vector-indices (u/list-files (.dir this)))]
-        (v/close-vecs idx))
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
@@ -565,6 +563,8 @@
         (u/shutdown-scheduler))
       (.sync env 1)
       (.close env)
+      (doseq [idx (keep @l/vector-indices (u/list-files (.dir this)))]
+        (v/close-vecs idx))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
