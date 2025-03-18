@@ -15,15 +15,19 @@ echo $JAVA_HOME
 args_app=(
     "--verbose"
     "--native-compiler-path=$(brew --prefix llvm)/bin/clang"
-    "--native-compiler-options='-I$(brew --prefix llvm)/include -L$(brew --prefix llvm)/lib'"
+    "--native-compiler-options=-I$(brew --prefix llvm)/include"
+    "--native-compiler-options=-L$(brew --prefix llvm)/lib"
+    "-H:-CheckToolchain"  # Disable toolchain validation
     "-jar" "target/main.uberjar.jar"
     "-H:Name=dtlv"
 )
 
 args_test0=(
     "--verbose"
-    "--native-compiler-path=/usr/local/opt/llvm/bin/clang"
-    "--native-compiler-options='-I$(brew --prefix llvm)/include -L$(brew --prefix llvm)/lib'"
+    "--native-compiler-path=$(brew --prefix llvm)/bin/clang"
+    "--native-compiler-options=-I$(brew --prefix llvm)/include"
+    "--native-compiler-options=-L$(brew --prefix llvm)/lib"
+    "-H:-CheckToolchain"  # Disable toolchain validation
     "-jar" "target/test0.uberjar.jar"
     "-H:Name=dtlv-test0"
 )
