@@ -1,12 +1,12 @@
 name: Build
 
-# on: push
+on: push
 # on: workflow_dispatch
-on:
-  workflow_dispatch:
-  release:
-    types:
-      - created
+# on:
+#   workflow_dispatch:
+#   release:
+#     types:
+#       - created
 
 env:
   DTLV_ARCH: amd64
@@ -16,7 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-13, ubuntu-22.04]
 
     steps:
       - name: Checkout repository and submodules
@@ -69,7 +69,7 @@ jobs:
             bash script/compile-native
           linux: |
             export DTLV_OS=linux
-            bash script/compile-native
+            bash script/compile-native-linux
 
       - name: Run Native Tests
         run: |
@@ -79,9 +79,9 @@ jobs:
         run: |
           7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
 
-      - name: Upload Binary
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
-          overwrite: true
+      # - name: Upload Binary
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+      #     overwrite: true

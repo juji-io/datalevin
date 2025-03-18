@@ -13,11 +13,21 @@ stores, such as clickhouse, DuckDB, and so on.
 With this feature, Datalevin can be used as a vector database to support
 applications such as semantic search, image search, retrieval augmented
 generation (RAG), and so on. This feature is currently available on Linux and
-MacOS on both x86_64 and arm64 CPUs.
+MacOSX on both x86_64 and arm64 CPUs.
+
+## Native Dependencies
+
+The vector feature expects some native dependencies on your system.
+
+* Linux on arm64 and x86_64, needs OpenMP and Vectorized Math from GCC,
+  e.g. on latest Debian/Ubuntu, `apt-get install g++-12 gcc-12`
+
+* MacOSX on arm64 and x86_64, needs the same from Clang, e.g. `brew install libomp llvm`
 
 ## Configurations
 
-These configurable options can be set when creating the vector index:
+These configurable options can be set when creating the vector index using
+Datalevin:
 
 * `:dimensions`, the number of dimensions of the vectors. **Required**, no
   default.

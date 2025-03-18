@@ -38,7 +38,7 @@ task:
     export JAVA_OPTS="-Xmx8g -XX:+UseG1GC"
     lein run
 
-    script/compile-native
+    script/compile-native-linux
 
     ./dtlv-test0
 
