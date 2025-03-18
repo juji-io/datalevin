@@ -185,7 +185,8 @@ conditions.
 Using a background thread, each attribute maintains a representative sample of
 entity ids that has it. This is used when an attribute has no condition
 constraining it in the query. Otherwise, online sampling is performed during
-query. Both use reservoir sampling methods.
+query. Both use reservoir sampling methods. Similar to counting, online sampling
+is also bounded by a user configurable time budget.
 
 A sample of base entity IDs are collected first, then merge scans are performed
 to obtain base selectivity ratios. Finally, the selectivity of all possible two
@@ -197,7 +198,7 @@ effective, so we sample base and 2-way join selectivity only.
 ### Dynamic plan search policy (new)
 
 The plan search space initially include all possible join orders as our joins
-are directional.  When the number of plans considered reaches `P(n, 3)`, the
+are directional.  When the number of plans considered reaches `P(n, 2)`, the
 planner turns the search policy from an exhaustive search to a greedy one. The
 reason is that size estimation of only the initial two joins are absolutely
 accurate, so a planning space larger than that afterwards does not need to be

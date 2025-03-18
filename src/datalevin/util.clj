@@ -7,7 +7,7 @@
    [clojure.java.io :as io])
   (:import
    [datalevin.utl LRUCache]
-   [clojure.lang IEditableCollection IPersistentSet ITransientSet IKVReduce
+   [clojure.lang IEditableCollection IPersistentSet ITransientSet
     IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays Iterator List]
@@ -452,14 +452,6 @@
         i
         (recur (inc i) (rest xs))))))
 
-;; lifted from https://github.com/bsless/clj-fast/blob/master/src/clj_fast/core.clj
-(defmacro as
-  [tag sym]
-  (if (symbol? sym)
-    (let [tag (if (class? tag) (.getName ^Class tag) (str tag))]
-      `(with-meta ~sym {:tag ~tag}))
-    sym))
-
 (defn merge-with
   [f & maps]
   (if (empty? maps)
@@ -623,7 +615,7 @@
   {:pre [(<= r n)]}
   (/ ^long (factorial n) ^long (factorial (- n r))))
 
-;; (def map+ map)
+#_(def map+ map)
 (defn map+
   "parallel map using query-thread-pool"
   ([f coll]

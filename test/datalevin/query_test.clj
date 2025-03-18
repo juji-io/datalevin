@@ -1122,6 +1122,33 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest issue-319-test
+  (let [dir  (u/tmp-dir (str "issue-320-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:block/uid  {:db/unique :db.unique/identity}
+                              :node/title {:db/unique :db.unique/identity}
+                              :block/refs {:db/valueType   :db.type/ref
+                                           :db/cardinality :db.cardinality/many}})]
+    (d/transact! conn [{:db/id -1 :block/uid "test"}
+                       {:db/id -2 :block/refs -1}])
+    (is (= (d/q '[:find ?SBlock
+                  :where
+                  [?ParentPage :block/uid "test"]
+                  [?SPage :node/title "Opposed By"]
+                  [?ParentPage :block/uid ?some-uid]
+                  [?SBlock :block/refs ?SPage]]
+                @conn)
+           #{}))
+    (is (= (d/q '[:find ?SPage
+                  :where
+                  [?ParentPage :block/uid "test"]
+                  [?SPage :node/title "Opposed By"]
+                  [?ParentPage :block/uid ?some-uid]
+                  ]
+                @conn)
+           #{}))
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest issue-320-test
   (let [dir  (u/tmp-dir (str "issue-320-" (UUID/randomUUID)))
         conn (d/get-conn dir)]

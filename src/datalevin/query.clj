@@ -1377,8 +1377,8 @@
     graph))
 
 (defn- free->bound
-  "cases where free var can be rewritten as bound.
-  * like pattern is free of wildcards"
+  "cases where free var can be rewritten as bound:
+    * like pattern is free of wildcards"
   [graph clause v]
   (w/postwalk
     (fn [m]
@@ -1440,8 +1440,7 @@
     ...
     }}
 
-  Remaining clauses are in :late-clauses.
-  "
+  Remaining clauses are in :late-clauses. "
   [context]
   (-> context
       split-clauses
@@ -1476,7 +1475,7 @@
     (reduce
       (fn [{:keys [mcount] :as node} [k i {:keys [attr val range]}]]
         (let [^long c (cond
-                        (some? val) (s/av-size store attr val) #_ (db/-count db [nil attr val] mcount)
+                        (some? val) (s/av-size store attr val)
                         range       (range-count db attr range mcount)
                         :else       (db/-count db [nil attr nil] mcount))]
           (cond
@@ -1538,8 +1537,8 @@
         no-var? (or (not var) (qu/placeholder? var))
 
         init (cond-> (map->InitStep
-                        {:attr attr :vars [e] :out [e]
-                         :mcount (:count clause)})
+                       {:attr attr :vars [e] :out [e]
+                        :mcount (:count clause)})
                var     (assoc :pred pred
                               :vars (cond-> [e]
                                       (not no-var?) (conj var))
@@ -1557,8 +1556,7 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [
-              [k i]   mpath
+        (let [[k i]   mpath
               bound1  (mapv (fn [{:keys [val] :as b}]
                               (-> b
                                   (update :pred add-pred #(= val %))
@@ -1586,10 +1584,10 @@
                               attrs vars))
               ires    (:result init)
               isp     (:sample init)
-              merge   (MergeScanStep. 0 attrs-v vars [e] [e] cols nil nil)]
-          (cond-> merge
-            ires (assoc :result (-execute merge db ires))
-            isp  (assoc :sample (-sample merge db isp))))))))
+              step    (MergeScanStep. 0 attrs-v vars [e] [e] cols nil nil)]
+          (cond-> step
+            ires (assoc :result (-execute step db ires))
+            isp  (assoc :sample (-sample step db isp))))))))
 
 (def default-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
 
@@ -1680,9 +1678,8 @@
         ncols    (:cols (peek new-steps))
         [s1 s2]  new-steps
         val1     (:val s1)
-        vars1    (:vars s1)
+        [_ v1]   (:vars s1)
         a1       (:attr s1)
-        v1       (when (< 1 (count vars1)) (peek vars1))
         ip       (cond-> (add-back-range v1 s1)
                    (some? val1) (add-pred #(= % val1)))
         attrs-v2 (:attrs-v s2)
@@ -1837,11 +1834,6 @@
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
   (apply min-key :cost
-         #_(map+ #(binary-plan*
-                    db base-plans ratios prev-plan
-                    (peek (:steps prev-plan)) link-e new-e % new-key)
-                 (filter #(= new-e (:tgt %))
-                         (get-in nodes [link-e :links])))
          (into []
                (comp
                  (filter #(= new-e (:tgt %)))
@@ -2041,21 +2033,6 @@
     (save-intermediates context steps pipes tuples)
     (r/relation! attrs tuples)))
 
-(defn- step-by-step
-  "for debugging"
-  [context db attrs steps]
-  (let [[f & r] steps
-        fres    (-execute f db nil)
-        sinks   (volatile! [fres])
-        tuples  (reduce
-                  (fn [ts step]
-                    (let [res (-execute step db ts)]
-                      (vswap! sinks conj res)
-                      res))
-                  fres r)]
-    (save-intermediates context steps (object-array @sinks) tuples)
-    (r/relation! attrs tuples)))
-
 (defn- execute-steps
   "execute all steps of a component's plan to obtain a relation"
   [context db steps]
@@ -2070,7 +2047,6 @@
               tuples (-execute (peek steps) db src)]
           (save-intermediates context steps (object-array [src]) tuples)
           (r/relation! attrs tuples))
-      ;; (step-by-step context db attrs steps)
       (pipelining context db attrs steps n))))
 
 (defn- execute-plan
@@ -2284,7 +2260,8 @@
         (let [v (const-v patterns)]
           (reduce
             (fn [c pattern]
-              (let [idx (u/index-of #(= pattern %) patterns)]
+              (let [origs (get-in c [:parsed-q :qorig-where])
+                    idx   (u/index-of #(= pattern %) origs)]
                 (-> c
                     (update-in [:parsed-q :qwhere] #(remove #{pattern} %))
                     (update-in [:parsed-q :qorig-where]
