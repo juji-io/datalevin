@@ -14,14 +14,16 @@ echo $JAVA_HOME
 
 args_app=(
     "--verbose"
-    "-H:Compiler=/usr/bin/gcc-12"
+    "-H:+UseNativeToolchain"
+    "-H:CC=/usr/bin/gcc-12"
     "-jar" "target/main.uberjar.jar"
     "-H:Name=dtlv"
 )
 
 args_test0=(
     "--verbose"
-    "-H:Compiler=/usr/bin/gcc-12"
+    "-H:+UseNativeToolchain"
+    "-H:CC=/usr/bin/gcc-12"
     "-jar" "target/test0.uberjar.jar"
     "-H:Name=dtlv-test0"
 )
