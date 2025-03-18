@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.21 (2025-03-18)
 
 ### Added
 - [Vector] `new-vector-index` function creates an on-disk index for equal-length
