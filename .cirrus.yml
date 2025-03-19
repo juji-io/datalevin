@@ -22,7 +22,7 @@ task:
 
     script/install-graalvm
 
-    export GRAALVM_HOME=$HOME/graalvm-jdk
+    export GRAALVM_HOME=$PWD/graalvm-jdk
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
@@ -70,7 +70,7 @@ task:
 
     script/install-graalvm
 
-    export GRAALVM_HOME=$HOME/graalvm-jdk/Contents/Home
+    export GRAALVM_HOME=$PWD/graalvm-jdk/Contents/Home
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
