@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.22 (2025-03-18)
 
 ### Improved
 
