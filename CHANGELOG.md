@@ -25,6 +25,8 @@
   [#145](https://github.com/juji-io/datalevin/issues/145)
 
 ###  Fixed
+- [Datalog] Handle pathological case of redundant clauses about the same
+  attribute. [#319](https://github.com/juji-io/datalevin/issues/319)
 - [Datalog] Correctly handle certain case of attribute without value.
   [#320](https://github.com/juji-io/datalevin/issues/320)
 
