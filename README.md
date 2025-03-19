@@ -24,7 +24,7 @@ src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=tr
 alt="datalevin windows build status"></img></a>
 <a href="https://cirrus-ci.com/github/juji-io/datalevin"><img
 src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg" alt="datalevin
-apple silicon build status"></img></a>
+arm64 build status"></img></a>
 </p>
 
 
@@ -76,8 +76,8 @@ built-in support of asynchronous transaction, Datalevin can handle
 [write](benchmarks/write-bench) intensive workload, as well as storing large
 documents.
 
-Datalevin support [vector database](doc/vector.md) features by integrating an
-efficient vector indexing and search
+Datalevin supports [vector database](doc/vector.md) features by integrating an
+efficient SIMD accelerated vector indexing and search
 [library](https://github.com/unum-cloud/usearch).
 
 Datalevin has a [novel full-text search engine](doc/search.md) that has

@@ -7,7 +7,7 @@ on these vectors based on various similarity metrics.
 This functionality is developed on the basis of
 [usearch](https://github.com/unum-cloud/usearch) library, which is an
 implementation of Hierarchical Navigable Small World (HNSW) graph algorithm [1].
-usearch leverages vector instructions in CPUs and is used in several OLAP
+usearch leverages SIMD vector instructions in CPUs and is used in several OLAP
 stores, such as clickhouse, DuckDB, and so on.
 
 With this feature, Datalevin can be used as a vector database to support

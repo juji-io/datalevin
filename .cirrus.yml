@@ -8,8 +8,8 @@ task:
   arm_container:
     image: ubuntu:latest
     memory: 8G
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: linux
   script: |
@@ -42,10 +42,8 @@ task:
 
     ./dtlv-test0
 
-    # export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-ubuntu-latest-aarch64.zip"
-    # export DTLV_TAG="${CIRRUS_TAG}"
-    export DTLV_ARCHIVE="dtlv-0.9.22-ubuntu-latest-aarch64.zip"
-    export DTLV_TAG="0.9.22"
+    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-ubuntu-latest-aarch64.zip"
+    export DTLV_TAG="${CIRRUS_TAG}"
 
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
@@ -59,8 +57,8 @@ task:
   name: MacOS ARM64 Build
   macos_instance:
     image: ghcr.io/cirruslabs/macos-runner:sonoma
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: macos
   script: |
@@ -80,10 +78,8 @@ task:
 
     brew install p7zip
 
-    # export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
-    # export DTLV_TAG="${CIRRUS_TAG}"
-    export DTLV_ARCHIVE="dtlv-0.9.22-macos-latest-aarch64.zip"
-    export DTLV_TAG="0.9.22"
+    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
+    export DTLV_TAG="${CIRRUS_TAG}"
 
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
