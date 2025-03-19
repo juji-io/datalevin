@@ -8,8 +8,8 @@ task:
   arm_container:
     image: ubuntu:latest
     memory: 8G
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: linux
   script: |
@@ -22,7 +22,7 @@ task:
 
     script/install-graalvm
 
-    export GRAALVM_HOME=graalvm-jdk
+    export GRAALVM_HOME=$HOME/graalvm-jdk
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
@@ -42,8 +42,10 @@ task:
 
     ./dtlv-test0
 
-    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-ubuntu-latest-aarch64.zip"
-    export DTLV_TAG="${CIRRUS_TAG}"
+    # export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-ubuntu-latest-aarch64.zip"
+    # export DTLV_TAG="${CIRRUS_TAG}"
+    export DTLV_ARCHIVE="dtlv-0.9.22-ubuntu-latest-aarch64.zip"
+    export DTLV_TAG="0.9.22"
 
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
@@ -57,8 +59,8 @@ task:
   name: MacOS ARM64 Build
   macos_instance:
     image: ghcr.io/cirruslabs/macos-runner:sonoma
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
   env:
     DTLV_OS: macos
   script: |
@@ -68,7 +70,7 @@ task:
 
     script/install-graalvm
 
-    export GRAALVM_HOME=graalvm-jdk/Contents/Home
+    export GRAALVM_HOME=$HOME/graalvm-jdk/Contents/Home
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
@@ -78,8 +80,10 @@ task:
 
     brew install p7zip
 
-    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
-    export DTLV_TAG="${CIRRUS_TAG}"
+    # export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
+    # export DTLV_TAG="${CIRRUS_TAG}"
+    export DTLV_ARCHIVE="dtlv-0.9.22-macos-latest-aarch64.zip"
+    export DTLV_TAG="0.9.22"
 
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
