@@ -32,7 +32,24 @@ dependency like so (remember to change `:sha`):
 
 This library supports Java 11 and above.
 
-**Performance Tip:**  To obtain better performance (about 5% to 20%), you may
+### Native Dependencies
+
+For now, Datalevin requires some system libraries to be present, such as `libc`,
+`libomp`, and `libmvec`. These are normally easy to get:
+
+* Linux needs [OpenMP](https://www.openmp.org/) and [Vectorized
+  Math](https://sourceware.org/glibc/wiki/libmvec) from GCC, e.g. on
+  Debian/Ubuntu, `apt-get install libgomp1` or `apt-get install g++-12 gcc-12`.
+
+* MacOSX needs the same libraries as the above from Clang, e.g. `brew
+  install libomp llvm`
+
+Otherwise, Datalevin may fail to load and report
+`java.lang.UnsatisfiedLinkError`.
+
+### Performance Tip
+
+To obtain better performance (about 5% to 20%), you may
 want to add the following JVM options to your project:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
@@ -56,20 +73,10 @@ For `dep.edn`, this is known to work:
 ```
 Then `clj -A:jvm-base`
 
-### Native Dependencies
+### Java 24
 
-For now, Datalevin requires some system libraries to be present, such as `libc`,
-`libomp`, and `libmvec`. These are easy to get:
-
-* Linux needs [OpenMP](https://www.openmp.org/) and [Vectorized
-  Math](https://sourceware.org/glibc/wiki/libmvec) from GCC, e.g. on
-  Debian/Ubuntu, `apt-get install g++-12 gcc-12`
-
-* MacOSX needs the same libraries as the above from Clang, e.g. `brew
-  install libomp llvm`
-
-Otherwise, Datalevin may fail to load and report
-`java.lang.UnsatisfiedLinkError`.
+You want to add `--enable-native-access=ALL-UNNAMED` JVM options to disable
+warnings about native access on Java 24.
 
 ### Other JVM Languages
 
