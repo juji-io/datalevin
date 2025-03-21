@@ -139,13 +139,13 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-ubuntu-22.04-amd64.zip)
   on x86_64 (AMD64)
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-ubuntu-latest-aarch64.zip)
   on arm64 (AARCH64)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-macos-latest-aarch64.zip)
   on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-macos-13-amd64.zip)
   on x86_64 (AMD64)
 * [Windows](https://github.com/juji-io/datalevin/releases/download/0.9.22/dtlv-0.9.22-windows-amd64.zip) on x86-64 (AMD64)
 
