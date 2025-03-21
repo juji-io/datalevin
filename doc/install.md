@@ -30,7 +30,7 @@ dependency like so (remember to change `:sha`):
         :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}
 ```
 
-This library supports Java 11 and above.
+This library supports Java 17 and above.
 
 ### Native Dependencies
 

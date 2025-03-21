@@ -15,7 +15,7 @@
    [me.lemire.integercompression/JavaFastPFOR "0.2.1"]
    [metosin/jsonista "0.3.13"]
    [nrepl/bencode "1.2.0"]
-   [org.babashka/sci "0.9.44"]
+   [org.babashka/sci "0.9.45"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.12.0"]
    [org.clojure/tools.cli "1.1.230"]
@@ -84,7 +84,7 @@
              "-Dclojure.compiler.direct-linking=true"
              "--add-opens=java.base/java.nio=ALL-UNNAMED"
              "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
-  :javac-options ["-target" "11" "-source" "11"]
+  :javac-options ["--release" "17"]
   :jar-exclusions [#"_test" #"\/test\/" #"test\d" #"\/data\.json" #"all\.json"
                    #"\.csv" #"\.edn" #"\.java"
                    #"\.md" #"\.txt"]

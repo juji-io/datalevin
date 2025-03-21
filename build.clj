@@ -8,7 +8,7 @@
   (b/delete {:path "target"}))
 
 (defn compile-java [_]
-  (b/javac {:src-dirs ["src/java"]
-            :class-dir class-dir
-            :basis basis
-            :javac-opts ["-source" "11" "-target" "11"]}))
+  (b/javac {:src-dirs   ["src/java"]
+            :class-dir  class-dir
+            :basis      basis
+            :javac-opts ["--release" "17"]}))
