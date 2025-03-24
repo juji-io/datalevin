@@ -6,6 +6,7 @@
 
 - [Vector] Defer closing of vector indices until after async executor is
   shutdown to avoid segfault due to trying to save a closed index.
+- Update minimal version of Java to 17.
 
 ## 0.9.21 (2025-03-18)
 
