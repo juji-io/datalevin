@@ -14,8 +14,8 @@ eventually, because writes are serialized. The first write succeeds, but the
 value will then be overwritten by the second write.
 
 Reads can be concurrent. Basically each reader thread reads its own view of the
-data created at the moment the read transaction starts. When read is concurrent
-with write, the newly written values are invisible to the reader, because read
+data created at the moment the read transaction starts. When a read is concurrent
+with a write, the newly written values are invisible to the reader, because read
 transaction sees a view of the database that is consistent and up to the time
 when the read transaction starts, which is before the write transaction commits.
 
@@ -106,9 +106,10 @@ techniques may achieve desirable write speed and durability trade-off.
 
 ## Explicit Synchronous Transaction
 
-To obtain features such as compare-and-swap semantics, that is, a group of reads
-and writes are treated as a single atomic action, Datalevin exposes explicit
-synchronous transaction.
+In addition to `:db/cas` or `:db.fn/cas` transaction functions, to obtain
+features such as compare-and-swap semantics, that is, a group of reads and
+writes are treated as a single atomic action, Datalevin exposes explicit
+synchronous transaction as another mechanism.
 
 For key-value API, `with-transaction-kv` macro is used for explicit transaction.
 `with-transaction` macro is used for Datalog API. Basically, all the code in the
@@ -124,19 +125,21 @@ Datalog functions such as `transact!` use `with-transaction` internally.
 
 ## Transaction Functions in Datalog Store
 
-In addition to `with-transaction`, transaction functions can be used in Datalog
-store for atomic actions. Two types of transaction functions can be used.
+As mentioned above, in addition to `with-transaction`, transaction functions can
+be used in Datalog store for atomic actions. In addition to `:db/cas`, two types
+of customized transaction functions can be written.
 
 `:db/fn` allows stored transaction functions. Such functions need to be defined
 using `inter-fn` or `definterfn`.  This is necessary in order to support
 de-serialization of functions without calling Clojure `eval`. This requirement
-is needed to accommodate GraalVM native image, because `eval `cannot be used in
-native image, which has a closed world assumption.  This way of defining a
-function is also necessary when a function needs to be passed over the wire to
-server or babashka. The source code of the function will be interpreted by
-[sci](https://github.com/babashka/sci) instead, so there's currently some
-limitations, e.g. except for built-in ones, normal Clojure vars are not
-accessible. We will address these limitations in the future.
+is needed to accommodate GraalVM native image. `eval` generates classes at
+runtime, so it cannot be used in native image, which has a closed world
+assumption.  This way of defining a function is also necessary when a function
+needs to be passed over the wire to servers or babashka. The source code of the
+function will be interpreted by [sci](https://github.com/babashka/sci) instead,
+so there's currently some limitations, e.g. except for built-in ones, normal
+Clojure vars are not accessible. We will address these limitations in the
+future.
 
 `:db.fn/call` is another way to call a transaction function, which does not
 store the function in the database, so this is usable in embedded mode, where
@@ -150,16 +153,16 @@ For usage examples, see tests in `datalevin.test.transact`.
 ### By Transaction
 
 The most straightforward method of transacting data at a time using `transact!`
-works quite well for many cases. To have higher throughput, use
-`transact-async`.
+works quite well for many cases. To have a much higher throughput, use
+`transact-async` instead.
 
 Because Datalevin supports only a single write thread at a time, parallel
-transactions actually slow writes down significantly due to the thread switching
-overhead.
+transactions actually slow writes down significantly due to mutex contention and
+thread switching overhead.
 
-However, transacting Datalog data involves a great number of data transformation
-and integrity checks, hence it can be slow. When initializing a DB with data, it
-may not be necessary to pay the price of this overhead.
+Transacting Datalog data involves a great number of data transformation and
+integrity checks. When initializing a DB with data, it may not be necessary to
+pay the price of this transaction overhead.
 
 ### By `init-db` and `fill-db`
 
@@ -171,6 +174,11 @@ integrity checks and temporary entity ID resolution are not performed.
 Similarly, `fill-db` can be used to bulk load additional collections of prepared
 datoms into a DB that is not empty. The same caution on datoms preparation need
 to apply.
+
+The manual datoms prepared process is mainly about making up approximate entity
+IDs, which would not be too difficult if the numbers of entities to load is
+known ahead of time. See JOB benchmark to see [an
+example](../benchmarks/JOB-bench/src/datalevin_bench/core.clj).
 
 ## Transactable Entities in Datalog store
 
@@ -215,7 +223,7 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 
 (def db2 (d/db-with db [(assoc ava :user/age 42)]))
 
-(def ava-with-age (d/entity db [:user/handle "ava"]))
+(def ava-with-age (d/entity db2 [:user/handle "ava"]))
 
 (d/touch ava-with-age)
 ;=> {:user/handle "ava",

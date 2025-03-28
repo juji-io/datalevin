@@ -190,7 +190,7 @@ search domain.
 
 An attribute with `:db/fulltext true` can have a `:db.fulltext/domains`
 property that list the domains this attribute participates in. By default, all
-freetext attributes are added to the default `datalevin` domain.
+full-text attributes are added to the default `datalevin` domain.
 
 These full-text attributes can also be set as `db.fulltext/autoDomain true`, so
 the attribute becomes its own domain automatically, and the domain name is the
@@ -217,7 +217,7 @@ In addition to information about each term and each document, the positions of t
 occurrences in the documents are also stored to support match highlighting and
 proximity query.
 
-Specifically, the following LMDB sub-databases are created for search supposes:
+Specifically, the following LMDB sub-databases are created for search purposes:
 
 * `terms`: map of term -> `term-info`.
 * `docs`: map of document id -> document reference and document norm.
@@ -277,8 +277,7 @@ The details of the *T-Wand* algorithm is the following.
 
 First, we want to consider documents containing all `n` user specified query
 terms. Instead of looping over all `n` inverted lists of all query terms, we
-first pick the query term with the least edit distance (i.e. with the least
-amount of typos) and the least document frequency (i.e. the most rare term), use
+first pick the query term with the least document frequency (i.e. the most rare term), use
 its inverted list of documents as the candidates, and forgo all other documents.
 This is sufficient, because, for a document to contain all `n` query terms, it
 must contains the rarest one among them. More generally, there is a simple
@@ -308,7 +307,7 @@ following two conditions is met:
 
 * this document is not going to appear in the required number of inverted lists,
   based on the aforementioned mathematical property. This is the main innovation
-  of the T-Wand algorithm.
+  of the *T-Wand* algorithm.
 
 or,
 
@@ -331,15 +330,10 @@ an all-OR query.
 
 #### *T-Wand* implementation
 
-The code is written in Clojure. The whole search engine weights less than 600
-lines of code. We have not unduly optimized the Clojure code for performance. That
-is to say, we have left many search speed optimization opportunities on the
-table, by writing idiomatic Clojure for the most part.
-
 As can be seen, the implementation of *T-Wand* relies heavily on intersection
 and union of document ids. Our implementation is helped by [Roaring
 Bitmaps](https://roaringbitmap.org/), a fast compressed bitmap library used in
-many projects. The parallel walking of document ids of different terms required
+many projects. The parallel walking of document IDs of different terms required
 by *Wand* is achieved by iterating the bitmaps.
 
 As mentioned, our storage of term frequencies is handled by an integer array

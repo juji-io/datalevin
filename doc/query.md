@@ -152,7 +152,7 @@ estimation.
 
 ### Directional join result size estimation (new)
 
-The traditional join result size estimation formula used in RDBMS like PostgrSQL
+The traditional join result size estimation formula used in RDBMS like PostgreSQL
 is based on a very simplistic statistical assumption: the attributes are
 considered statistically independent from one another. Data in the real world
 almost never meet this idealized assumptions. One major consequence of such
