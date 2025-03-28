@@ -66,7 +66,8 @@ unzip dtlv-0.5.21-macos-latest-amd64.zip
 ```console
 ./dtlv-0.4 -d /src/dir -c copy /backup/dir
 ```
-This also compacts the data file, so it's not huge. Ideally, one would run a cron job to backup daily for production databases.
+This also compacts the data file, so it's not huge. Ideally, one would run a
+cron job to backup daily for production databases.
 
 3. Dump the current database as a text file, e.g.
 
@@ -101,4 +102,4 @@ and
 function in your code to dump and load the database, assuming your code has
 necessary dependencies. First dump the database with the old version of
 Datalevin library, then change the dependency to new version of Datalevin
-library to load the aatabase.
+library to load the database.

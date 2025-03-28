@@ -21,6 +21,8 @@
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g.
   128TB on a modern 64-bit machine that implements 48-bit address spaces.
 
-* Currently supports Clojure on JVM 11 or above, but adding support for other
+* Currently supports Clojure on JVM 17 or above, but adding support for other
   Clojure-hosting runtimes is possible, since bindings for LMDB
   exist in almost all major languages and are available on most platforms.
+
+* Expect some native dependencies: libc, libomp, and libmvec.
