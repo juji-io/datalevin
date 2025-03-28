@@ -13,9 +13,11 @@ to LMDB storage, but has since deviated from that origin signficantly.
 
 * Datalevin can be used a fast key-value store.
 
+* Datalevin can be used a vector database.
+
 * Datalevin can be used as a fulltext search engine.
 
-* Datalevin datalog engine has a cost-based query optimizer, so queries are
+* Datalevin Datalog engine has a cost-based query optimizer, so queries are
   truly declarative and clause ordering does not affect query performance.
 
 * Datalevin is not an immutable database, and there is no
@@ -29,9 +31,9 @@ to LMDB storage, but has since deviated from that origin signficantly.
 
 * Support asynchronous transaction.
 
-* Lazy results set and spill to disk are supported.
-
 * Support transactoble Entity.
+
+* Lazy results set and spill to disk are supported.
 
 * Entity id and transaction integer ids are 64 bits long, instead of 32 bits, to
   support much larger DB.
