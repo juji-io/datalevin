@@ -72,8 +72,8 @@ follwing table lists these flags and their implications.
 | Flags | Meaning | Speedup in Mixed Read/Write | Implications |
 |----|----|----|---|
 | `:nometasync` | Only sync data pages when commit, do not sync meta pages | up to 5X | Last transaction may be lost at untimely system crashes, but integrity of DB is retained |
-| `:nosync` | Don't fsync when commit | 2X - 20X | OS is responsible for syncing the data. Untimely system crash may render the DB corrupted. |
-| `:writemap` + `:mapasync` | Use writable memory map and asynchronous commit | 2X - 25X | Untimely system crash may render the DB corrupted; Buggy external code may accidentally overwrite DB memory; Some OS fully preallocates the disk to the specified map size. |
+| `:nosync` | Don't fsync when commit | up to 20X | OS is responsible for syncing the data. Untimely system crash may render the DB corrupted. |
+| `:writemap` + `:mapasync` | Use writable memory map and asynchronous commit | up to 25X | Untimely system crash may render the DB corrupted; Buggy external code may accidentally overwrite DB memory; Some OS fully preallocates the disk to the specified map size. |
 
 Here are some examples of passing the env flags:
 
