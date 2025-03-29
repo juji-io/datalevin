@@ -15,20 +15,6 @@ applications such as semantic search, image search, retrieval augmented
 generation (RAG), and so on. This feature is currently available on Linux and
 MacOSX on both x86_64 and arm64 CPUs.
 
-## Native Dependencies
-
-The vector feature expects some native dependencies on your system:
-
-* Linux needs [OpenMP](https://www.openmp.org/) and [Vectorized
-  Math](https://sourceware.org/glibc/wiki/libmvec) from GCC, e.g. on
-  Debian/Ubuntu, `apt-get install g++-12 gcc-12`
-
-* MacOSX needs the same libraries as the above from Clang, e.g. `brew
-  install libomp llvm`
-
-Otherwise, Datalevin may fail to load and report
-`java.lang.UnsatisfiedLinkError`.
-
 ## Configurations
 
 These configurable options can be set when creating the vector index using
