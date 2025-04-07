@@ -155,7 +155,7 @@ Here is a simple code example using Datalevin:
 
 ;; Transact some data
 ;; `:nation` is not defined in schema, so it will be treated as an EDN blob
-(d/transact conn
+(d/transact! conn
             [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
              {:name "Peirce", :db/id -2, :nation "france"}
              {:name "De Morgan", :db/id -3, :nation "English"}])
@@ -171,7 +171,7 @@ Here is a simple code example using Datalevin:
 ;; => #{["France"]}
 
 ;; Retract the name attribute of an entity
-(d/transact conn [[:db/retract 1 :name "Frege"]])
+(d/transact! conn [[:db/retract 1 :name "Frege"]])
 
 ;; Pull the entity, now the name is gone
 (d/q '[:find (pull ?e [*])
