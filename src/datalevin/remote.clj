@@ -65,6 +65,8 @@
   (q [store query inputs]
     "For special case of queries with a single remote store as source,
      send the query and inputs over to remote server")
+  (pull [store pattern id opts])
+  (pull-many [store pattern id opts])
   (explain [store opts query inputs])
   (fulltext-datoms [store query opts])
   (tx-data [store data simulated?]
@@ -237,6 +239,12 @@
   IRemoteDB
   (q [_ query inputs]
     (cl/normal-request client :q [db-name query inputs] writing?))
+
+  (pull [_ pattern id opts]
+    (cl/normal-request client :pull [db-name pattern id opts] writing?))
+
+  (pull-many [_ pattern id opts]
+    (cl/normal-request client :pull-many [db-name pattern id opts] writing?))
 
   (explain [_ opts query inputs]
     (cl/normal-request client :explain [db-name opts query inputs] writing?))

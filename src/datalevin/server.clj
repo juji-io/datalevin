@@ -1211,6 +1211,8 @@
    'list-range-filter-count
    'visit-list-range
    'q
+   'pull
+   'pull-many
    'explain
    'fulltext-datoms
    'new-search-engine
@@ -2288,6 +2290,30 @@
           db                     (get-db server db-name writing?)
           inputs                 (replace {:remote-db-placeholder db} inputs)
           data                   (apply q/q query inputs)]
+      (if (coll? data)
+        (if (< (count data) ^long c/+wire-datom-batch-size+)
+          (write-message skey {:type :command-complete :result data})
+          (copy-out skey data c/+wire-datom-batch-size+))
+        (write-message skey {:type :command-complete :result data})))))
+
+(defn- pull
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [[db-name pattern id opts] args
+          db                        (get-db server db-name writing?)
+          data                      (d/pull db pattern id opts)]
+      (if (coll? data)
+        (if (< (count data) ^long c/+wire-datom-batch-size+)
+          (write-message skey {:type :command-complete :result data})
+          (copy-out skey data c/+wire-datom-batch-size+))
+        (write-message skey {:type :command-complete :result data})))))
+
+(defn- pull-many
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [[db-name pattern id opts] args
+          db                        (get-db server db-name writing?)
+          data                      (d/pull-many db pattern id opts)]
       (if (coll? data)
         (if (< (count data) ^long c/+wire-datom-batch-size+)
           (write-message skey {:type :command-complete :result data})

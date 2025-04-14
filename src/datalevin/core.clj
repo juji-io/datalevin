@@ -136,8 +136,8 @@ Only usable for debug output.
 
 ;; Pull API
 
-(def ^{:arglists '([db pattern id] [db pattern id opts])
-       :doc      "Fetches data from a Datalog database using recursive declarative
+(defn pull
+  "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
@@ -158,20 +158,31 @@ Only usable for debug output.
                 ; => {:db/id   1,
                 ;     :name    \"Ivan\"
                 ;     :likes   [:pizza]
-                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
-  pull dp/pull)
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
+  ([db pattern id opts]
+   (let [store (.-store ^DB db)]
+     (if (instance? DatalogStore store)
+       (r/pull store pattern id opts)
+       (dp/pull db pattern id opts))))
+  ([db pattern id]
+   (pull db pattern id {})))
 
-(def ^{:arglists '([db pattern ids] [db pattern ids opts])
-       :doc
-       "Same as [[pull]], but accepts sequence of ids and returns
+(defn pull-many
+  "Same as [[pull]], but accepts sequence of ids and returns
   sequence of maps.
 
   Usage:
 
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]"}
-  pull-many dp/pull-many)
+             ;     {:db/id 2, :name \"Oleg\"}]"
+  ([db pattern id opts]
+   (let [store (.-store ^DB db)]
+     (if (instance? DatalogStore store)
+       (r/pull-many store pattern id opts)
+       (dp/pull-many db pattern id opts))))
+  ([db pattern id]
+   (pull-many db pattern id {})))
 
 ;; Creating DB
 
