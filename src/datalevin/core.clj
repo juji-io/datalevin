@@ -1237,7 +1237,7 @@ Only usable for debug output.
    This will be automatically expanded as needed, albeit with some slow down
    when the expansion happens.
   * `:max-readers` specifies the maximal number of concurrent readers
-   allowed for the db file. Default is 126.
+   allowed for the db file. Default is 512.
   * `:max-dbs` specifies the maximal number of sub-databases (DBIs) allowed
    for the db file. Default is 128. It may induce slowness if too big a
    number of DBIs are created, as a linear scan is used to look up a DBI.

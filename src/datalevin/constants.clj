@@ -357,8 +357,8 @@
   *max-dbs* 128)
 
 (def ^{:dynamic true
-       :doc     "Default number of readers allowed for a DB file is 256."}
-  *max-readers* 256)
+       :doc     "Default number of readers allowed for a DB file is 512."}
+  *max-readers* 512)
 
 (def ^{:dynamic true
        :doc     "Initial db file size is 1000 MiB, automatically grown"}
