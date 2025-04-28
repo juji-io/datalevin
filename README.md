@@ -332,8 +332,7 @@ adjust the priorities based on feedback.
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
-  vector database;~~  extensible de/serialization for arbitrary data; auto upgrade
-  migration; compressed data storage.
+  vector database;~~ TTL for KV DB; extensible de/serialization for arbitrary data; auto upgrade migration; compressed data storage.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
 * 1.1.0 Transaction log storage and access API; read-only replicas for server.
 * 1.2.0 JSON API and library/client for popular languages.
