@@ -21,15 +21,6 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 {:deps {datalevin/datalevin {:mvn/version "0.9.22"}}}
 ```
 
-The `master` branch of this project is always kept fully functional, so if you
-need to use some yet-to-be released fixes or features, you can declare the
-dependency like so (remember to change `:sha`):
-
-```Clojure
-{:deps {:git/url "https://github.com/juji-io/datalevin.git"
-        :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}
-```
-
 This library supports Java 17 and above.
 
 ### Native Dependencies
@@ -46,6 +37,20 @@ For now, Datalevin requires some system libraries to be present, such as `libc`,
 
 Otherwise, Datalevin may fail to load and report
 `java.lang.UnsatisfiedLinkError`.
+
+### Unreleased Code
+
+The `master` branch of this project is kept fully functional, so if you
+need to use some yet-to-be released fixes or features, you can declare the
+dependency in `deps.edn` (remember to change the `:sha`):
+
+```Clojure
+{:deps {datalevin/datalevin
+        {:git/url "https://github.com/juji-io/datalevin.git"
+         :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}}
+```
+Make sure to go to ~/.gitlibs/libs/datalevin/datalevin/<sha> and run `lein test` to
+compile and run tests first.
 
 ### Performance Tip
 
