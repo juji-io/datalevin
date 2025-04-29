@@ -757,6 +757,7 @@
                 (raise "Fail to commit read/write transaction in LMDB: "
                        e {}))))
           (vreset! write-txn nil)
+          (.close txn)
           (if aborted? :aborted :committed)))
       (raise "Calling `close-transact-kv` without opening" {})))
 

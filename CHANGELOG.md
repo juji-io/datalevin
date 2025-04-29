@@ -6,6 +6,8 @@
 - [Server] Faster code path for `pull` and `pull-many` on server.
   [#322](https://github.com/juji-io/datalevin/issues/322)
 - [KV] Set default of `:max-readers` to 1024.
+- [KV] Explicitly close read/write transaction after commit instead of relying
+  on GC.
 
 ## 0.9.22 (2025-03-18)
 
