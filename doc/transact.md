@@ -293,7 +293,8 @@ http-kit server by default creates a new thread to handle a request and can
 run out of readers quickly, so it is desirable to specify a `:work-pool` when
 starting the http-kit server.
 
-Use of `future`, `agent`, `pmap` and so on may also take up too many readers,
-for these use `java.util.current.Executors/newCachedThreadPool`, which is
-unbounded in size. When threads do not finish their work quickly enough, the
-number of initiated threads can accumulate to a huge number.
+Default use of `future`, `agent`, `pmap` and so on may also take up too many
+readers, for these use `java.util.current.Executors/newCachedThreadPool`, which
+is unbounded in size. When threads do not finish their work quickly enough, the
+number of initiated threads can accumulate to a huge number. To change the
+thread pool used, call `set-agent-send-off-executor!` function.
