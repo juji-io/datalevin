@@ -290,7 +290,7 @@ pool with a limited number of threads to work with Datalevin. e.g.
 
 Some libraries may uses unbounded number of threads. For example, a
 http-kit server by default creates a new thread to handle a request and can
-run out of readers quickly, so it is desirable to specify a `:work-pool` when
+run out of readers quickly, so it is desirable to specify a `:worker-pool` when
 starting the http-kit server.
 
 Default use of `future`, `agent`, `pmap` and so on may also take up too many
