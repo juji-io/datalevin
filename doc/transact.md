@@ -279,7 +279,7 @@ improves performance.
 
 Datalevin has a upper limit of the number of readers that are available, set as
 a KV option `:max-readers`. The default number is 1024 (one can set a
-large number), but it may still run out, resulting in a `MDB_READERS_FULL`
+larger number), but it may still run out, resulting in a `MDB_READERS_FULL`
 exception. The common cause is that there are too many reading threads (not
 necessarily at the same time).
 
@@ -295,5 +295,5 @@ starting the http-kit server.
 
 Use of `future`, `agent`, `pmap` and so on may also take up too many readers,
 for these use `java.util.current.Executors/newCachedThreadPool`, which is
-unbounded in size. When threads do not finish their work quick enough, the
+unbounded in size. When threads do not finish their work quickly enough, the
 number of initiated threads can accumulate to a huge number.
