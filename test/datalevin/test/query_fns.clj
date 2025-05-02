@@ -428,9 +428,12 @@
 
 (deftest test-fulltext-fns
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
-        db  (-> (d/empty-db dir {:text {:db/valueType           :db.type/string
-                                        :db/fulltext            true
-                                        :db.fulltext/autoDomain true}})
+        db  (-> (d/empty-db dir
+                            {:text {:db/valueType           :db.type/string
+                                    :db/fulltext            true
+                                    :db.fulltext/autoDomain true}}
+                            {:search-domains
+                             {"text" {:index-position? true}}})
                 (d/db-with
                   [{:db/id 1,
                     :text  "The quick red fox jumped over the lazy red dogs."}
@@ -450,6 +453,11 @@
                 db "red fox")
            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
              [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (is (= (d/q '[:find ?e ?a ?v
+                  :in $ ?q
+                  :where [(fulltext $ :text ?q) [[?e ?a ?v]]]]
+                db [:and {:phrase "little lamb"} "fleece"])
+           #{[2 :text "Mary had a little lamb whose fleece was red as fire."]}))
     (d/close-db db)
     (u/delete-files dir)))
 

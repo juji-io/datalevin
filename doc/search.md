@@ -102,12 +102,18 @@ domain name the same as attribute name.
 A query function `fulltext` is provided to allow full-text search in Datalog
 queries. This function takes the db, the query and an optional option map (same
 as `search`), and returns a sequence of matching datoms in the form of `[e a v]`
-for easy destructuring, ordered by relevance to the query.
+for easy destructuring, ordered by relevance to the query. The query is the same
+as that of the standalone search engine, so you can use the same search
+expression.
 
 ```Clojure
 (let [db (-> (d/empty-db "/tmp/mydb"
-               {:text {:db/valueType :db.type/string
-                       :db/fulltext  true}})
+               {:text {:db/valueType           :db.type/string
+                       :db/fulltext            true
+                       ;; `:text` attribute will be turned into a search domain of its own
+                       :db.fulltext/autoDomain true}}
+               ;; phrase search requires indexing position
+               {:search-domains {"text" {:index-position? true}}})
              (d/db-with
                  [{:db/id 1,
                    :text  "The quick red fox jumped over the lazy red dogs."}
@@ -129,8 +135,8 @@ for easy destructuring, ordered by relevance to the query.
            :in $ ?q
            :where [(fulltext $ :text ?q {:top 1}) [[?e ?a ?v]]]]
           db
-          "red fox"))
-;=> #{[1 :text "The quick red fox jumped over the lazy red dogs."]}
+          [:and {:phrase "little lamb"} "fleece"]
+;=> #{[2 :text "Mary had a little lamb whose fleece was red as fire."]}
 ```
 
 In the above example, we destructure the results into three variables,
