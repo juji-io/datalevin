@@ -15,7 +15,7 @@ to see how Datalevin handle complex queries.
 The data set is originally from Internet Movie Database
 [IMDB](https://developer.imdb.com/non-commercial-datasets/), downloaded in
 May 2013. The exported CSV files of the data set can be downloaded from
-http://homepages.cwi.nl/~boncz/job/imdb.tgz
+https://event.cwi.nl/da/job/imdb.tgz
 
 Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB. Each
 CSV file is a table. The data is highly normalized, with many foreign key
@@ -23,7 +23,7 @@ references. The biggest table has over 36 million rows, while the smallest
 has only 4 rows.
 
 ### PostgreSQL
-
+s
 Assume a PostgreSQL server is running.
 
 First import the schema: `psql -f data/schema.sql`
