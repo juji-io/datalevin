@@ -49,7 +49,7 @@ dependency in `deps.edn` (remember to change the `:sha`):
         {:git/url "https://github.com/juji-io/datalevin.git"
          :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}}
 ```
-Make sure to go to ~/.gitlibs/libs/datalevin/datalevin/<sha> and run `lein test` to
+Make sure to go to `~/.gitlibs/libs/datalevin/datalevin/$SHA` and run `lein test` to
 compile and run tests first.
 
 ### Performance Tip
