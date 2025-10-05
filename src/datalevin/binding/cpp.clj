@@ -690,6 +690,7 @@
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
+      (.close-rtx rtx)
       (pool-add pools rtx)))
 
   (stat [_]
