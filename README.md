@@ -72,7 +72,7 @@ performance, which is [competitive](benchmarks/JOB-bench) with popular SQL RDBMS
 such as PostgreSQL.
 
 Datalevin provides robust ACID transaction features on the basis of
-our forked version of [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
+[our fork](https://github.com/huahaiy/dlmdb) of [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
 for its high read performance. With built-in support of asynchronous
 transaction, Datalevin can also handle [write](benchmarks/write-bench) intensive
 workload, as well as storing large documents.
