@@ -72,7 +72,7 @@ performance, which is [competitive](benchmarks/JOB-bench) with popular SQL RDBMS
 such as PostgreSQL.
 
 Datalevin provides robust ACID transaction features on the basis of
-[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
+our forked version of [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
 for its high read performance. With built-in support of asynchronous
 transaction, Datalevin can also handle [write](benchmarks/write-bench) intensive
 workload, as well as storing large documents.
@@ -332,7 +332,9 @@ adjust the priorities based on feedback.
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
-  vector database;~~ TTL for KV DB; extensible de/serialization for arbitrary data; auto upgrade migration; compressed data storage.
+  vector database;~~Reduced Datalog query planning time on the basis of DLMDB
+  (forked LMDB with additional features); TTL for KV DB; auto upgrade migration.
+* 0.11.0 extensible de/serialization for arbitrary data; compressed data storage.
 * 1.0.0 New rule evaluation algorithm and incremental view maintenance.
 * 1.1.0 Transaction log storage and access API; read-only replicas for server.
 * 1.2.0 JSON API and library/client for popular languages.
