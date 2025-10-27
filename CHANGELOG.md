@@ -2,7 +2,12 @@
 
 ## WIP
 
+### Added
+- [KV] Random access and rank functions.
+- [KV] Option to enable prefix compression for keys and DUPSORT values.
+
 ### Improved
+- [Datalog] Reduced query planning time.
 - [Server] Faster code path for `pull` and `pull-many` on server.
   [#322](https://github.com/juji-io/datalevin/issues/322)
 - [KV] Explicitly close read/write transaction after commit instead of relying
