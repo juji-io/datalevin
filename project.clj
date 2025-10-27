@@ -9,23 +9,23 @@
   [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "1.0.5"]
-   [com.taoensso/nippy "3.4.2"]
+   [com.taoensso/nippy "3.6.0"]
    [com.taoensso/timbre "6.5.0"]
-   [joda-time/joda-time "2.13.0"]
-   [me.lemire.integercompression/JavaFastPFOR "0.2.1"]
+   [joda-time/joda-time "2.14.0"]
+   [me.lemire.integercompression/JavaFastPFOR "0.3.8"]
    [metosin/jsonista "0.3.13"]
    [nrepl/bencode "1.2.0"]
-   [org.babashka/sci "0.9.45"]
+   [org.babashka/sci "0.10.49"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
-   [org.clojure/clojure "1.12.0"]
-   [org.clojure/tools.cli "1.1.230"]
+   [org.clojure/clojure "1.12.3"]
+   [org.clojure/tools.cli "1.2.245"]
    [org.clojure/test.check "1.1.1"]
-   [org.eclipse.collections/eclipse-collections "11.1.0"]
-   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.12.8"]
-   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.12.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.12.8"]
-   [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.12.8"]
-   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.12.8"]
+   [org.eclipse.collections/eclipse-collections "13.0.0"]
+   [org.clojars.huahaiy/dtlvnative-macosx-arm64 "0.13.5"]
+   [org.clojars.huahaiy/dtlvnative-macosx-x86_64 "0.13.5"]
+   [org.clojars.huahaiy/dtlvnative-linux-arm64 "0.13.5"]
+   [org.clojars.huahaiy/dtlvnative-linux-x86_64 "0.13.5"]
+   [org.clojars.huahaiy/dtlvnative-windows-x86_64 "0.13.5"]
    [org.roaringbitmap/RoaringBitmap "1.3.0"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
@@ -82,6 +82,7 @@
   :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
              "-Xlint:all"
              "-Dclojure.compiler.direct-linking=true"
+             "--enable-native-access=ALL-UNNAMED"
              "--add-opens=java.base/java.nio=ALL-UNNAMED"
              "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
   :javac-options ["--release" "17"]

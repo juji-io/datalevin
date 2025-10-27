@@ -670,7 +670,6 @@
   (get-rtx [this]
     (or (when-let [^Rtx rtx (pool-take pools)]
           (try
-            (.reset rtx)
             (.renew rtx)
             (catch Util$BadReaderLockException _
               (raise
@@ -690,7 +689,7 @@
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
-      (.close-rtx rtx)
+      (.reset rtx)
       (pool-add pools rtx)))
 
   (stat [_]
