@@ -67,7 +67,7 @@
   #{:nordahead :notls})
 
 (def default-dbi-flags
-  "Default LMDB dbi flag is `#{:create}`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for full list of flags"
+  "Default DBI flag is `#{:create}`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for a list of flags for stock LMDB, and https://github.com/huahaiy/dlmdb for additional flags."
   #{:create})
 
 (def default-put-flags

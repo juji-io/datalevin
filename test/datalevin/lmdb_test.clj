@@ -412,19 +412,19 @@
         lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         sum     (volatile! 0)
         visitor (i/inter-fn
-                    [vb]
+                  [vb]
                   (let [^long v (b/read-buffer vb :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))
         joins   (volatile! "")
         kvisit  (i/inter-fn
-                    [bf]
+                  [bf]
                   (let [k (b/read-buffer bf :string)]
                     (vswap! joins #(s/join " " [% k]))))
         values  (volatile! [])
         op-gen  (i/inter-fn
-                    [k kt]
+                  [k kt]
                   (i/inter-fn
-                      [^IListRandKeyValIterable iterable]
+                    [^IListRandKeyValIterable iterable]
                     (let [^IListRandKeyValIterator iter
                           (l/val-iterator iterable)]
                       (loop [next? (l/seek-key iter k kt)]
@@ -432,7 +432,7 @@
                           (vswap! values conj
                                   (b/read-buffer (l/next-val iter) :long))
                           (recur (l/has-next-val iter)))))))]
-    (l/open-list-dbi lmdb "list")
+    (l/open-list-dbi lmdb "list" #_{:flags #{:create :counted :dupsort}})
     (is (l/list-dbi? lmdb "list"))
 
     (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
@@ -448,13 +448,14 @@
     (is (= "a b c" (s/trim @joins)))
 
     (is (= (l/key-range-list-count lmdb "list" [:all] :string) 10))
-    (is (= (l/key-range-list-count lmdb "list" [:all] :string 5) 7))
+    (is (= (l/key-range-list-count lmdb "list" [:all] :string 5) 5))
     (is (= (l/key-range-list-count lmdb "list" [:greater-than "a"] :string)
            6))
+    (is (= (l/key-range-list-count lmdb "list" [:closed "A" "d"] :string) 10))
+    (is (= (l/key-range-list-count lmdb "list" [:closed "a" "e"] :string) 10))
     (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string)
            7))
-    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string 5)
-           7))
+    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string 5) 5))
 
     (is (= (l/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
     (is (= (l/key-range-count lmdb "list" [:greater-than "b"] :string) 1))

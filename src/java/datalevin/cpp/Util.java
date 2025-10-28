@@ -59,4 +59,16 @@ public class Util {
             throw new DTLVException(msg);
         }
     }
+
+    /**
+     * Return version of LMDB as a string
+     */
+    public static String version() {
+        String version;
+        BytePointer v = DTLV.mdb_version((IntPointer)null,
+                                         (IntPointer)null,
+                                         (IntPointer)null);
+        version = v.getString();
+        return version;
+    }
 }

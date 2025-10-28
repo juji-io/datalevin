@@ -12,6 +12,7 @@
   (:refer-clojure :exclude [load sync])
   (:require
    [clojure.edn :as edn]
+   [clojure.string :as s]
    [clojure.pprint :as p]
    [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
@@ -22,6 +23,7 @@
   (:import
    [clojure.lang IPersistentVector]
    [datalevin.utl BitOps]
+   [datalevin.cpp Util]
    [java.nio ByteBuffer]
    [java.io Writer PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
@@ -432,7 +434,8 @@ values;")
        (set (list-dbis lmdb)))
      (dump-dbis-list lmdb))))
 
-(defn list-dbi? [db dbi-name] (:dupsort? (dbi-opts db dbi-name)))
+(defn list-dbi? [db dbi-name]
+  (get-in (dbi-opts db dbi-name) [:flags :dupsort]))
 
 (defn sample-key-freqs
   "return a long array of frequencies of 2 bytes symbols if there are enough
@@ -647,3 +650,6 @@ values;")
 
 ;; for freeing in memory vector index when a LMDB exits
 (defonce vector-indices (atom {}))  ; fname -> index
+
+;; check if db is backed by DLMDB (rather than stock LMDB)
+(defonce dlmdb? (memoize (fn [] (s/starts-with? (Util/version) "D"))))

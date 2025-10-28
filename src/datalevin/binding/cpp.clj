@@ -1,5 +1,4 @@
-;;
-;; Copyright (c) Huahai Yang. All rights reserved.
+;; ;; Copyright (c) Huahai Yang. All rights reserved.
 ;; The use and distribution terms for this software are covered by the
 ;; Eclipse Public License 2.0 (https://opensource.org/license/epl-2-0)
 ;; which can be found in the file LICENSE at the root of this distribution.
@@ -29,12 +28,13 @@
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
+   [datalevin.utl BitOps]
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
-   [org.bytedeco.javacpp SizeTPointer]
+   [org.bytedeco.javacpp SizeTPointer LongPointer]
    [clojure.lang IObj]))
 
 (defprotocol IPool
@@ -77,13 +77,15 @@
 
     :cp-compact DTLV/MDB_CP_COMPACT
 
-    :reversekey DTLV/MDB_REVERSEKEY
-    :dupsort    DTLV/MDB_DUPSORT
-    :integerkey DTLV/MDB_INTEGERKEY
-    :dupfixed   DTLV/MDB_DUPFIXED
-    :integerdup DTLV/MDB_INTEGERDUP
-    :reversedup DTLV/MDB_REVERSEDUP
-    :create     DTLV/MDB_CREATE
+    :reversekey         DTLV/MDB_REVERSEKEY
+    :dupsort            DTLV/MDB_DUPSORT
+    :integerkey         DTLV/MDB_INTEGERKEY
+    :dupfixed           DTLV/MDB_DUPFIXED
+    :integerdup         DTLV/MDB_INTEGERDUP
+    :reversedup         DTLV/MDB_REVERSEDUP
+    :create             DTLV/MDB_CREATE
+    :prefix-compression DTLV/MDB_PREFIX_COMPRESSION
+    :counted            DTLV/MDB_COUNTED
 
     :nooverwrite DTLV/MDB_NOOVERWRITE
     :nodupdata   DTLV/MDB_NODUPDATA
@@ -191,6 +193,7 @@
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
               ^boolean dupsort?
+              ^boolean counted?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -532,6 +535,8 @@
     (.cancel ^ScheduledFuture fut true)
     (vreset! scheduled-sync nil)))
 
+(declare key-range-list-count-fast key-range-list-count-slow)
+
 (deftype CppLMDB [^Env env
                   info
                   ^Pool pools
@@ -589,29 +594,27 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?
-                                   dupsort?]
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
                             :or   {key-size       c/+max-key-size+
                                    val-size       c/*init-val-size*
                                    flags          c/default-dbi-flags
-                                   dupsort?       false
                                    validate-data? false}}]
     (.check-ready this)
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
-        (let [opts (merge (get info-dbis dbi-name)
-                          {:key-size       key-size
-                           :val-size       val-size
-                           :flags          flags
-                           :dupsort?       dupsort?
-                           :validate-data? validate-data?})
-              kp   (new-bufval key-size)
-              vp   (new-bufval val-size)
-              dbi  (Dbi/create env dbi-name
-                               (kv-flags (if dupsort? (conj flags :dupsort) flags)))
-              db   (DBI. dbi (new-pools) kp vp
-                         dupsort? validate-data?)]
+        (let [opts     (merge (get info-dbis dbi-name)
+                              {:key-size       key-size
+                               :val-size       val-size
+                               :flags          flags
+                               :validate-data? validate-data?})
+              flags    (set flags)
+              dupsort? (if (:dupsort flags) true false)
+              counted? (if (:counted flags) true false)
+              kp       (new-bufval key-size)
+              vp       (new-bufval val-size)
+              dbi      (Dbi/create env dbi-name (kv-flags flags))
+              db       (DBI. dbi (new-pools) kp vp dupsort? counted? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
             (l/transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
@@ -958,15 +961,17 @@
   (visit [this dbi-name visitor k-range k-type v-type raw-pred?]
     (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?))
 
-  (open-list-dbi [this dbi-name {:keys [key-size val-size]
+  (open-list-dbi [this dbi-name {:keys [key-size val-size flags]
                                  :or   {key-size c/+max-key-size+
-                                        val-size c/+max-key-size+}}]
+                                        val-size c/+max-key-size+
+                                        flags    c/default-dbi-flags}}]
     (.check-ready this)
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
     (.open-dbi this dbi-name
-               {:key-size key-size :val-size val-size :dupsort? true}))
+               {:key-size key-size :val-size val-size
+                :flags    (conj flags :dupsort)}))
   (open-list-dbi [lmdb dbi-name]
     (.open-list-dbi lmdb dbi-name nil))
 
@@ -1017,32 +1022,11 @@
     (.key-range-list-count lmdb dbi-name k-range k-type nil nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap]
     (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
-  (key-range-list-count [lmdb dbi-name [range-type k1 k2] k-type cap budget]
-    (scan/scan
-      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
-            forward           (dtlv-bool (.-forward? ctx))
-            start             (dtlv-bool (.-include-start? ctx))
-            end               (dtlv-bool (.-include-stop? ctx))
-            sk                (dtlv-val (.-start-bf ctx))
-            ek                (dtlv-val (.-stop-bf ctx))]
-        (dtlv-c
-          (cond
-            budget
-            (DTLV/dtlv_key_range_list_count_cap_budget
-              (.ptr ^Cursor cur) cap budget c/range-count-iteration-step
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              forward start end sk ek)
-            cap
-            (DTLV/dtlv_key_range_list_count_cap
-              (.ptr ^Cursor cur) cap
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              forward start end sk ek)
-            :else
-            (DTLV/dtlv_key_range_list_count
-              (.ptr ^Cursor cur)
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              forward start end sk ek))))
-      (raise "Fail to count list in key range: " e {:dbi dbi-name})))
+  (key-range-list-count [lmdb dbi-name k-range k-type cap budget]
+    (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)
+    #_(if (and (l/dlmdb?) )
+        (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
+        (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
@@ -1136,6 +1120,53 @@
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
+
+(defn- key-range-list-count-fast
+  [lmdb dbi-name [range-type k1 k2] k-type cap]
+  (scan/scan
+    (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)]
+      (with-open [ptr (LongPointer. 1)]
+        (DTLV/mdb_range_count_values
+          (.get ^Txn (.-txn ^Rtx rtx))
+          (.get ^Dbi (.-db ^DBI dbi))
+          (dtlv-val (.-start-bf ctx))
+          (dtlv-val (.-stop-bf ctx))
+          (BitOps/intOr
+            (if (.-include-start? ctx) (int DTLV/MDB_COUNT_LOWER_INCL) 0)
+            (if (.-include-stop? ctx) (int DTLV/MDB_COUNT_UPPER_INCL) 0))
+          ptr)
+        (let [res (.get ^LongPointer ptr)]
+          (if (and cap (> ^long res ^long cap)) cap res))))
+    (raise "Fail to count (fast) list in key range: " e {:dbi dbi-name})))
+
+(defn- key-range-list-count-slow
+  [lmdb dbi-name [range-type k1 k2] k-type cap budget]
+  (scan/scan
+    (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+          forward           (dtlv-bool (.-forward? ctx))
+          start             (dtlv-bool (.-include-start? ctx))
+          end               (dtlv-bool (.-include-stop? ctx))
+          sk                (dtlv-val (.-start-bf ctx))
+          ek                (dtlv-val (.-stop-bf ctx))]
+      (dtlv-c
+        (cond
+          budget
+          (DTLV/dtlv_key_range_list_count_cap_budget
+            (.ptr ^Cursor cur) cap budget c/range-count-iteration-step
+            (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+            forward start end sk ek)
+          cap
+          (let [res (DTLV/dtlv_key_range_list_count_cap
+                      (.ptr ^Cursor cur) cap
+                      (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+                      forward start end sk ek)]
+            (if (> res cap) cap res))
+          :else
+          (DTLV/dtlv_key_range_list_count
+            (.ptr ^Cursor cur)
+            (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+            forward start end sk ek))))
+    (raise "Fail to count (slow) list in key range: " e {:dbi dbi-name})))
 
 (defn- create-rw-txn [^CppLMDB lmdb] (Txn/create (.-env lmdb)))
 

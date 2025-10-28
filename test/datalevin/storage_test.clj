@@ -354,7 +354,7 @@
     (is (= 5 (sut/av-range-size store :b 7 20)))
     (is (= 7 (sut/av-range-size store :b 4 20)))
 
-    (is (= 3 (sut/av-range-size store :b 2 4 2)))
+    (is (= 2 (sut/av-range-size store :b 2 4 2)))
 
     (are [a range pred get-v? result]
         (do (.clear res)

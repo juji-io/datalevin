@@ -587,14 +587,15 @@
         [db-name dbi-name frozen-visitor k-range k-type v-type raw-pred?]
         writing?)))
 
-  (open-list-dbi [db dbi-name {:keys [key-size val-size]
+  (open-list-dbi [db dbi-name {:keys [key-size val-size flags]
                                :or   {key-size c/+max-key-size+
-                                      val-size c/+max-key-size+}
+                                      val-size c/+max-key-size+
+                                      flags    c/default-dbi-flags}
                                :as   opts}]
     (.open-dbi db dbi-name
                (merge opts
                       {:key-size key-size :val-size val-size
-                       :dupsort? true})))
+                       :flags    (conj flags :dupsort)})))
   (open-list-dbi [db dbi-name] (.open-list-dbi db dbi-name nil))
 
   IList
