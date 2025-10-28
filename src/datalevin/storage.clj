@@ -811,11 +811,13 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [this a]
-    (if-let [aid (:db/aid (schema a))]
-      (let [^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
-        (or (when (and ms (not (zero? ms))) ms)
-            (.actual-a-size this a)))
-      0))
+    (if (lmdb/dlmdb?)
+      (.actual-a-size this a)
+      (if-let [aid (:db/aid (schema a))]
+        (let [^long ms (lmdb/get-value lmdb c/meta aid :int :id)]
+          (or (when (and ms (not (zero? ms))) ms)
+              (.actual-a-size this a)))
+        0)))
 
   (actual-a-size [_ a]
     (if-let [aid (:db/aid (schema a))]
@@ -824,7 +826,8 @@
                  [:closed
                   (datom->indexable schema (d/datom c/e0 a nil) false)
                   (datom->indexable schema (d/datom c/emax a nil) true)] :av)]
-        (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]])
+        (when-not (lmdb/dlmdb?)
+          (lmdb/transact-kv lmdb [[:put c/meta aid as :int :id]]))
         as)
       0))
 

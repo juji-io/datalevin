@@ -1023,10 +1023,9 @@
   (key-range-list-count [lmdb dbi-name k-range k-type cap]
     (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap budget]
-    (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)
-    #_(if (and (l/dlmdb?) )
-        (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
-        (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
+    (if (and (l/dlmdb?) (.-counted? ^DBI (.get-dbi lmdb dbi-name)))
+      (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
+      (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
@@ -1124,17 +1123,19 @@
 (defn- key-range-list-count-fast
   [lmdb dbi-name [range-type k1 k2] k-type cap]
   (scan/scan
-    (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)]
+    (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+          flag              (BitOps/intOr
+                              (if (.-include-start? ctx)
+                                (int DTLV/MDB_COUNT_LOWER_INCL) 0)
+                              (if (.-include-stop? ctx)
+                                (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
       (with-open [ptr (LongPointer. 1)]
         (DTLV/mdb_range_count_values
           (.get ^Txn (.-txn ^Rtx rtx))
           (.get ^Dbi (.-db ^DBI dbi))
           (dtlv-val (.-start-bf ctx))
           (dtlv-val (.-stop-bf ctx))
-          (BitOps/intOr
-            (if (.-include-start? ctx) (int DTLV/MDB_COUNT_LOWER_INCL) 0)
-            (if (.-include-stop? ctx) (int DTLV/MDB_COUNT_UPPER_INCL) 0))
-          ptr)
+          flag ptr)
         (let [res (.get ^LongPointer ptr)]
           (if (and cap (> ^long res ^long cap)) cap res))))
     (raise "Fail to count (fast) list in key range: " e {:dbi dbi-name})))

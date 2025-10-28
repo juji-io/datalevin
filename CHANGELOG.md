@@ -2,12 +2,20 @@
 
 ## WIP
 
+### Changed
+- [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb) with
+  additional features. Stock LMDB can still be used on platforms that do not
+  have bundled DLMDB, though without benefits of the new features.
+- [KV] Default DBI flags is now `#{:create :counted :prefix-compression}`,
+  leveraging the counted DB and prefix compression features in DLMDB.
+
 ### Added
-- [KV] Random access and rank functions.
-- [KV] Option to enable prefix compression for keys and DUPSORT values.
+- [KV] Random access and rank lookup functions in O(log n) runtime.
+- [KV] Range count functions in O(log n) runtime.
 
 ### Improved
-- [Datalog] Reduced query planning time.
+- [Datalog] Reduced query planning time due to the faster range counts and
+  sampling in DLMDB.
 - [Server] Faster code path for `pull` and `pull-many` on server.
   [#322](https://github.com/juji-io/datalevin/issues/322)
 - [KV] Explicitly close read/write transaction after commit instead of relying
