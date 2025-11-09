@@ -1529,17 +1529,17 @@
 
 (defn- open-dbis
   [lmdb]
-  (lmdb/open-list-dbi
-    lmdb c/ave {:key-size c/+max-key-size+ :val-size (* 2 c/+id-bytes+)})
-  (lmdb/open-list-dbi
-    lmdb c/eav {:key-size c/+id-bytes+ :val-size c/+max-key-size+})
+  (lmdb/open-list-dbi lmdb c/ave {:key-size c/+max-key-size+
+                                  :val-size (* 2 c/+id-bytes+)})
+  (lmdb/open-list-dbi lmdb c/eav {:key-size c/+id-bytes+
+                                  :val-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
-  (lmdb/open-list-dbi
-    lmdb c/vae {:key-size c/+id-bytes+
-                :val-size (+ c/+short-id-bytes+ c/+id-bytes+)}))
+  (lmdb/open-list-dbi lmdb c/vae
+                      {:key-size c/+id-bytes+
+                       :val-size (+ c/+short-id-bytes+ c/+id-bytes+)}))
 
 (defn- default-search-domain
   [dms search-opts search-domains]

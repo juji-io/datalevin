@@ -80,17 +80,16 @@
              (= "latest" version)
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"../..\"}
-                  org.clojure/clojure   {:mvn/version \"1.12.0\"}
-                  com.taoensso/nippy    {:mvn/version \"3.4.2\"}
+                  org.clojure/clojure   {:mvn/version \"1.12.3\"}
+                  com.taoensso/nippy    {:mvn/version \"3.6.0\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
-                  me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.2.1\"}
+                  me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.3.8\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.3.0\"}
-                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.12.8\"}
-                  org.clojars.huahaiy/dtlvnative-macosx-x86_64 {:mvn/version \"0.12.8\"}
-                  org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.12.8\"}
-                  org.clojars.huahaiy/dtlvnative-linux-x86_64 {:mvn/version \"0.12.8\"}
-                  org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version \"0.12.8\"}
-                  org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
+                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.13.20\"}
+                  org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.13.20\"}
+                  org.clojars.huahaiy/dtlvnative-linux-x86_64 {:mvn/version \"0.13.20\"}
+                  org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version \"0.13.20\"}
+                  org.eclipse.collections/eclipse-collections {:mvn/version \"13.0.0\"}
                   }}"
                   )
 
@@ -151,9 +150,9 @@
 
 (def default-versions
   [
-   ;; ["latest" "datomic"]
-   ;; ["latest" "datascript"]
-   ;; ["0.9.22" "datalevin"]
+   ;["latest" "datomic"]
+   ;["latest" "datascript"]
+   ;["0.9.22" "datalevin"]
    ["latest" "datalevin"]
    ])
 

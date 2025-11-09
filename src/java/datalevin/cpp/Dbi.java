@@ -20,7 +20,6 @@ public class Dbi {
         try {
             Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
             handle = (int)ptr.get();
-            Util.checkRc(DTLV.dtlv_set_comparator(txn.get(), handle));
         } catch (Exception e) {
             txn.close();
             throw e;
@@ -29,35 +28,12 @@ public class Dbi {
         txn.commit();
     }
 
-    // public Dbi(Env env, int flags) {
-    //     this.name = null;
-    //     this.ptr = new IntPointer(1);
-
-    //     Txn txn = Txn.create(env);
-    //     try {
-    //         Util.checkRc(DTLV.mdb_dbi_open(txn.get(),
-    //                                     WordFactory.nullPointer(),
-    //                                     flags,
-    //                                     ptr));
-    //         Util.checkRc(DTLV.dtlv_set_comparator(txn.get(), get()));
-    //     } catch(Exception e) {
-    //         txn.close();
-    //         throw e;
-    //     }
-
-    //     txn.commit();
-    // }
-
     /**
      * Factory method to create an instance
      */
     public static Dbi create(Env env, String name, int flags) {
         return new Dbi(env, name, flags);
     }
-
-    // public static Dbi create(Env env, int flags) {
-    //     return new Dbi(env, flags);
-    // }
 
     /**
      * Free memory

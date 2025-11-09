@@ -67,8 +67,8 @@
   #{:nordahead :notls})
 
 (def default-dbi-flags
-  "Default DBI flags is `#{:create :counted}`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for a list of flags for stock LMDB, and https://github.com/huahaiy/dlmdb for additional flags."
-  #{:create :counted})
+  "Default DBI flags is `#{:create :counted :prefix-compression}`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for a list of flags for stock LMDB, and https://github.com/huahaiy/dlmdb for additional flags."
+  #{:create :counted :prefix-compression})
 
 (def default-put-flags
   "Default LMDB put flag is `#{}`. See http://www.lmdb.tech/doc/group__mdb__put.html for full list of flags"

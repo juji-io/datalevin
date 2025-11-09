@@ -10,7 +10,8 @@
 (ns ^:no-doc datalevin.buffer
   "ByteBuffer operations"
   (:require
-   [datalevin.constants :as c])
+   [datalevin.constants :as c]
+   [datalevin.util :as u])
   (:import
    [java.util.concurrent ConcurrentLinkedDeque]
    [java.nio ByteBuffer]
@@ -67,3 +68,8 @@
          (allocate-buffer cap)))))
 
 (defn return-direct-buffer [bf] (.offer direct-buffers bf))
+
+(defn hex-buffer [^ByteBuffer sb]
+  (let [sa (byte-array (.remaining sb))]
+    (.get sb sa)
+    (u/hexify sa)))

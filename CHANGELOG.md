@@ -3,35 +3,42 @@
 ## WIP
 
 ### Changed
-- [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb) with
-  additional features. Stock LMDB can still be used on platforms that do not
-  have bundled DLMDB, though without benefits of the new features.
-- [KV] Default DBI flags is now `#{:create :counted :prefix-compression}`,
-  leveraging the counted DB and prefix compression features in DLMDB.
+- [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
+  additional features of counted DB and prefix compression. Stock LMDB can still
+  be used on platforms that do not have bundled DLMDB, though without benefits
+  of the new features.
+- [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
+- [Vector] Vector index is now stored inside the database file and is ACID
+  compliant.
+- [Platform] Drop support for Intel macOS.
 
 ### Added
-- [KV] Random access and rank lookup functions in O(log n) runtime.
-- [KV] Range count functions in O(log n) runtime.
+- [Platform] Automatically upgrade DB from version 0.9.12 onwards.
+- [KV] DB wide option `:key-compression`, which compresses data with order
+  preserving Hu-Tucker coding. This also applies to DUPSORT values if enabled.
+- [KV] DB wide option `:value-compression`, which compresses with LZ4.
+- [KV] Random access and rank lookup functions in O(log n) time for
+  `:counted` DBIs.
+- [KV] Range count functions in O(log n) time for `:counted` DBIs.
 
-### Improved
-- [Datalog] Reduced query planning time due to the faster range counts and
-  sampling in DLMDB.
+### Fixed
 - [Server] Faster code path for `pull` and `pull-many` on server.
   [#322](https://github.com/juji-io/datalevin/issues/322)
-- [KV] Explicitly close read/write transaction after commit instead of relying
-  on GC.
-- [KV] Put read only transactions back to the pool in "committed" or "aborted"
-  state rather than in "reset" state, so they do not hold up the readers
-  unnecessarily.
+
+### Improved
+- [Datalog] Reduced query planning time due to faster range counts and
+  sampling by rank of `:counted` feature.
+- [Datalog] Smaller DB size due to prefix compression and key/value compression.
 - [KV] Set default of `:max-readers` to 1024.
 
 ## 0.9.22 (2025-03-18)
 
-### Improved
+### Changed
+- [Platform] Update minimal version of Java to 17.
 
+### Improved
 - [Vector] Defer closing of vector indices until after async executor is
-  shutdown to avoid segfault due to trying to save a closed index.
-- Update minimal version of Java to 17.
+  shutdown to avoid segment fault due to trying to save a closed index.
 
 ## 0.9.21 (2025-03-18)
 

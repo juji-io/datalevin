@@ -334,10 +334,11 @@ adjust the priorities based on feedback.
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
   vector database;~~reduced Datalog query planning time on the basis of DLMDB;
   compressed data storage; auto upgrade migration.
-* 0.11.0  TTL for KV DB; extensible de/serialization for arbitrary data.
-* 1.0.0 New rule evaluation algorithm and incremental view maintenance.
-* 1.1.0 Transaction log storage and access API; read-only replicas for server.
-* 1.2.0 JSON API and library/client for popular languages.
+* 0.11.0 New rule evaluation algorithm and incremental view maintenance.
+* 1.0.0  TTL for both KV and Datalog values; extensible de/serialization for
+  arbitrary data.
+* 1.1.0 JSON API and library/client for popular languages.
+* 1.2.0 Transaction log storage and access API; read-only replicas for server.
 * 2.0.0 Automatic document indexing.
 * 3.0.0 Distributed mode.
 
