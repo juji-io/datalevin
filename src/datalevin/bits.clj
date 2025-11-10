@@ -791,28 +791,14 @@
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
-    (do (put-bytes bf bs)
-        (when (giant? x) (put-byte bf c/truncator)))
+    (put-bytes bf bs)
     (put-fixed bf (.-v x) (.-f x)))
-  (put-byte bf c/separator)
-  (put-long bf (.-g x)))
-
-(defn- put-av
-  [bf ^Indexable x]
-  (put-int bf (.-a x))
-  (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (let [g? (giant? x)]
-    (if-let [bs (.-b x)]
-      (do (put-bytes bf bs)
-          (when g? (put-byte bf c/truncator)))
-      (put-fixed bf (.-v x) (.-f x)))
-    (put-byte bf c/separator)
-    (put-byte bf (if g? c/true-value c/false-value))))
-
-(defn- put-eg
-  [bf ^Indexable x]
-  (put-long bf (.-e x))
-  (put-long bf (.-g x)))
+  (if (giant? x)
+    (do (put-byte bf c/truncator)
+        (put-long bf (.-g x))
+        (put-byte bf c/true-value))
+    (do (put-byte bf c/separator)
+        (put-byte bf c/false-value))))
 
 (defn- put-ae
   [bf ^Indexable x]
@@ -831,36 +817,24 @@
 
 (defn- get-avg
   [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 8))
-  (let [g (get-long bf)
-        a (get-int (.rewind bf))]
-    (if (= g c/normal)
-      (Retrieved. nil a (get-value bf 9) g)
-      (Retrieved. nil a nil g))))
+  (let [limit (.limit bf)
+        a     (get-int bf)]
+    (.position bf (- limit 1))
+    (if (= c/true-value (get-byte bf))
+      (do (.position bf (- limit 9))
+          (Retrieved. nil a nil (get-long bf)))
+      (do (.position bf 4)
+          (Retrieved. nil a (get-value bf 2) c/normal)))))
 
 (defn avg->r
   [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 8))
-  (let [g (get-long bf)]
-    (if (= g c/normal)
+  (let [limit (.limit bf)]
+    (.position bf (- limit 1))
+    (if (= c/true-value (get-byte bf))
+      (do (.position bf (- limit 9))
+          (Retrieved. nil nil nil (get-long bf)))
       (do (.position bf 4)
-          (Retrieved. nil nil (get-value bf 9) g))
-      (Retrieved. nil nil nil g))))
-
-(defn- get-eg
-  [^ByteBuffer bf]
-  (let [e (get-long bf)
-        g (get-long bf)]
-    (Retrieved. e nil nil g)))
-
-(defn- get-av
-  [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 1))
-  (let [giant? (= c/true-value (get-byte bf))
-        a      (get-int (.rewind bf))]
-    (if giant?
-      (Retrieved. nil a nil nil)
-      (Retrieved. nil a (get-value bf 2) nil))))
+          (Retrieved. nil nil (get-value bf 2) c/normal)))))
 
 (defn- get-ae
   [bf]
@@ -935,8 +909,6 @@
                        (cp/put-sorted-ints bf i2))
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
-     :av             (put-av bf x)
-     :eg             (put-eg bf x)
      :ae             (put-ae bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
@@ -990,8 +962,6 @@
      :int            (get-int bf)
      :attr           (get-attr bf)
      :avg            (get-avg bf)
-     :eg             (get-eg bf)
-     :av             (get-av bf)
      :ae             (get-ae bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)

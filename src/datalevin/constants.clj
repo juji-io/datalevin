@@ -101,7 +101,7 @@
 
 ;; index storage
 
-(def ^:no-doc ^:const +val-bytes-wo-hdr+ 497)  ; - hdr - s - g - a
+(def ^:no-doc ^:const +val-bytes-wo-hdr+ 497)  ; - hdr - g - a - g?
 (def ^:no-doc ^:const +val-bytes-trunc+  496)  ; - tr
 
 (def ^:no-doc ^:const +id-bytes+ Long/BYTES)
