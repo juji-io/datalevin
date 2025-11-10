@@ -692,7 +692,7 @@
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
-      (.reset rtx)
+      (.reset ^Rtx rtx)
       (pool-add pools rtx)))
 
   (stat [_]
@@ -1161,7 +1161,7 @@
                       (.ptr ^Cursor cur) cap
                       (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
                       forward start end sk ek)]
-            (if (> res cap) cap res))
+            (if (> ^long res ^long cap) cap res))
           :else
           (DTLV/dtlv_key_range_list_count
             (.ptr ^Cursor cur)

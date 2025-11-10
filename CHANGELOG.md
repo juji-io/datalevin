@@ -13,7 +13,8 @@
 - [Platform] Drop support for Intel macOS.
 
 ### Added
-- [Platform] Automatically upgrade DB from version 0.9.12 onwards.
+- [Platform] Automatically upgrade DB from version 0.9.12 onwards. The migration
+  may take a while when first opening the DB, and it needs Internet access.
 - [KV] DB wide option `:key-compression`, which compresses data with order
   preserving Hu-Tucker coding. This also applies to DUPSORT values if enabled.
 - [KV] DB wide option `:value-compression`, which compresses with LZ4.
