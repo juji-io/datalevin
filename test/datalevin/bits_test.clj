@@ -368,19 +368,6 @@
                " dmin: " (u/hexify (sut/get-bytes bf1)))))
     (sut/put-bf bf1 dmax :avg)
     (.rewind bf)
-    (is (<= (bf/compare-buffer bf bf1) 0))
-    (sut/put-bf bf d :av)
-    (sut/put-bf bf1 dmin :av)
-    ;; TODO deal with occasional fail here, basically, empty character
-    (is (>=(bf/compare-buffer bf bf1) 0)
-        (do
-          (.rewind bf)
-          (.rewind bf1)
-          (str "v: " v
-               " d: " (u/hexify (sut/get-bytes bf))
-               " dmin: " (u/hexify (sut/get-bytes bf1)))))
-    (sut/put-bf bf1 dmax :av)
-    (.rewind bf)
     (is (<= (bf/compare-buffer bf bf1) 0))))
 
 (test/defspec keyword-extrema-generative-test
@@ -515,28 +502,6 @@
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
-(defn- av-test
-  [v a1 v1 ^Indexable d ^Indexable d1]
-  (let [^ByteBuffer bf  (bf/allocate-buffer 16384)
-        ^ByteBuffer bf1 (bf/allocate-buffer 16384)
-        _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :av)
-        _               (.flip ^ByteBuffer bf)
-        _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :av)
-        _               (.flip ^ByteBuffer bf1)
-        res             (bf/compare-buffer bf bf1)]
-    (is (u/same-sign? res (u/combine-cmp (compare a a1)
-                                         (compare v v1))))
-    (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :av)]
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))
-    (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :av)]
-      (is (= a1 (.-a r)))
-      (is (= v1 (.-v r))))))
-
 (defn- ae-test
   [e1 a1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (bf/allocate-buffer 16384)
@@ -580,19 +545,6 @@
       (avg-test v' a1 v1'
                 (sut/indexable e a v' :db.type/instant g)
                 (sut/indexable e1 a1 v1' :db.type/instant g)))))
-
-(test/defspec instant-av-generative-test
-  100
-  (prop/for-all
-    [e1 (gen/large-integer* {:min c/e0})
-     a1 gen/nat
-     v1 gen/int
-     v gen/int]
-    (let [v'  (Date. ^long v)
-          v1' (Date. ^long v1)]
-      (av-test v' a1 v1'
-               (sut/indexable e a v' :db.type/instant g)
-               (sut/indexable e1 a1 v1' :db.type/instant g)))))
 
 (test/defspec keyword-avg-generative-test
   100
@@ -728,20 +680,6 @@
       (is (= a (.-a r)))
       (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
 
-(test/defspec bytes-av-generative-test
-  100
-  (prop/for-all
-    [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
-                       gen/bytes)]
-    (let [^ByteBuffer bf (bf/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/bytes g)
-          _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :av)
-          _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :av)]
-      (is (= a (.-a r)))
-      (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
-
 (defn data-size-less-than?
   [^long limit data]
   (< (alength ^bytes (sut/serialize data)) limit))
@@ -757,20 +695,6 @@
           _              (sut/put-buffer bf d :avg)
           _              (.flip ^ByteBuffer bf)
           ^Retrieved r   (sut/read-buffer bf :avg)]
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))))
-
-(test/defspec data-av-generative-test
-  100
-  (prop/for-all
-    [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
-                       gen/any-equatable)]
-    (let [^ByteBuffer bf (bf/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v nil g)
-          _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :av)
-          _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :av)]
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
 

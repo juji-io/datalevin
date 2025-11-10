@@ -178,26 +178,17 @@
               {:v v}))
           (b/indexable e am vm :db.type/sysMin gm))))))
 
-(defn- index->dbi
-  [index]
-  (case index
-    :eav c/eav
-    :ave c/ave
-    :vae c/vae))
+(defonce index->dbi {:eav c/eav
+                     :ave c/ave
+                     :vae c/vae})
 
-(defn- index->ktype
-  [index]
-  (case index
-    :eav :id
-    :ave :avg
-    :vae :id))
+(defonce index->ktype {:eav :id
+                       :ave :avg
+                       :vae :id})
 
-(defn- index->vtype
-  [index]
-  (case index
-    :eav :avg
-    :ave :id
-    :vae :ae))
+(defonce index->vtype {:eav :avg
+                       :ave :id
+                       :vae :ae})
 
 (defn- index->k
   [index schema ^Datom datom high?]
