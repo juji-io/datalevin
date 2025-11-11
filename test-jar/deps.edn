@@ -1,6 +1,6 @@
 {:paths   ["src"]
  :deps
- {org.clojure/clojure                  {:mvn/version "1.12.0"}
+ {org.clojure/clojure                  {:mvn/version "1.12.3"}
   com.github.clj-easy/graal-build-time {:mvn/version "1.0.5"}
   datalevin/datalevin                  {:local/root "../target/datalevin-0.9.22.jar"}}
  :aliases {:build
