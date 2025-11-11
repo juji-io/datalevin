@@ -78,10 +78,10 @@ For `dep.edn`, this is known to work:
 ```
 Then `clj -A:jvm-base`
 
-### Java 24
+### Java 24 and above
 
 You want to add `--enable-native-access=ALL-UNNAMED` JVM options to disable
-warnings about native access on Java 24.
+warnings about native access.
 
 ### Other JVM Languages
 

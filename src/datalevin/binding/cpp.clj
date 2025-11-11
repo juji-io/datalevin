@@ -23,7 +23,7 @@
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
     DTLV$dtlv_list_iter DTLV$dtlv_list_sample_iter DTLV$dtlv_list_val_iter
-    DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
+    DTLV$dtlv_list_rank_sample_iter DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
@@ -373,23 +373,37 @@
           ev                 (dtlv-val (.-stop-bf vctx))
           k                  (.key cur)
           v                  (.val cur)
-          iter               (DTLV$dtlv_list_sample_iter.)
+          iter               (if (l/dlmdb?)
+                               (DTLV$dtlv_list_rank_sample_iter.)
+                               (DTLV$dtlv_list_sample_iter.))
           samples            (alength indices)
           sizets             (SizeTPointer. samples)]
       (dotimes [i samples] (.put sizets i (aget indices i)))
       (Util/checkRc
-        (DTLV/dtlv_list_sample_iter_create
-          iter sizets samples budget step (.ptr cur) (.ptr k) (.ptr v)
-          ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
-          ^int forward-val? ^int include-start-val? ^int include-stop-val?
-          sv ev))
+        (if (l/dlmdb?)
+          (DTLV/dtlv_list_rank_sample_iter_create
+            ^DTLV$dtlv_list_rank_sample_iter iter
+            sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek sv ev)
+          (DTLV/dtlv_list_sample_iter_create
+            ^DTLV$dtlv_list_sample_iter iter
+            sizets samples budget step (.ptr cur) (.ptr k) (.ptr v)
+            ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
+            ^int forward-val? ^int include-start-val? ^int include-stop-val?
+            sv ev)))
       (reify
         Iterator
-        (hasNext [_] (dtlv-rc (DTLV/dtlv_list_sample_iter_has_next iter)))
+        (hasNext [_]
+          (dtlv-rc
+            (if (l/dlmdb?)
+              (DTLV/dtlv_list_rank_sample_iter_has_next iter)
+              (DTLV/dtlv_list_sample_iter_has_next iter))))
         (next [_] (KV. k v))
 
         AutoCloseable
-        (close [_] (DTLV/dtlv_list_sample_iter_destroy iter))))))
+        (close [_]
+          (if (l/dlmdb?)
+            (DTLV/dtlv_list_rank_sample_iter_destroy iter)
+            (DTLV/dtlv_list_sample_iter_destroy iter)))))))
 
 (deftype ListRandKeyValIterable [^DBI db
                                  ^Cursor cur
@@ -1023,7 +1037,7 @@
   (key-range-list-count [lmdb dbi-name k-range k-type cap]
     (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap budget]
-    (if (and (l/dlmdb?) (.-counted? ^DBI (.get-dbi lmdb dbi-name)))
+    (if (l/dlmdb?)
       (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
       (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
 
@@ -1131,10 +1145,8 @@
                                 (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
       (with-open [ptr (LongPointer. 1)]
         (DTLV/mdb_range_count_values
-          (.get ^Txn (.-txn ^Rtx rtx))
-          (.get ^Dbi (.-db ^DBI dbi))
-          (dtlv-val (.-start-bf ctx))
-          (dtlv-val (.-stop-bf ctx))
+          (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
+          (dtlv-val (.-start-bf ctx)) (dtlv-val (.-stop-bf ctx))
           flag ptr)
         (let [res (.get ^LongPointer ptr)]
           (if (and cap (> ^long res ^long cap)) cap res))))
