@@ -3277,7 +3277,7 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [f [2.5]
+  (doseq [f [3.0 3.5]
           s [4.0]
           v [2.0]
           ]
@@ -3304,7 +3304,7 @@
 
   (time (d/analyze (d/db conn)))
 
-  (d/explain {:run? true} q-25c (d/db conn))
+  (d/explain {:run? true} q-12a (d/db conn))
 
   (def store (.-store (d/db conn)))
 

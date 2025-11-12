@@ -435,7 +435,7 @@
     (doseq [val-range val-ranges]
       (lmdb/visit-list-sample
         lmdb c/ave sample-indices c/sample-time-budget c/sample-iteration-step
-        work (ave-key-range aid vt val-range) :avg [:closed c/e0 c/emax] :id))
+        work (ave-key-range aid vt val-range) :avg :id))
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
         lmdb c/ave work (ave-key-range aid vt val-range) :avg
@@ -1294,7 +1294,6 @@
 (defn- analyze*
   [store attr]
   (when-let [aid (:db/aid ((schema store) attr))]
-    (actual-cardinality store attr)
     (e-sample* store attr aid (actual-a-size store attr))))
 
 (defn sampling

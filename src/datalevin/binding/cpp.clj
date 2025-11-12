@@ -23,7 +23,8 @@
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
     DTLV$dtlv_list_iter DTLV$dtlv_list_sample_iter DTLV$dtlv_list_val_iter
-    DTLV$dtlv_list_rank_sample_iter DTLV$dtlv_list_val_full_iter DTLV$MDB_val]
+    DTLV$dtlv_list_rank_sample_iter DTLV$dtlv_list_val_full_iter DTLV$MDB_val
+    DTLV$dtlv_list_key_range_full_val_iter]
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
     Util$BadReaderLockException Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
@@ -186,7 +187,8 @@
    :entries        (.ms_entries ^DTLV$MDB_stat (.get stat))})
 
 (declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable
-         ->ListFullValIterable ->ListSampleIterable)
+         ->ListFullValIterable ->ListSampleIterable
+         ->ListKeyRangeFullValIterable)
 
 (deftype DBI [^Dbi db
               ^Pool curs
@@ -248,16 +250,17 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-list-sample [this rtx cur indices budget step [k-range-type k1 k2]
-                        k-type [v-range-type v1 v2] v-type]
-    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
-                                 v-range-type v1 v2 v-type)]
+  (iterate-list-sample [this rtx cur indices budget step [k-range-type k1 k2] k-type]
+    (let [ctx (l/range-info rtx k-range-type k1 k2 k-type)]
       (->ListSampleIterable this indices budget step cur rtx ctx)))
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
     (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
   (iterate-list-val-full [this rtx cur]
     (->ListFullValIterable this cur rtx))
+  (iterate-list-key-range-val-full [this rtx cur [range-type k1 k2] k-type]
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
+      (->ListKeyRangeFullValIterable this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -359,37 +362,24 @@
                              ctx]
   Iterable
   (iterator [_]
-    (let [[^RangeContext kctx ^RangeContext vctx] ctx
-
-          forward-key?       (dtlv-bool (.-forward? kctx))
-          include-start-key? (dtlv-bool (.-include-start? kctx))
-          include-stop-key?  (dtlv-bool (.-include-stop? kctx))
-          sk                 (dtlv-val (.-start-bf kctx))
-          ek                 (dtlv-val (.-stop-bf kctx))
-          forward-val?       (dtlv-bool (.-forward? vctx))
-          include-start-val? (dtlv-bool (.-include-start? vctx))
-          include-stop-val?  (dtlv-bool (.-include-stop? vctx))
-          sv                 (dtlv-val (.-start-bf vctx))
-          ev                 (dtlv-val (.-stop-bf vctx))
-          k                  (.key cur)
-          v                  (.val cur)
-          iter               (if (l/dlmdb?)
-                               (DTLV$dtlv_list_rank_sample_iter.)
-                               (DTLV$dtlv_list_sample_iter.))
-          samples            (alength indices)
-          sizets             (SizeTPointer. samples)]
+    (let [sk      (dtlv-val (.-start-bf ctx))
+          ek      (dtlv-val (.-stop-bf ctx))
+          k       (.key cur)
+          v       (.val cur)
+          iter    (if (l/dlmdb?)
+                    (DTLV$dtlv_list_rank_sample_iter.)
+                    (DTLV$dtlv_list_sample_iter.))
+          samples (alength indices)
+          sizets  (SizeTPointer. samples)]
       (dotimes [i samples] (.put sizets i (aget indices i)))
       (Util/checkRc
         (if (l/dlmdb?)
           (DTLV/dtlv_list_rank_sample_iter_create
             ^DTLV$dtlv_list_rank_sample_iter iter
-            sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek sv ev)
+            sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek)
           (DTLV/dtlv_list_sample_iter_create
             ^DTLV$dtlv_list_sample_iter iter
-            sizets samples budget step (.ptr cur) (.ptr k) (.ptr v)
-            ^int forward-key? ^int include-start-key? ^int include-stop-key? sk ek
-            ^int forward-val? ^int include-start-val? ^int include-stop-val?
-            sv ev)))
+            sizets samples budget step (.ptr cur) (.ptr k) (.ptr v) sk ek)))
       (reify
         Iterator
         (hasNext [_]
@@ -432,6 +422,32 @@
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_val_iter_destroy iter))))))
+
+(deftype ListKeyRangeFullValIterable [^DBI db
+                                      ^Cursor cur
+                                      ^Rtx rtx
+                                      ^RangeContext ctx]
+  Iterable
+  (iterator [_]
+    (let [include-start? (dtlv-bool (.-include-start? ctx))
+          include-stop?  (dtlv-bool (.-include-stop? ctx))
+          sk             (dtlv-val (.-start-bf ctx))
+          ek             (dtlv-val (.-stop-bf ctx))
+          k              (.key cur)
+          v              (.val cur)
+          iter           (DTLV$dtlv_list_key_range_full_val_iter.)]
+      (Util/checkRc
+        (DTLV/dtlv_list_key_range_full_val_iter_create
+          iter (.ptr cur) (.ptr k) (.ptr v)
+          ^int include-start? ^int include-stop? sk ek))
+      (reify
+        Iterator
+        (hasNext [_]
+          (dtlv-rc (DTLV/dtlv_list_key_range_full_val_iter_has_next iter)))
+        (next [_] (KV. k v))
+
+        AutoCloseable
+        (close [_] (DTLV/dtlv_list_key_range_full_val_iter_destroy iter))))))
 
 (deftype ListFullValIterable [^DBI db
                               ^Cursor cur
@@ -1118,14 +1134,23 @@
     (scan/visit-list-range this dbi-name visitor k-range kt v-range
                            vt raw-pred?))
 
+  (visit-list-key-range
+    [this dbi-name visitor k-range k-type v-type]
+    (.visit-list-key-range this dbi-name visitor k-range k-type
+                           v-type true))
+  (visit-list-key-range
+    [this dbi-name visitor k-range k-type v-type raw-pred?]
+    (scan/visit-list-key-range this dbi-name visitor k-range k-type
+                               v-type raw-pred?))
+
   (visit-list-sample
-    [this list-name indices budget step visitor k-range k-type v-range v-type]
+    [this list-name indices budget step visitor k-range k-type v-type]
     (.visit-list-sample this list-name indices budget step visitor k-range
-                        k-type v-range v-type true))
+                        k-type v-type true))
   (visit-list-sample
-    [this dbi-name indices budget step visitor k-range kt v-range vt raw-pred?]
+    [this dbi-name indices budget step visitor k-range kt vt raw-pred?]
     (scan/visit-list-sample this dbi-name indices budget step visitor k-range
-                            kt v-range vt raw-pred?))
+                            kt vt raw-pred?))
 
   (operate-list-val-range
     [this dbi-name operator v-range vt]

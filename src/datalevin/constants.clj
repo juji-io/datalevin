@@ -425,7 +425,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 2.5)
+  magic-cost-merge-scan-v 3.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
