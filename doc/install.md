@@ -4,8 +4,9 @@ Datalevin can be installed with different methods, depending on how you plan to 
 
 ## Clojure Library
 
-The core of Datalevin is a JVM Clojure library, simply add it to your Clojure
-project as a dependency and start using it!
+The core of Datalevin is a JVM Clojure library with some native dependencies.
+In many cases, one can simply add it to your Clojure project as a dependency
+and start using it!
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:

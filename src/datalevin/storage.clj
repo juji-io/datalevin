@@ -437,9 +437,8 @@
         lmdb c/ave sample-indices c/sample-time-budget c/sample-iteration-step
         work (ave-key-range aid vt val-range) :avg :id))
     (doseq [val-range val-ranges]
-      (lmdb/visit-list-range
-        lmdb c/ave work (ave-key-range aid vt val-range) :avg
-        [:closed c/e0 c/emax] :id))))
+      (lmdb/visit-list-key-range
+        lmdb c/ave work (ave-key-range aid vt val-range) :avg :id))))
 
 (defn- ave-tuples-scan-need-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]
