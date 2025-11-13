@@ -10,6 +10,8 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
   the load, the bigger the batch"
+  (:require
+   [datalevin.util :as u])
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
@@ -122,9 +124,7 @@
   (stop [_]
     (.set running false)
     (.shutdownNow dispatcher)
-    (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS)
-    (.shutdown workers)
-    (.awaitTermination workers 5000 TimeUnit/MILLISECONDS))
+    (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS))
   (exec [_ work]
     (let [k  (work-key work)
           cb (callback work)]
@@ -142,7 +142,7 @@
 (defn- new-async-executor
   []
   (->AsyncExecutor (Executors/newSingleThreadExecutor)
-                   (Executors/newWorkStealingPool)
+                   (u/get-worker-thread-pool)
                    (LinkedBlockingQueue.)
                    (ConcurrentHashMap.)
                    (AtomicBoolean. false)))

@@ -603,7 +603,7 @@
       (swap! l/lmdb-dirs disj (l/dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
-        (u/shutdown-query-thread-pool)
+        (u/shutdown-worker-thread-pool)
         (u/shutdown-scheduler))
       (.sync env 1)
       (.close env)
