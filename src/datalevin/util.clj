@@ -36,7 +36,8 @@
   (let [pool @worker-thread-pool-atom]
     (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
       (reset! worker-thread-pool-atom
-              (Executors/newWorkStealingPool))
+              (Executors/newFixedThreadPool
+                (* 3 (.availableProcessors (Runtime/getRuntime)))))
       pool)))
 
 (defn shutdown-worker-thread-pool
@@ -171,7 +172,6 @@
        total)
      (+ total (.length file)))))
 
-;;(def +tmp+ "/mnt/tmpfs/")
 (def +tmp+
   (s/escape (let [path (System/getProperty "java.io.tmpdir")]
               (if-not (s/ends-with? path +separator+)
@@ -642,3 +642,8 @@
    (let [pool ^ExecutorService (get-worker-thread-pool)
          futs (.invokeAll pool (mapv (fn [e1 e2] #(f e1 e2)) c1 c2))]
      (mapv #(.get ^Future %) futs))))
+
+(defn supports-virtual-threads?
+  "Returns true when the running JVM is 21+ (Loom / virtual threads)."
+  []
+  (>= (.feature (Runtime/version)) 21))

@@ -25,12 +25,12 @@
     DTLV$dtlv_list_iter DTLV$dtlv_list_sample_iter DTLV$dtlv_list_val_iter
     DTLV$dtlv_list_rank_sample_iter DTLV$dtlv_list_val_full_iter DTLV$MDB_val
     DTLV$dtlv_list_key_range_full_val_iter]
-   [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util
-    Util$BadReaderLockException Util$MapFullException]
+   [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util Util$MapFullException]
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
-   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
+   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture
+    Semaphore]
    [java.lang AutoCloseable]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
@@ -54,6 +54,12 @@
              (get [_] (ArrayDeque.))))))
 
 (defn- new-bufval [size] (BufVal. size))
+
+(defn- get-bufval
+  [pools]
+  (if-let [^BufVal bv (pool-take pools)]
+    (do (.clear bv) bv)
+    (new-bufval c/+max-key-size+)))
 
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
@@ -173,10 +179,7 @@
      (l/range-table v-range-type start-vp stop-vp)])
 
   IRtx
-  (read-only? [_] (.isReadOnly txn))
-  (close-rtx [_] (.close txn))
-  (reset [this] (.reset txn) this)
-  (renew [this] (.renew txn) this))
+  (read-only? [_] (.isReadOnly txn)))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.ms_psize ^DTLV$MDB_stat (.get stat))
@@ -570,6 +573,7 @@
 (deftype CppLMDB [^Env env
                   info
                   ^Pool pools
+                  ^Semaphore readers
                   ^HashMap dbis
                   scheduled-sync
                   ^BufVal kp-w
@@ -589,7 +593,7 @@
 
   (mark-write [_]
     (->CppLMDB
-      env info pools dbis scheduled-sync kp-w vp-w start-kp-w
+      env info pools readers dbis scheduled-sync kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
@@ -701,29 +705,35 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
-    (or (when-let [^Rtx rtx (pool-take pools)]
-          (try
-            (.renew rtx)
-            (catch Util$BadReaderLockException _
-              (raise
-                "Please do not open multiple LMDB connections to the same DB
+    (try
+      (.acquire readers)
+      (Rtx. this
+            (Txn/createReadOnly env)
+            (get-bufval pools)
+            (get-bufval pools)
+            (get-bufval pools)
+            (get-bufval pools)
+            (get-bufval pools)
+            (get-bufval pools)
+            (volatile! false))
+      (catch Exception e
+        (raise
+          "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.core/open-kv` for more details." {}))))
-        (Rtx. this
-              (Txn/createReadOnly env)
-              (new-bufval c/+max-key-size+)
-              (new-bufval 0)
-              (new-bufval c/+max-key-size+)
-              (new-bufval c/+max-key-size+)
-              (new-bufval c/+max-key-size+)
-              (new-bufval c/+max-key-size+)
-              (volatile! false))))
+           `datalevin.core/open-kv` for more details."
+          {:cause (.getMessage e)}))))
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
-      (.reset ^Rtx rtx)
-      (pool-add pools rtx)))
+      (.commit ^Txn (.-txn  ^Rtx rtx))
+      (pool-add pools (.-kp ^Rtx rtx))
+      (pool-add pools (.-vp ^Rtx rtx))
+      (pool-add pools (.-start-kp ^Rtx rtx))
+      (pool-add pools (.-stop-kp ^Rtx rtx))
+      (pool-add pools (.-start-vp ^Rtx rtx))
+      (pool-add pools (.-stop-vp ^Rtx rtx))
+      (.release readers)))
 
   (stat [_]
     (try
@@ -1281,6 +1291,7 @@
            ^CppLMDB lmdb (->CppLMDB env
                                     (volatile! info)
                                     (new-pools)
+                                    (Semaphore. max-readers)
                                     (HashMap.)
                                     (volatile! nil)
                                     (new-bufval c/+max-key-size+)

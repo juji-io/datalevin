@@ -40,10 +40,7 @@
     "return key value range information for list iterators"))
 
 (defprotocol IRtx
-  (read-only? [this] "is this a read only transaction")
-  (close-rtx [this] "close the transaction")
-  (reset [this] "reset transaction so it can be reused upon renew")
-  (renew [this] "renew and return previously reset transaction for reuse"))
+  (read-only? [this] "is this a read only transaction"))
 
 (defprotocol IDB
   (dbi [this] "Return the underlying dbi")

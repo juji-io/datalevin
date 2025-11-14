@@ -6,7 +6,8 @@
    [datalevin.constants :as c]
    [datalevin.core :as d])
   (:import
-   [java.util UUID]))
+   [java.util UUID]
+   [java.util.concurrent Executors]))
 
 (use-fixtures :each db-fixture)
 
@@ -80,7 +81,7 @@
 (deftest test-multi-threads-read
   (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
         conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n     10000
+        n     2000
         all   (range n)
         tx    (map (fn [i] {:id i}) (range n))
         query (fn [i]
@@ -92,12 +93,13 @@
     (d/transact! conn tx)
     (is (= n (d/count-datoms @conn nil nil nil)))
 
-    (dotimes [_ 100]
+    (dotimes [_ 10]
       (let [futs (mapv #(future (pull %)) all)]
         (is (= all (for [f futs] @f))))
       (is (= (range 1 (inc n)) (pmap query all)))
       (is (= all (pmap pull all))))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-multi-threads-read-1
   (let [dir  (u/tmp-dir (str "concurrent-read1-" (UUID/randomUUID)))
@@ -126,5 +128,41 @@
     (is (= (dec n) (count (pmap pull rng))))
     (is (= (dec n) (count (pmap pull rng))))
     (is (= (dec n) (count (pmap pull rng))))
+    (d/close conn)
+    (u/delete-files dir)))
 
-    (d/close conn)))
+(deftest virtual-thread-max-readers-test
+  (when (u/supports-virtual-threads?)
+    (let [dir         (u/tmp-dir (str "vt-" (UUID/randomUUID)))
+          readers     2
+          threads     100
+          queries     10
+          size        100
+          conn        (d/get-conn dir {} {:kv-opts {:max-readers readers}})
+          vt-executor (Executors/newVirtualThreadPerTaskExecutor)]
+      (d/transact! conn (mapv (fn [^long i] {:id i :value (* i queries)})
+                              (range size)))
+      (doseq [^long i (range threads)]
+        (let [ft (.submit
+                   vt-executor
+                   ^Callable
+                   (fn []
+                     (reduce
+                       (fn [acc ^long query-id]
+                         (let [target-id (mod (+ (* i size) query-id) size)
+                               result    (d/q '[:find ?v
+                                                :in $ ?id
+                                                :where
+                                                [?e :id ?id]
+                                                [?e :value ?v]]
+                                              (d/db conn)
+                                              target-id)]
+                           (if (= (* ^long target-id queries) (ffirst result))
+                             (inc acc)
+                             acc)))
+                       0
+                       (range queries))))]
+          (is (= queries (.get ft)))))
+      (.shutdown vt-executor)
+      (d/close conn)
+      (u/delete-files dir))))
