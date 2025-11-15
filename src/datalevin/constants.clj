@@ -408,6 +408,14 @@
 ;; datalog query engine
 
 (def ^{:dynamic true
+       :doc     "Size reduction a predicate induces during scan"}
+  magic-size-pred 0.7)
+
+(def ^{:dynamic true
+       :doc     "Size reduction a filter induces during scan"}
+  magic-size-fidx 0.8)
+
+(def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
   magic-cost-pred 2.0)
 

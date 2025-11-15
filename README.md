@@ -294,7 +294,7 @@ the average times:
 <img src="benchmarks/JOB-bench/means.png" alt="JOB benchmark averages" height="300"></img>
 </p>
 
-Datalevin is about 1.3X faster than PostgreSQL on average in running the complex
+Datalevin is about 1.7X faster than PostgreSQL on average in running the complex
 queries that involves many joins. The gain is mainly due to shorter query
 execution time as Datalevin's query optimizer generates better plans. Details of
 the analysis can be found in [this

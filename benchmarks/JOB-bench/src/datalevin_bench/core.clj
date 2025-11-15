@@ -3268,32 +3268,27 @@
     (doseq [q queries]
       (let [qname  (s/replace (name q) "q-" "")
             query  (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
-            result (d/explain {:run? true} query (d/db conn))]
+            result (d/explain {:run? true} query (d/db conn))
+            ]
         (d/write-csv w [[qname
-                         (:planning-time result)
+                         (:prepare-time result)
                          (:execution-time result)]]))))
   (d/close conn)
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [f [1.6 1.6]
-          s [2.0 2.0]
-          v [4.5 7.0]
-          ]
+  (doseq [p [0.5 0.6 0.7]
+          f [0.8 0.9]]
     (let [start (System/currentTimeMillis)]
-      (doseq [q ['q-10c] #_queries]
+      (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
-          (binding [c/magic-cost-fidx          f
-                    c/magic-cost-pred          s
-                    c/magic-cost-var           v
-                    c/magic-cost-merge-scan-v  3.5
-                    c/magic-cost-val-eq-scan-e 4.0
-                    c/magic-cost-init-scan-e   2.0
-                    q/*cache?*                 false]
+          (binding [c/magic-size-pred p
+                    c/magic-size-fidx f
+                    q/*cache?*        false]
             (let [start (System/currentTimeMillis)]
               (d/q query (d/db conn))
               (println q "took" (- (System/currentTimeMillis) start))))))
-      (println "f" f "s" s  "v" v
+      (println "p" p "f" f
                (format
                  "%.2f"
                  (double (/ (- (System/currentTimeMillis) start) 1000))))))
@@ -3304,7 +3299,8 @@
   (time (d/analyze (d/db conn)))
 
   (d/explain {:run? true} q-10c (d/db conn))
-;; => {:opt-clauses [[?ci :cast-info/note ?ci.note] [?cn :company-name/country-code "[us]"] [?t :title/production-year ?t.production-year] [?mc :movie-companies/movie ?t] [?ci :cast-info/movie ?t] [?ci :cast-info/person-role ?chn] [?mc :movie-companies/company ?cn] [?chn :char-name/name ?chn.name] [?t :title/title ?t.title] [(like ?ci.note "%(producer)%")] [(< 1990 ?t.production-year)]], :late-clauses (), :actual-result-size 6, :parsing-time "0.816", :query-graph {$ {?ci {:links [{:type :ref, :tgt ?t, :attr :cast-info/movie} {:type :ref, :tgt ?chn, :attr :cast-info/person-role} {:type :val-eq, :tgt ?mc, :var ?t, :attrs {?ci :cast-info/movie, ?mc :movie-companies/movie}}], :free [{:attr :cast-info/note, :var ?ci.note, :pred #function[datalevin.query/activate-var-pred/fn--31079]} {:attr :cast-info/movie, :var ?t} {:attr :cast-info/person-role, :var ?chn}]}, ?cn {:links [{:type :_ref, :tgt ?mc, :attr :movie-companies/company}], :bound [{:attr :company-name/country-code, :val "[us]"}]}, ?t {:links [{:type :_ref, :tgt ?ci, :attr :cast-info/movie} {:type :_ref, :tgt ?mc, :attr :movie-companies/movie}], :free [{:attr :title/production-year, :var ?t.production-year, :range [[[:open 1990] [:closed :db.value/sysMax]]]} {:attr :title/title, :var ?t.title}]}, ?mc {:links [{:type :ref, :tgt ?t, :attr :movie-companies/movie} {:type :ref, :tgt ?cn, :attr :movie-companies/company} {:type :val-eq, :tgt ?ci, :var ?t, :attrs {?ci :cast-info/movie, ?mc :movie-companies/movie}}], :free [{:attr :movie-companies/movie, :var ?t} {:attr :movie-companies/company, :var ?cn}]}, ?chn {:links [{:type :_ref, :tgt ?ci, :attr :cast-info/person-role}], :free [{:attr :char-name/name, :var ?chn.name}]}}}, :execution-time "69784.601", :result (["Himself" "Evil Eyes: Behind the Scenes"]), :planning-time "18.357", :building-time "1.856", :plan {$ [(#datalevin.query.Plan{:steps ["Initialize [?t ?t.production-year] by range [[[:open 1990] [:closed :db.value/sysMax]]] on :title/production-year." "Merge [?t.title] by scanning [:title/title]."], :cost 34555404, :size 1772072, :actual-size 1749032} #datalevin.query.Plan{:steps ["Merge ?mc by reverse reference of :movie-companies/movie." "Merge [?cn] by scanning [:movie-companies/movie :movie-companies/company]."], :cost 103666212, :size 1029574, :actual-size 1508127} #datalevin.query.Plan{:steps ["Merge ?ci by equal values of :cast-info/movie." "Merge [?ci.note ?chn] by scanning [:cast-info/note :cast-info/person-role :cast-info/movie]."], :cost 237510832, :size 29724, :actual-size 23} #datalevin.query.Plan{:steps ["Filter by predicates on [:company-name/country-code]."], :cost 237718900, :size 29724, :actual-size 10} #datalevin.query.Plan{:steps ["Merge [?chn.name] by scanning [:char-name/name]."], :cost 238239070, :size 29724, :actual-size 10})]}}
+
+
 
   (def store (.-store (d/db conn)))
 

@@ -1597,31 +1597,39 @@
             ires (assoc :result (-execute step db ires))
             isp  (assoc :sample (-sample step db isp))))))))
 
-(def default-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
-
-(defn- estimate-scan-v-size
-  [^long e-size steps]
-  (let [{:keys [know-e?] res1 :result sp1 :sample} (first steps)]
-    (if know-e?
-      1
-      (let [{:keys [result sample]} (peek steps)]
-        (estimate-round
-          (* e-size
-             (double (cond
-                       result (let [s (.size ^List result)]
-                                (if (< 0 s)
-                                  (/ s (.size ^List res1))
-                                  default-ratio))
-                       sample (let [s (.size ^List sample)]
-                                (if (< 0 s)
-                                  (/ s (.size ^List sp1))
-                                  default-ratio))))))))))
-
 (defn- n-items
   [attrs-v k]
   (reduce
     (fn [^long c [_ m]] (if (m k) (inc c) c))
     0 attrs-v))
+
+(defn- default-merge-ratio
+  [{:keys [attrs-v]}]
+  (let [npred (n-items attrs-v :pred)
+        nfidx (n-items attrs-v :fidx)]
+    (cond-> 1.0
+      (< 0 npred) (* (Math/pow c/magic-size-pred npred))
+      (< 0 nfidx) (* (Math/pow c/magic-size-fidx nfidx)))))
+
+(defn- estimate-scan-v-size
+  [^long e-size steps]
+  (let [{:keys [know-e?] res1 :result sp1 :sample :as istep} (first steps)
+        {:keys [result sample] :as mstep}                    (peek steps)]
+    (cond
+      know-e?         1
+      (= istep mstep) e-size ; no merge step
+      :else
+      (estimate-round
+        (* e-size (double
+                    (cond
+                      result (let [s (.size ^List result)]
+                               (if (< 0 s)
+                                 (/ s (.size ^List res1))
+                                 (default-merge-ratio mstep)))
+                      sample (let [s (.size ^List sample)]
+                               (if (< 0 s)
+                                 (/ s (.size ^List sp1))
+                                 (default-merge-ratio mstep))))))))))
 
 (defn- factor
   [magic ^long n]
@@ -1769,6 +1777,8 @@
         (rd/map #(s/av-size store attr (aget ^objects % index))
                 (s/remove-end-scan tuples))))))
 
+(def magic-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
+
 (defn- estimate-link-size
   [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
    prev-size last-step index]
@@ -1791,7 +1801,7 @@
           size)
         :else
         (* ^long prev-size
-           ^double (.getOrDefault ratios ratio-key default-ratio))))))
+           ^double (.getOrDefault ratios ratio-key magic-ratio))))))
 
 (defn- estimate-join-size
   [db link-e link ratios prev-size last-step index new-base-plan]
@@ -2302,12 +2312,15 @@
                           1000000))
            bt  (double (/ building-time 1000000))
            plt (double (/ planning-time 1000000))
-           pat (double (/ parsing-time 1000000))]
+           pat (double (/ parsing-time 1000000))
+           ppt (double (/ (+ parsing-time building-time planning-time)
+                          1000000))]
        (vswap! *explain* assoc
                :actual-result-size (count result-set)
                :parsing-time (format "%.3f" pat)
                :building-time (format "%.3f" bt)
                :planning-time (format "%.3f" plt)
+               :prepare-time (format "%.3f" ppt)
                :execution-time (format "%.3f" et)
                :opt-clauses opt-clauses
                :query-graph (w/postwalk

@@ -4,12 +4,15 @@
 
 ### Changed
 - [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
-  additional features of counted DB and prefix compression. Stock LMDB can still
-  be used on platforms that do not have bundled DLMDB, though without benefits
-  of the new features.
+  additional features of counted DB
+  [#337](https://github.com/juji-io/datalevin/issues/337), prefix compression
+  and dupsort iterator optimizations. Stock LMDB can still be used on platforms
+  that do not have bundled DLMDB, though without benefits of the new features.
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [Vector] Vector index is now stored inside the database file and is ACID
   compliant.
+- [Platform] Native dependencies are statically compiled and bundled in the
+  release jars.
 - [Platform] Drop support for Intel macOS.
 - [Platform] Minimal Java version is 21.
 
@@ -22,14 +25,19 @@
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs.
 - [KV] Range count functions in O(log n) time for `:counted` DBIs.
+- [KV] Sampling functions in O(log n) time for `:counted` DBIs.
 
 ### Fixed
-- [Server] Faster code path for `pull` and `pull-many` on server.
-  [#322](https://github.com/juji-io/datalevin/issues/322)
+- [KV] Enable virtual threads usage by not reusing read only transactions
+  [#322](https://github.com/juji-io/datalevin/issues/322).
+- [Server] Faster code path for `pull` and `pull-many` on server
+  [#322](https://github.com/juji-io/datalevin/issues/322).
 
 ### Improved
-- [Datalog] Reduced query planning time due to faster range counts and
-  sampling of `:counted` feature.
+- [Datalog] Cut query planning time in half due to faster range counts and
+  sampling of `:counted` feature in DLMDB.
+- [Datalog] Slightly reduced query execution time due to more optimized DLMDB
+  iterators.
 - [Datalog] Smaller DB size due to prefix compression and key/value compression.
 - [KV] Set default of `:max-readers` to 1024.
 
