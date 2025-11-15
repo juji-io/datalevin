@@ -270,31 +270,3 @@ For more examples have a look at the
 This Entity API is new and can be improved. For example, it does not currently
 resolve lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel
 free to reach out to @den1k.
-
-## Read Transaction
-
-Unlike write transactions that are freed after use, read transactions are reset
-instead, so that subsequent read operations may renew and reuse them. This
-improves performance.
-
-Datalevin has a upper limit of the number of readers that are available, set as
-a KV option `:max-readers`. The default number is 1024 (one can set a
-larger number), but it may still run out, resulting in a `MDB_READERS_FULL`
-exception. The common cause is that there are too many reading threads (not
-necessarily at the same time).
-
-To avoid exhausting the number of readers, it is recommended to use a thread
-pool with a limited number of threads to work with Datalevin. e.g.
-`java.util.current.Executors/newFixedThreadPool`,
-`java.util.current.Executors/newWorkStealingPool`, or a custom one.
-
-Some libraries may uses unbounded number of threads. For example, a
-http-kit server by default creates a new thread to handle a request and can
-run out of readers quickly, so it is desirable to specify a `:worker-pool` when
-starting the http-kit server.
-
-Default use of `future`, `agent`, `pmap` and so on may also take up too many
-readers, for these use `java.util.current.Executors/newCachedThreadPool`, which
-is unbounded in size. When threads do not finish their work quickly enough, the
-number of initiated threads can accumulate to a huge number. To change the
-thread pool used, call `set-agent-send-off-executor!` function.

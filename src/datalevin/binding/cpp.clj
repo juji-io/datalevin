@@ -55,11 +55,14 @@
 
 (defn- new-bufval [size] (BufVal. size))
 
-(defn- get-bufval
+(defn- get-bufvals
   [pools]
-  (if-let [^BufVal bv (pool-take pools)]
-    (do (.clear bv) bv)
-    (new-bufval c/+max-key-size+)))
+  (if-let [^objects bvs (pool-take pools)]
+    (do (dotimes [i 6] (.clear ^BufVal (aget bvs i)))
+        bvs)
+    (let [bvs (object-array 6)]
+      (dotimes [i 6] (aset bvs i (new-bufval c/+max-key-size+)))
+      bvs)))
 
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
@@ -144,6 +147,7 @@
 
 (deftype Rtx [lmdb
               ^Txn txn
+              ^objects bvs
               ^BufVal kp
               ^BufVal vp
               ^BufVal start-kp
@@ -362,7 +366,7 @@
                              ^long step
                              ^Cursor cur
                              ^Rtx rtx
-                             ctx]
+                             ^RangeContext ctx]
   Iterable
   (iterator [_]
     (let [sk      (dtlv-val (.-start-bf ctx))
@@ -404,17 +408,13 @@
                                  ^RangeContext ctx]
   IListRandKeyValIterable
   (val-iterator [_]
-    (let [include-start-val? (dtlv-bool (.-include-start? ctx))
-          include-stop-val?  (dtlv-bool (.-include-stop? ctx))
-          sv                 (dtlv-val (.-start-bf ctx))
-          ev                 (dtlv-val (.-stop-bf ctx))
-          ^BufVal k          (.key cur)
-          ^BufVal v          (.val cur)
-          iter               (DTLV$dtlv_list_val_iter.)]
+    (let [sv        (dtlv-val (.-start-bf ctx))
+          ev        (dtlv-val (.-stop-bf ctx))
+          ^BufVal k (.key cur)
+          ^BufVal v (.val cur)
+          iter      (DTLV$dtlv_list_val_iter.)]
       (Util/checkRc
-        (DTLV/dtlv_list_val_iter_create
-          iter (.ptr cur) (.ptr k) (.ptr v)
-          ^int include-start-val? ^int include-stop-val? sv ev))
+        (DTLV/dtlv_list_val_iter_create iter (.ptr cur) (.ptr k) (.ptr v) sv ev))
       (reify
         IListRandKeyValIterator
         (seek-key [_ x t]
@@ -706,16 +706,18 @@
 
   (get-rtx [this]
     (try
-      (.acquire readers)
-      (Rtx. this
-            (Txn/createReadOnly env)
-            (get-bufval pools)
-            (get-bufval pools)
-            (get-bufval pools)
-            (get-bufval pools)
-            (get-bufval pools)
-            (get-bufval pools)
-            (volatile! false))
+      (let [^objects bvs (get-bufvals pools)]
+        (.acquire readers)
+        (Rtx. this
+              (Txn/createReadOnly env)
+              bvs
+              (aget bvs 0)
+              (aget bvs 1)
+              (aget bvs 2)
+              (aget bvs 3)
+              (aget bvs 4)
+              (aget bvs 5)
+              (volatile! false)))
       (catch Exception e
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -726,14 +728,9 @@
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
-      (.commit ^Txn (.-txn  ^Rtx rtx))
-      (pool-add pools (.-kp ^Rtx rtx))
-      (pool-add pools (.-vp ^Rtx rtx))
-      (pool-add pools (.-start-kp ^Rtx rtx))
-      (pool-add pools (.-stop-kp ^Rtx rtx))
-      (pool-add pools (.-start-vp ^Rtx rtx))
-      (pool-add pools (.-stop-vp ^Rtx rtx))
-      (.release readers)))
+      (.abort ^Txn (.-txn  ^Rtx rtx))
+      (.release readers)
+      (pool-add pools (.-bvs ^Rtx rtx))))
 
   (stat [_]
     (try
@@ -1235,6 +1232,7 @@
     (vreset! (.-write-txn lmdb)
              (Rtx. lmdb
                    (create-rw-txn lmdb)
+                   nil
                    kp-w
                    vp-w
                    start-kp-w

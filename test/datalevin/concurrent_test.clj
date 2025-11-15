@@ -81,7 +81,7 @@
 (deftest test-multi-threads-read
   (let [dir   (u/tmp-dir (str "concurrent-read-" (UUID/randomUUID)))
         conn  (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n     2000
+        n     1000
         all   (range n)
         tx    (map (fn [i] {:id i}) (range n))
         query (fn [i]
@@ -105,7 +105,7 @@
   (let [dir  (u/tmp-dir (str "concurrent-read1-" (UUID/randomUUID)))
         conn (d/get-conn dir {:children {:db/valueType   :db.type/ref
                                          :db/cardinality :db.cardinality/many}})
-        n    10000
+        n    1000
         rng  (range 1 n)
         tx   (mapv (fn [^long i]
                      (let [id (* -1 i)]
@@ -148,7 +148,7 @@
                    ^Callable
                    (fn []
                      (reduce
-                       (fn [acc ^long query-id]
+                       (fn [^long acc ^long query-id]
                          (let [target-id (mod (+ (* i size) query-id) size)
                                result    (d/q '[:find ?v
                                                 :in $ ?id

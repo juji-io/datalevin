@@ -11,6 +11,7 @@
 - [Vector] Vector index is now stored inside the database file and is ACID
   compliant.
 - [Platform] Drop support for Intel macOS.
+- [Platform] Minimal Java version is 21.
 
 ### Added
 - [Platform] Automatically upgrade DB from version 0.9.12 onwards. The migration
@@ -28,7 +29,7 @@
 
 ### Improved
 - [Datalog] Reduced query planning time due to faster range counts and
-  sampling by rank of `:counted` feature.
+  sampling of `:counted` feature.
 - [Datalog] Smaller DB size due to prefix compression and key/value compression.
 - [KV] Set default of `:max-readers` to 1024.
 

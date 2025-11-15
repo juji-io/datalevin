@@ -20,7 +20,8 @@
     IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays Iterator List]
-   [java.util.concurrent Executors ExecutorService Future TimeUnit]
+   [java.util.concurrent Executors ExecutorService Future TimeUnit
+    ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -30,14 +31,20 @@
 
 (defonce worker-thread-pool-atom (atom nil))
 
+(defn- ioPool
+  []
+  (let [threads (* 4 (.availableProcessors (Runtime/getRuntime)))]
+    (ThreadPoolExecutor.
+      threads threads 0 TimeUnit/MILLISECONDS
+      (ArrayBlockingQueue. (* 4 threads))       ; bounded queue
+      (ThreadPoolExecutor$CallerRunsPolicy.)))) ; backpressure
+
 (defn get-worker-thread-pool
   "access the thread pool for parallel query processing"
   []
   (let [pool @worker-thread-pool-atom]
     (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
-      (reset! worker-thread-pool-atom
-              (Executors/newFixedThreadPool
-                (* 3 (.availableProcessors (Runtime/getRuntime)))))
+      (reset! worker-thread-pool-atom (ioPool))
       pool)))
 
 (defn shutdown-worker-thread-pool
