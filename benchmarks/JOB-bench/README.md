@@ -183,9 +183,9 @@ in this benchmark:
 |DB|Wall Clock Time (seconds)|
 |---|---|
 |PostgreSQL|204|
-|Datalevin|119|
+|Datalevin|105|
 
-Datalevin is about 1.7X faster than PostgreSQL overall in running these complex
+Datalevin is about 2X faster than PostgreSQL overall in running these complex
 queries.
 
 ### Planning time
@@ -195,7 +195,7 @@ Numbers below are in milliseconds.
 |DB|Mean|Min|Median|Max|
 |---|---|---|---|---|
 |PostgreSQL|9.8 |0.8 |3.6 |44.1 |
-|Datalevin|36.2 |5.3 |23.9 |310.1 |
+|Datalevin|34.2 |5.7 |22.8 |285.2 |
 
 Datalevin spent more time than PostgreSQL on query planning. However, the
 planning time can be seen as rounding error compared with execution time.
@@ -207,12 +207,12 @@ Numbers below are in milliseconds.
 |DB|Mean|Min|Median|Max|
 |---|---|---|---|---|
 |PostgreSQL|1752.6 |3.0 |174.6 |55251.3 |
-|Datalevin|994.1 |0.1 |184.8 |22555.3 |
+|Datalevin|866.8 |0.1 |213.6 |7726.3 |
 
-On average, Datalevin is 1.7X faster than PostgreSQL in plan execution.
+On average, Datalevin is 2X faster than PostgreSQL in plan execution.
 The median times are similar, the differences are mainly in
 extrema. The best plan in Datalevin can be an order of magnitude faster, while
-the worst plan in PostgreSQL can be 2X slower than the worst plan in Datalevin.
+the worst plan in PostgreSQL can be 7X slower than the worst plan in Datalevin.
 
 ## Remarks
 
