@@ -19,12 +19,11 @@ public class Dbi {
         Txn txn = Txn.create(env);
         try {
             Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
-            handle = (int)ptr.get();
+            handle = (int) ptr.get();
         } catch (Exception e) {
             txn.close();
             throw e;
         }
-
         txn.commit();
     }
 

@@ -55,15 +55,6 @@
 
 (defn- new-bufval [size] (BufVal. size))
 
-(defn- get-bufvals
-  [pools]
-  (if-let [^objects bvs (pool-take pools)]
-    (do (dotimes [i 6] (.clear ^BufVal (aget bvs i)))
-        bvs)
-    (let [bvs (object-array 6)]
-      (dotimes [i 6] (aset bvs i (new-bufval c/+max-key-size+)))
-      bvs)))
-
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
   (k [_] (.outBuf kp))
@@ -147,7 +138,7 @@
 
 (deftype Rtx [lmdb
               ^Txn txn
-              ^objects bvs
+              depth
               ^BufVal kp
               ^BufVal vp
               ^BufVal start-kp
@@ -183,7 +174,18 @@
      (l/range-table v-range-type start-vp stop-vp)])
 
   IRtx
-  (read-only? [_] (.isReadOnly txn)))
+  (read-only? [_] (.isReadOnly txn))
+  (reset [this]
+    (vswap! depth u/long-dec)
+    (when (zero? ^long @depth)
+      (.reset txn))
+    this)
+
+  (renew [this]
+    (when (zero? @depth)
+      (.renew txn))
+    (vswap! depth u/long-inc)
+    this))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.ms_psize ^DTLV$MDB_stat (.get stat))
@@ -246,7 +248,7 @@
           ^BufVal vp (.-vp ^Rtx rtx)
           rc         (DTLV/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
                                    (.get db) (.ptr kp) (.ptr vp))]
-      (Util/checkRc rc)
+      (Util/checkRc ^int rc)
       (when-not (= rc DTLV/MDB_NOTFOUND)
         (.outBuf vp))))
   (iterate-key [this rtx cur [range-type k1 k2] k-type]
@@ -572,7 +574,7 @@
 
 (deftype CppLMDB [^Env env
                   info
-                  ^Pool pools
+                  ^ThreadLocal tl-reader
                   ^Semaphore readers
                   ^HashMap dbis
                   scheduled-sync
@@ -593,7 +595,7 @@
 
   (mark-write [_]
     (->CppLMDB
-      env info pools readers dbis scheduled-sync kp-w vp-w start-kp-w
+      env info tl-reader readers dbis scheduled-sync kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
@@ -705,32 +707,35 @@
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
-    (try
-      (let [^objects bvs (get-bufvals pools)]
-        (.acquire readers)
-        (Rtx. this
-              (Txn/createReadOnly env)
-              bvs
-              (aget bvs 0)
-              (aget bvs 1)
-              (aget bvs 2)
-              (aget bvs 3)
-              (aget bvs 4)
-              (aget bvs 5)
-              (volatile! false)))
-      (catch Exception e
-        (raise
-          "Please do not open multiple LMDB connections to the same DB
+    (when-not (.closed-kv? this)
+      (try
+        (or (when-let [^Rtx rtx (.get tl-reader)]
+              (.renew rtx))
+            (let [rtx (Rtx. this
+                            (Txn/createReadOnly env)
+                            (volatile! 1)
+                            (new-bufval c/+max-key-size+)
+                            (new-bufval 0)
+                            (new-bufval c/+max-key-size+)
+                            (new-bufval c/+max-key-size+)
+                            (new-bufval c/+max-key-size+)
+                            (new-bufval c/+max-key-size+)
+                            (volatile! false))]
+              (.set tl-reader rtx)
+              rtx))
+        (catch Exception e
+          (raise "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.core/open-kv` for more details."
-          {:cause (.getMessage e)}))))
+                 {:cause (.getMessage e)})))))
 
   (return-rtx [this rtx]
     (when-not  (.closed-kv? this)
-      (.abort ^Txn (.-txn  ^Rtx rtx))
-      (.release readers)
-      (pool-add pools (.-bvs ^Rtx rtx))))
+      (if (.isVirtual (Thread/currentThread))
+        (do (.abort ^Txn (.-txn ^Rtx rtx))
+            (.remove tl-reader))
+        (.reset ^Rtx rtx))))
 
   (stat [_]
     (try
@@ -1213,6 +1218,10 @@
             forward start end sk ek))))
     (raise "Fail to count (slow) list in key range: " e {:dbi dbi-name})))
 
+(defn- create-read-txn
+  [^CppLMDB lmdb]
+  )
+
 (defn- create-rw-txn [^CppLMDB lmdb] (Txn/create (.-env lmdb)))
 
 (defn- reset-write-txn
@@ -1232,7 +1241,7 @@
     (vreset! (.-write-txn lmdb)
              (Rtx. lmdb
                    (create-rw-txn lmdb)
-                   nil
+                   (volatile! 1)
                    kp-w
                    vp-w
                    start-kp-w
@@ -1288,7 +1297,7 @@
                                       :temp?       temp?})
            ^CppLMDB lmdb (->CppLMDB env
                                     (volatile! info)
-                                    (new-pools)
+                                    (ThreadLocal.)
                                     (Semaphore. max-readers)
                                     (HashMap.)
                                     (volatile! nil)

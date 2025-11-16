@@ -60,11 +60,11 @@
 ;; lmdb
 
 (def default-env-flags
-  "Default LMDB env flag is `#{:nordahead :notls}`. See
+  "Default LMDB env flag is `#{:nordahead}`. See
   [[datalevin.core/set-env-flags]] for a full list of flags.
 
   Passed as `:flags` option value to `open-kv` function."
-  #{:nordahead :notls})
+  #{:nordahead})
 
 (def default-dbi-flags
   "Default DBI flags is `#{:create :counted :prefix-compression}`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for a list of flags for stock LMDB, and https://github.com/huahaiy/dlmdb for additional flags."
@@ -366,7 +366,7 @@
   *max-dbs* 128)
 
 (def ^{:dynamic true
-       :doc     "Default number of readers allowed for a DB file is 1024. Can be set as `:max-readers` option when opening the DB."}
+       :doc     "Default number of concurrent readers allowed for a DB file is 1024. Can be set as `:max-readers` option when opening the DB."}
   *max-readers* 1024)
 
 (def ^{:dynamic true
