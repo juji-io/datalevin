@@ -56,15 +56,19 @@ list of values, and this list of values are also sorted, essentially it is a two
 level nested B+ trees of B+ trees), we store the head elements only once, by
 treating them as keys. The values are the remaining two elements of the
 triple as a list of values mapped to by a key. This nested triple storage
-results in about 20% space reduction, more or less depending on the data.
+results in about 20% space reduction, more or less depending on the data. In
+addition, the underlying KV storage implement page based prefix compression, so
+an additional 10% space reduction is archived.
 
 The main advantage of this list based triple storage is to facilitate counting
 of elements, which is the most critical input for query planning. Some list
-counts can be immediately read from the index, without performing actual
+counts can be immediately read from the index in O(1), without performing actual
 range scan to count them. For example, in our storage schema, the number of
 datoms matching `[?e :an-attr "bound value"]` pattern can be obtained from the
 `:ave` index in constant time, without maintaining specialized statistics
-collecting facilities and storage.
+collecting facilities and storage. Other range counts take advantage of the
+underlying KV storage's order statistics meta data to have O(log n) counting
+time.
 
 ## Query Optimizations
 
@@ -168,11 +172,11 @@ Data correlations are encoded naturally by these methods.
 As mentioned, the main advantage of our system is having more accurate
 result size estimation. Instead of relying on statistics based estimations
 using histograms and the like, we count elements directly, because counts in our
-list based triple storage are cheap to obtain. Since the planner is only
-interested in smallest count within one entity class, the counting is capped by
-the current minimum, so the time spent in counting is minimized. In addition,
-the counting is also bounded by a user configurable time budget. Compared with
-statistics based estimation, counting is simple, accurate and always up to date.
+list based triple storage are cheap to obtain. As our B+tree KV storage maintains
+order statics on the branch nodes, the range count operations have O(log n)
+time complexity. Compared with statistics based estimation, counting is simple,
+accurate and always up to date.
+
 
 ### Query specific sampling (new)
 
@@ -180,13 +184,9 @@ For large result size, even capped and bounded counting can be too expensive to
 perform. Sampling is used when result size is expected to be larger than a
 threshold. To ensure representative samples that are specific to the query and
 data distribution, we perform sampling by execution under actual query
-conditions.
-
-Using a background thread, each attribute maintains a representative sample of
-entity ids that has it. This is used when an attribute has no condition
-constraining it in the query. Otherwise, online sampling is performed during
-query. Both use reservoir sampling methods. Similar to counting, online sampling
-is also bounded by a user configurable time budget.
+conditions. Online sampling is performed during query using reservoir
+sampling methods. Similar to counting, online sampling takes advantage of O(log
+n) rank operation of the count feature of the KV storage.
 
 A sample of base entity IDs are collected first, then merge scans are performed
 to obtain base selectivity ratios. Finally, the selectivity of all possible two
