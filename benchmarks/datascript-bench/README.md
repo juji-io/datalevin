@@ -46,7 +46,7 @@ option.
 ```Clojure
       (d/init-db datoms (u/tmp-dir (str "bench-init" (UUID/randomUUID)))
                  schema {:kv-opts
-                 {:flags #{:nordahead :notls :writemap :nosync}}})
+                 {:flags #{:nordahead :writemap :nosync}}})
 ```
 
 |DB|Init Latency (ms)|
@@ -73,7 +73,7 @@ This transacts one datom at a time.
             (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
       (d/empty-db (u/tmp-dir (str "bench-add-1" (UUID/randomUUID)))
                   schema
-                  {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
+                  {:kv-opts {:flags #{:nordahead :writemap :nosync}}})
       core/people20k)
 ```
 
@@ -101,7 +101,7 @@ This transacts one entity (5 datoms) at a time.
           (reduce (fn [db p] (d/db-with db [p]))
             (d/empty-db (u/tmp-dir (str "bench-add-5" (UUID/randomUUID)))
                         schema
-                        {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
+                        {:kv-opts {:flags #{:nordahead :writemap :nosync}}})
             core/people20k)
 ```
 
@@ -126,7 +126,7 @@ This transacts all 100K datoms in one go.
     (d/db-with
       (d/empty-db (u/tmp-dir (str "bench-add-all" (UUID/randomUUID)))
                   schema
-                  {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
+                  {:kv-opts {:flags #{:nordahead :writemap :nosync}}})
       core/people20k)
 ```
 

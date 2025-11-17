@@ -1473,7 +1473,7 @@ See also: [[open-kv]], [[sync]]"}
 
          * `:mapasync`, use asynchronous msync when `:writemap` is used
 
-         * `:notls`, tie reader locktable slots to txn objects instead of to threads, set in Datalevin by default
+         * `:notls`, tie reader locktable slots to txn objects instead of to threads
 
          * `:nolock`, don't do any locking, caller must manage their own locks
 

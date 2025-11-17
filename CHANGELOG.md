@@ -6,15 +6,16 @@
 - [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
   additional features of counted DB
   [#337](https://github.com/juji-io/datalevin/issues/337), prefix compression
-  and dupsort iterator optimizations. Stock LMDB can still be used on platforms
-  that do not have bundled DLMDB, though without benefits of the new features.
+  and dupsort iterator optimizations.
+- [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
+- [KV] Default `:max-readers` is now 1024.
 - [Vector] Vector index is now stored inside the database file and is ACID
   compliant.
 - [Platform] Native dependencies are statically compiled and bundled in the
   release jars.
 - [Platform] Drop support for Intel macOS.
-- [Platform] Minimal Java version is 21.
+- [Platform] Minimal Java version is now 21.
 
 ### Added
 - [Platform] Automatically upgrade DB from version 0.9.12 onwards. The migration
@@ -29,17 +30,16 @@
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions
-  [#322](https://github.com/juji-io/datalevin/issues/322).
+  [#326](https://github.com/juji-io/datalevin/issues/326).
 - [Server] Faster code path for `pull` and `pull-many` on server
   [#322](https://github.com/juji-io/datalevin/issues/322).
 
 ### Improved
+- [Datalog] Smaller DB size due to prefix compression and key/value compression.
 - [Datalog] Cut query planning time in half due to faster range counts and
   sampling of `:counted` feature in DLMDB.
 - [Datalog] Slightly reduced query execution time due to more optimized DLMDB
   iterators.
-- [Datalog] Smaller DB size due to prefix compression and key/value compression.
-- [KV] Set default of `:max-readers` to 1024.
 
 ## 0.9.22 (2025-03-18)
 

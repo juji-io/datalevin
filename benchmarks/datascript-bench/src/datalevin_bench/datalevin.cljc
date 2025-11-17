@@ -135,7 +135,7 @@
               (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
         (d/empty-db (u/tmp-dir (str "datalevin-bench-add-1" (UUID/randomUUID)))
                     schema {:kv-opts
-                            {:flags #{:nordahead :notls :writemap :nosync}}})
+                            {:flags #{:nordahead :writemap :nosync}}})
         core/people20k))))
 
 
@@ -147,7 +147,7 @@
                                           (UUID/randomUUID)))
                           schema
                           {:kv-opts
-                           {:flags #{:nordahead :notls :writemap :nosync}}})
+                           {:flags #{:nordahead :writemap :nosync}}})
               core/people20k))))
 
 
@@ -159,7 +159,7 @@
                                     (UUID/randomUUID)))
                     schema
                     {:kv-opts
-                     {:flags #{:nordahead :notls :writemap :nosync}}})
+                     {:flags #{:nordahead :writemap :nosync}}})
         core/people20k))))
 
 
@@ -176,7 +176,7 @@
         (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init"
                                           (UUID/randomUUID)))
                    schema {:kv-opts
-                           {:flags #{:nordahead :notls :writemap :nosync}}})))))
+                           {:flags #{:nordahead :writemap :nosync}}})))))
 
 
 (defn ^:export retract-5 []
@@ -185,7 +185,7 @@
                                            (UUID/randomUUID)))
                            schema
                            {:kv-opts
-                            {:flags #{:nordahead :notls :writemap :nosync}}})
+                            {:flags #{:nordahead :writemap :nosync}}})
                core/people20k)
         eids (->> (d/datoms db :ave :name) (map :e) (shuffle))
         res  (core/bench-10
