@@ -182,7 +182,7 @@
     this)
 
   (renew [this]
-    (when (zero? @depth)
+    (when (zero? ^long @depth)
       (.renew txn))
     (vswap! depth u/long-inc)
     this))

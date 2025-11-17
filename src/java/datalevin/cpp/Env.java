@@ -72,6 +72,17 @@ public class Env {
     }
 
     /**
+     * Check reader lock table, clean it up. Return the number of dead readers.
+     */
+    public int readerCheck() {
+        try (IntPointer dPtr = new IntPointer(1)) {
+            if (closed) return (int)0;
+            Util.checkRc(DTLV.mdb_reader_check(env, dPtr));
+            return (int) dPtr.get();
+        }
+    }
+
+    /**
      * Set flags, non-zero onOff set the flags. Otherwise, clear the flags.
      */
     public void setFlags(final int toChange, final int onOff) {
@@ -83,11 +94,10 @@ public class Env {
      * Get flags.
      */
     public int getFlags() {
-        IntPointer fPtr = new IntPointer(1);
-        Util.checkRc(DTLV.mdb_env_get_flags(env, fPtr));
-        int res = (int) fPtr.get();
-        fPtr.close();
-        return res;
+        try (IntPointer fPtr = new IntPointer(1)) {
+            Util.checkRc(DTLV.mdb_env_get_flags(env, fPtr));
+            return (int) fPtr.get();
+        }
     }
 
     public void setMapSize(long size) {

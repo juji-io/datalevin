@@ -18,6 +18,12 @@ public class Util {
         }
     }
 
+    public static class ReaderFullException extends DTLVException {
+        public ReaderFullException(String msg) {
+            super(msg);
+        }
+    }
+
     public static class MapFullException extends DTLVException {
         public MapFullException(String msg) {
             super(msg);
@@ -51,6 +57,8 @@ public class Util {
             return;
         } else if (code == DTLV.MDB_BAD_RSLOT) {
             throw new BadReaderLockException("Bad reader lock");
+        } else if (code == DTLV.MDB_READERS_FULL) {
+            throw new ReaderFullException("Reader limit reached");
         } else if (code == DTLV.MDB_MAP_FULL) {
             throw new MapFullException("Map full");
         } else {

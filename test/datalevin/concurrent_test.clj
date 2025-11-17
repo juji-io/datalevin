@@ -134,8 +134,8 @@
 (deftest virtual-thread-max-readers-test
   (when (u/supports-virtual-threads?)
     (let [dir         (u/tmp-dir (str "vt-" (UUID/randomUUID)))
-          readers     2
-          threads     100
+          readers     5
+          threads     200
           queries     10
           size        100
           conn        (d/get-conn dir {} {:kv-opts {:max-readers readers}})
@@ -166,3 +166,24 @@
       (.shutdown vt-executor)
       (d/close conn)
       (u/delete-files dir))))
+
+(deftest virtual-threads-concurrent-read-test
+  (let [dir         (u/tmp-dir (str "vt-concurrent-read-" (UUID/randomUUID)))
+        conn        (d/get-conn dir {:id {:db/unique :db.unique/identity}})
+        n           1000
+        all         (range n)
+        tx          (map (fn [i] {:id i}) (range n))
+        query       (fn [i]
+                      (d/q '[:find ?e .
+                             :in $ ?i
+                             :where [?e :id ?i]]
+                           @conn i))
+        vt-executor (Executors/newVirtualThreadPerTaskExecutor)]
+    (d/transact! conn tx)
+
+    (dotimes [_ 10]
+      (let [futs (pmap #(.submit vt-executor ^Callable (fn [] (query %)))
+                       all)]
+        (is (= (range 1 (inc n)) (for [f futs] @f)))))
+    (d/close conn)
+    (u/delete-files dir)))
