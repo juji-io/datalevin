@@ -65,7 +65,13 @@ as shown in `datalevin-bench.core` namespace. The attribute names follow Clojure
 convention.
 
 The same set of CSV files are transformed into datoms and loaded into
-Datalevin by uncommenting and running `(def db ...)` at [this line](https://github.com/juji-io/datalevin/blob/bce87e5afb5a3df1901988a2f750a86862a2e6a1/benchmarks/JOB-bench/src/datalevin_bench/core.clj#L461). This loads 277,878,514 datoms into Datalevin.
+Datalevin by running:
+
+```bash
+clj -Xdb
+```
+
+This loads 277,878,514 datoms into Datalevin, and it may take a while.
 
 ## Queries
 

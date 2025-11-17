@@ -1218,10 +1218,6 @@
             forward start end sk ek))))
     (raise "Fail to count (slow) list in key range: " e {:dbi dbi-name})))
 
-(defn- create-read-txn
-  [^CppLMDB lmdb]
-  )
-
 (defn- create-rw-txn [^CppLMDB lmdb] (Txn/create (.-env lmdb)))
 
 (defn- reset-write-txn
