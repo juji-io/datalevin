@@ -380,11 +380,9 @@ Only usable for debug output.
   abort-transact db/abort-transact)
 
 (defn ^:no-doc with
-  "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data {} false))
   ([db tx-data tx-meta] (with db tx-data tx-meta false))
   ([db tx-data tx-meta simulated?]
-   {:pre [(db/db? db)]}
    (db/transact-tx-data (db/->TxReport db db [] {} tx-meta)
                         tx-data simulated?)))
 
@@ -394,9 +392,7 @@ Only usable for debug output.
   tx-data->simulated-report db/tx-data->simulated-report)
 
 (defn ^:no-doc db-with
-  "Applies transaction. Return the Datalog db."
   [db tx-data]
-  {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
 
 (declare close open-kv clear-dbi close-kv)

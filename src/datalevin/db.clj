@@ -509,7 +509,6 @@
 
 (defn new-db
   [^IStore store]
-  (refresh-cache store)
   (let [db (map->DB
              {:store         store
               :max-eid       (s/init-max-eid store)
@@ -519,6 +518,7 @@
               :vaet          (TreeSortedSet. ^Comparator d/cmp-datoms-vaet)
               :pull-patterns (LRUCache. 64)})]
     (swap! dbs assoc (s/db-name store) db)
+    (refresh-cache store (System/currentTimeMillis))
     (s/start-sampling store)
     db))
 
@@ -1482,7 +1482,7 @@
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
        (s/load-datoms pstore (:tx-data rp))
-       (refresh-cache pstore))
+       (refresh-cache pstore (System/currentTimeMillis)))
      rp)))
 
 (defn- remote-tx-result
