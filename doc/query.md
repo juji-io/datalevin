@@ -51,14 +51,14 @@ and in `:ave` index, there are many repeated values of `a` and `v`. These
 repetitions of head elements increase not just the storage size, but also
 processing overhead during query.
 
-Taking advantage of LMDB's dupsort capability (i.e. a key can be mapped to a
+Taking advantage of LMDB's DUPSORT capability (i.e. a key can be mapped to a
 list of values, and this list of values are also sorted, essentially it is a two
 level nested B+ trees of B+ trees), we store the head elements only once, by
 treating them as keys. The values are the remaining two elements of the
 triple as a list of values mapped to by a key. This nested triple storage
-results in about 20% space reduction, more or less depending on the data. In
-addition, the underlying KV storage implement page based prefix compression, so
-an additional 10% space reduction is archived.
+results in about 20% space reduction. In addition, the [underlying KV
+storage](https://github.com/huahaiy/dlmdb) implements page based prefix
+compression to achieve an additional 10% space reduction.
 
 The main advantage of this list based triple storage is to facilitate counting
 of elements, which is the most critical input for query planning. Some list
@@ -142,8 +142,8 @@ For two sets of where clauses involving two classes of entities respectively,
 e.g. `?e` and `?f`, we currently consider the following cases. If there
 is a reference attribute in the clauses that connects these two classes of entities
 e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method will be considered.
-The forward ref method takes the list of `f?` in an existing relation, then
-merge scan values of `?f` entities. Reverse ref method has an extra step, it
+The forward `:ref` method takes the list of `f?` in an existing relation, then
+merge scan values of `?f` entities. Reverse `:_ref` method has an extra step, it
 starts with `?f` relation and scan `:ave` index to obtain corresponding list of
 `?e`, then merge scan values of `?e` entities. The third case is the value
 equality case, where `e` and `f` are linked due to unification of attribute
@@ -177,16 +177,14 @@ order statics on the branch nodes, the range count operations have O(log n)
 time complexity. Compared with statistics based estimation, counting is simple,
 accurate and always up to date.
 
-
 ### Query specific sampling (new)
 
-For large result size, even capped and bounded counting can be too expensive to
-perform. Sampling is used when result size is expected to be larger than a
-threshold. To ensure representative samples that are specific to the query and
-data distribution, we perform sampling by execution under actual query
-conditions. Online sampling is performed during query using reservoir
-sampling methods. Similar to counting, online sampling takes advantage of O(log
-n) rank operation of the count feature of the KV storage.
+We use sampling to estimate join result size. To ensure representative samples
+that are specific to the query and data distribution, we perform sampling by
+execution under actual query conditions. Online sampling is performed during
+query using reservoir sampling methods. Similar to counting, online sampling
+takes advantage of O(log n) rank operation of the counted feature of our KV
+storage.
 
 A sample of base entity IDs are collected first, then merge scans are performed
 to obtain base selectivity ratios. Finally, the selectivity of all possible two
