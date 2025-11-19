@@ -55,10 +55,6 @@ public class Util {
         String msg;
         if (code == DTLV.MDB_SUCCESS || code == DTLV.MDB_NOTFOUND) {
             return;
-        } else if (code == DTLV.MDB_BAD_RSLOT) {
-            throw new BadReaderLockException("Bad reader lock");
-        } else if (code == DTLV.MDB_READERS_FULL) {
-            throw new ReaderFullException("Reader limit reached");
         } else if (code == DTLV.MDB_MAP_FULL) {
             throw new MapFullException("Map full");
         } else {

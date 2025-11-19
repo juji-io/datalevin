@@ -1605,11 +1605,11 @@
 
 (defn- default-merge-ratio
   [{:keys [attrs-v]}]
-  (let [^long npred (n-items attrs-v :pred)
-        ^long nfidx (n-items attrs-v :fidx)]
+  (let [npred (n-items attrs-v :pred)
+        nfidx (n-items attrs-v :fidx)]
     (cond-> 1.0
-      (< 0 npred) (* (Math/pow c/magic-size-pred npred))
-      (< 0 nfidx) (* (Math/pow c/magic-size-fidx nfidx)))))
+      (< 0 ^long npred) (* (Math/pow c/magic-size-pred npred))
+      (< 0 ^long nfidx) (* (Math/pow c/magic-size-fidx nfidx)))))
 
 (defn- estimate-scan-v-size
   [^long e-size steps]

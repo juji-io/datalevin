@@ -420,7 +420,7 @@
   magic-cost-pred 3.0)
 
 (def ^{:dynamic true
-       :doc     "Cost associated with adding variable during scan"}
+       :doc     "Cost associated with adding a variable during scan"}
   magic-cost-var 4.5)
 
 (def ^{:dynamic true
@@ -437,7 +437,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
-  magic-cost-val-eq-scan-e 3.0)
+  magic-cost-val-eq-scan-e 2.5)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
