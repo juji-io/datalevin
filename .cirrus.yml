@@ -51,6 +51,8 @@ task:
     chmod +x install
     ./install
 
+    unset JAVA_HOME
+
     bb --config .build/bb.edn release-artifact
 
 task:
@@ -63,14 +65,14 @@ task:
     DTLV_OS: macos
   script: |
 
-    brew install leiningen libomp llvm
-    lein run
-
     script/install-graalvm
 
     export GRAALVM_HOME=graalvm-jdk/Contents/Home
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
+
+    brew install leiningen libomp llvm
+    lein run
 
     script/compile-native
 
@@ -84,5 +86,7 @@ task:
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
     brew install borkdude/brew/babashka
+
+    unset JAVA_HOME
 
     bb --config .build/bb.edn release-artifact

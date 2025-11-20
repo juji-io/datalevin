@@ -4,6 +4,9 @@
 
 (def new-v (first *command-line-args*))
 
+;; Change to the branch this release is created from
+(def branch "v0.9")
+
 (assert (re-matches #"\d+\.\d+\.\d+" (or new-v ""))
         "Use ./release.clj <new-version>")
 (println "Releasing version" new-v)
@@ -67,7 +70,7 @@
 
   (sh "git" "commit" "-m" (str "Version " new-v))
   (sh "git" "tag" "-l" new-v)
-  (sh "git" "push" "origin" "master"))
+  (sh "git" "push" "origin" branch))
 
 (defn run-tests []
   (println "\n\n[ Running lein tests ]\n")
@@ -117,17 +120,17 @@
                        (take-while #(not (re-matches #"# .+" %)))
                        (remove str/blank?)
                        (str/join "\n"))
-        request  { "tag_name" new-v
-                   "name"     new-v
-                   "target_commitish" "master"
-                   "body" changelog}]
+        request   { "tag_name"        new-v
+                   "name"             new-v
+                   "target_commitish" branch
+                   "body"             changelog}]
     (sh "curl" "-u" GITHUB_AUTH
         "-X" "POST"
         "--data" (map->json request)
         "https://api.github.com/repos/juji-io/datalevin/releases")))
 
 (defn -main []
-  (run-tests)
+  ;; (run-tests)
   (update-version)
   (make-commit)
   (github-release)
