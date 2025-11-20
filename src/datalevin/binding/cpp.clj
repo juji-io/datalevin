@@ -3,6 +3,8 @@
   (:refer-clojure :exclude [sync])
   (:require
    [clojure.stacktrace :as stt]
+   [clojure.java.io :as io]
+   [clojure.string :as s]
    [datalevin.bits :as b]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
@@ -22,11 +24,35 @@
    [datalevin.async IAsyncWork]
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
+   [java.io File]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer]
    [clojure.lang IObj]))
+
+(def ^:private version-file-name "VERSION")
+
+(defn- version-file
+  [^File dir]
+  (io/file dir version-file-name))
+
+(defn- write-version-file!
+  [^File dir version]
+  (when (and version (not (s/blank? (str version))))
+    (u/create-dirs (.getPath dir))
+    (spit (version-file dir) (str version))
+    version))
+
+(defn- read-version-file
+  [^File dir]
+  (try
+    (let [^File f (version-file dir)]
+      (if (.exists f)
+        (some-> (slurp f) s/trim not-empty)
+        (write-version-file! dir c/version)))
+    (catch Exception e
+      (raise "Unable to read/write VERSION file"))))
 
 (defprotocol IPool
   (pool-add [_ x])
@@ -1193,8 +1219,9 @@
                            flags)
            ^Env env      (Env/create dir mapsize max-readers max-dbs
                                      (kv-flags flags))
+           version       (read-version-file file)
            info          (merge opts {:dir         dir
-                                      :version     c/version
+                                      :version     version
                                       :flags       flags
                                       :max-readers max-readers
                                       :max-dbs     max-dbs
