@@ -11,14 +11,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.9.25"]
+[datalevin "0.9.26"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.9.25"}}}
+{:deps {datalevin/datalevin {:mvn/version "0.9.26"}}}
 ```
 
 The `master` branch of this project is always kept fully functional, so if you
@@ -132,15 +132,15 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.25/dtlv-0.9.25-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.26/dtlv-0.9.26-ubuntu-latest-amd64.zip)
   on x86_64 (AMD64)
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.25/dtlv-0.9.25-ubuntu-latest-aarch64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.9.26/dtlv-0.9.26-ubuntu-latest-aarch64.zip)
   on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.25/dtlv-0.9.25-macos-latest-aarch64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.26/dtlv-0.9.26-macos-latest-aarch64.zip)
   on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.25/dtlv-0.9.25-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.9.26/dtlv-0.9.26-macos-latest-amd64.zip)
   on x86_64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.9.25/dtlv-0.9.25-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.9.26/dtlv-0.9.26-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip to get a `dtlv` executable, put it on your path.
 
@@ -149,19 +149,19 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 ### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.9.25/datalevin-0.9.25-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.9.26/datalevin-0.9.26-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is not as efficient as Hotspot JVM for long running programs, or when a
 pre-built native version is not available for your platform. For example:
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.25-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.26-standalone.jar
 ```
 This will start the Datalevin REPL.
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.25-standalone.jar serv -r /tmp/test-server
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.9.26-standalone.jar serv -r /tmp/test-server
 ```
 Will run the Datalevin server on default port 8898, with root data path at
 `/tmp/test-server`.
@@ -179,7 +179,7 @@ registry](https://github.com/babashka/pod-registry) within a Babashka script
 #!/usr/bin/env bb
 
 (require '[babashka.pods :as pods])
-(pods/load-pod 'huahaiy/datalevin "0.9.25")
+(pods/load-pod 'huahaiy/datalevin "0.9.26")
 
 ```
 
