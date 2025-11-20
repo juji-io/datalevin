@@ -18,15 +18,17 @@
 - [Platform] Minimal Java version is now 21.
 
 ### Added
-- [Platform] Automatically upgrade DB from version 0.9.12 onwards. The migration
-  may take a while when first opening the DB, and it needs Internet access.
-- [KV] DB wide option `:key-compression`, which compresses data with order
-  preserving Hu-Tucker coding. This also applies to DUPSORT values if enabled.
-- [KV] DB wide option `:value-compression`, which compresses with LZ4.
+- [Platform] Automatically upgrade DB from version 0.9.27 onwards. The migration
+  may take a while when opening the DB, and it needs Internet access.
+- [KV] DB wide option `:key-compression :hu-tucker`, which compresses data with
+  order preserving Hu-Tucker coding. This also applies to DUPSORT values if
+  enabled.
+- [KV] DB wide option `:value-compression :lz4`, which compresses with LZ4.
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs.
 - [KV] Range count functions in O(log n) time for `:counted` DBIs.
 - [KV] Sampling functions in O(log n) time for `:counted` DBIs.
+  [#325](https://github.com/juji-io/datalevin/issues/325)
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions
@@ -38,8 +40,14 @@
 - [Datalog] Smaller DB size due to prefix compression and key/value compression.
 - [Datalog] Cut query planning time in half due to faster range counts and
   sampling of `:counted` feature in DLMDB.
-- [Datalog] Slightly reduced query execution time due to more optimized DLMDB
-  iterators.
+- [Datalog] Reduced query execution time due to more optimized DLMDB iterators.
+  Now 2X faster than PostgreSQL in JOB benchmark.
+
+## 0.9.27 (2025-11-19)
+
+## Added
+- [KV] Write a `VERSION` file, otherwise the same as 0.9.22. This is to allow
+  automatic migration from 0.9.27 to 0.10.0 and onwards.
 
 ## 0.9.22 (2025-03-18)
 
