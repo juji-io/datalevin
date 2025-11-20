@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.9.23 (2025-11-19)
+## 0.9.24 (2025-11-19)
 
 ### Added
 - [KV] Add a `VERSION` file, in preparation for auto migration.

@@ -10,7 +10,7 @@
 
 (def version
   "Version number of Datalevin"
-  "0.9.23")
+  "0.9.24")
 
 ;;---------------------------------------------
 ;; system constants, fixed
