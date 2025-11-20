@@ -4,7 +4,7 @@ version: "v-{build}"
 
 branches:
   only:
-    - master
+    - v0.9
 
 skip_non_tags: true
 
