@@ -11,9 +11,12 @@
   (:refer-clojure :exclude [sync])
   (:require
    [clojure.stacktrace :as stt]
+   [clojure.java.io :as io]
+   [clojure.string :as s]
    [datalevin.bits :as b]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
+   [datalevin.migrate :as m]
    [datalevin.async :as a]
    [datalevin.scan :as scan]
    [datalevin.vector :as v]
@@ -32,11 +35,32 @@
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture
     Semaphore]
    [java.lang AutoCloseable]
+   [java.io File]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
    [clojure.lang IObj]))
+
+(defn- version-file
+  [^File dir]
+  (io/file dir c/version-file-name))
+
+(defn- write-version-file
+  [^File dir version]
+  (when (and version (not (s/blank? ^String version)))
+    (spit (version-file dir) version)
+    version))
+
+(defn- read-version-file
+  [^File dir]
+  (try
+    (let [^File f (version-file dir)]
+      (when (.exists f)
+        (some-> (slurp f) s/trim not-empty)))
+    (catch Exception e
+      (raise "Unable to read VERSION file"
+             {:msg (.getMessage e)}))))
 
 (defprotocol IPool
   (pool-add [_ x])
@@ -1264,57 +1288,79 @@
                                    [:all]))]
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
+(defn- open-kv*
+  [dir file {:keys [mapsize max-readers flags max-dbs temp?]
+             :or   {max-readers c/*max-readers*
+                    max-dbs     c/*max-dbs*
+                    mapsize     c/*init-db-size*
+                    flags       c/default-env-flags
+                    temp?       false}
+             :as   opts}]
+  (try
+    (let [mapsize       (* (long (if (u/empty-dir? file)
+                                   mapsize
+                                   (c/pick-mapsize dir)))
+                           1024 1024)
+          flags         (if temp?
+                          (conj flags :nosync)
+                          flags)
+          ^Env env      (Env/create dir mapsize max-readers max-dbs
+                                    (kv-flags flags))
+          info          (merge opts {:dir         dir
+                                     :flags       flags
+                                     :max-readers max-readers
+                                     :max-dbs     max-dbs
+                                     :temp?       temp?})
+          ^CppLMDB lmdb (->CppLMDB env
+                                   (volatile! info)
+                                   (ThreadLocal.)
+                                   (Semaphore. max-readers)
+                                   (HashMap.)
+                                   (volatile! nil)
+                                   (new-bufval c/+max-key-size+)
+                                   (new-bufval 0)
+                                   (new-bufval c/+max-key-size+)
+                                   (new-bufval c/+max-key-size+)
+                                   (new-bufval c/+max-key-size+)
+                                   (new-bufval c/+max-key-size+)
+                                   (volatile! nil)
+                                   false
+                                   nil)]
+      (swap! l/lmdb-dirs conj dir)
+      (l/open-dbi lmdb c/kv-info)
+      (if temp?
+        (u/delete-on-exit file)
+        (do (init-info lmdb info)
+            (.addShutdownHook (Runtime/getRuntime)
+                              (Thread. #(l/close-kv lmdb)))
+            (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
+      lmdb)
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (raise "Fail to open database: " e {:dir dir}))))
+
 (defmethod open-kv :cpp
   ([dir] (open-kv dir {}))
-  ([dir {:keys [mapsize max-readers flags max-dbs temp?]
-         :or   {max-readers c/*max-readers*
-                max-dbs     c/*max-dbs*
-                mapsize     c/*init-db-size*
-                flags       c/default-env-flags
-                temp?       false}
-         :as   opts}]
+  ([dir opts]
    (assert (string? dir) "directory should be a string.")
-   (try
-     (let [file          (u/file dir)
-           mapsize       (* (long (if (u/empty-dir? file)
-                                    mapsize
-                                    (c/pick-mapsize dir)))
-                            1024 1024)
-           flags         (if temp?
-                           (conj flags :nosync)
-                           flags)
-           ^Env env      (Env/create dir mapsize max-readers max-dbs
-                                     (kv-flags flags))
-           info          (merge opts {:dir         dir
-                                      :version     c/version
-                                      :flags       flags
-                                      :max-readers max-readers
-                                      :max-dbs     max-dbs
-                                      :temp?       temp?})
-           ^CppLMDB lmdb (->CppLMDB env
-                                    (volatile! info)
-                                    (ThreadLocal.)
-                                    (Semaphore. max-readers)
-                                    (HashMap.)
-                                    (volatile! nil)
-                                    (new-bufval c/+max-key-size+)
-                                    (new-bufval 0)
-                                    (new-bufval c/+max-key-size+)
-                                    (new-bufval c/+max-key-size+)
-                                    (new-bufval c/+max-key-size+)
-                                    (new-bufval c/+max-key-size+)
-                                    (volatile! nil)
-                                    false
-                                    nil)]
-       (swap! l/lmdb-dirs conj dir)
-       (l/open-dbi lmdb c/kv-info)
-       (if temp?
-         (u/delete-on-exit file)
-         (do (init-info lmdb info)
-             (.addShutdownHook (Runtime/getRuntime)
-                               (Thread. #(l/close-kv lmdb)))
-             (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
-       lmdb)
-     (catch Exception e
-       (stt/print-stack-trace e)
-       (raise "Fail to open database: " e {:dir dir})))))
+   (let [file (u/file dir)
+         ]
+     (open-kv* dir file opts))))
+#_(defmethod open-kv :cpp
+    ([dir] (open-kv dir {}))
+    ([dir opts]
+     (assert (string? dir) "directory should be a string.")
+     (let [file    (u/file dir)
+           version (read-version-file file)]
+       (if version
+         (do
+           (when (not= version c/version)
+             (if-let [{:keys [major minor patch]} (c/parse-version version)]
+               (let [{:keys [cmajor cminor]} (c/parse-version c/version)]
+                 (when (and c/require-migration?
+                            (or (< cmajor major) (< cminor minor)))
+                   (m/perform-migration dir major minor patch)))
+               (raise "Corrupt VERSION file" {:input version})))
+           (open-kv* dir file opts))
+         (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
+                {:dir dir})))))

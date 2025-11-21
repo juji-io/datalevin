@@ -28,8 +28,6 @@
     (l/set-env-flags lmdb #{:nosync} true)
     (is (= (l/get-env-flags lmdb) (conj c/default-env-flags :nosync)))
 
-    (is (= c/version (:version (l/opts lmdb))))
-
     (is (= 50 (-> lmdb l/opts :spill-opts :spill-threshold)))
 
     (l/open-dbi lmdb "a")

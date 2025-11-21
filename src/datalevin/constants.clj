@@ -11,6 +11,7 @@
   "System vars. Some can be dynamically rebound to change system behavior."
   (:refer-clojure :exclude [meta])
   (:require
+   [clojure.string :as s]
    [datalevin.util :as u])
   (:import
    [java.io File]
@@ -19,7 +20,24 @@
 
 (def version
   "Version number of Datalevin"
-  "0.9.22")
+  "0.10.0")
+
+(def version-file-name
+  "Name of the file that store version on disk"
+  "VERSION")
+
+(def version-regex #"^(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
+
+(defn parse-version
+  [s]
+  (when-let [[_ major minor patch] (re-matches version-regex (s/trim s))]
+    {:major (parse-long major)
+     :minor (some-> minor parse-long)
+     :patch (some-> patch parse-long)}))
+
+(def require-migration?
+  "if this version of Datalevin calls for migrating db"
+  true)
 
 ;;---------------------------------------------
 ;; system constants, fixed

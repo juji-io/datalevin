@@ -15,6 +15,7 @@
    [clojure.edn :as edn]
    [taoensso.nippy :as nippy]
    [datalevin.util :as u]
+   [datalevin.conn :as conn]
    [datalevin.csv :as csv]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
@@ -46,8 +47,8 @@
 
 ;; Entities
 
-(defn entity
-  "Retrieves an entity by its id from a Datalog database. Entities
+(def ^{:arglists '([db eid])
+       :doc      "Retrieves an entity by its id from a Datalog database. Entities
   are map-like structures to navigate Datalevin database content.
 
   `db` is a Datalog database.
@@ -100,10 +101,9 @@
     - Accessed entity attributes are cached on entity itself (except
     backward references).
     - When printing, only cached attributes (the ones you have accessed
-      before) are printed. See [[touch]]."
-  [db eid]
-  {:pre [(db/db? db)]}
-  (de/entity db eid))
+      before) are printed. See [[touch]]."}
+  entity de/entity)
+
 
 (def ^{:arglists '([ent attr value])
        :doc      "Add an attribute value to an entity of a Datalog database"}
@@ -113,21 +113,19 @@
        :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
-(defn entid
-  "Given lookup ref `[unique-attr value]`, returns numberic entity id.
+(def ^{:arglists '([db eid])
+       :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
   `db` is a Datalog database.
 
   If entity does not exist, returns `nil`.
 
   For numeric `eid` returns `eid` itself (does not check for entity
-  existence in that case)."
-  [db eid]
-  {:pre [(db/db? db)]}
-  (db/entid db eid))
+  existence in that case)."}
+  entid db/entid)
 
 (defn entity-db
-  "Returns a Datalog db that entity was created from."
+  "Returns the Datalog DB that this entity was created from."
   [^Entity entity]
   {:pre [(de/entity? entity)]}
   (.-db entity))
@@ -302,114 +300,26 @@ Only usable for debug output.
   abort-transact-kv l/abort-transact-kv)
 
 (u/import-macro l/with-transaction-kv)
+(u/import-macro conn/with-transaction)
+(u/import-macro conn/with-conn)
 
-(defn datalog-index-cache-limit
-  "Get or set the cache limit of a Datalog DB. Default is 256. Set to 0 to
-   disable the cache, useful when transacting bulk data as it saves memory."
-  ([^DB db]
-   (let [^Store store (.-store db)]
-     (:cache-limit (s/opts store))))
-  ([^DB db ^long n]
-   (let [^Store store (.-store db)]
-     (s/assoc-opt store :cache-limit n)
-     (db/refresh-cache store (System/currentTimeMillis)))))
-
-(defmacro with-transaction
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of Datalog database operations. Works with synchronous
-  `transact!`.
-
-  `conn` is a new identifier of the Datalog database connection with a new
-  read/write transaction attached, and `orig-conn` is the original database
-  connection.
-
-  `body` should refer to `conn`.
-
-  Example:
-
-          (with-transaction [cn conn]
-            (let [query  '[:find ?c .
-                           :in $ ?e
-                           :where [?e :counter ?c]]
-                  ^long now (q query @cn 1)]
-              (transact! cn [{:db/id 1 :counter (inc now)}])
-              (q query @cn 1))) "
-  [[conn orig-conn] & body]
-  `(locking ~orig-conn
-     (let [db#  ^DB (deref ~orig-conn)
-           s#   (.-store db#)
-           old# (db/cache-disabled? s#)]
-       (locking (l/write-txn s#)
-         (db/disable-cache s#)
-         (if (instance? DatalogStore s#)
-           (let [res#    (if (l/writing? s#)
-                           (let [~conn ~orig-conn]
-                             ~@body)
-                           (let [s1# (r/open-transact s#)
-                                 w#  #(let [~conn
-                                            (atom (db/transfer db# s1#)
-                                                  :meta (meta ~orig-conn))]
-                                        ~@body) ]
-                             (try
-                               (u/repeat-try-catch
-                                   ~c/+in-tx-overflow-times+
-                                   l/resized? (w#))
-                               (finally (r/close-transact s#)))))
-                 new-db# (db/new-db s#)]
-             (reset! ~orig-conn new-db#)
-             (when-not old# (db/enable-cache s#))
-             res#)
-           (let [kv#     (.-lmdb ^Store s#)
-                 s1#     (volatile! nil)
-                 res1#   (l/with-transaction-kv [kv1# kv#]
-                           (let [conn1# (atom (db/transfer
-                                                db# (s/transfer s# kv1#))
-                                              :meta (meta ~orig-conn))
-                                 res#   (let [~conn conn1#]
-                                          ~@body)]
-                             (vreset! s1# (.-store ^DB (deref conn1#)))
-                             res#))
-                 new-s#  (s/transfer (deref s1#) kv#)
-                 new-db# (db/new-db new-s#)]
-             (reset! ~orig-conn new-db#)
-             (when-not old# (db/enable-cache new-s#))
-             res1#))))))
+(def ^{:arglists '([db] [db n])
+       :doc      "Get or set the cache limit of a Datalog DB. Default is 256. Set to 0 to
+   disable the cache, useful when transacting bulk data as it saves memory."}
+  datalog-index-cache-limit db/datalog-index-cache-limit)
 
 (def ^{:arglists '([conn])
        :doc      "Rollback writes of the transaction from inside [[with-transaction]]."}
   abort-transact db/abort-transact)
 
-(defn ^:no-doc with
-  ([db tx-data] (with db tx-data {} false))
-  ([db tx-data tx-meta] (with db tx-data tx-meta false))
-  ([db tx-data tx-meta simulated?]
-   (db/transact-tx-data (db/->TxReport db db [] {} tx-meta)
-                        tx-data simulated?)))
+(def ^:no-doc with conn/with)
 
 (def ^{:arglists '([db tx-data])
        :doc      "Returns a transaction report without side-effects. Useful for obtaining
   the would-be db state and the would-be set of datoms."}
   tx-data->simulated-report db/tx-data->simulated-report)
 
-(defn ^:no-doc db-with
-  [db tx-data]
-  (:db-after (with db tx-data)))
-
-(declare close open-kv clear-dbi close-kv)
-
-(defn clear
-  "Close the Datalog database, then clear all data, including schema."
-  [conn]
-  (let [store (.-store ^DB @conn)
-        lmdb  (if (instance? DatalogStore store)
-                (let [dir (s/dir store)]
-                  (close conn)
-                  (open-kv dir))
-                (.-lmdb ^Store store))]
-    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
-      (clear-dbi lmdb dbi))
-    (close-kv lmdb)))
-
+(def ^:no-doc db-with conn/db-with)
 
 ;; Query
 
@@ -520,7 +430,10 @@ Only usable for debug output.
            :late-clauses [[(not= ?n1 ?n2)]]}
 
 
-  * `:planning-time` includes all the time spent up to when the plan is generated.
+  * `:parsing-time` time spent parsing the query.
+  * `:build-time` time spent building the query graph.
+  * `:planning-time` time spent planning the query.
+  * `:prepare-time` includes all the time spent up to when the plan is generated.
   * `:execution-time` is the time between the generated plan and result return.
   * `:actual-result-size` is the number of tuples generated.
   * `:opt-cluases` includes all the clauses that the optimizer worked on.
@@ -589,15 +502,15 @@ Only usable for debug output.
        (->> (datoms db :ave attr) (reverse) (take N))
 
    "
-  ([db index]             {:pre [(db/db? db)]}
+  ([db index] {:pre [(db/db? db)]}
    (db/-datoms db index nil nil nil))
-  ([db index c1]          {:pre [(db/db? db)]}
+  ([db index c1] {:pre [(db/db? db)]}
    (db/-datoms db index c1 nil nil))
-  ([db index c1 c2]       {:pre [(db/db? db)]}
+  ([db index c1 c2] {:pre [(db/db? db)]}
    (db/-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+  ([db index c1 c2 c3] {:pre [(db/db? db)]}
    (db/-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n]  {:pre [(db/db? db)]}
+  ([db index c1 c2 c3 n] {:pre [(db/db? db)]}
    (db/-datoms db index c1 c2 c3 n)))
 
 (defn search-datoms
@@ -628,7 +541,7 @@ Only usable for debug output.
        ; => (#datalevin/Datom [1 :likes \"pizza\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])
    "
-  [db e a v]             {:pre [(db/db? db)]}
+  [db e a v]
   (db/-search db [e a v]))
 
 (defn count-datoms
@@ -652,17 +565,18 @@ Only usable for debug output.
        (count-datoms db nil :likes \"pizza\")
        ; => 10
    "
-  [db e a v]             {:pre [(db/db? db)]}
+  [db e a v]
   (db/-count db [e a v] nil true))
 
 (defn cardinality
   "Count the number of unique values of an attribute in a Datalog db. "
-  [db a]             {:pre [(db/db? db)]}
+  [db a]
   (db/-cardinality db a true))
 
 (defn max-eid
   "Return the current maximal entity id of a Datalog db"
-  [db]             {:pre [(db/db? db)]}
+  [db]
+  {:pre [(db/db? db)]}
   (s/init-max-eid (:store db)))
 
 (defn analyze
@@ -670,9 +584,9 @@ Only usable for debug output.
   When `attr` is not given, collect statistics for all attributes. Return `:done`.
 
   Datalevin runs this function in the background periodically. "
-  ([db]             {:pre [(db/db? db)]}
+  ([db] {:pre [(db/db? db)]}
    (s/analyze (:store db) nil))
-  ([db attr]        {:pre [(db/db? db)]}
+  ([db attr] {:pre [(db/db? db)]}
    (s/analyze (:store db) attr)))
 
 (defn seek-datoms
@@ -705,28 +619,28 @@ Only usable for debug output.
        (seek-datoms db :eav 2 :likes \"fish\")
        ; => (#datalevin/Datom [2 :likes \"pie\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])"
-  ([db index]             {:pre [(db/db? db)]}
+  ([db index]
    (db/-seek-datoms db index nil nil nil))
-  ([db index c1]          {:pre [(db/db? db)]}
+  ([db index c1]
    (db/-seek-datoms db index c1 nil nil))
-  ([db index c1 c2]       {:pre [(db/db? db)]}
+  ([db index c1 c2]
    (db/-seek-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+  ([db index c1 c2 c3]
    (db/-seek-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n]    {:pre [(db/db? db)]}
+  ([db index c1 c2 c3 n]
    (db/-seek-datoms db index c1 c2 c3 n)))
 
 (defn rseek-datoms
   "Same as [[seek-datoms]], but goes backwards."
-  ([db index]             {:pre [(db/db? db)]}
+  ([db index]
    (db/-rseek-datoms db index nil nil nil))
-  ([db index c1]          {:pre [(db/db? db)]}
+  ([db index c1]
    (db/-rseek-datoms db index c1 nil nil))
-  ([db index c1 c2]       {:pre [(db/db? db)]}
+  ([db index c1 c2]
    (db/-rseek-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+  ([db index c1 c2 c3]
    (db/-rseek-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n]    {:pre [(db/db? db)]}
+  ([db index c1 c2 c3 n]
    (db/-rseek-datoms db index c1 c2 c3 n)))
 
 (defn fulltext-datoms
@@ -739,8 +653,8 @@ Only usable for debug output.
        (r/fulltext-datoms store query opts)
        (dbq/fulltext db query opts)))))
 
-(defn index-range
-  "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVE sort order.
+(def ^{:arglists '([db attr start end])
+       :doc      "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVE sort order.
 
    Same properties as [[datoms]].
 
@@ -760,28 +674,22 @@ Only usable for debug output.
    Useful patterns:
 
        ; find all entities with age in a specific range (inclusive)
-       (->> (index-range db :age 18 60) (map :e))"
-  [db attr start end]
-  {:pre [(db/db? db)]}
-  (db/-index-range db attr start end))
+       (->> (index-range db :age 18 60) (map :e))"}
+  index-range db/-index-range)
 
 
 ;; Conn
+(def ^{:arglists '([conn])
+       :doc      "Returns `true` if this is an open connection to a local Datalog db, `false`
+  otherwise."}
+  conn? conn/conn?)
 
-(defn conn?
-  "Returns `true` if this is an open connection to a local Datalog db, `false`
-  otherwise."
-  [conn]
-  (and (instance? clojure.lang.IDeref conn) (db/db? @conn)))
+(def ^{:arglists '([db])
+       :doc      "Creates a mutable reference to a given Datalog database. See [[create-conn]]."}
+  conn-from-db conn/conn-from-db)
 
-(defn conn-from-db
-  "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
-  [db]
-  {:pre [(db/db? db)]}
-  (atom db :meta { :listeners (atom {}) }))
-
-(defn conn-from-datoms
-  "Create a mutable reference to a Datalog database with the given datoms added to it.
+(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
+       :doc      "Create a mutable reference to a Datalog database with the given datoms added to it.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
@@ -798,14 +706,11 @@ Only usable for debug output.
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
-  "
-  ([datoms] (conn-from-db (init-db datoms)))
-  ([datoms dir] (conn-from-db (init-db datoms dir)))
-  ([datoms dir schema] (conn-from-db (init-db datoms dir schema)))
-  ([datoms dir schema opts] (conn-from-db (init-db datoms dir schema opts))))
+  "}
+  conn-from-datoms conn/conn-from-datoms)
 
-(defn create-conn
-  "Creates a mutable reference (a “connection”) to a Datalog database at the given
+(def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
+       :doc      "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
 
@@ -845,25 +750,16 @@ Only usable for debug output.
 
              (create-conn \"/tmp/test-create-conn\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (create-conn \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true})"
-  ([] (conn-from-db (empty-db)))
-  ([dir] (conn-from-db (empty-db dir)))
-  ([dir schema] (conn-from-db (empty-db dir schema)))
-  ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
+             (create-conn \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true})"}
+  create-conn conn/create-conn)
 
-(defn close
-  "Close the connection to a Datalog db"
-  [conn]
-  (when-let [store (.-store ^DB @conn)]
-    (s/close ^Store store))
-  nil)
+(def ^{:arglists '([conn])
+       :doc      "Close the connection to a Datalog db"}
+  close conn/close)
 
-(defn closed?
-  "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"
-  [conn]
-  (or (nil? conn)
-      (nil? @conn)
-      (s/closed? ^Store (.-store ^DB @conn))))
+(def ^{:arglists '([conn])
+       :doc      "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"}
+  closed? conn/closed?)
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   (let [report (with-transaction [c conn]
@@ -871,8 +767,8 @@ Only usable for debug output.
                  (with @c tx-data tx-meta))]
     (assoc report :db-after @conn)))
 
-(defn transact!
-  "Synchronously applies transaction to the underlying Datalog database of a
+(def ^{:arglists '([conn tx-data] [conn tx-data tx-meta])
+       :doc      "Synchronously applies transaction to the underlying Datalog database of a
   connection.
 
   Returns a transaction report, a map:
@@ -956,56 +852,27 @@ Only usable for debug output.
                        {:db/id 296, :friend -1}])
       ; equivalent to
       (transact! conn [[:db/add  -1 :name   \"Oleg\"]
-                       [:db/add 296 :friend -1]])"
-  ([conn tx-data] (transact! conn tx-data nil))
-  ([conn tx-data tx-meta]
-   (let [report (-transact! conn tx-data tx-meta)]
-     (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
-       (callback report))
-     report)))
+                       [:db/add 296 :friend -1]])"}
+  transact! conn/transact!)
 
-(defn reset-conn!
-  "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that
-  will remove everything from old value and insert everything from the new one."
-  ([conn db] (reset-conn! conn db nil))
-  ([conn db tx-meta]
-   (let [report (db/map->TxReport
-                  {:db-before @conn
-                   :db-after  db
-                   :tx-data   (let [ds (datoms db :eav)]
-                                (u/concatv
-                                  (mapv #(assoc % :added false) ds)
-                                  ds))
-                   :tx-meta   tx-meta})]
-     (reset! conn db)
-     (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
-       (callback report))
-     db)))
+(def ^{:arglists '([conn db] [conn db tx-meta])
+       :doc      "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that will remove everything from old value and insert everything from the new one."}
+  reset-conn! conn/reset-conn!)
 
-
-(defn- atom? [a] (instance? clojure.lang.IAtom a))
-
-(defn listen!
-  "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
+(def ^{:arglists '([conn callback] [conn key callback])
+       :doc      "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
   to the database via [[transact!]], the callback is called with the transaction
   report. `key` is any opaque unique value.
 
   Idempotent. Calling [[listen!]] with the same key twice will override old
   callback with the new value.
 
-   Returns the key under which this listener is registered. See also [[unlisten!]]."
-  ([conn callback] (listen! conn (rand) callback))
-  ([conn key callback]
-   {:pre [(conn? conn) (atom? (:listeners (meta conn)))]}
-   (swap! (:listeners (meta conn)) assoc key callback)
-   key))
+   Returns the key under which this listener is registered. See also [[unlisten!]]."}
+  listen! conn/listen!)
 
-
-(defn unlisten!
-  "Removes registered listener from connection. See also [[listen!]]."
-  [conn key]
-  {:pre [(conn? conn) (atom? (:listeners (meta conn)))]}
-  (swap! (:listeners (meta conn)) dissoc key))
+(def ^{:arglists '([conn key])
+       :doc      "Removes registered listener from connection. See also [[listen!]]."}
+  unlisten! conn/unlisten!)
 
 ;; Datomic compatibility layer
 
@@ -1024,7 +891,6 @@ Only usable for debug output.
      :db/current-tx
      x)))
 
-
 (defn resolve-tempid
   "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
 
@@ -1032,31 +898,22 @@ Only usable for debug output.
   [_db tempids tempid]
   (get tempids tempid))
 
+(def ^{:arglists '([conn])
+       :doc      "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object. "}
+  db conn/db)
 
-(defn db
-  "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
+(def ^{:arglists '([conn])
+       :doc      "Return the option map of the Datalog DB"}
+  opts conn/opts)
 
-  Exists for Datomic API compatibility. "
-  [conn]
-  {:pre [(conn? conn)]}
-  @conn)
+(def ^{:arglists '([conn])
+       :doc      "Return the schema of Datalog DB"}
+  schema conn/schema)
 
-;;
-
-(defn opts
-  "Return the option map of the Datalog DB"
-  [conn]
-  {:pre [(conn? conn)]}
-  (s/opts ^Store (.-store ^DB @conn)))
-
-(defn schema
-  "Return the schema of Datalog DB"
-  [conn]
-  {:pre [(conn? conn)]}
-  (s/schema ^Store (.-store ^DB @conn)))
-
-(defn update-schema
-  "Update the schema of an open connection to a Datalog db.
+(def ^{:arglists '([conn schema-update]
+                   [conn schema-update del-attrs]
+                   [conn schema-update del-attrs rename-map])
+       :doc      "Update the schema of an open connection to a Datalog db.
 
   * `schema-update` is a map from attribute keywords to maps of corresponding
   properties.
@@ -1074,96 +931,19 @@ Only usable for debug output.
         (update-schema conn {:new/attr {:db/valueType :db.type/string}})
         (update-schema conn {:new/attr {:db/valueType :db.type/string}}
                             #{:old/attr1 :old/attr2})
-        (update-schema conn nil nil {:old/attr :new/attr}) "
-  ([conn schema-update]
-   (update-schema conn schema-update nil nil))
-  ([conn schema-update del-attrs]
-   (update-schema conn schema-update del-attrs nil))
-  ([conn schema-update del-attrs rename-map]
-   {:pre [(conn? conn)]}
-   (let [^DB db       (db conn)
-         ^Store store (.-store db)]
-     (s/set-schema store schema-update)
-     (doseq [attr del-attrs] (s/del-attr store attr))
-     (doseq [[old new] rename-map] (s/rename-attr store old new))
-     (schema conn))))
+        (update-schema conn nil nil {:old/attr :new/attr}) "}
+  update-schema conn/update-schema)
 
-(defonce ^:private connections (atom {}))
+(def ^{:arglists '([dir] [dir schema] [dir schema opts])
+       :doc      "Obtain an open connection to a Datalog database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
-(defn- add-conn [dir conn] (swap! connections assoc dir conn))
+  See also [[create-conn]] and [[with-conn]]"}
+  get-conn conn/get-conn)
 
-(defn- new-conn
-  [dir schema opts]
-  (let [conn (create-conn dir schema opts)]
-    (add-conn dir conn)
-    conn))
-
-(defn get-conn
-  "Obtain an open connection to a Datalog database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
-
-  See also [[create-conn]] and [[with-conn]]"
-  ([dir]
-   (get-conn dir nil nil))
-  ([dir schema]
-   (get-conn dir schema nil))
-  ([dir schema opts]
-   (if-let [c (get @connections dir)]
-     (if (closed? c) (new-conn dir schema opts) c)
-     (new-conn dir schema opts))))
-
-(defmacro with-conn
-  "Evaluate body in the context of an connection to the Datalog database.
-
-  If the database does not exist, this will create it. If it is closed,
-  this will open it. However, the connection will be closed in the end of
-  this call. If a database needs to be kept open, use `create-conn` and
-  hold onto the returned connection. See also [[create-conn]] and [[get-conn]]
-
-  `spec` is a vector of an identifier of new database connection, a path or
-  dtlv URI string, a schema map and a option map. The last two are optional.
-
-  Example:
-
-          (with-conn [conn \"my-data-path\"]
-            ;; body)
-
-          (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
-            ;; body)
-  "
-  [spec & body]
-  `(let [r#      (list ~@(rest spec))
-         dir#    (first r#)
-         schema# (second r#)
-         opts#   (second (rest r#))
-         conn#   (get-conn dir# schema# opts#)]
-     (try
-       (let [~(first spec) conn#] ~@body)
-       (finally (close conn#)))))
-
-(declare dl-tx-combine)
-
-(defn- dl-work-key* [db-name] (->> db-name hash (str "tx") keyword))
-
-(def ^:no-doc dl-work-key (memoize dl-work-key*))
-
-(deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb]
-  IAsyncWork
-  (work-key [_] (->> (.-store ^DB @conn) s/db-name dl-work-key))
-  (do-work [_] (transact! conn tx-data tx-meta))
-  (combine [_] dl-tx-combine)
-  (callback [_] cb))
-
-(defn- dl-tx-combine
-  [coll]
-  (let [^AsyncDLTx fw (first coll)]
-    (->AsyncDLTx (.-conn fw)
-                 (.-store fw)
-                 (into [] (comp (map #(.-tx-data ^AsyncDLTx %)) cat) coll)
-                 (.-tx-meta fw)
-                 (.-cb fw))))
-
-(defn transact-async
-  "Datalog transaction that returns a future immediately. The future will
+(def ^{:arglists '([conn tx-data]
+                   [conn tx-data tx-meta]
+                   [conn tx-data tx-meta callback])
+       :doc      "Datalog transaction that returns a future immediately. The future will
   eventually contain the transaction report when this asynchronous transaction
   successfully commits, otherwise, an exception will be thrown when the future
   is deref'ed.
@@ -1177,19 +957,11 @@ Only usable for debug output.
   this version as callback is required for async pod function.
 
   This function has higher throughput than [[transact!]] in high write rate use
-  cases."
-  ([conn tx-data] (transact-async conn tx-data nil))
-  ([conn tx-data tx-meta] (transact-async conn tx-data tx-meta nil))
-  ([conn tx-data tx-meta callback]
-   (a/exec (a/get-executor)
-           (let [store (.-store ^DB @conn)]
-             (if (instance? DatalogStore store)
-               (->AsyncDLTx conn store tx-data tx-meta callback)
-               (let [lmdb (.-lmdb ^Store store)]
-                 (->AsyncDLTx conn lmdb tx-data tx-meta callback)))))))
+  cases."}
+  transact-async conn/transact-async)
 
-(defn transact
-  "Datalog transaction that returns an already realized future that contains
+(def ^{:arglists '([conn tx-data] [conn tx-data tx-meta])
+       :doc      "Datalog transaction that returns an already realized future that contains
   the transaction report when the transaction succeeds, otherwise an exception
   will be thrown.
 
@@ -1198,19 +970,11 @@ Only usable for debug output.
 
   One use of this function is to end a consecutive sequence of `transact-async`
   calls, and when this function returns, it indicates that all those previous
-  async transactions are also committed."
-  ([conn tx-data] (transact conn tx-data nil))
-  ([conn tx-data tx-meta]
-   {:pre [(conn? conn)]}
-   (let [fut (transact-async conn tx-data tx-meta)]
-     @fut
-     fut)))
+  async transactions are also committed."}
+  transact conn/transact)
 
-(defn ^:no-doc squuid
-  "Generates a UUID that grow with time.
-
-  Not particuarly meaningful in Datalevin, included only for the purpose
-  of compatibility with code that worked with Datomic and Datascript. "
+(defn squuid
+  "Generates a UUID that grow with time."
   ([]
    (squuid (System/currentTimeMillis)))
   ([^long msec]
@@ -1222,7 +986,7 @@ Only usable for debug output.
                           (bit-shift-left time 32)) ]
      (UUID. new-high low))))
 
-(defn ^:no-doc squuid-time-millis
+(defn squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds,
   rounded to the closest second."
   [uuid]
@@ -1326,6 +1090,19 @@ Only usable for debug output.
 (def ^{:arglists '([db dbi-name])
        :doc      "Clear data in the DBI (i.e sub-database) of the key-value store, but leave it open"}
   clear-dbi l/clear-dbi)
+
+(defn clear
+  "Close the Datalog database, then clear all data, including schema."
+  [conn]
+  (let [store (.-store ^DB @conn)
+        lmdb  (if (instance? DatalogStore store)
+                (let [dir (s/dir store)]
+                  (close conn)
+                  (open-kv dir))
+                (.-lmdb ^Store store))]
+    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
+      (clear-dbi lmdb dbi))
+    (close-kv lmdb)))
 
 (def ^{:arglists '([db dbi-name])
        :doc      "Clear data in the DBI (i.e. sub-database) of the key-value store, then delete it"}

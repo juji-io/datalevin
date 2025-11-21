@@ -1589,3 +1589,12 @@
     (if (instance? DatalogStore s)
       (r/abort-transact s)
       (l/abort-transact-kv (.-lmdb ^Store s)))))
+
+(defn datalog-index-cache-limit
+  ([^DB db]
+   (let [^Store store (.-store db)]
+     (:cache-limit (s/opts store))))
+  ([^DB db ^long n]
+   (let [^Store store (.-store db)]
+     (s/assoc-opt store :cache-limit n)
+     (refresh-cache store (System/currentTimeMillis)))))
