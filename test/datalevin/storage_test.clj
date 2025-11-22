@@ -3,6 +3,7 @@
    [datalevin.storage :as sut]
    [datalevin.util :as u]
    [datalevin.constants :as c]
+   [datalevin.interface :as if]
    [datalevin.datom :as d]
    [datalevin.lmdb :as lmdb]
    [datalevin.test.core :as tdc :refer [db-fixture]]
@@ -28,17 +29,17 @@
                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         pipe  (LinkedBlockingQueue.)
         res   (FastList.)]
-    (is (= c/g0 (sut/max-gt store)))
-    (is (= 3 (sut/max-aid store)))
+    (is (= c/g0 (if/max-gt store)))
+    (is (= 3 (if/max-aid store)))
     (is (= (merge c/entity-time-schema c/implicit-schema)
-           (sut/schema store)))
-    (is (= c/e0 (sut/init-max-eid store)))
-    (is (= c/tx0 (sut/max-tx store)))
-    (is (sut/analyze store nil))
+           (if/schema store)))
+    (is (= c/e0 (if/init-max-eid store)))
+    (is (= c/tx0 (if/max-tx store)))
+    (is (if/analyze store nil))
     (let [a   :a/b
           v   (UUID/randomUUID)
           d   (d/datom c/e0 a v)
-          s   (assoc (sut/schema store) a {:db/aid 3})
+          s   (assoc (if/schema store) a {:db/aid 3})
           b   :b/c
           p1  {:db/valueType :db.type/uuid}
           v1  (UUID/randomUUID)
@@ -50,149 +51,149 @@
           v2  (long (rand c/emax))
           d2  (d/datom c/e0 c v2)
           s2  (assoc s1 c (merge p2 {:db/aid 5}))
-          dir (lmdb/dir (.-lmdb ^Store store))
-          t1  (sut/last-modified store)]
+          dir (if/env-dir (.-lmdb ^Store store))
+          t1  (if/last-modified store)]
       (is (= d0 (assoc d :v v1)))
       (is (= d0 (conj d [:v v1])))
       (is (= d0 (w/postwalk #(if (d/datom? %) (assoc % :v v1) %) d)))
-      (sut/load-datoms store [d])
-      (is (= (inc c/tx0) (sut/max-tx store)))
-      (is (<= t1 (sut/last-modified store)))
-      (is (= s (sut/schema store)))
-      (is (= 1 (sut/datom-count store :eav)))
-      (is (= 1 (sut/datom-count store :ave)))
-      (is (= 0 (sut/datom-count store :vae)))
-      (is (= d (sut/ea-first-datom store c/e0 a)))
-      (is (= c/e0 (sut/av-first-e store a v)))
-      (is (= v (sut/ea-first-v store c/e0 a)))
-      (is (= [d] (sut/av-datoms store a v)))
-      (is (= [d] (sut/fetch store d)))
-      (is (= [d] (sut/slice store :eav d d)))
-      (is (sut/populated? store :eav d d))
-      (is (= 1 (sut/size store :eav d d)))
-      (is (= 1 (sut/e-size store c/e0)))
-      (is (= 1 (sut/a-size store a)))
-      (is (= 1 (sut/av-size store a v)))
-      (is (= 1 (sut/av-range-size store a v v)))
-      (is (= d (sut/head store :eav d d)))
-      (is (= d (sut/tail store :eav d d)))
-      (sut/swap-attr store b merge p1)
-      (sut/load-datoms store [d1])
-      (is (= (+ 2 c/tx0) (sut/max-tx store)))
-      (is (= s1 (sut/schema store)))
-      (is (= 2 (sut/datom-count store :eav)))
-      (is (= 2 (sut/datom-count store :ave)))
-      (is (= 0 (sut/datom-count store :vae)))
-      (is (= [] (sut/slice store :eav d (d/datom c/e0 :non-exist v1))))
-      (is (= 0 (sut/size store :eav d (d/datom c/e0 :non-exist v1))))
-      (is (nil? (sut/populated? store :eav d (d/datom c/e0 :non-exist v1))))
-      (is (= d (sut/head store :eav d d1)))
-      (is (= d1 (sut/tail store :eav d1 d)))
-      (is (= 2 (sut/size store :eav d d1)))
-      (is (= 1 (sut/size store :eav d d1 1)))
-      (is (= 2 (sut/e-size store c/e0)))
-      (is (= 1 (sut/a-size store b)))
-      (is (= [d d1] (sut/slice store :eav d d1)))
-      (is (= [d d1] (sut/slice store :ave d d1)))
-      (is (= [d1 d] (sut/rslice store :eav d1 d)))
-      (is (= [d d1] (sut/slice store :eav
-                               (d/datom c/e0 a nil)
+      (if/load-datoms store [d])
+      (is (= (inc c/tx0) (if/max-tx store)))
+      (is (<= t1 (if/last-modified store)))
+      (is (= s (if/schema store)))
+      (is (= 1 (if/datom-count store :eav)))
+      (is (= 1 (if/datom-count store :ave)))
+      (is (= 0 (if/datom-count store :vae)))
+      (is (= d (if/ea-first-datom store c/e0 a)))
+      (is (= c/e0 (if/av-first-e store a v)))
+      (is (= v (if/ea-first-v store c/e0 a)))
+      (is (= [d] (if/av-datoms store a v)))
+      (is (= [d] (if/fetch store d)))
+      (is (= [d] (if/slice store :eav d d)))
+      (is (if/populated? store :eav d d))
+      (is (= 1 (if/size store :eav d d)))
+      (is (= 1 (if/e-size store c/e0)))
+      (is (= 1 (if/a-size store a)))
+      (is (= 1 (if/av-size store a v)))
+      (is (= 1 (if/av-range-size store a v v)))
+      (is (= d (if/head store :eav d d)))
+      (is (= d (if/tail store :eav d d)))
+      (if/swap-attr store b merge p1)
+      (if/load-datoms store [d1])
+      (is (= (+ 2 c/tx0) (if/max-tx store)))
+      (is (= s1 (if/schema store)))
+      (is (= 2 (if/datom-count store :eav)))
+      (is (= 2 (if/datom-count store :ave)))
+      (is (= 0 (if/datom-count store :vae)))
+      (is (= [] (if/slice store :eav d (d/datom c/e0 :non-exist v1))))
+      (is (= 0 (if/size store :eav d (d/datom c/e0 :non-exist v1))))
+      (is (nil? (if/populated? store :eav d (d/datom c/e0 :non-exist v1))))
+      (is (= d (if/head store :eav d d1)))
+      (is (= d1 (if/tail store :eav d1 d)))
+      (is (= 2 (if/size store :eav d d1)))
+      (is (= 1 (if/size store :eav d d1 1)))
+      (is (= 2 (if/e-size store c/e0)))
+      (is (= 1 (if/a-size store b)))
+      (is (= [d d1] (if/slice store :eav d d1)))
+      (is (= [d d1] (if/slice store :ave d d1)))
+      (is (= [d1 d] (if/rslice store :eav d1 d)))
+      (is (= [d d1] (if/slice store :eav
+                              (d/datom c/e0 a nil)
+                              (d/datom c/e0 nil nil))))
+      (is (= [d1 d] (if/rslice store :eav
+                               (d/datom c/e0 b nil)
                                (d/datom c/e0 nil nil))))
-      (is (= [d1 d] (sut/rslice store :eav
-                                (d/datom c/e0 b nil)
-                                (d/datom c/e0 nil nil))))
-      (is (= 1 (sut/size-filter store :eav
-                                (fn [^Datom d] (= v (.-v d)))
-                                (d/datom c/e0 nil nil)
-                                (d/datom c/e0 nil nil))))
-      (is (= 0 (sut/size-filter store :eav
-                                (fn [^Datom d] (= v (.-v d)))
-                                (d/datom c/e0 nil nil)
-                                (d/datom c/e0 nil nil) 0)))
-      (is (= d (sut/head-filter store :eav
-                                (fn [^Datom d] (when (= v (.-v d)) d))
-                                (d/datom c/e0 nil nil)
-                                (d/datom c/e0 nil nil))))
-      (is (= d (sut/tail-filter store :eav
-                                (fn [^Datom d]
-                                  (when (= v (.-v d)) d))
-                                (d/datom c/e0 nil nil)
-                                (d/datom c/e0 nil nil))))
-      (is (= [d] (sut/slice-filter store :eav
-                                   (fn [^Datom d]
-                                     (when (= v (.-v d)) d))
-                                   (d/datom c/e0 nil nil)
-                                   (d/datom c/e0 nil nil))))
-      (sut/ave-tuples store pipe a
-                      [[[:closed c/v0] [:closed c/vmax]]]
-                      (constantly true))
+      (is (= 1 (if/size-filter store :eav
+                               (fn [^Datom d] (= v (.-v d)))
+                               (d/datom c/e0 nil nil)
+                               (d/datom c/e0 nil nil))))
+      (is (= 0 (if/size-filter store :eav
+                               (fn [^Datom d] (= v (.-v d)))
+                               (d/datom c/e0 nil nil)
+                               (d/datom c/e0 nil nil) 0)))
+      (is (= d (if/head-filter store :eav
+                               (fn [^Datom d] (when (= v (.-v d)) d))
+                               (d/datom c/e0 nil nil)
+                               (d/datom c/e0 nil nil))))
+      (is (= d (if/tail-filter store :eav
+                               (fn [^Datom d]
+                                 (when (= v (.-v d)) d))
+                               (d/datom c/e0 nil nil)
+                               (d/datom c/e0 nil nil))))
+      (is (= [d] (if/slice-filter store :eav
+                                  (fn [^Datom d]
+                                    (when (= v (.-v d)) d))
+                                  (d/datom c/e0 nil nil)
+                                  (d/datom c/e0 nil nil))))
+      (if/ave-tuples store pipe a
+                     [[[:closed c/v0] [:closed c/vmax]]]
+                     (constantly true))
       (.drainTo pipe res)
       (is (= [c/e0] (map #(aget ^objects % 0) res)))
       (.clear res)
-      (sut/ave-tuples store pipe b [[[:closed v1] [:closed v1]]])
+      (if/ave-tuples store pipe b [[[:closed v1] [:closed v1]]])
       (.drainTo pipe res)
       (is (= [c/e0] (map #(aget ^objects % 0) res)))
       (.clear res)
-      (is (= [d1 d] (sut/rslice store :ave d1 d)))
-      (is (= [d d1] (sut/slice store :ave
-                               (d/datom c/e0 a nil)
+      (is (= [d1 d] (if/rslice store :ave d1 d)))
+      (is (= [d d1] (if/slice store :ave
+                              (d/datom c/e0 a nil)
+                              (d/datom c/e0 nil nil))))
+      (is (= [d1 d] (if/rslice store :ave
+                               (d/datom c/e0 b nil)
                                (d/datom c/e0 nil nil))))
-      (is (= [d1 d] (sut/rslice store :ave
-                                (d/datom c/e0 b nil)
-                                (d/datom c/e0 nil nil))))
-      (is (= [d] (sut/slice-filter store :ave
-                                   (fn [^Datom d]
-                                     (when (= v (.-v d)) d))
-                                   (d/datom c/e0 nil nil)
-                                   (d/datom c/e0 nil nil))))
-      (sut/swap-attr store c merge p2)
-      (sut/load-datoms store [d2])
-      (is (= [d d1 d2] (sut/e-datoms store c/e0)))
-      (is (= d (sut/e-first-datom store c/e0)))
-      (is (= d (sut/ea-first-datom store c/e0 a)))
-      (is (= d1 (sut/ea-first-datom store c/e0 b)))
-      (is (= d2 (sut/ea-first-datom store c/e0 c)))
-      (is (nil? (sut/ea-first-datom store c/e0 :not-exist)))
-      (is (= (+ 3 c/tx0) (sut/max-tx store)))
-      (is (= s2 (sut/schema store)))
-      (is (= 3 (sut/datom-count store c/eav)))
-      (is (= 3 (sut/datom-count store c/ave)))
-      (is (= 1 (sut/datom-count store c/vae)))
-      (is (= 3 (sut/e-size store c/e0)))
-      (is (= 1 (sut/a-size store c)))
-      (is (= 1 (sut/v-size store v2)))
-      (is (= [d2] (sut/slice store :vae
-                             (d/datom c/e0 c v2)
-                             (d/datom c/emax c v2))))
-      (sut/load-datoms store [(d/delete d)])
-      (is (= (+ 4 c/tx0) (sut/max-tx store)))
-      (is (= 2 (sut/datom-count store c/eav)))
-      (is (= 2 (sut/datom-count store c/ave)))
-      (is (= 1 (sut/datom-count store c/vae)))
-      (sut/close store)
-      (is (sut/closed? store))
+      (is (= [d] (if/slice-filter store :ave
+                                  (fn [^Datom d]
+                                    (when (= v (.-v d)) d))
+                                  (d/datom c/e0 nil nil)
+                                  (d/datom c/e0 nil nil))))
+      (if/swap-attr store c merge p2)
+      (if/load-datoms store [d2])
+      (is (= [d d1 d2] (if/e-datoms store c/e0)))
+      (is (= d (if/e-first-datom store c/e0)))
+      (is (= d (if/ea-first-datom store c/e0 a)))
+      (is (= d1 (if/ea-first-datom store c/e0 b)))
+      (is (= d2 (if/ea-first-datom store c/e0 c)))
+      (is (nil? (if/ea-first-datom store c/e0 :not-exist)))
+      (is (= (+ 3 c/tx0) (if/max-tx store)))
+      (is (= s2 (if/schema store)))
+      (is (= 3 (if/datom-count store c/eav)))
+      (is (= 3 (if/datom-count store c/ave)))
+      (is (= 1 (if/datom-count store c/vae)))
+      (is (= 3 (if/e-size store c/e0)))
+      (is (= 1 (if/a-size store c)))
+      (is (= 1 (if/v-size store v2)))
+      (is (= [d2] (if/slice store :vae
+                            (d/datom c/e0 c v2)
+                            (d/datom c/emax c v2))))
+      (if/load-datoms store [(d/delete d)])
+      (is (= (+ 4 c/tx0) (if/max-tx store)))
+      (is (= 2 (if/datom-count store c/eav)))
+      (is (= 2 (if/datom-count store c/ave)))
+      (is (= 1 (if/datom-count store c/vae)))
+      (if/close store)
+      (is (if/closed? store))
       (let [store (sut/open dir {}
                             {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-        (is (= (+ 4 c/tx0) (sut/max-tx store)))
-        (is (= [d1] (sut/slice store :eav d1 d1)))
-        (sut/load-datoms store [(d/delete d1)])
-        (is (= (+ 5 c/tx0) (sut/max-tx store)))
-        (is (= 1 (sut/datom-count store c/eav)))
-        (sut/load-datoms store [d d1])
-        (is (= (+ 6 c/tx0) (sut/max-tx store)))
-        (is (= 3 (sut/datom-count store c/eav)))
-        (sut/close store))
+        (is (= (+ 4 c/tx0) (if/max-tx store)))
+        (is (= [d1] (if/slice store :eav d1 d1)))
+        (if/load-datoms store [(d/delete d1)])
+        (is (= (+ 5 c/tx0) (if/max-tx store)))
+        (is (= 1 (if/datom-count store c/eav)))
+        (if/load-datoms store [d d1])
+        (is (= (+ 6 c/tx0) (if/max-tx store)))
+        (is (= 3 (if/datom-count store c/eav)))
+        (if/close store))
       (let [d     :d/e
             p3    {:db/valueType :db.type/long}
             s3    (assoc s2 d (merge p3 {:db/aid 6}))
             s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
             store (sut/open dir {d p3}
                             {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-        (is (= (+ 6 c/tx0) (sut/max-tx store)))
-        (is (= s3 (sut/schema store)))
-        (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
-        (is (= s4 (sut/schema store)))
-        (sut/close store)))
+        (is (= (+ 6 c/tx0) (if/max-tx store)))
+        (is (= s3 (if/schema store)))
+        (if/set-schema store {:f/g {:db/valueType :db.type/string}})
+        (is (= s4 (if/schema store)))
+        (if/close store)))
     (u/delete-files dir)))
 
 (deftest schema-test
@@ -202,12 +203,12 @@
         store (sut/open
                 dir s
                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
-        s1    (sut/schema store)]
-    (sut/close store)
-    (is (sut/closed? store))
+        s1    (if/schema store)]
+    (if/close store)
+    (is (if/closed? store))
     (let [store (sut/open dir s)]
-      (is (= s1 (sut/schema store)))
-      (sut/close store))
+      (is (= s1 (if/schema store)))
+      (if/close store))
     (u/delete-files dir)))
 
 (deftest giants-string-test
@@ -218,12 +219,12 @@
                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         v      (apply str (repeat 100 (UUID/randomUUID)))
         d      (d/datom c/e0 :a v)]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (is (= [d] (sut/slice store :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax))))
-    (sut/close store)
+    (if/load-datoms store [d])
+    (is (= [d] (if/fetch store d)))
+    (is (= [d] (if/slice store :eav
+                         (d/datom c/e0 :a c/v0)
+                         (d/datom c/e0 :a c/vmax))))
+    (if/close store)
     (u/delete-files dir)))
 
 (deftest giants-data-test
@@ -234,25 +235,25 @@
         v     (apply str (repeat 100 (UUID/randomUUID)))
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (is (= [d] (sut/slice store :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax))))
-    (sut/close store)
+    (if/load-datoms store [d])
+    (is (= [d] (if/fetch store d)))
+    (is (= [d] (if/slice store :eav
+                         (d/datom c/e0 :a c/v0)
+                         (d/datom c/e0 :a c/vmax))))
+    (if/close store)
     (let [store' (sut/open dir nil
                            {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-      (is (sut/populated? store' :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax)))
-      (is (= [d] (sut/fetch store' d)))
-      (is (= [d] (sut/slice store' :eav
-                            (d/datom c/e0 :a c/v0)
-                            (d/datom c/e0 :a c/vmax))))
-      (sut/load-datoms store' [d1])
-      (is (= 1 (sut/init-max-eid store')))
-      (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store'))
+      (is (if/populated? store' :eav
+                         (d/datom c/e0 :a c/v0)
+                         (d/datom c/e0 :a c/vmax)))
+      (is (= [d] (if/fetch store' d)))
+      (is (= [d] (if/slice store' :eav
+                           (d/datom c/e0 :a c/v0)
+                           (d/datom c/e0 :a c/vmax))))
+      (if/load-datoms store' [d1])
+      (is (= 1 (if/init-max-eid store')))
+      (is (= [d1] (if/fetch store' d1)))
+      (if/close store'))
     (u/delete-files dir)))
 
 (deftest normal-data-test
@@ -263,26 +264,26 @@
         v     (UUID/randomUUID)
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (is (= [d] (sut/slice store :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax))))
-    (sut/close store)
+    (if/load-datoms store [d])
+    (is (= [d] (if/fetch store d)))
+    (is (= [d] (if/slice store :eav
+                         (d/datom c/e0 :a c/v0)
+                         (d/datom c/e0 :a c/vmax))))
+    (if/close store)
 
     (let [store' (sut/open dir nil
                            {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-      (is (sut/populated? store' :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax)))
-      (is (= [d] (sut/fetch store' d)))
-      (is (= [d] (sut/slice store' :eav
-                            (d/datom c/e0 :a c/v0)
-                            (d/datom c/e0 :a c/vmax))))
-      (sut/load-datoms store' [d1])
-      (is (= 1 (sut/init-max-eid store')))
-      (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store'))
+      (is (if/populated? store' :eav
+                         (d/datom c/e0 :a c/v0)
+                         (d/datom c/e0 :a c/vmax)))
+      (is (= [d] (if/fetch store' d)))
+      (is (= [d] (if/slice store' :eav
+                           (d/datom c/e0 :a c/v0)
+                           (d/datom c/e0 :a c/vmax))))
+      (if/load-datoms store' [d1])
+      (is (= 1 (if/init-max-eid store')))
+      (is (= [d1] (if/fetch store' d1)))
+      (if/close store'))
     (u/delete-files dir)))
 
 (deftest false-value-test
@@ -290,9 +291,9 @@
         dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open dir nil
                         {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (sut/close store)
+    (if/load-datoms store [d])
+    (is (= [d] (if/fetch store d)))
+    (if/close store)
     (u/delete-files dir)))
 
 (test/defspec random-data-test
@@ -306,9 +307,9 @@
           store (sut/open dir {}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})
-          _     (sut/load-datoms store [d])
-          r     (sut/fetch store d)]
-      (sut/close store)
+          _     (if/load-datoms store [d])
+          r     (if/fetch store d)]
+      (if/close store)
       (u/delete-files dir)
       (is (= [d] r)))))
 
@@ -339,26 +340,26 @@
         pipe  (LinkedBlockingQueue.)
         res   (FastList.)
         ]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
-    (is (= 6 (sut/cardinality store :a)))
-    (is (= 6 (sut/actual-cardinality store :a)))
-    (is (= 6 (sut/a-size store :a)))
+    (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
+    (is (= 6 (if/cardinality store :a)))
+    (is (= 6 (if/actual-cardinality store :a)))
+    (is (= 6 (if/a-size store :a)))
 
-    (is (= 7 (sut/cardinality store :b)))
-    (is (= 7 (sut/actual-cardinality store :b)))
-    (is (= 9 (sut/a-size store :b)))
+    (is (= 7 (if/cardinality store :b)))
+    (is (= 7 (if/actual-cardinality store :b)))
+    (is (= 9 (if/a-size store :b)))
 
-    (is (= 1 (sut/av-size store :a "8a")))
-    (is (= 2 (sut/av-size store :b 7)))
+    (is (= 1 (if/av-size store :a "8a")))
+    (is (= 2 (if/av-size store :b 7)))
 
-    (is (= 5 (sut/av-range-size store :b 7 20)))
-    (is (= 7 (sut/av-range-size store :b 4 20)))
+    (is (= 5 (if/av-range-size store :b 7 20)))
+    (is (= 7 (if/av-range-size store :b 4 20)))
 
-    (is (= 2 (sut/av-range-size store :b 2 4 2)))
+    (is (= 2 (if/av-range-size store :b 2 4 2)))
 
     (are [a range pred get-v? result]
         (do (.clear res)
-            (sut/ave-tuples store pipe a range pred get-v?)
+            (if/ave-tuples store pipe a range pred get-v?)
             (.drainTo pipe res)
             (is (= result (set (mapv vec res)))))
 
@@ -412,7 +413,7 @@
 
       :a [[[:open "0a0"] [:closed "15a"]]] nil false
       (set [[0] [10] [15]]))
-    (sut/close store)
+    (if/close store)
     (u/delete-files dir)
     ))
 
@@ -452,14 +453,14 @@
                            {:flags (conj c/default-env-flags :nosync)}})
         in      (sut/tuple-pipe)
         out     (FastList.)]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13])
+    (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13])
 
     (are [tuples eid-idx attrs-v result]
         (do (.clear out)
             (sut/reset in)
             (.addAll ^Collection in tuples)
             (.add ^Collection in :datalevin/end-scan)
-            (sut/eav-scan-v store in out eid-idx attrs-v)
+            (if/eav-scan-v store in out eid-idx attrs-v)
             (is (= (set result) (set (mapv vec out)))))
 
       tuples0 0 [[:b {:pred nil :skip? false}]]
@@ -567,7 +568,7 @@
 
       tuples4 0 [[:d {:skip? true}] [:e {:skip? true}]]
       [[10]])
-    (sut/close store)
+    (if/close store)
     (u/delete-files dir)))
 
 (deftest val-eq-scan-e-test
@@ -593,14 +594,14 @@
                            {:flags (conj c/default-env-flags :nosync)}})
         in      (sut/tuple-pipe)
         out     (FastList.)]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8])
+    (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8])
 
     (are [tuples veid-idx attr result]
         (do (.clear out)
             (sut/reset in)
             (.addAll ^Collection in tuples)
             (.add ^Collection in :datalevin/end-scan)
-            (sut/val-eq-scan-e store in out veid-idx attr)
+            (if/val-eq-scan-e store in out veid-idx attr)
             (is (= result (mapv vec out))))
 
       tuples0 0 :c
@@ -615,7 +616,7 @@
       tuples2 0 :a
       [[1 5] [1 8] [2 8][1 5] [1 8]]
       )
-    (sut/close store)
+    (if/close store)
     (u/delete-files dir)))
 
 (deftest sampling-test
@@ -624,45 +625,45 @@
                           {:a {:db/valueType :db.type/long}
                            :b {:db/valueType :db.type/long}}
                           {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
-        aid-a   (-> (sut/schema store) :a :db/aid)
+        aid-a   (-> (if/schema store) :a :db/aid)
         size-a  5000
         csize-a 1000
-        aid-b   (-> (sut/schema store) :b :db/aid)
+        aid-b   (-> (if/schema store) :b :db/aid)
         size-b  10
         csize-b 5
         counts  #(.get ^ConcurrentHashMap (.-counts ^Store store) %)]
     (is (nil? (counts aid-a)))
-    (sut/load-datoms store (mapv #(d/datom % :a %) (range 1 (inc size-a))))
+    (if/load-datoms store (mapv #(d/datom % :a %) (range 1 (inc size-a))))
     (is (= size-a (counts aid-a)))
-    (is (= size-a (sut/actual-a-size store :a)))
-    (is (= size-a (sut/a-size store :a)))
-    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample store :a))]
+    (is (= size-a (if/actual-a-size store :a)))
+    (is (= size-a (if/a-size store :a)))
+    (let [sample (mapv #(aget ^objects % 0) (if/e-sample store :a))]
       (is (= c/init-exec-size-threshold (count sample)))
-      (sut/load-datoms store (mapv #(d/datom % :a %)
-                                   (range (inc size-a) (+ size-a (inc csize-a)))))
+      (if/load-datoms store (mapv #(d/datom % :a %)
+                                  (range (inc size-a) (+ size-a (inc csize-a)))))
       (is (= (+ size-a csize-a) (counts aid-a)))
       (sut/sampling store)
       (is (zero? (counts aid-a)))
-      (is (= (+ size-a csize-a) (sut/a-size store :a)))
-      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample store :a))]
+      (is (= (+ size-a csize-a) (if/a-size store :a)))
+      (let [new-sample (mapv #(aget ^objects % 0) (if/e-sample store :a))]
         (is (not= sample new-sample))
         (is (< (apply max sample) (apply max new-sample)))))
 
     (.remove ^ConcurrentHashMap (.-counts ^Store store) aid-a)
     (is (nil? (counts aid-b)))
-    (sut/load-datoms store (mapv #(d/datom % :b %) (range 1 (inc size-b))))
+    (if/load-datoms store (mapv #(d/datom % :b %) (range 1 (inc size-b))))
     (is (= size-b (counts aid-b)))
-    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample store :b))]
+    (let [sample (mapv #(aget ^objects % 0) (if/e-sample store :b))]
       (is (= size-b (count sample)))
       (is (= sample (range 1 (inc size-b))))
-      (sut/load-datoms store (mapv #(d/datom % :b %)
-                                   (range (inc size-b) (+ size-b (inc csize-b)))))
+      (if/load-datoms store (mapv #(d/datom % :b %)
+                                  (range (inc size-b) (+ size-b (inc csize-b)))))
       (is (= (+ size-b csize-b) (counts aid-b)))
       (sut/sampling store)
       (is (zero? (counts aid-b)))
-      (is (= (+ size-b csize-b) (sut/a-size store :b)))
-      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample store :b))]
+      (is (= (+ size-b csize-b) (if/a-size store :b)))
+      (let [new-sample (mapv #(aget ^objects % 0) (if/e-sample store :b))]
         (is (= (concat sample (range (inc size-b) (+ size-b (inc csize-b))))
                new-sample))))
-    (sut/close store)
+    (if/close store)
     (u/delete-files dir)))

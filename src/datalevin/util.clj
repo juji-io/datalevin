@@ -19,7 +19,7 @@
    [clojure.lang IEditableCollection IPersistentSet ITransientSet
     IFn$OOL]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util Random Arrays Iterator List]
+   [java.util Random Arrays Iterator List UUID]
    [java.util.concurrent Executors ExecutorService Future TimeUnit
     ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
@@ -654,3 +654,46 @@
   "Returns true when the running JVM is 21+ (Loom / virtual threads)."
   []
   (>= (.feature (Runtime/version)) 21))
+
+(def ^:private last-tempid (atom -1000000))
+
+(defn tempid
+  "Allocates and returns an unique temporary id (a negative integer). Ignores `part`. Returns `x` if it is specified.
+
+   Exists for Datomic API compatibility. Prefer using negative integers directly if possible."
+  ([part]
+   (if (= part :db.part/tx)
+     :db/current-tx
+     (swap! last-tempid dec)))
+  ([part x]
+   (if (= part :db.part/tx)
+     :db/current-tx
+     x)))
+
+(defn resolve-tempid
+  "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
+
+   Exists for Datomic API compatibility. Prefer using map lookup directly if possible."
+  [_db tempids tempid]
+  (get tempids tempid))
+
+(defn squuid
+  "Generates a UUID that grow with time."
+  ([]
+   (squuid (System/currentTimeMillis)))
+  ([^long msec]
+   (let [uuid     (UUID/randomUUID)
+         time     (int (/ msec 1000))
+         high     (.getMostSignificantBits uuid)
+         low      (.getLeastSignificantBits uuid)
+         new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
+                          (bit-shift-left time 32)) ]
+     (UUID. new-high low))))
+
+(defn squuid-time-millis
+  "Returns time that was used in [[squuid]] call, in milliseconds,
+  rounded to the closest second."
+  [uuid]
+  (-> (.getMostSignificantBits ^UUID uuid)
+      (bit-shift-right 32)
+      (* 1000)))

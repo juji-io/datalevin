@@ -15,9 +15,9 @@
    [datalevin.constants :as c]
    [datalevin.util :as u]
    [datalevin.lmdb :as l]
+   [datalevin.interface :as i]
    [taoensso.nippy :as nippy]
-   [clojure.set :as set]
-   [datalevin.bits :as b])
+   [clojure.set :as set])
   (:import
    [java.util Iterator List UUID NoSuchElementException Map Set Collection]
    [java.io DataInput DataOutput]
@@ -81,13 +81,13 @@
   (memory-count ^long [_] (.size memory))
 
   (disk-count ^long [_]
-    (if @disk (l/entries @disk c/tmp-dbi) 0))
+    (if @disk (i/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-vec-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
       (vreset! disk (l/open-kv dir {:temp? true}))
-      (l/open-dbi @disk c/tmp-dbi {:key-size Long/BYTES}))
+      (i/open-dbi @disk c/tmp-dbi {:key-size Long/BYTES}))
     this)
 
   List
@@ -116,7 +116,7 @@
       (cond
         (= i tc) (.cons this v)
         (< i mc) (.add memory i v)
-        (< i tc) (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi i v :id)])
+        (< i tc) (i/transact-kv @disk [(l/kv-tx :put c/tmp-dbi i v :id)])
         :else    (throw (IndexOutOfBoundsException.))))
     this)
 
@@ -125,7 +125,7 @@
       (if (and (< ^long @memory-pressure spill-threshold) mem?)
         (.add memory v)
         (do (when mem? (.spill this))
-            (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi @total v :id)]))))
+            (i/transact-kv @disk [(l/kv-tx :put c/tmp-dbi @total v :id)]))))
     (vswap! total u/long-inc)
     this)
 
@@ -141,7 +141,7 @@
       (if (some? (get this k))
         true
         (if @disk
-          (some? (l/get-value @disk c/tmp-dbi k :id))
+          (some? (i/get-value @disk c/tmp-dbi k :id))
           false))
       false))
 
@@ -149,14 +149,14 @@
     (when (integer? k)
       (if-some [v (.get memory k)]
         (MapEntry. k v)
-        (when-some [v (l/get-value @disk c/tmp-dbi k :id)]
+        (when-some [v (i/get-value @disk c/tmp-dbi k :id)]
           (MapEntry. k v)))))
 
   (valAt [_ k nf]
     (if (integer? k)
       (cond
         (< ^long k (.size memory)) (.get memory k)
-        @disk                      (l/get-value @disk c/tmp-dbi k :id)
+        @disk                      (i/get-value @disk c/tmp-dbi k :id)
         :else                      nf)
       nf))
   (valAt [this k]
@@ -165,7 +165,7 @@
   (peek [this]
     (if (zero? ^long (disk-count this))
       (.getLast memory)
-      (l/get-first @disk c/tmp-dbi [:all-back] :id :data true)))
+      (i/get-first @disk c/tmp-dbi [:all-back] :id :data true)))
 
   (pop [this]
     (cond
@@ -173,9 +173,9 @@
       (throw (IllegalStateException. "Can't pop empty vector"))
 
       (< 0 ^long (disk-count this))
-      (let [[lk _] (l/get-first @disk c/tmp-dbi [:all-back]
+      (let [[lk _] (i/get-first @disk c/tmp-dbi [:all-back]
                                 :id :ignore)]
-        (l/transact-kv @disk [(l/kv-tx :del c/tmp-dbi lk :id)]))
+        (i/transact-kv @disk [(l/kv-tx :del c/tmp-dbi lk :id)]))
 
       :else (.remove memory (dec ^long (memory-count this))))
     (vswap! total #(dec ^long %))
@@ -186,7 +186,7 @@
   (empty [this]
     (.clear memory)
     (when @disk
-      (l/close-kv @disk)
+      (i/close-kv @disk)
       (vreset! disk nil))
     this)
 
@@ -247,7 +247,7 @@
   ;; as finalizer API is scheduled to be removed in future JVM
   (finalize ^void [_]
     (when @disk
-      (l/close-kv @disk)
+      (i/close-kv @disk)
       (u/delete-files @spill-dir))))
 
 (deftype SVecSeq [^SpillableVector v
@@ -348,13 +348,13 @@
 
   (memory-count ^long [_] (.size memory))
 
-  (disk-count ^long [_] (if @disk (l/entries @disk c/tmp-dbi) 0))
+  (disk-count ^long [_] (if @disk (i/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-map-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
       (vreset! disk (l/open-kv dir {:temp? true}))
-      (l/open-dbi @disk c/tmp-dbi {:key-size Integer/BYTES}))
+      (i/open-dbi @disk c/tmp-dbi {:key-size Integer/BYTES}))
     this)
 
   IPersistentMap
@@ -364,26 +364,26 @@
   (without [this k] (.remove this k) this)
 
   (count [_]
-    (cond-> (.size memory) @disk (+ ^long (l/entries @disk c/tmp-dbi))))
+    (cond-> (.size memory) @disk (+ ^long (i/entries @disk c/tmp-dbi))))
 
   (containsKey [_ k]
     (if (.containsKey memory k)
       true
       (if @disk
-        (some? (l/get-value @disk c/tmp-dbi k))
+        (some? (i/get-value @disk c/tmp-dbi k))
         false)))
 
   (entryAt [_ k]
     (if-some [v (.get memory k)]
       (MapEntry. k v)
-      (when-some [v (l/get-value @disk c/tmp-dbi k)]
+      (when-some [v (i/get-value @disk c/tmp-dbi k)]
         (MapEntry. k v))))
 
   (valAt [_ k nf]
     (if-some [v (.get memory k)]
       v
       (if @disk
-        (if-some [v (l/get-value @disk c/tmp-dbi k)]
+        (if-some [v (i/get-value @disk c/tmp-dbi k)]
           v
           nf)
         nf)))
@@ -397,7 +397,7 @@
   (empty [this]
     (.clear memory)
     (when @disk
-      (l/close-kv @disk)
+      (i/close-kv @disk)
       (vreset! disk nil))
     this)
 
@@ -405,7 +405,7 @@
 
   (keySet [_]
     (set/union (set (.keySet memory))
-               (when @disk (set (l/key-range @disk c/tmp-dbi [:all])))))
+               (when @disk (set (i/key-range @disk c/tmp-dbi [:all])))))
 
   (equiv [this other]
     (cond
@@ -432,15 +432,15 @@
       (.put memory k v)
       (when-not (= (.get memory k) v)
         (when (nil? @disk) (.spill this))
-        (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi k v)]))))
+        (i/transact-kv @disk [(l/kv-tx :put c/tmp-dbi k v)]))))
 
   (get [this k] (.valAt this k))
 
   (remove [_ k]
     (if (.containsKey memory k)
       (.remove memory k)
-      (when (and @disk (l/get-value @disk c/tmp-dbi k))
-        (l/transact-kv @disk [(l/kv-tx :del c/tmp-dbi k)]))))
+      (when (and @disk (i/get-value @disk c/tmp-dbi k))
+        (i/transact-kv @disk [(l/kv-tx :del c/tmp-dbi k)]))))
 
   (isEmpty [this] (= 0 (count this)))
 
@@ -462,9 +462,9 @@
             kl       (FastList. (.keySet memory))
             mn       (.size kl)
             db       @disk
-            ^long dn (if db (l/entries db c/tmp-dbi) 0)
+            ^long dn (if db (i/entries db c/tmp-dbi) 0)
             dl       (when-not (zero? dn)
-                       (l/get-range db c/tmp-dbi [:all]))]
+                       (i/get-range db c/tmp-dbi [:all]))]
         (reify
           Iterator
           (hasNext [_]
@@ -489,7 +489,7 @@
 
   (finalize ^void [_]
     (when @disk
-      (l/close-kv @disk)
+      (i/close-kv @disk)
       (u/delete-files @spill-dir))))
 
 (defn new-spillable-map

@@ -11,21 +11,17 @@
   "User facing API for Datalevin library features"
   (:refer-clojure :exclude [sync load])
   (:require
-   [clojure.pprint :as p]
-   [clojure.edn :as edn]
-   [taoensso.nippy :as nippy]
    [datalevin.util :as u]
    [datalevin.conn :as conn]
+   [datalevin.dump :as dump]
    [datalevin.csv :as csv]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
    [datalevin.vector :as v]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
-   [datalevin.storage :as s]
-   [datalevin.constants :as c]
+   [datalevin.interface :as i]
    [datalevin.lmdb :as l]
-   [datalevin.async :as a]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
@@ -33,17 +29,7 @@
    [datalevin.entity :as de]
    [datalevin.binding.cpp]
    [datalevin.datafy]
-   [datalevin.bits :as b])
-  (:import
-   [datalevin.entity Entity]
-   [datalevin.storage Store]
-   [datalevin.db DB]
-   [datalevin.datom Datom]
-   [datalevin.async IAsyncWork]
-   [datalevin.remote DatalogStore KVStore]
-   [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
-    DataInputStream IOException]
-   [java.util UUID]))
+   [datalevin.bits :as b]))
 
 ;; Entities
 
@@ -109,7 +95,8 @@
        :doc      "Add an attribute value to an entity of a Datalog database"}
   add de/add)
 
-(def ^{:arglists '([ent attr][ent attr value])
+(def ^{:arglists '([ent attr]
+                   [ent attr value])
        :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
@@ -124,11 +111,9 @@
   existence in that case)."}
   entid db/entid)
 
-(defn entity-db
-  "Returns the Datalog DB that this entity was created from."
-  [^Entity entity]
-  {:pre [(de/entity? entity)]}
-  (.-db entity))
+(def ^{:arglists '([entity])
+       :doc      "Returns the Datalog DB that this entity was created from."}
+  entity-db de/entity-db)
 
 (def ^{:arglists '([e])
        :doc      "Forces all entity attributes to be eagerly fetched and cached.
@@ -143,8 +128,9 @@ Only usable for debug output.
 
 ;; Pull API
 
-(defn pull
-  "Fetches data from a Datalog database using recursive declarative
+(def ^{:arglists '([db pattern id opts]
+                   [db pattern id])
+       :doc      "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
@@ -165,35 +151,27 @@ Only usable for debug output.
                 ; => {:db/id   1,
                 ;     :name    \"Ivan\"
                 ;     :likes   [:pizza]
-                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
-  ([db pattern id opts]
-   (let [store (.-store ^DB db)]
-     (if (instance? DatalogStore store)
-       (r/pull store pattern id opts)
-       (dp/pull db pattern id opts))))
-  ([db pattern id]
-   (pull db pattern id {})))
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
+  pull dp/pull)
 
-(defn pull-many
-  "Same as [[pull]], but accepts sequence of ids and returns
+(def ^{:arglists '([db pattern id opts]
+                   [db pattern id])
+       :doc      "Same as [[pull]], but accepts sequence of ids and returns
   sequence of maps.
 
   Usage:
 
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]"
-  ([db pattern id opts]
-   (let [store (.-store ^DB db)]
-     (if (instance? DatalogStore store)
-       (r/pull-many store pattern id opts)
-       (dp/pull-many db pattern id opts))))
-  ([db pattern id]
-   (pull-many db pattern id {})))
+             ;     {:db/id 2, :name \"Oleg\"}]"}
+  pull-many dp/pull-many)
 
 ;; Creating DB
 
-(def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
+(def ^{:arglists '([]
+                   [dir]
+                   [dir schema]
+                   [dir schema opts])
        :doc      "Open a Datalog database at the given location.
 
  `dir` could be a local directory path or a dtlv connection URI string.
@@ -238,7 +216,9 @@ Only usable for debug output.
   Return `false` otherwise. "}
   db? db/db?)
 
-(def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
+(def ^{:arglists '([e a v]
+                   [e a v tx]
+                   [e a v tx added])
        :doc      "Low-level fn to create raw datoms in a Datalog db.
 
              Optionally with transaction id (number) and `added` flag (`true` for addition, `false` for retraction).
@@ -262,7 +242,10 @@ Only usable for debug output.
        :doc      "Return the value of a datom"}
   datom-v dd/datom-v)
 
-(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
+(def ^{:arglists '([datoms]
+                   [datoms dir]
+                   [datoms dir schema]
+                   [datoms dir schema opts])
        :doc      "Low-level function for creating a Datalog database quickly from a sequence of trusted datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
@@ -294,16 +277,12 @@ Only usable for debug output.
 
 ;; Changing DB
 
-(def ^{:arglists '([db])
-       :doc      "Rollback writes of the transaction from inside
-  [[with-transaction-kv]]."}
-  abort-transact-kv l/abort-transact-kv)
-
 (u/import-macro l/with-transaction-kv)
 (u/import-macro conn/with-transaction)
 (u/import-macro conn/with-conn)
 
-(def ^{:arglists '([db] [db n])
+(def ^{:arglists '([db]
+                   [db n])
        :doc      "Get or set the cache limit of a Datalog DB. Default is 256. Set to 0 to
    disable the cache, useful when transacting bulk data as it saves memory."}
   datalog-index-cache-limit db/datalog-index-cache-limit)
@@ -323,21 +302,8 @@ Only usable for debug output.
 
 ;; Query
 
-(defn- only-remote-db
-  "Return [remote-db [updated-inputs]] if the inputs contain only one db
-  and its backing store is a remote one, where the remote-db in the inputs is
-  replaced by `:remote-db-placeholder, otherwise return `nil`"
-  [inputs]
-  (let [dbs (filter db/-searchable? inputs)]
-    (when-let [rdb (first dbs)]
-      (let [rstore (.-store ^DB rdb)]
-        (when (and (= 1 (count dbs))
-                   (instance? DatalogStore rstore)
-                   (db/db? rdb))
-          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
-
-(defn q
-  "Executes a Datalog query, which supports [Datomic Query Format](https://docs.datomic.com/query/query-data-reference.html).
+(def ^{:arglists '([query & inputs])
+       :doc      "Executes a Datalog query, which supports [Datomic Query Format](https://docs.datomic.com/query/query-data-reference.html).
 
   In addition, when `:find` spec is a relation, `:order-by` clause is supported, which can be followed by a single variable or a vector. The vector includes one or more variables, each optionally followed by a keyword `:asc` or `:desc`, specifying ascending or descending order, respectively. The default is `:asc`. `:limit` is also supported to specify the number of tuples to be returned.
 
@@ -350,14 +316,11 @@ Only usable for debug output.
                :timeout 5000]
              db)
           ; => #{[\"pizza\"] [\"pie\"] [\"fries\"] [\"candy\"]}
-          ```"
-  [query & inputs]
-  (if-let [[store inputs'] (only-remote-db inputs)]
-    (r/q store query inputs')
-    (apply dq/q query inputs)))
+          ```"}
+  q dq/q)
 
-(defn explain
-  "Explain the query plan for a Datalog query.
+(def ^{:arglists '([opts query & inputs])
+       :doc      "Explain the query plan for a Datalog query.
 
     `opts` is a map, with these keys:
 
@@ -443,17 +406,17 @@ Only usable for debug output.
       - `:steps` are the descriptions of the processing steps planned.
       - `:cost` is the accumulated estimated cost, which determines the plan.
       - `:size` is the estimated number of resulting tuples for the steps.
-      - `:actual-size` is the actual number of resulting tuples after the steps are executed. "
-  [opts query & inputs]
-  (if-let [[store inputs'] (only-remote-db inputs)]
-    (r/explain store opts query inputs')
-    (apply dq/explain opts query inputs)))
-
+      - `:actual-size` is the actual number of resulting tuples after the steps are executed. "}
+  explain dq/explain)
 
 ;; Index lookups
 
-(defn datoms
-  "Lookup datoms in specified index of Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
+(def ^{:arglists '([db index]
+                   [db index c1]
+                   [db index c1 c2]
+                   [db index c1 c2 c3]
+                   [db index c1 c2 c3 n])
+       :doc      "Lookup datoms in specified index of Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
 
@@ -499,22 +462,11 @@ Only usable for debug output.
        (->> (datoms db :ave attr) (take N))
 
        ; find N entities with highest attr value (e.g. 10 latest posts)
-       (->> (datoms db :ave attr) (reverse) (take N))
+       (->> (datoms db :ave attr) (reverse) (take N)) "}
+  datoms db/-datoms)
 
-   "
-  ([db index] {:pre [(db/db? db)]}
-   (db/-datoms db index nil nil nil))
-  ([db index c1] {:pre [(db/db? db)]}
-   (db/-datoms db index c1 nil nil))
-  ([db index c1 c2] {:pre [(db/db? db)]}
-   (db/-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3] {:pre [(db/db? db)]}
-   (db/-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n] {:pre [(db/db? db)]}
-   (db/-datoms db index c1 c2 c3 n)))
-
-(defn search-datoms
-  "Datom lookup in Datalog db. Returns a sequence of datoms matching the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function chooses the most efficient index to look up the datoms. The order of the returned datoms depends on the index chosen.
+(def ^{:arglists '([db e a v])
+       :doc      "Datom lookup in Datalog db. Returns a sequence of datoms matching the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function chooses the most efficient index to look up the datoms. The order of the returned datoms depends on the index chosen.
 
    Usage:
 
@@ -539,13 +491,11 @@ Only usable for debug output.
        ; find all datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
        (search-datoms db nil :likes \"pizza\")
        ; => (#datalevin/Datom [1 :likes \"pizza\"]
-       ;     #datalevin/Datom [2 :likes \"pizza\"])
-   "
-  [db e a v]
-  (db/-search db [e a v]))
+       ;     #datalevin/Datom [2 :likes \"pizza\"]) "}
+  search-datoms db/search-datoms)
 
-(defn count-datoms
-  "Count datoms in Datalog db that match the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function is more efficient than calling `count` on `search-datoms` results.
+(def ^{:arglists '([db e a v])
+       :doc      "Count datoms in Datalog db that match the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function is more efficient than calling `count` on `search-datoms` results.
 
    Usage:
 
@@ -563,34 +513,31 @@ Only usable for debug output.
 
        ; count datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
        (count-datoms db nil :likes \"pizza\")
-       ; => 10
-   "
-  [db e a v]
-  (db/-count db [e a v] nil true))
+       ; => 10 "}
+  count-datoms db/count-datoms)
 
-(defn cardinality
-  "Count the number of unique values of an attribute in a Datalog db. "
-  [db a]
-  (db/-cardinality db a true))
+(def ^{:arglists '([db a])
+       :doc      "Count the number of unique values of an attribute in a Datalog db."}
+  cardinality db/cardinality)
 
-(defn max-eid
-  "Return the current maximal entity id of a Datalog db"
-  [db]
-  {:pre [(db/db? db)]}
-  (s/init-max-eid (:store db)))
+(def ^{:arglists '([db a])
+       :doc      "Return the current maximal entity id of a Datalog db"}
+  max-eid db/max-eid)
 
-(defn analyze
-  "Collect statistics for an attribute `attr` that are helpful for Datalog query planner.
+(def ^{:arglists '([db]
+                   [db attr])
+       :doc      "Collect statistics for an attribute `attr` that are helpful for Datalog query planner.
   When `attr` is not given, collect statistics for all attributes. Return `:done`.
 
-  Datalevin runs this function in the background periodically. "
-  ([db] {:pre [(db/db? db)]}
-   (s/analyze (:store db) nil))
-  ([db attr] {:pre [(db/db? db)]}
-   (s/analyze (:store db) attr)))
+  Datalevin runs this function in the background periodically. "}
+  analyze db/analyze)
 
-(defn seek-datoms
-  "Similar to [[datoms]], but will return datoms starting from specified components.
+(def ^{:arglists '([db index]
+                   [db index c1]
+                   [db index c1 c2]
+                   [db index c1 c2 c3]
+                   [db index c1 c2 c3 n])
+       :doc      "Similar to [[datoms]], but will return datoms starting from specified components.
 
    If no datom matches passed arguments exactly, iterator will start from first datom that could be considered “greater” in index order.
 
@@ -618,40 +565,21 @@ Only usable for debug output.
        ; no datom [2 :likes \"fish\"], so starts with one immediately following such in index
        (seek-datoms db :eav 2 :likes \"fish\")
        ; => (#datalevin/Datom [2 :likes \"pie\"]
-       ;     #datalevin/Datom [2 :likes \"pizza\"])"
-  ([db index]
-   (db/-seek-datoms db index nil nil nil))
-  ([db index c1]
-   (db/-seek-datoms db index c1 nil nil))
-  ([db index c1 c2]
-   (db/-seek-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3]
-   (db/-seek-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n]
-   (db/-seek-datoms db index c1 c2 c3 n)))
+       ;     #datalevin/Datom [2 :likes \"pizza\"])"}
+  seek-datoms db/seek-datoms)
 
-(defn rseek-datoms
-  "Same as [[seek-datoms]], but goes backwards."
-  ([db index]
-   (db/-rseek-datoms db index nil nil nil))
-  ([db index c1]
-   (db/-rseek-datoms db index c1 nil nil))
-  ([db index c1 c2]
-   (db/-rseek-datoms db index c1 c2 nil))
-  ([db index c1 c2 c3]
-   (db/-rseek-datoms db index c1 c2 c3))
-  ([db index c1 c2 c3 n]
-   (db/-rseek-datoms db index c1 c2 c3 n)))
+(def ^{:arglists '([db index]
+                   [db index c1]
+                   [db index c1 c2]
+                   [db index c1 c2 c3]
+                   [db index c1 c2 c3 n])
+       :doc      "Same as [[seek-datoms]], but goes backwards."}
+  rseek-datoms db/rseek-datoms)
 
-(defn fulltext-datoms
-  "Return datoms that found by the given fulltext search query"
-  ([db query]
-   (fulltext-datoms db query nil))
-  ([^DB db query opts]
-   (let [store (.-store db)]
-     (if (instance? DatalogStore store)
-       (r/fulltext-datoms store query opts)
-       (dbq/fulltext db query opts)))))
+(def ^{:arglists '([db query]
+                   [db query opts])
+       :doc      "Return datoms that found by the given fulltext search query"}
+  fulltext-datoms dbq/fulltext-datoms)
 
 (def ^{:arglists '([db attr start end])
        :doc      "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVE sort order.
@@ -760,12 +688,6 @@ Only usable for debug output.
 (def ^{:arglists '([conn])
        :doc      "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"}
   closed? conn/closed?)
-
-(defn ^:no-doc -transact! [conn tx-data tx-meta]
-  (let [report (with-transaction [c conn]
-                 (assert (conn? c))
-                 (with @c tx-data tx-meta))]
-    (assoc report :db-after @conn)))
 
 (def ^{:arglists '([conn tx-data] [conn tx-data tx-meta])
        :doc      "Synchronously applies transaction to the underlying Datalog database of a
@@ -876,27 +798,26 @@ Only usable for debug output.
 
 ;; Datomic compatibility layer
 
-(def ^:private last-tempid (atom -1000000))
+(def ^{:arglists '([part] [part x])
+       :doc      "allocates and returns an unique temporary id (a negative integer). ignores `part`. returns `x` if it is specified.
 
-(defn tempid
-  "Allocates and returns an unique temporary id (a negative integer). Ignores `part`. Returns `x` if it is specified.
+   exists for datomic api compatibility. prefer using negative integers directly if possible."}
+  tempid u/tempid)
 
-   Exists for Datomic API compatibility. Prefer using negative integers directly if possible."
-  ([part]
-   (if (= part :db.part/tx)
-     :db/current-tx
-     (swap! last-tempid dec)))
-  ([part x]
-   (if (= part :db.part/tx)
-     :db/current-tx
-     x)))
+(def ^{:arglists '([_db tempids tempid])
+       :doc      "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
 
-(defn resolve-tempid
-  "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
+   Exists for Datomic API compatibility. Prefer using map lookup directly if possible."}
+  resolve-tempid u/resolve-tempid)
 
-   Exists for Datomic API compatibility. Prefer using map lookup directly if possible."
-  [_db tempids tempid]
-  (get tempids tempid))
+(def ^{:arglists '([] [msec])
+       :doc      "Generates a UUID that grow with time."}
+  squuid u/squuid)
+
+(def ^{:arglists '([uuid])
+       :doc      "Returns time that was used in [[squuid]] call, in milliseconds,
+  rounded to the closest second."}
+  squuid-time-millis u/squuid-time-millis)
 
 (def ^{:arglists '([conn])
        :doc      "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object. "}
@@ -973,27 +894,6 @@ Only usable for debug output.
   async transactions are also committed."}
   transact conn/transact)
 
-(defn squuid
-  "Generates a UUID that grow with time."
-  ([]
-   (squuid (System/currentTimeMillis)))
-  ([^long msec]
-   (let [uuid     (UUID/randomUUID)
-         time     (int (/ msec 1000))
-         high     (.getMostSignificantBits uuid)
-         low      (.getLeastSignificantBits uuid)
-         new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
-                          (bit-shift-left time 32)) ]
-     (UUID. new-high low))))
-
-(defn squuid-time-millis
-  "Returns time that was used in [[squuid]] call, in milliseconds,
-  rounded to the closest second."
-  [uuid]
-  (-> (.getMostSignificantBits ^UUID uuid)
-      (bit-shift-right 32)
-      (* 1000)))
-
 ;; -------------------------------------
 
 ;; key value store API
@@ -1006,8 +906,8 @@ Only usable for debug output.
        :doc      "Value of a key value pair"}
   v l/v)
 
-(defn open-kv
-  "Open a LMDB key-value database, return the connection.
+(def ^{:arglists '([dir] [dir opts])
+       :doc      "Open a LMDB key-value database, return the connection.
 
   `dir` is a directory path or a dtlv connection URI string.
 
@@ -1052,25 +952,20 @@ Only usable for debug output.
   example, in Clojure, use [component](https://github.com/stuartsierra/component),
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
-  to hold on to and manage the connection. "
-  ([dir]
-   (open-kv dir nil))
-  ([dir opts]
-   (if (r/dtlv-uri? dir)
-     (r/open-kv dir opts)
-     (l/open-kv dir opts))))
+  to hold on to and manage the connection. "}
+  open-kv conn/open-kv)
 
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
-  close-kv l/close-kv)
+  close-kv i/close-kv)
 
 (def ^{:arglists '([db])
        :doc      "Return true if this key-value store is closed"}
-  closed-kv? l/closed-kv?)
+  closed-kv? i/closed-kv?)
 
 (def ^{:arglists '([db])
        :doc      "Return the path or URI string of the key-value store"}
-  dir l/dir)
+  dir i/env-dir)
 
 (def ^{:arglists '([db dbi-name]
                    [db dbi-name opts])
@@ -1085,45 +980,28 @@ Only usable for debug output.
       * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
 
       * `:flags` is a set of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `#{:create}`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
-  open-dbi l/open-dbi)
+  open-dbi i/open-dbi)
 
 (def ^{:arglists '([db dbi-name])
        :doc      "Clear data in the DBI (i.e sub-database) of the key-value store, but leave it open"}
-  clear-dbi l/clear-dbi)
+  clear-dbi i/clear-dbi)
 
-(defn clear
-  "Close the Datalog database, then clear all data, including schema."
-  [conn]
-  (let [store (.-store ^DB @conn)
-        lmdb  (if (instance? DatalogStore store)
-                (let [dir (s/dir store)]
-                  (close conn)
-                  (open-kv dir))
-                (.-lmdb ^Store store))]
-    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
-      (clear-dbi lmdb dbi))
-    (close-kv lmdb)))
+(def ^{:arglists '([conn])
+       :doc      "Close the Datalog database, then clear all data, including schema."}
+  clear conn/clear)
 
 (def ^{:arglists '([db dbi-name])
        :doc      "Clear data in the DBI (i.e. sub-database) of the key-value store, then delete it"}
-  drop-dbi l/drop-dbi)
+  drop-dbi i/drop-dbi)
 
 (def ^{:arglists '([db])
        :doc      "List the names of the sub-databases in the key-value store"}
-  list-dbis l/list-dbis)
+  list-dbis i/list-dbis)
 
-(defn copy
-  "Copy a Datalog or a key-value database to a destination directory path,
-  optionally compact while copying, default not compact. "
-  ([db dest]
-   (copy db dest false))
-  ([db dest compact?]
-   (cond
-     (instance? datalevin.db.DB db)
-     (l/copy (.-lmdb ^Store (.-store ^DB db)) dest compact?)
-     (satisfies? l/ILMDB db)
-     (l/copy db dest compact?)
-     :else (u/raise "Can only copy a local database." {}))))
+(def ^{:arglists '([db dest] [db dest compact?])
+       :doc      "Copy a Datalog or a key-value database to a destination directory path,
+  optionally compact while copying, default not compact. "}
+  copy dump/copy)
 
 (def ^{:arglists '([db] [db dbi-name])
        :doc      "Return the statitics of the unnamed top level database or a named DBI (i.e. sub-database) of the key-value store as a map:
@@ -1133,11 +1011,11 @@ Only usable for debug output.
   * `:leaf-pages` is the number of leaf pages
   * `:overflow-pages` is the number of overflow-pages
   * `:entries` is the number of data entries"}
-  stat l/stat)
+  stat i/stat)
 
 (def ^{:arglists '([db dbi-name])
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
-  entries l/entries)
+  entries i/entries)
 
 (def ^{:arglists '([db txs] [db dbi-name txs] [db dbi-name txs k-type]
                    [db dbi-name txs k-type v-type])
@@ -1182,33 +1060,19 @@ Only usable for debug output.
               [:del \"a\" :non-exist] ])
 
 See also: [[open-kv]], [[sync]]"}
-  transact-kv l/transact-kv)
+  transact-kv i/transact-kv)
 
-(declare kv-tx-combine)
+(def ^{:arglists '([db])
+       :doc      "Rollback writes of the transaction from inside
+  [[with-transaction-kv]]."}
+  abort-transact-kv i/abort-transact-kv)
 
-(defn- kv-work-key* [dir] (->> dir hash (str "kv-tx") keyword))
-
-(def ^:no-doc kv-work-key (memoize kv-work-key*))
-
-(deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb]
-  IAsyncWork
-  (work-key [_] (kv-work-key (l/dir lmdb)))
-  (do-work [_] (l/transact-kv lmdb dbi-name txs k-type v-type))
-  (combine [_] kv-tx-combine)
-  (callback [_] cb))
-
-(defn- kv-tx-combine
-  [coll]
-  (let [^AsyncKVTx fw (first coll)]
-    (->AsyncKVTx (.-lmdb fw)
-                 (.-dbi-name fw)
-                 (into [] (comp (map #(.-txs ^AsyncKVTx %)) cat) coll)
-                 (.-k-type fw)
-                 (.-v-type fw)
-                 (.-cb fw))))
-
-(defn transact-kv-async
-  "Asynchronously update key-value DB, insert or delete key value pairs,
+(def ^{:arglists '([this txs]
+                   [this dbi-name txs]
+                   [this dbi-name txs k-type]
+                   [this dbi-name txs k-type v-type]
+                   [this dbi-name txs k-type v-type callback])
+       :doc      "Asynchronously update key-value DB, insert or delete key value pairs,
   return a future. The future eventually contains `:transacted` if transaction
   succeeds, otherwise an exception will be thrown when the future is deref'ed.
 
@@ -1220,18 +1084,8 @@ See also: [[open-kv]], [[sync]]"}
   (possibly an exception) as the single argument. Babashka pod only supports
   this version as callback is required for async pod function.
 
-  See also: [[transact-kv]]"
-  ([this txs] (transact-kv-async this nil txs))
-  ([this dbi-name txs]
-   (transact-kv-async this dbi-name txs :data :data))
-  ([this dbi-name txs k-type]
-   (transact-kv-async this dbi-name txs k-type :data))
-  ([this dbi-name txs k-type v-type]
-   (transact-kv-async this dbi-name txs k-type v-type nil))
-  ([this dbi-name txs k-type v-type callback]
-   (a/exec (a/get-executor)
-           (->AsyncKVTx this dbi-name txs k-type v-type callback))))
-
+  See also: [[transact-kv]]"}
+  transact-kv-async l/transact-kv-async)
 
 (def ^{:arglists '([db ks on-off])
        :doc      "Set LMDB environment flags. `ks` is a set of keywords, when `on-off` is truthy, these flags are set, otherwise, they are cleared. These are the keywords:
@@ -1257,16 +1111,16 @@ See also: [[open-kv]], [[sync]]"}
          * `:nordahead`, don't do readahead (no effect on Windows), set in Datalevin by default
 
          * `:nomeminit`, don't initialize malloc'd memory before writing to datafile "}
-  set-env-flags l/set-env-flags)
+  set-env-flags i/set-env-flags)
 
 (def ^{:arglists '([db])
        :doc      "Get LMDB environment flags that are currently in effect. Return a
 set of keywords. See [[set-env-flags]] for their meanings."}
-  get-env-flags l/get-env-flags)
+  get-env-flags i/get-env-flags)
 
 (def ^{:arglists '([db])
        :doc      "Force a synchronous flush to disk. Useful when non-default flags for write are included in the `:flags` option when opening the KV store, such as `:nosync`, `:mapasync`, etc. See [[open-kv]]"}
-  sync l/sync)
+  sync i/sync)
 
 (def ^{:arglists '([db dbi-name k]
                    [db dbi-name k k-type]
@@ -1296,7 +1150,7 @@ set of keywords. See [[set-env-flags]] for their meanings."}
         ;; key doesn't exist
         (gkvet-value lmdb \"a\" 2)
         ;;==> nil "}
-  get-value l/get-value)
+  get-value i/get-value)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
@@ -1336,7 +1190,7 @@ set of keywords. See [[set-env-flags]] for their meanings."}
               ;; ignore both, this is like testing if the range is empty
               (get-first lmdb \"a\" [:greater-than 5] :long :ignore true)
               ;;==> true"}
-  get-first l/get-first)
+  get-first i/get-first)
 
 (def ^{:arglists '([db dbi-name n k-range]
                    [db dbi-name n k-range k-type]
@@ -1365,7 +1219,7 @@ set of keywords. See [[set-env-flags]] for their meanings."}
 
               (get-first-n lmdb \"c\" 2 [:all] :long :long)
               ;;==> [[0 1] [2 9]]"}
-  get-first-n l/get-first-n)
+  get-first-n i/get-first-n)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
@@ -1401,7 +1255,7 @@ If value is to be ignored, put `:ignore` as `v-type`.
               ;; out of range
               (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
               ;;==> [] "}
-  get-range l/get-range)
+  get-range i/get-range)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type])
@@ -1417,7 +1271,7 @@ This function is eager and attempts to load all data in range into memory. When 
 
               (key-range lmdb \"c\" [:greater-than 9] :long)
               ;;==> [11 15 14]"}
-  key-range l/key-range)
+  key-range i/key-range)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
@@ -1434,7 +1288,7 @@ This function is eager and attempts to load all data in range into memory. When 
 
               (key-range lmdb \"c\" [:greater-than 9] :long)
               ;;==> 1002"}
-  key-range-count l/key-range-count)
+  key-range-count i/key-range-count)
 
 (def ^{:arglists '([db dbi-name k-range k-type]
                    [db dbi-name k-range k-type cap])
@@ -1445,7 +1299,7 @@ This function is eager and attempts to load all data in range into memory. When 
 `k-type` is data type of key. The allowed data types are described in [[read-buffer]].
 
 `cap` is a number, over which the count will stop."}
-  key-range-list-count l/key-range-list-count)
+  key-range-list-count i/key-range-list-count)
 
 (def ^{:arglists '([db dbi-name visitor k-range]
                    [db dbi-name visitor k-range k-type]
@@ -1463,7 +1317,7 @@ This function is eager and attempts to load all data in range into memory. When 
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;"}
-  visit-key-range l/visit-key-range)
+  visit-key-range i/visit-key-range)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
@@ -1494,7 +1348,7 @@ See [[get-range]] for usage of the augments.
                 (doseq [item range]
                   ;; do processing on each item
                   ))"}
-  range-seq l/range-seq)
+  range-seq i/range-seq)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type])
@@ -1513,7 +1367,7 @@ See [[get-range]] for usage of the augments.
 
               (range-count lmdb \"c\" [:at-least 9] :long)
               ;;==> 10 "}
-  range-count l/range-count)
+  range-count i/range-count)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1553,7 +1407,7 @@ See [[get-range]] for usage of the augments.
               ;; ignore key
               (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
               ;;==> 16 "}
-  get-some l/get-some)
+  get-some i/get-some)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1590,7 +1444,7 @@ If value is to be ignored, put `:ignore` as `v-type`
               ;; ignore key
               (range-filter lmdb \"a\" pred [:greater-than 9] :long :data true)
               ;;==> [16 17] "}
-  range-filter l/range-filter)
+  range-filter i/range-filter)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1607,7 +1461,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 `k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
 
 See also [[range-filter]] "}
-  range-keep l/range-keep)
+  range-keep i/range-keep)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1622,7 +1476,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 `k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
 
 See also [[range-filter]] "}
-  range-some l/range-some)
+  range-some i/range-some)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1648,7 +1502,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
-  range-filter-count l/range-filter-count)
+  range-filter-count i/range-filter-count)
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
@@ -1680,7 +1534,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
                                   (.put hashmap k v))))
               (visit lmdb \"a\" visitor [:closed 11 19] :long)
               "}
-  visit l/visit)
+  visit i/visit)
 
 ;; List related functions
 
@@ -1697,7 +1551,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   supported.
 
   See [[put-list-items]], [[get-list]], [[list-range]], and so on."}
-  open-list-dbi l/open-list-dbi)
+  open-list-dbi i/open-list-dbi)
 
 (def ^{:arglists '([db list-name k vs k-type v-type])
        :doc      "Put some list items to a key.
@@ -1712,7 +1566,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   supported.
 
   See [[get-list]], [[list-range]], and so on."}
-  put-list-items l/put-list-items)
+  put-list-items i/put-list-items)
 
 (def ^{:arglists '([db list-name k k-type]
                    [db list-name k vs k-type v-type])
@@ -1724,12 +1578,12 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
    be deleted. If unspecified, all list items and the key will be deleted.
 
    See also [[put-list-items]]."}
-  del-list-items l/del-list-items)
+  del-list-items i/del-list-items)
 
 (def ^{:arglists '([db list-name k k-type v-type])
        :doc      "Get a list by the key. The list items were added
   by [[put-list-items]]."}
-  get-list l/get-list)
+  get-list i/get-list)
 
 (def ^{:arglists '([db list-name visitor k k-type]
                    [db list-name visitor k k-type v-type]
@@ -1737,17 +1591,17 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
        :doc      "Visit the list associated with a key, presumably for
   side effects. The list items were added by [[put-list-items]]. When `raw-pred?` is true (default), the visitor call is `(visitor kv)`, where `kv`
      is a raw `IKV` object, with both key and value fields being a `ByteBuffer`; otherwise, the call is `(visitor k v)`, where `k` and `v` are already decoded key and value. "}
-  visit-list l/visit-list)
+  visit-list i/visit-list)
 
 (def ^{:arglists '([db list-name k k-type])
        :doc      "Return the number of items in the list associated with a
   key. The list items were added by [[put-list-items]]."}
-  list-count l/list-count)
+  list-count i/list-count)
 
 (def ^{:arglists '([db list-name k v k-type v-type])
        :doc      "Return true if an item is in the list associated with the
  key. The list items were added by [[put-list-items]]."}
-  in-list? l/in-list?)
+  in-list? i/in-list?)
 
 (def ^{:arglists '([db list-name k-range k-type v-range v-type])
        :doc      "Return a seq of key-values in the specified value range
@@ -1756,7 +1610,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range l/list-range)
+  list-range i/list-range)
 
 (def ^{:arglists '([db list-name k-range k-type v-range v-type])
        :doc      "Return the number of key-values in the specified value
@@ -1765,7 +1619,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-count l/list-range-count)
+  list-range-count i/list-range-count)
 
 (def ^{:arglists '([db list-name k-range k-type v-range v-type])
        :doc      "Return the first key-values in the specified value range
@@ -1774,7 +1628,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-first l/list-range-first)
+  list-range-first i/list-range-first)
 
 (def ^{:arglists '([db list-name n k-range k-type v-range v-type])
        :doc      "Return the first n key-values in the specified value range
@@ -1783,7 +1637,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-first-n l/list-range-first-n)
+  list-range-first-n i/list-range-first-n)
 
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
                    [db list-name pred k-range k-type v-range v-type raw-pred?])
@@ -1794,7 +1648,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-filter l/list-range-filter)
+  list-range-filter i/list-range-filter)
 
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
                    [db list-name pred k-range k-type v-range v-type raw-pred?])
@@ -1806,7 +1660,7 @@ This function is eager and attempts to load all matching data in range into memo
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-keep l/list-range-keep)
+  list-range-keep i/list-range-keep)
 
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
                    [db list-name pred k-range k-type v-range v-type raw-pred?])
@@ -1816,7 +1670,7 @@ This function is eager and attempts to load all matching data in range into memo
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-filter-count l/list-range-filter-count)
+  list-range-filter-count i/list-range-filter-count)
 
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
                    [db list-name pred k-range k-type v-range v-type raw-pred?])
@@ -1826,7 +1680,7 @@ This function is eager and attempts to load all matching data in range into memo
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  list-range-some l/list-range-some)
+  list-range-some i/list-range-some)
 
 (def ^{:arglists '([db list-name visitor k-range k-type v-range v-type]
                    [db list-name visitor k-range k-type v-range v-type raw-pred?])
@@ -1835,89 +1689,10 @@ This function is eager and attempts to load all matching data in range into memo
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
-  visit-list-range l/visit-list-range)
+  visit-list-range i/visit-list-range)
 
-(defn ^:no-doc dump-datalog
-  ([conn]
-   (binding [u/*datalevin-print* true]
-     (p/pprint (opts conn))
-     (p/pprint (schema conn))
-     (doseq [^Datom datom (datoms @conn :eav)]
-       (prn [(.-e datom) (.-a datom) (.-v datom)]))))
-  ([conn data-output]
-   (if data-output
-     (nippy/freeze-to-out!
-       data-output
-       [(opts conn)
-        (schema conn)
-        (map (fn [^Datom datom] [(.-e datom) (.-a datom) (.-v datom)])
-             (datoms @conn :eav))])
-     (dump-datalog conn))))
-
-(defn- dump
-  [conn ^String dumpfile]
-  (let [d (DataOutputStream. (FileOutputStream. dumpfile))]
-    (dump-datalog conn d)
-    (.flush d)
-    (.close d)))
-
-(defn ^:no-doc load-datalog
-  ([dir in schema opts nippy?]
-   (if nippy?
-     (try
-       (let [[old-opts old-schema datoms] (nippy/thaw-from-in! in)
-             new-opts                     (merge old-opts opts)
-             new-schema                   (merge old-schema schema)]
-         (db/init-db (for [d datoms] (apply dd/datom d))
-                     dir new-schema new-opts))
-       (catch Exception e
-         (u/raise "Error loading nippy file into Datalog DB: " e {})))
-     (load-datalog dir in schema opts)))
-  ([dir in schema opts]
-   (try
-     (with-open [^PushbackReader r in]
-       (let [read-form             #(edn/read {:eof     ::EOF
-                                               :readers *data-readers*} r)
-             read-maps             #(let [m1 (read-form)]
-                                      (if (:db/ident m1)
-                                        [nil m1]
-                                        [m1 (read-form)]))
-             [old-opts old-schema] (read-maps)
-             new-opts              (merge old-opts opts)
-             new-schema            (merge old-schema schema)
-             datoms                (->> (repeatedly read-form)
-                                        (take-while #(not= ::EOF %))
-                                        (map #(apply dd/datom %)))
-             db                    (db/init-db datoms dir new-schema new-opts)]
-         (db/close-db db)))
-     (catch IOException e
-       (u/raise "IO error while loading Datalog data: " e {}))
-     (catch RuntimeException e
-       (u/raise "Parse error while loading Datalog data: " e {}))
-     (catch Exception e
-       (u/raise "Error loading Datalog data: " e {})))))
-
-(defn- load
-  [dir schema opts ^String dumpfile]
-  (let [f  (FileInputStream. dumpfile)
-        in (DataInputStream. f)]
-    (load-datalog dir in schema opts true)
-    (.close f)))
-
-(defn ^:no-doc re-index-datalog
-  [conn schema opts]
-  (let [d (s/dir (.-store ^DB @conn))]
-    (try
-      (let [dumpfile (str d u/+separator+ "dl-dump")]
-        (dump conn dumpfile)
-        (clear conn)
-        (load d schema opts dumpfile)
-        (create-conn d))
-      (catch Exception e
-        (u/raise "Unable to re-index Datalog database" e {:dir d})))))
-
-(defn re-index
-  "Close the `db`, dump the data, clear the `db`, then
+(def ^{:arglists '([db opts] [db schema opts])
+       :doc      "Close the `db`, dump the data, clear the `db`, then
   reload the data and re-index using the given option. Return a new
   re-indexed `db`.
 
@@ -1937,25 +1712,15 @@ This function is eager and attempts to load all matching data in range into memo
   new schema.
 
   This function is only safe to call when other threads or programs are
-  not accessing the same `db`."
-  ([db opts]
-   (re-index db {} opts))
-  ([db schema opts]
-   (let [bk (when (:backup? opts)
-              (u/tmp-dir (str "dtlv-re-index-" (System/currentTimeMillis))))]
-     (if (conn? db)
-       (let [store (.-store ^DB @db)]
-         (if (instance? DatalogStore store)
-           (do (l/re-index store schema opts) db)
-           (do (when bk (copy @db bk true))
-               (re-index-datalog db schema opts))))
-       (l/re-index db opts)))))
+  not accessing the same `db`."}
+  re-index dump/re-index)
+
 
 ;; -------------------------------------
 ;; Search API
 
-(defn new-search-engine
-  "Create a full-text search engine.
+(def ^{:arglists '([lmdb] [lmdb opts])
+       :doc      "Create a full-text search engine.
 
    The search index is stored in the passed-in key-value database
    opened by [[open-kv]].
@@ -1985,13 +1750,8 @@ This function is eager and attempts to load all matching data in range into memo
 
    * `:search-opts` is the default options passed to [[search]] function.
 
-  See [[datalevin.search-utils]] for some functions to customize search."
-  ([lmdb]
-   (new-search-engine lmdb {}))
-  ([lmdb opts]
-   (if (instance? datalevin.remote.KVStore lmdb)
-     (r/new-search-engine lmdb opts)
-     (sc/new-search-engine lmdb opts))))
+  See [[datalevin.search-utils]] for some functions to customize search."}
+  new-search-engine sc/new-search-engine)
 
 (def ^{:arglists '([engine doc-ref doc-text]
                    [engine doc-ref doc-text check-exist?])
@@ -2010,24 +1770,24 @@ the search index. Default is `true` and search index will be updated with
 the new text. For better ingestion speed, set it to `false` when importing
 data, i.e. when it is known that `doc-ref` does not already exist in the
 search index."}
-  add-doc sc/add-doc)
+  add-doc i/add-doc)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Remove a document referred to by `doc-ref` from the search
 engine index."}
-  remove-doc sc/remove-doc)
+  remove-doc i/remove-doc)
 
 (def ^{:arglists '([engine])
        :doc      "Remove all documents from the search engine index."}
-  clear-docs sc/clear-docs)
+  clear-docs i/clear-docs)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Test if a `doc-ref` is already in the search index"}
-  doc-indexed? sc/doc-indexed?)
+  doc-indexed? i/doc-indexed?)
 
 (def ^{:arglists '([engine])
        :doc      "Return the number of documents in the search index"}
-  doc-count sc/doc-count)
+  doc-count i/doc-count)
 
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` could be a
@@ -2073,7 +1833,7 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
   * `proximity-max-dist`  can be used to control the maximal distance between
     terms that would still be considered as belonging to the same span. Default
     value is `45`. It is only applicable when `index-position?` is `true`"}
-  search sc/search)
+  search i/search)
 
 (def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
        :doc      "Create a writer for writing documents to the search index
@@ -2166,11 +1926,11 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
 
 (def ^{:arglists '([index])
        :doc      "Close the vector index and free memory"}
-  close-vector-index v/close-vecs)
+  close-vector-index i/close-vecs)
 
 (def ^{:arglists '([index])
        :doc      "Close the vector index and delete all vectors"}
-  clear-vector-index v/clear-vecs)
+  clear-vector-index i/clear-vecs)
 
 (def ^{:arglists '([index])
        :doc      "Return a map of information about the vector index:
@@ -2186,7 +1946,7 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
      * `:connectivity`  see [[new-vector-index]]
      * `:expansion-add` see [[new-vector-index]]
      * `:expansion-search`see [[new-vector-index]]"}
-  vector-index-info v/vecs-info)
+  vector-index-info i/vecs-info)
 
 (def ^{:arglists '([index vec-ref vec-data])
        :doc      "Add a vector to the vector index.
@@ -2196,12 +1956,12 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
         consistent dimensions and value type as that of the `index`.
 
         See [[new-vector-index]]"}
-  add-vec v/add-vec)
+  add-vec i/add-vec)
 
 (def ^{:arglists '([index vec-ref])
        :doc      "Remove all the vectors associated with the `vec-ref`
   from the `index`"}
-  remove-vec v/remove-vec)
+  remove-vec i/remove-vec)
 
 (def ^{:arglists '([index query-vec] [index query-vec opts])
        :doc      "Search the vector index with a query vector, return the
@@ -2219,7 +1979,7 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
         together.
    * `:vec-filter` is a boolean function that takes the `vec-ref` and decides if
      it should be in the results."}
-  search-vec v/search-vec)
+  search-vec i/search-vec)
 
 ;; -------------------------------------
 ;; byte buffer

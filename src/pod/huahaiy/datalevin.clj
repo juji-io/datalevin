@@ -20,6 +20,7 @@
    [datalevin.protocol :as p]
    [datalevin.datom :as dd]
    [datalevin.db :as db]
+   [datalevin.interface :as if]
    [datalevin.storage :as st]
    [clojure.java.io :as io]
    [clojure.walk :as w])
@@ -375,14 +376,14 @@
 
 (defn open-transact-kv [{:keys [::kv-db] :as db}]
   (when-let [d (get @kv-dbs kv-db)]
-    (let [wdb (l/open-transact-kv d)]
+    (let [wdb (if/open-transact-kv d)]
       (swap! wkv-dbs assoc kv-db wdb)
       (assoc db :writing? true))))
 
 (defn close-transact-kv [{:keys [::kv-db]}]
   (when-let [d (get @kv-dbs kv-db)]
     (swap! wkv-dbs dissoc kv-db)
-    (l/close-transact-kv d)))
+    (if/close-transact-kv d)))
 
 (defn abort-transact-kv [{:keys [::kv-db]}]
   (when-let [d (get @wkv-dbs kv-db)]
@@ -392,7 +393,7 @@
   (when-let [c (get @dl-conns conn)]
     (let [s  (.-store ^DB @c)
           l  (.-lmdb ^Store s)
-          wl (l/open-transact-kv l)
+          wl (if/open-transact-kv l)
           ws (st/transfer s wl)
           wd (db/new-db ws)]
       (swap! wdl-dbs assoc conn wd)
@@ -407,7 +408,7 @@
       (reset! c (db/new-db (st/transfer ws l)))
       (swap! wdl-dbs dissoc conn)
       (swap! wdl-conns dissoc conn)
-      (l/close-transact-kv l))))
+      (if/close-transact-kv l))))
 
 (defn abort-transact [{:keys [::conn]}]
   (when-let [c (get @dl-conns conn)]

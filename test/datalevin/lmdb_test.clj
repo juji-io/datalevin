@@ -3,6 +3,7 @@
    [datalevin.lmdb :as l]
    [datalevin.bits :as b]
    [datalevin.interpret :as i]
+   [datalevin.interface :as if]
    [datalevin.util :as u]
    [datalevin.core :as dc]
    [datalevin.constants :as c]
@@ -25,142 +26,142 @@
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
 
-    (l/set-env-flags lmdb #{:nosync} true)
-    (is (= (l/get-env-flags lmdb) (conj c/default-env-flags :nosync)))
+    (if/set-env-flags lmdb #{:nosync} true)
+    (is (= (if/get-env-flags lmdb) (conj c/default-env-flags :nosync)))
 
-    (is (= 50 (-> lmdb l/opts :spill-opts :spill-threshold)))
+    (is (= 50 (-> lmdb if/env-opts :spill-opts :spill-threshold)))
 
-    (l/open-dbi lmdb "a")
-    (is (not (l/list-dbi? lmdb "a")))
+    (if/open-dbi lmdb "a")
+    (is (not (if/list-dbi? lmdb "a")))
 
-    (l/open-dbi lmdb "b")
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
-    (l/open-dbi lmdb "d")
+    (if/open-dbi lmdb "b")
+    (if/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (if/open-dbi lmdb "d")
 
     (testing "dbis"
-      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis lmdb))))
-      (is (= (inc Long/BYTES) (:key-size (l/dbi-opts lmdb "c")))))
+      (is (= #{"a" "b" "c" "d"} (set (if/list-dbis lmdb))))
+      (is (= (inc Long/BYTES) (:key-size (if/dbi-opts lmdb "c")))))
 
     (testing "transacting nil will throw"
-      (is (thrown? Exception (l/transact-kv lmdb [[:put "a" nil 1]])))
-      (is (thrown? Exception (l/transact-kv lmdb [[:put "a" 1 nil]]))))
+      (is (thrown? Exception (if/transact-kv lmdb [[:put "a" nil 1]])))
+      (is (thrown? Exception (if/transact-kv lmdb [[:put "a" 1 nil]]))))
 
     (testing "transact-kv"
-      (l/transact-kv lmdb
-                     [[:put "a" 1 2]
-                      [:put "a" 'a 1]
-                      [:put "a" 5 {}]
-                      [:put "a" :annunaki/enki true :attr :data]
-                      [:put "a" :datalevin ["hello" "world"]]
-                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-                      [:put "b" 2 3]
-                      [:put "b" (byte 0x01) #{1 2} :byte :data]
-                      [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-                      [:put "b" [-1 -235254457N] 5]
-                      [:put "b" :a 4]
-                      [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                      [:put "b" 1 :long :long :data]
-                      [:put "b" :long 1 :data :long]
-                      [:put "b" 2 3 :long :long]
-                      [:put "b" "ok" 42 :string :long]
-                      [:put "d" 3.14 :pi :double :keyword]
-                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]
-                      [:put "d" [-1 0 1 2 3 4] 1 [:long]]
-                      [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
-                      [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
-                       [:long :string :keyword]]
-                      [:put "d"  [:ok -0.687 "nice"] [2 4]
-                       [:keyword :double :string] [:long]]]))
+      (if/transact-kv lmdb
+        [[:put "a" 1 2]
+         [:put "a" 'a 1]
+         [:put "a" 5 {}]
+         [:put "a" :annunaki/enki true :attr :data]
+         [:put "a" :datalevin ["hello" "world"]]
+         [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+         [:put "b" 2 3]
+         [:put "b" (byte 0x01) #{1 2} :byte :data]
+         [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+         [:put "b" [-1 -235254457N] 5]
+         [:put "b" :a 4]
+         [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+         [:put "b" 1 :long :long :data]
+         [:put "b" :long 1 :data :long]
+         [:put "b" 2 3 :long :long]
+         [:put "b" "ok" 42 :string :long]
+         [:put "d" 3.14 :pi :double :keyword]
+         [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+         [:put "d" [-1 0 1 2 3 4] 1 [:long]]
+         [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
+         [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
+          [:long :string :keyword]]
+         [:put "d"  [:ok -0.687 "nice"] [2 4]
+          [:keyword :double :string] [:long]]]))
 
-    (l/sync lmdb)
+    (if/sync lmdb)
 
     (testing "entries"
-      (is (= 5 (:entries (l/stat lmdb))))
-      (is (= 6 (:entries (l/stat lmdb "a"))))
-      (is (= 6 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (:entries (if/stat lmdb))))
+      (is (= 6 (:entries (if/stat lmdb "a"))))
+      (is (= 6 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "get-value"
-      (is (= 1 (l/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
-      (is (= [1 2 3] (l/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
-      (is (= 2 (l/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
-                            [:long :string :keyword])))
-      (is (= [2 4] (l/get-value lmdb "d" [:ok -0.687 "nice"]
-                                [:keyword :double :string] [:long])))
-      (is (= 2 (l/get-value lmdb "a" 1)))
-      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
-      (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))
-      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value lmdb "a" 42 :long :datom)))
-      (is (nil? (l/get-value lmdb "a" 2)))
-      (is (nil? (l/get-value lmdb "b" 1)))
-      (is (= 5 (l/get-value lmdb "b" [-1 -235254457N])))
-      (is (= 1 (l/get-value lmdb "a" 'a)))
-      (is (= {} (l/get-value lmdb "a" 5)))
-      (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
-      (is (= 3 (l/get-value lmdb "b" 2)))
-      (is (= 4 (l/get-value lmdb "b" :a)))
-      (is (= #{1 2} (l/get-value lmdb "b" (byte 0x01) :byte)))
-      (is (= :bk (l/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (= 1 (if/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
+      (is (= [1 2 3] (if/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
+      (is (= 2 (if/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
+                             [:long :string :keyword])))
+      (is (= [2 4] (if/get-value lmdb "d" [:ok -0.687 "nice"]
+                                 [:keyword :double :string] [:long])))
+      (is (= 2 (if/get-value lmdb "a" 1)))
+      (is (= [1 2] (if/get-value lmdb "a" 1 :data :data false)))
+      (is (= true (if/get-value lmdb "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (if/get-value lmdb "a" 42 :long :datom)))
+      (is (nil? (if/get-value lmdb "a" 2)))
+      (is (nil? (if/get-value lmdb "b" 1)))
+      (is (= 5 (if/get-value lmdb "b" [-1 -235254457N])))
+      (is (= 1 (if/get-value lmdb "a" 'a)))
+      (is (= {} (if/get-value lmdb "a" 5)))
+      (is (= ["hello" "world"] (if/get-value lmdb "a" :datalevin)))
+      (is (= 3 (if/get-value lmdb "b" 2)))
+      (is (= 4 (if/get-value lmdb "b" :a)))
+      (is (= #{1 2} (if/get-value lmdb "b" (byte 0x01) :byte)))
+      (is (= :bk (if/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
       (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                         ^bytes (l/get-value lmdb "b" :bv :data :bytes)))
-      (is (= :long (l/get-value lmdb "b" 1 :long :data)))
-      (is (= 1 (l/get-value lmdb "b" :long :data :long)))
-      (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
-      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+                         ^bytes (if/get-value lmdb "b" :bv :data :bytes)))
+      (is (= :long (if/get-value lmdb "b" 1 :long :data)))
+      (is (= 1 (if/get-value lmdb "b" :long :data :long)))
+      (is (= 3 (if/get-value lmdb "b" 2 :long :long)))
+      (is (= 42 (if/get-value lmdb "b" "ok" :string :long)))
+      (is (= :pi (if/get-value lmdb "d" 3.14 :double :keyword)))
       (is (= "nice year"
-             (l/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
+             (if/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
 
     (testing "get-first and get-first-n"
-      (is (= [1 2] (l/get-first lmdb "a" [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
+      (is (= [1 2] (if/get-first lmdb "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
 
     (testing "delete"
-      (l/transact-kv lmdb [[:del "a" 1]
-                           [:del "a" :non-exist]
-                           [:del "a" "random things that do not exist"]])
-      (is (nil? (l/get-value lmdb "a" 1))))
+      (if/transact-kv lmdb [[:del "a" 1]
+                            [:del "a" :non-exist]
+                            [:del "a" "random things that do not exist"]])
+      (is (nil? (if/get-value lmdb "a" 1))))
 
     (testing "entries-again"
-      (is (= 5 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "non-existent dbi"
-      (is (thrown? Exception (l/get-value lmdb "z" 1))))
+      (is (thrown? Exception (if/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
-      (l/transact-kv lmdb [[:put "c" 1 (range 100000)]])
-      (is (= (range 100000) (l/get-value lmdb "c" 1))))
+      (if/transact-kv lmdb [[:put "c" 1 (range 100000)]])
+      (is (= (range 100000) (if/get-value lmdb "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception
-                   (l/transact-kv lmdb [[:put "a" (range 1000) 1]]))))
+                   (if/transact-kv lmdb [[:put "a" (range 1000) 1]]))))
 
     (testing "close then re-open, clear and drop"
-      (let [dir (l/dir lmdb)]
-        (l/close-kv lmdb)
-        (is (l/closed-kv? lmdb))
+      (let [dir (if/env-dir lmdb)]
+        (if/close-kv lmdb)
+        (is (if/closed-kv? lmdb))
         (let [lmdb  (l/open-kv dir
                                {:flags (conj c/default-env-flags :nosync)})
-              dbi-a (l/open-dbi lmdb "a")]
+              dbi-a (if/open-dbi lmdb "a")]
           (is (= "a" (l/dbi-name dbi-a)))
-          (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
-          (l/clear-dbi lmdb "a")
-          (is (nil? (l/get-value lmdb "a" :datalevin)))
-          (l/drop-dbi lmdb "a")
-          (is (thrown? Exception (l/get-value lmdb "a" 1)))
-          (l/close-kv lmdb))))
+          (is (= ["hello" "world"] (if/get-value lmdb "a" :datalevin)))
+          (if/clear-dbi lmdb "a")
+          (is (nil? (if/get-value lmdb "a" :datalevin)))
+          (if/drop-dbi lmdb "a")
+          (is (thrown? Exception (if/get-value lmdb "a" 1)))
+          (if/close-kv lmdb))))
     (u/delete-files dir)))
 
 (deftest async-basic-ops-test
   (let [dir  (u/tmp-dir (str "async-lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
 
-    (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "b")
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
-    (l/open-dbi lmdb "d")
+    (if/open-dbi lmdb "a")
+    (if/open-dbi lmdb "b")
+    (if/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (if/open-dbi lmdb "d")
 
     (testing "transacting nil will throw"
       (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" nil 1]])))
@@ -194,63 +195,63 @@
                                [:keyword :double :string] [:long]]]))
 
     (testing "entries"
-      (is (= 5 (:entries (l/stat lmdb))))
-      (is (= 6 (:entries (l/stat lmdb "a"))))
-      (is (= 6 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (:entries (if/stat lmdb))))
+      (is (= 6 (:entries (if/stat lmdb "a"))))
+      (is (= 6 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "get-value"
-      (is (= 1 (l/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
-      (is (= [1 2 3] (l/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
-      (is (= 2 (l/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
-                            [:long :string :keyword])))
-      (is (= [2 4] (l/get-value lmdb "d" [:ok -0.687 "nice"]
-                                [:keyword :double :string] [:long])))
-      (is (= 2 (l/get-value lmdb "a" 1)))
-      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
-      (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))
-      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value lmdb "a" 42 :long :datom)))
-      (is (nil? (l/get-value lmdb "a" 2)))
-      (is (nil? (l/get-value lmdb "b" 1)))
-      (is (= 5 (l/get-value lmdb "b" [-1 -235254457N])))
-      (is (= 1 (l/get-value lmdb "a" 'a)))
-      (is (= {} (l/get-value lmdb "a" 5)))
-      (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
-      (is (= 3 (l/get-value lmdb "b" 2)))
-      (is (= 4 (l/get-value lmdb "b" :a)))
-      (is (= #{1 2} (l/get-value lmdb "b" (byte 0x01) :byte)))
-      (is (= :bk (l/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (= 1 (if/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
+      (is (= [1 2 3] (if/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
+      (is (= 2 (if/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
+                             [:long :string :keyword])))
+      (is (= [2 4] (if/get-value lmdb "d" [:ok -0.687 "nice"]
+                                 [:keyword :double :string] [:long])))
+      (is (= 2 (if/get-value lmdb "a" 1)))
+      (is (= [1 2] (if/get-value lmdb "a" 1 :data :data false)))
+      (is (= true (if/get-value lmdb "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (if/get-value lmdb "a" 42 :long :datom)))
+      (is (nil? (if/get-value lmdb "a" 2)))
+      (is (nil? (if/get-value lmdb "b" 1)))
+      (is (= 5 (if/get-value lmdb "b" [-1 -235254457N])))
+      (is (= 1 (if/get-value lmdb "a" 'a)))
+      (is (= {} (if/get-value lmdb "a" 5)))
+      (is (= ["hello" "world"] (if/get-value lmdb "a" :datalevin)))
+      (is (= 3 (if/get-value lmdb "b" 2)))
+      (is (= 4 (if/get-value lmdb "b" :a)))
+      (is (= #{1 2} (if/get-value lmdb "b" (byte 0x01) :byte)))
+      (is (= :bk (if/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
       (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                         ^bytes (l/get-value lmdb "b" :bv :data :bytes)))
-      (is (= :long (l/get-value lmdb "b" 1 :long :data)))
-      (is (= 1 (l/get-value lmdb "b" :long :data :long)))
-      (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
-      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+                         ^bytes (if/get-value lmdb "b" :bv :data :bytes)))
+      (is (= :long (if/get-value lmdb "b" 1 :long :data)))
+      (is (= 1 (if/get-value lmdb "b" :long :data :long)))
+      (is (= 3 (if/get-value lmdb "b" 2 :long :long)))
+      (is (= 42 (if/get-value lmdb "b" "ok" :string :long)))
+      (is (= :pi (if/get-value lmdb "d" 3.14 :double :keyword)))
       (is (= "nice year"
-             (l/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
+             (if/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
 
     (testing "get-first and get-first-n"
-      (is (= [1 2] (l/get-first lmdb "a" [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
+      (is (= [1 2] (if/get-first lmdb "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
 
     (testing "delete"
       @(dc/transact-kv-async lmdb [[:del "a" 1]
                                    [:del "a" :non-exist]
                                    [:del "a" "random things that do not exist"]])
-      (is (nil? (l/get-value lmdb "a" 1))))
+      (is (nil? (if/get-value lmdb "a" 1))))
 
     (testing "entries-again"
-      (is (= 5 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "non-existent dbi"
-      (is (thrown? Exception (l/get-value lmdb "z" 1))))
+      (is (thrown? Exception (if/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
       @(dc/transact-kv-async lmdb [[:put "c" 1 (range 100000)]])
-      (is (= (range 100000) (l/get-value lmdb "c" 1))))
+      (is (= (range 100000) (if/get-value lmdb "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception
@@ -261,69 +262,69 @@
 (deftest transact-arity-test
   (let [dir  (u/tmp-dir (str "lmdb-tx-arity-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a")
-    (l/transact-kv lmdb "a" [[:put :a 1]
-                             [:put :b 2]])
-    (is (= 1 (l/get-value lmdb "a" :a)))
-    (is (= 2 (l/get-value lmdb "a" :b)))
+    (if/open-dbi lmdb "a")
+    (if/transact-kv lmdb "a" [[:put :a 1]
+                              [:put :b 2]])
+    (is (= 1 (if/get-value lmdb "a" :a)))
+    (is (= 2 (if/get-value lmdb "a" :b)))
 
-    (l/open-dbi lmdb "b")
-    (l/transact-kv lmdb "b" [[:put "b" 1]
-                             [:put "a" 2]] :string)
+    (if/open-dbi lmdb "b")
+    (if/transact-kv lmdb "b" [[:put "b" 1]
+                              [:put "a" 2]] :string)
     (is (= [["a" 2] ["b" 1]]
-           (l/get-range lmdb "b" [:all] :string)))
-    (l/close-kv lmdb)
+           (if/get-range lmdb "b" [:all] :string)))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a")
-    (l/transact-kv lmdb [[:put "a" :old 1]])
-    (is (= 1 (l/get-value lmdb "a" :old)))
+    (if/open-dbi lmdb "a")
+    (if/transact-kv lmdb [[:put "a" :old 1]])
+    (is (= 1 (if/get-value lmdb "a" :old)))
     (let [res (future
                 (let [lmdb2 (l/open-kv
                               dir
                               {:flags (conj c/default-env-flags :nosync)})]
-                  (l/open-dbi lmdb2 "a")
-                  (is (= 1 (l/get-value lmdb2 "a" :old)))
-                  (l/transact-kv lmdb2 [[:put "a" :something 1]])
-                  (is (= 1 (l/get-value lmdb2 "a" :something)))
-                  (is (= 1 (l/get-value lmdb "a" :something)))
+                  (if/open-dbi lmdb2 "a")
+                  (is (= 1 (if/get-value lmdb2 "a" :old)))
+                  (if/transact-kv lmdb2 [[:put "a" :something 1]])
+                  (is (= 1 (if/get-value lmdb2 "a" :something)))
+                  (is (= 1 (if/get-value lmdb "a" :something)))
                   ;; should not close this
                   ;; https://github.com/juji-io/datalevin/issues/7
-                  (l/close-kv lmdb2)
+                  (if/close-kv lmdb2)
                   1))]
       (is (= 1 @res)))
     (is (thrown-with-msg? Exception #"multiple LMDB"
-                          (l/get-value lmdb "a" :something)))
-    (l/close-kv lmdb)
+                          (if/get-value lmdb "a" :something)))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest multi-threads-get-value-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a")
+    (if/open-dbi lmdb "a")
     (let [ks  (shuffle (range 0 100000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
-      (l/transact-kv lmdb txs)
-      (is (= 100000 (l/entries lmdb "a")))
-      (is (= vs (pmap #(l/get-value lmdb "a" % :long :long) ks))))
-    (l/close-kv lmdb)
+      (if/transact-kv lmdb txs)
+      (is (= 100000 (if/entries lmdb "a")))
+      (is (= vs (pmap #(if/get-value lmdb "a" % :long :long) ks))))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest multi-threads-put-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a")
+    (if/open-dbi lmdb "a")
     (let [ks  (shuffle (range 0 10000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
-      (dorun (pmap #(l/transact-kv lmdb [%]) txs))
-      (is (= 10000 (l/entries lmdb "a")))
-      (is (= vs (map #(l/get-value lmdb "a" % :long :long) ks))))
-    (l/close-kv lmdb)
+      (dorun (pmap #(if/transact-kv lmdb [%]) txs))
+      (is (= 10000 (if/entries lmdb "a")))
+      (is (= vs (map #(if/get-value lmdb "a" % :long :long) ks))))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 ;; generative tests
@@ -337,13 +338,13 @@
      v gen/any-equatable]
     (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-          _      (l/open-dbi lmdb "a")
+          _      (if/open-dbi lmdb "a")
           d      (d/datom e a v e)
-          _      (l/transact-kv lmdb [[:put "a" k d :long :datom]])
-          put-ok (= d (l/get-value lmdb "a" k :long :datom))
-          _      (l/transact-kv lmdb [[:del "a" k :long]])
-          del-ok (nil? (l/get-value lmdb "a" k :long))]
-      (l/close-kv lmdb)
+          _      (if/transact-kv lmdb [[:put "a" k d :long :datom]])
+          put-ok (= d (if/get-value lmdb "a" k :long :datom))
+          _      (if/transact-kv lmdb [[:del "a" k :long]])
+          del-ok (nil? (if/get-value lmdb "a" k :long))]
+      (if/close-kv lmdb)
       (u/delete-files dir)
       (is (and put-ok del-ok)))))
 
@@ -360,12 +361,12 @@
                       gen/any-equatable)]
     (let [dir    (u/tmp-dir (str "data-test-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-          _      (l/open-dbi lmdb "a")
-          _      (l/transact-kv lmdb [[:put "a" k v]])
-          put-ok (= v (l/get-value lmdb "a" k))
-          _      (l/transact-kv lmdb [[:del "a" k]])
-          del-ok (nil? (l/get-value lmdb "a" k))]
-      (l/close-kv lmdb)
+          _      (if/open-dbi lmdb "a")
+          _      (if/transact-kv lmdb [[:put "a" k v]])
+          put-ok (= v (if/get-value lmdb "a" k))
+          _      (if/transact-kv lmdb [[:del "a" k]])
+          del-ok (nil? (if/get-value lmdb "a" k))]
+      (if/close-kv lmdb)
       (u/delete-files dir)
       (is (and put-ok del-ok)))))
 
@@ -376,15 +377,15 @@
      ^bytes v (gen/not-empty gen/bytes)]
     (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-          _      (l/open-dbi lmdb "a")
-          _      (l/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
+          _      (if/open-dbi lmdb "a")
+          _      (if/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
           put-ok (Arrays/equals v
                                 ^bytes
-                                (l/get-value
-                                  lmdb "a" k :bytes :bytes))
-          _      (l/transact-kv lmdb [[:del "a" k :bytes]])
-          del-ok (nil? (l/get-value lmdb "a" k :bytes))]
-      (l/close-kv lmdb)
+                                (if/get-value
+                                    lmdb "a" k :bytes :bytes))
+          _      (if/transact-kv lmdb [[:del "a" k :bytes]])
+          del-ok (nil? (if/get-value lmdb "a" k :bytes))]
+      (if/close-kv lmdb)
       (u/delete-files dir)
       (is (and put-ok del-ok)))))
 
@@ -396,12 +397,12 @@
                       lmdb   (l/open-kv
                                dir
                                {:flags (conj c/default-env-flags :nosync)})
-                      _      (l/open-dbi lmdb "a")
-                      _      (l/transact-kv lmdb [[:put "a" k v :long :long]])
-                      put-ok (= v ^long (l/get-value lmdb "a" k :long :long))
-                      _      (l/transact-kv lmdb [[:del "a" k :long]])
-                      del-ok (nil? (l/get-value lmdb "a" k)) ]
-                  (l/close-kv lmdb)
+                      _      (if/open-dbi lmdb "a")
+                      _      (if/transact-kv lmdb [[:put "a" k v :long :long]])
+                      put-ok (= v ^long (if/get-value lmdb "a" k :long :long))
+                      _      (if/transact-kv lmdb [[:del "a" k :long]])
+                      del-ok (nil? (if/get-value lmdb "a" k)) ]
+                  (if/close-kv lmdb)
                   (u/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -430,275 +431,275 @@
                           (vswap! values conj
                                   (b/read-buffer (l/next-val iter) :long))
                           (recur (l/has-next-val iter)))))))]
-    (l/open-list-dbi lmdb "list" #_{:flags #{:create :counted :dupsort}})
-    (is (l/list-dbi? lmdb "list"))
+    (if/open-list-dbi lmdb "list" #_{:flags #{:create :counted :dupsort}})
+    (is (if/list-dbi? lmdb "list"))
 
-    (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
-    (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
-    (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
+    (if/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
+    (if/put-list-items lmdb "list" "b" [5 6 7] :string :long)
+    (if/put-list-items lmdb "list" "c" [3 6 9] :string :long)
 
-    (is (= (l/entries lmdb "list") 10))
+    (is (= (if/entries lmdb "list") 10))
 
-    (is (= (l/key-range-count lmdb "list" [:all]) 3))
-    (is (= (l/key-range-count lmdb "list" [:all] :string 2) 2))
+    (is (= (if/key-range-count lmdb "list" [:all]) 3))
+    (is (= (if/key-range-count lmdb "list" [:all] :string 2) 2))
 
-    (l/visit-key-range lmdb "list" kvisit [:all] :string)
+    (if/visit-key-range lmdb "list" kvisit [:all] :string)
     (is (= "a b c" (s/trim @joins)))
 
-    (is (= (l/key-range-list-count lmdb "list" [:all] :string) 10))
-    (is (= (l/key-range-list-count lmdb "list" [:all] :string 5) 5))
-    (is (= (l/key-range-list-count lmdb "list" [:greater-than "a"] :string)
+    (is (= (if/key-range-list-count lmdb "list" [:all] :string) 10))
+    (is (= (if/key-range-list-count lmdb "list" [:all] :string 5) 5))
+    (is (= (if/key-range-list-count lmdb "list" [:greater-than "a"] :string)
            6))
-    (is (= (l/key-range-list-count lmdb "list" [:closed "A" "d"] :string) 10))
-    (is (= (l/key-range-list-count lmdb "list" [:closed "a" "e"] :string) 10))
-    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string)
+    (is (= (if/key-range-list-count lmdb "list" [:closed "A" "d"] :string) 10))
+    (is (= (if/key-range-list-count lmdb "list" [:closed "a" "e"] :string) 10))
+    (is (= (if/key-range-list-count lmdb "list" [:less-than "c"] :string)
            7))
-    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string 5) 5))
+    (is (= (if/key-range-list-count lmdb "list" [:less-than "c"] :string 5) 5))
 
-    (is (= (l/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
-    (is (= (l/key-range-count lmdb "list" [:greater-than "b"] :string) 1))
-    (is (= (l/key-range lmdb "list" [:less-than "b"] :string) ["a"]))
+    (is (= (if/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
+    (is (= (if/key-range-count lmdb "list" [:greater-than "b"] :string) 1))
+    (is (= (if/key-range lmdb "list" [:less-than "b"] :string) ["a"]))
 
-    (l/operate-list-val-range lmdb "list" (op-gen "b" :string) [:all] :long)
+    (if/operate-list-val-range lmdb "list" (op-gen "b" :string) [:all] :long)
     (is (= [5 6 7] @values))
     (vreset! values [])
 
-    (l/operate-list-val-range lmdb "list" (op-gen "b" :string)
-                              [:closed 5 6] :long)
+    (if/operate-list-val-range lmdb "list" (op-gen "b" :string)
+                               [:closed 5 6] :long)
     (is (= [5 6] @values))
     (vreset! values [])
 
     ;; we no longer support open boundary for list val
-    (l/operate-list-val-range lmdb "list" (op-gen "b" :string)
-                              [:closed 5 6] :long)
+    (if/operate-list-val-range lmdb "list" (op-gen "b" :string)
+                               [:closed 5 6] :long)
     (is (= [5 6] @values))
     (vreset! values [])
 
-    (l/operate-list-val-range lmdb "list"  (op-gen "d" :string)
-                              [:closed 5 6] :long)
+    (if/operate-list-val-range lmdb "list"  (op-gen "d" :string)
+                               [:closed 5 6] :long)
     (is (= [] @values))
     (vreset! values [])
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
-           (l/get-range lmdb "list" [:all] :string :long)))
+           (if/get-range lmdb "list" [:all] :string :long)))
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:closed "a" "b"] :string :long)))
+           (if/get-range lmdb "list" [:closed "a" "b"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:closed "b" "b"] :string :long)))
+           (if/get-range lmdb "list" [:closed "b" "b"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
+           (if/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
     (is (= [["c" 3] ["c" 6] ["c" 9] ["b" 5] ["b" 6] ["b" 7]
             ["a" 1] ["a" 2] ["a" 3] ["a" 4]]
-           (l/get-range lmdb "list" [:all-back] :string :long)))
+           (if/get-range lmdb "list" [:all-back] :string :long)))
 
     (is (= ["a" 1]
-           (l/get-first lmdb "list" [:closed "a" "a"] :string :long)))
+           (if/get-first lmdb "list" [:closed "a" "a"] :string :long)))
     (is (= [["a" 1] ["a" 2]]
-           (l/get-first-n lmdb "list" 2 [:closed "a" "c"] :string :long)))
+           (if/get-first-n lmdb "list" 2 [:closed "a" "c"] :string :long)))
     (is (= [["a" 1] ["a" 2]]
-           (l/list-range-first-n lmdb "list" 2 [:closed "a" "c"] :string
-                                 [:closed 1 5] :long)))
+           (if/list-range-first-n lmdb "list" 2 [:closed "a" "c"] :string
+                                  [:closed 1 5] :long)))
 
     (is (= [3 6 9]
-           (l/get-list lmdb "list" "c" :string :long)))
+           (if/get-list lmdb "list" "c" :string :long)))
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
-           (l/list-range lmdb "list" [:all] :string [:all] :long)))
+           (if/list-range lmdb "list" [:all] :string [:all] :long)))
     (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
-           (l/list-range lmdb "list" [:closed "a" "c"] :string
-                         [:closed 2 4] :long)))
+           (if/list-range lmdb "list" [:closed "a" "c"] :string
+                          [:closed 2 4] :long)))
     (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
             ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
-           (l/list-range lmdb "list" [:all-back] :string [:all-back] :long)))
+           (if/list-range lmdb "list" [:all-back] :string [:all-back] :long)))
     (is (= [["c" 3]]
-           (l/list-range lmdb "list" [:at-least "b"] :string
-                         [:at-most-back 4] :long)))
+           (if/list-range lmdb "list" [:at-least "b"] :string
+                          [:at-most-back 4] :long)))
 
     (is (= [["b" 5]]
-           (l/list-range lmdb "list" [:open "a" "c"] :string
-                         [:less-than 6] :long)))
+           (if/list-range lmdb "list" [:open "a" "c"] :string
+                          [:less-than 6] :long)))
 
-    (is (= (l/list-count lmdb "list" "a" :string) 4))
-    (is (= (l/list-count lmdb "list" "b" :string) 3))
+    (is (= (if/list-count lmdb "list" "a" :string) 4))
+    (is (= (if/list-count lmdb "list" "b" :string) 3))
 
-    (is (not (l/in-list? lmdb "list" "a" 7 :string :long)))
-    (is (l/in-list? lmdb "list" "b" 7 :string :long))
+    (is (not (if/in-list? lmdb "list" "a" 7 :string :long)))
+    (is (if/in-list? lmdb "list" "b" 7 :string :long))
 
-    (is (nil? (l/near-list lmdb "list" "a" 7 :string :long)))
+    (is (nil? (if/near-list lmdb "list" "a" 7 :string :long)))
     (is (= 5 (b/read-buffer
-               (l/near-list lmdb "list" "b" 4 :string :long) :long)))
+               (if/near-list lmdb "list" "b" 4 :string :long) :long)))
 
-    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
-    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= (if/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= (if/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
 
-    (l/visit-list lmdb "list" visitor "a" :string)
+    (if/visit-list lmdb "list" visitor "a" :string)
     (is (= @sum 10))
 
-    (l/del-list-items lmdb "list" "a" :string)
+    (if/del-list-items lmdb "list" "a" :string)
 
-    (is (= (l/list-count lmdb "list" "a" :string) 0))
-    (is (not (l/in-list? lmdb "list" "a" 1 :string :long)))
-    (is (empty? (l/get-list lmdb "list" "a" :string :long)))
+    (is (= (if/list-count lmdb "list" "a" :string) 0))
+    (is (not (if/in-list? lmdb "list" "a" 1 :string :long)))
+    (is (empty? (if/get-list lmdb "list" "a" :string :long)))
 
-    (l/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
+    (if/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
 
     (is (= [1 2 3 4 5 6 7]
-           (l/get-list lmdb "list" "b" :string :long)))
-    (is (= (l/list-count lmdb "list" "b" :string) 7))
-    (is (l/in-list? lmdb "list" "b" 1 :string :long))
+           (if/get-list lmdb "list" "b" :string :long)))
+    (is (= (if/list-count lmdb "list" "b" :string) 7))
+    (is (if/in-list? lmdb "list" "b" 1 :string :long))
 
-    (l/del-list-items lmdb "list" "b" [1 2] :string :long)
+    (if/del-list-items lmdb "list" "b" [1 2] :string :long)
 
-    (is (= (l/list-count lmdb "list" "b" :string) 5))
-    (is (not (l/in-list? lmdb "list" "b" 1 :string :long)))
+    (is (= (if/list-count lmdb "list" "b" :string) 5))
+    (is (not (if/in-list? lmdb "list" "b" 1 :string :long)))
     (is (= [3 4 5 6 7]
-           (l/get-list lmdb "list" "b" :string :long)))
+           (if/get-list lmdb "list" "b" :string :long)))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest list-string-test
   (let [dir   (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         pred  (i/inter-fn [kv]
-                          (let [^String v (b/read-buffer (l/v kv) :string)]
-                            (< (count v) 5)))
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (< (count v) 5)))
         pred1 (i/inter-fn [kv]
-                          (let [^String v (b/read-buffer (l/v kv) :string)]
-                            (when (< (count v) 5) v)))]
-    (l/open-list-dbi lmdb "str")
-    (is (l/list-dbi? lmdb "str"))
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (when (< (count v) 5) v)))]
+    (if/open-list-dbi lmdb "str")
+    (is (if/list-dbi? lmdb "str"))
 
-    (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
-    (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
+    (if/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
+    (if/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
 
     (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
             ["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:all] :string :string)))
+           (if/get-range lmdb "str" [:all] :string :string)))
     (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
             ["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
+           (if/get-range lmdb "str" [:closed "a" "b"] :string :string)))
     (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
+           (if/get-range lmdb "str" [:closed "b" "b"] :string :string)))
     (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+           (if/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
 
     (is (= [["b" "nice"]]
-           (l/list-range-filter lmdb "str" pred [:greater-than "a"] :string
-                                [:all] :string)))
+           (if/list-range-filter lmdb "str" pred [:greater-than "a"] :string
+                                 [:all] :string)))
 
     (is (= ["nice"]
-           (l/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
-                              [:all] :string)))
+           (if/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
+                               [:all] :string)))
     (is (= "nice"
-           (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
-                              [:all] :string)))
+           (if/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
+                               [:all] :string)))
 
     (is (= ["a" "abc"]
-           (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))
+           (if/get-first lmdb "str" [:closed "a" "a"] :string :string)))
 
-    (is (= (l/list-count lmdb "str" "a" :string) 3))
-    (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (= (if/list-count lmdb "str" "a" :string) 3))
+    (is (= (if/list-count lmdb "str" "b" :string) 3))
 
-    (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
-    (is (l/in-list? lmdb "str" "b" "hello" :string :string))
+    (is (not (if/in-list? lmdb "str" "a" "hello" :string :string)))
+    (is (if/in-list? lmdb "str" "b" "hello" :string :string))
 
-    (is (= (l/get-list lmdb "str" "a" :string :string)
+    (is (= (if/get-list lmdb "str" "a" :string :string)
            ["abc" "defg" "hi"]))
 
-    (l/del-list-items lmdb "str" "a" :string)
+    (if/del-list-items lmdb "str" "a" :string)
 
-    (is (= (l/list-count lmdb "str" "a" :string) 0))
-    (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-    (is (empty? (l/get-list lmdb "str" "a" :string :string)))
+    (is (= (if/list-count lmdb "str" "a" :string) 0))
+    (is (not (if/in-list? lmdb "str" "a" "hi" :string :string)))
+    (is (empty? (if/get-list lmdb "str" "a" :string :string)))
 
-    (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
+    (if/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 
-    (is (= (l/list-count lmdb "str" "b" :string) 5))
-    (is (l/in-list? lmdb "str" "b" "good" :string :string))
+    (is (= (if/list-count lmdb "str" "b" :string) 5))
+    (is (if/in-list? lmdb "str" "b" "good" :string :string))
 
-    (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
+    (if/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
 
-    (is (= (l/list-count lmdb "str" "b" :string) 3))
-    (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+    (is (= (if/list-count lmdb "str" "b" :string) 3))
+    (is (not (if/in-list? lmdb "str" "b" "world" :string :string)))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest validate-data-test
   (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a" {:validate-data? true})
-    (is (l/transact-kv lmdb [[:put "a" (byte-array [1 3]) 2 :bytes :id]]))
-    (is (l/transact-kv lmdb [[:put "a" 1 -0.1 :id :double]]))
+    (if/open-dbi lmdb "a" {:validate-data? true})
+    (is (if/transact-kv lmdb [[:put "a" (byte-array [1 3]) 2 :bytes :id]]))
+    (is (if/transact-kv lmdb [[:put "a" 1 -0.1 :id :double]]))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "a" 2 :bytes]])))
+                          (if/transact-kv lmdb [[:put "a" "a" 2 :bytes]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
+                          (if/transact-kv lmdb [[:put "a" 1 2 :string]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 "b" :long :long]])))
+                          (if/transact-kv lmdb [[:put "a" 1 "b" :long :long]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 1 :float]])))
+                          (if/transact-kv lmdb [[:put "a" 1 1 :float]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1000 1 :byte]])))
+                          (if/transact-kv lmdb [[:put "a" 1000 1 :byte]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 1 :bytes]])))
+                          (if/transact-kv lmdb [[:put "a" 1 1 :bytes]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "b" 1 :keyword]])))
+                          (if/transact-kv lmdb [[:put "a" "b" 1 :keyword]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "b" 1 :symbol]])))
+                          (if/transact-kv lmdb [[:put "a" "b" 1 :symbol]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "b" 1 :boolean]])))
+                          (if/transact-kv lmdb [[:put "a" "b" 1 :boolean]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "b" 1 :instant]])))
+                          (if/transact-kv lmdb [[:put "a" "b" 1 :instant]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
-    (l/close-kv lmdb)
+                          (if/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest read-during-transaction-test
   (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         lmdb1 (l/mark-write lmdb)]
-    (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "d")
+    (if/open-dbi lmdb "a")
+    (if/open-dbi lmdb "d")
 
-    (l/open-transact-kv lmdb)
+    (if/open-transact-kv lmdb)
 
     (testing "get-value"
-      (is (nil? (l/get-value lmdb1 "a" 1 :data :data false)))
-      (l/transact-kv lmdb
-                     [[:put "a" 1 2]
-                      [:put "a" 'a 1]
-                      [:put "a" 5 {}]
-                      [:put "a" :annunaki/enki true :attr :data]
-                      [:put "a" :datalevin ["hello" "world"]]
-                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]])
+      (is (nil? (if/get-value lmdb1 "a" 1 :data :data false)))
+      (if/transact-kv lmdb
+        [[:put "a" 1 2]
+         [:put "a" 'a 1]
+         [:put "a" 5 {}]
+         [:put "a" :annunaki/enki true :attr :data]
+         [:put "a" :datalevin ["hello" "world"]]
+         [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]])
 
-      (is (= [1 2] (l/get-value lmdb1 "a" 1 :data :data false)))
+      (is (= [1 2] (if/get-value lmdb1 "a" 1 :data :data false)))
       ;; non-writing txn will still read pre-transaction values
-      (is (nil? (l/get-value lmdb "a" 1 :data :data false)))
+      (is (nil? (if/get-value lmdb "a" 1 :data :data false)))
 
-      (is (nil? (l/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
-                             true)))
-      (l/transact-kv lmdb
-                     [[:put "d" 3.14 :pi :double :keyword]
-                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]])
+      (is (nil? (if/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
+                              true)))
+      (if/transact-kv lmdb
+        [[:put "d" 3.14 :pi :double :keyword]
+         [:put "d" #inst "1969-01-01" "nice year" :instant :string]])
       (is (= "nice year"
-             (l/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
-                          true)))
-      (is (nil? (l/get-value lmdb "d" #inst "1969-01-01" :instant :string
-                             true))))
+             (if/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
+                           true)))
+      (is (nil? (if/get-value lmdb "d" #inst "1969-01-01" :instant :string
+                              true))))
 
-    (l/close-transact-kv lmdb)
+    (if/close-transact-kv lmdb)
 
     (testing "entries after transaction"
-      (is (= 6 (l/entries lmdb "a")))
-      (is (= 2 (l/entries lmdb "d"))))
+      (is (= 6 (if/entries lmdb "a")))
+      (is (= 2 (if/entries lmdb "d"))))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest with-txn-map-resize-test
@@ -707,18 +708,18 @@
                              :flags   (conj c/default-env-flags :nosync)})
         data {:description "this is going to be bigger than 10 MB"
               :numbers     (range 10000000)}]
-    (l/open-dbi lmdb "a")
+    (if/open-dbi lmdb "a")
 
     (l/with-transaction-kv [db lmdb]
-      (l/transact-kv db [[:put "a" 0 :prior]])
-      (is (= :prior (l/get-value db "a" 0)))
-      (l/transact-kv db [[:put "a" 1 data]])
-      (is (= data (l/get-value db "a" 1))))
+      (if/transact-kv db [[:put "a" 0 :prior]])
+      (is (= :prior (if/get-value db "a" 0)))
+      (if/transact-kv db [[:put "a" 1 data]])
+      (is (= data (if/get-value db "a" 1))))
 
-    (is (= :prior (l/get-value lmdb "a" 0)))
-    (is (= data (l/get-value lmdb "a" 1)))
+    (is (= :prior (if/get-value lmdb "a" 0)))
+    (is (= data (if/get-value lmdb "a" 1)))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest open-again-resized-test
@@ -727,122 +728,122 @@
                              :flags   (conj c/default-env-flags :nosync)})
         data {:description "this is normal data"}]
 
-    (l/open-dbi lmdb "a")
-    (l/transact-kv lmdb [[:put "a" 0 data]])
-    (is (= data (l/get-value lmdb "a" 0)))
-    (l/close-kv lmdb)
+    (if/open-dbi lmdb "a")
+    (if/transact-kv lmdb [[:put "a" 0 data]])
+    (is (= data (if/get-value lmdb "a" 0)))
+    (if/close-kv lmdb)
 
     (let [lmdb1 (l/open-kv dir {:mapsize 10})]
-      (l/open-dbi lmdb1 "a")
-      (is (= data (l/get-value lmdb1 "a" 0)))
-      (l/transact-kv lmdb1 [[:put "a" 1000 "good"]])
-      (is (= "good" (l/get-value lmdb1 "a" 1000)))
-      (l/close-kv lmdb1))
+      (if/open-dbi lmdb1 "a")
+      (is (= data (if/get-value lmdb1 "a" 0)))
+      (if/transact-kv lmdb1 [[:put "a" 1000 "good"]])
+      (is (= "good" (if/get-value lmdb1 "a" 1000)))
+      (if/close-kv lmdb1))
     (u/delete-files dir)))
 
 (deftest with-transaction-kv-test
   (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "a")
+    (if/open-dbi lmdb "a")
 
     (testing "new value is invisible to outside readers"
       (dc/with-transaction-kv [db lmdb]
-        (is (nil? (l/get-value db "a" 1 :data :data false)))
-        (l/transact-kv db [[:put "a" 1 2]
-                           [:put "a" :counter 0]])
-        (is (= [1 2] (l/get-value db "a" 1 :data :data false)))
-        (is (nil? (l/get-value lmdb "a" 1 :data :data false))))
-      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false))))
+        (is (nil? (if/get-value db "a" 1 :data :data false)))
+        (if/transact-kv db [[:put "a" 1 2]
+                            [:put "a" :counter 0]])
+        (is (= [1 2] (if/get-value db "a" 1 :data :data false)))
+        (is (nil? (if/get-value lmdb "a" 1 :data :data false))))
+      (is (= [1 2] (if/get-value lmdb "a" 1 :data :data false))))
 
     (testing "abort"
       (dc/with-transaction-kv [db lmdb]
-        (l/transact-kv db [[:put "a" 1 3]])
-        (is (= [1 3] (l/get-value db "a" 1 :data :data false)))
-        (l/abort-transact-kv db))
-      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false))))
+        (if/transact-kv db [[:put "a" 1 3]])
+        (is (= [1 3] (if/get-value db "a" 1 :data :data false)))
+        (if/abort-transact-kv db))
+      (is (= [1 2] (if/get-value lmdb "a" 1 :data :data false))))
 
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
             #(dc/with-transaction-kv [db lmdb]
-               (let [^long now (l/get-value db "a" :counter)]
-                 (l/transact-kv db [[:put "a" :counter (inc now)]])
-                 (l/get-value db "a" :counter)))]
+               (let [^long now (if/get-value db "a" :counter)]
+                 (if/transact-kv db [[:put "a" :counter (inc now)]])
+                 (if/get-value db "a" :counter)))]
         (is (= (set [1 2 3])
                (set (pcalls count-f count-f count-f))))))
 
     (testing "nested concurrent writes"
       (let [count-f
             #(dc/with-transaction-kv [db lmdb]
-               (let [^long now (l/get-value db "a" :counter)]
+               (let [^long now (if/get-value db "a" :counter)]
                  (dc/with-transaction-kv [db' db]
-                   (l/transact-kv db' [[:put "a" :counter (inc now)]]))
-                 (l/get-value db "a" :counter)))]
+                   (if/transact-kv db' [[:put "a" :counter (inc now)]]))
+                 (if/get-value db "a" :counter)))]
         (is (= (set [4 5 6])
                (set (pcalls count-f count-f count-f))))))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest tuple-range-query-test
   (let [dir  (u/tmp-dir (str "tuple-range-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "t")
-    (l/open-dbi lmdb "u")
+    (if/open-dbi lmdb "t")
+    (if/open-dbi lmdb "u")
 
-    (l/transact-kv lmdb "t" [[:put [:a "a"] 1]
-                             [:put [:a "b"] 2]]
-                   [:keyword :string])
+    (if/transact-kv lmdb "t" [[:put [:a "a"] 1]
+                              [:put [:a "b"] 2]]
+                    [:keyword :string])
     (is (= [[[:a "a"] 1] [[:a "b"] 2]]
-           (l/get-range lmdb "t" [:closed [:a "a"] [:a "z"]]
-                        [:keyword :string])))
+           (if/get-range lmdb "t" [:closed [:a "a"] [:a "z"]]
+                         [:keyword :string])))
     (is (= [[[:a "a"] 1] [[:a "b"] 2]]
-           (l/get-range lmdb "t"
-                        [:closed [:a :db.value/sysMin] [:a :db.value/sysMax]]
-                        [:keyword :string])))
+           (if/get-range lmdb "t"
+                         [:closed [:a :db.value/sysMin] [:a :db.value/sysMax]]
+                         [:keyword :string])))
     (is (= [[[:a "a"] 1]]
-           (l/get-range lmdb "t"
-                        [:closed [:db.value/sysMin :db.value/sysMin]
-                         [:a "a"]]
-                        [:keyword :string])))
+           (if/get-range lmdb "t"
+                         [:closed [:db.value/sysMin :db.value/sysMin]
+                          [:a "a"]]
+                         [:keyword :string])))
 
-    (l/transact-kv lmdb "u" [[:put [:a 1] 1] [:put [:a 2] 2] [:put [:b 2] 3]]
-                   [:keyword :long])
+    (if/transact-kv lmdb "u" [[:put [:a 1] 1] [:put [:a 2] 2] [:put [:b 2] 3]]
+                    [:keyword :long])
     (is (= [[[:a 1] 1] [[:a 2] 2] [[:b 2] 3]]
-           (l/get-range lmdb "u"
-                        [:closed [:a :db.value/sysMin]
-                         [:db.value/sysMax :db.value/sysMax]]
-                        [:keyword :long])))
+           (if/get-range lmdb "u"
+                         [:closed [:a :db.value/sysMin]
+                          [:db.value/sysMax :db.value/sysMax]]
+                         [:keyword :long])))
     (is (= [[[:b 2] 3]]
-           (l/get-range lmdb "u"
-                        [:closed [:b :db.value/sysMin] [:b :db.value/sysMax]]
-                        [:keyword :long])))
-    (l/close-kv lmdb)
+           (if/get-range lmdb "u"
+                         [:closed [:b :db.value/sysMin] [:b :db.value/sysMax]]
+                         [:keyword :long])))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest int-int-range-query-test
   (let [dir  (u/tmp-dir (str "int-int-range-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
-    (l/open-dbi lmdb "t")
-    (l/transact-kv lmdb "t" [[:put [2 4] 4]
-                             [:put [1 2] 2]
-                             [:put [3 2] 5]
-                             [:put [5 2] 6]
-                             [:put [1 3] 3]
-                             [:put [1 1] 1]
-                             ]
-                   :int-int :id)
+    (if/open-dbi lmdb "t")
+    (if/transact-kv lmdb "t" [[:put [2 4] 4]
+                              [:put [1 2] 2]
+                              [:put [3 2] 5]
+                              [:put [5 2] 6]
+                              [:put [1 3] 3]
+                              [:put [1 1] 1]
+                              ]
+                    :int-int :id)
     (is (= [[[2 4] 4] [[3 2] 5]]
-           (l/get-range lmdb "t" [:closed [2 2] [3 3]] :int-int :id)))
+           (if/get-range lmdb "t" [:closed [2 2] [3 3]] :int-int :id)))
     (is (= [[[3 2] 5] [[5 2] 6]]
-           (l/get-range lmdb "t"
-                        [:closed-open [3 0] [5 Integer/MAX_VALUE]]
-                        :int-int :id)))
+           (if/get-range lmdb "t"
+                         [:closed-open [3 0] [5 Integer/MAX_VALUE]]
+                         :int-int :id)))
     (is (= [[[3 2] 5]]
-           (l/get-range lmdb "t"
-                        [:closed [3 0] [4 0]] :int-int :id)))
-    (is (= [] (l/get-range lmdb "t"
-                           [:closed [13 0] [14 0]] :int-int :id)))
-    (l/close-kv lmdb)
+           (if/get-range lmdb "t"
+                         [:closed [3 0] [4 0]] :int-int :id)))
+    (is (= [] (if/get-range lmdb "t"
+                            [:closed [13 0] [14 0]] :int-int :id)))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest sample-key-freqs-test
@@ -852,21 +853,21 @@
         ks   (shuffle (range 0 m))
         txs  #(map (fn [k v] [:put % k v :long :long]) ks ks)]
 
-    (l/open-dbi lmdb "u")
-    (l/transact-kv lmdb (txs "u"))
+    (if/open-dbi lmdb "u")
+    (if/transact-kv lmdb (txs "u"))
     (let [^longs freqs (l/sample-key-freqs lmdb "u")]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
       (is (< (aget freqs 1) (aget freqs 0))))
 
-    (l/open-dbi lmdb "v")
-    (l/transact-kv lmdb (txs "v"))
+    (if/open-dbi lmdb "v")
+    (if/transact-kv lmdb (txs "v"))
     (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< 1 (aget freqs 0)))
       (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest list-sample-freqs-test
@@ -878,19 +879,19 @@
         vs   (shuffle (range 0 n))
         txs  #(for [k ks v vs] [:put % k v :long :long])]
 
-    (l/open-list-dbi lmdb "u")
-    (l/transact-kv lmdb (txs "u"))
+    (if/open-list-dbi lmdb "u")
+    (if/transact-kv lmdb (txs "u"))
     (let [^longs freqs (l/sample-key-freqs lmdb "u")]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
       (is (< (aget freqs 1) (aget freqs 0))))
 
-    (l/open-dbi lmdb "v")
-    (l/transact-kv lmdb (txs "v"))
+    (if/open-dbi lmdb "v")
+    (if/transact-kv lmdb (txs "v"))
     (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< 1 (aget freqs 0)))
       (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))

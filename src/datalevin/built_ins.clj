@@ -21,14 +21,16 @@
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as st]
-   [datalevin.search :as s]
    [datalevin.vector :as v]
    [datalevin.entity :as de]
-   [datalevin.util :as u :refer [raise]])
+   [datalevin.remote :as r]
+   [datalevin.util :as u :refer [raise]]
+   [datalevin.interface :refer [search schema search-vec]])
   (:import
    [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.storage Store]
+   [datalevin.remote DatalogStore]
    [datalevin.db DB]))
 
 (def ^:no-doc like-cache (LRUCache. 256))
@@ -146,7 +148,7 @@
              (if (clojure.core/= :g (nth d 0))
                (st/gt->datom lmdb (peek d))
                (st/e-aid-v->datom store d))))
-      (s/search engine query opts))))
+      (search engine query opts))))
 
 (defn fulltext
   "Function that does fulltext search. Returns matching datoms in the form
@@ -182,13 +184,22 @@
          query        (if attr? arg2 arg1)
          opts         (if attr? arg3 arg2)]
      (when attr?
-       (when-not (-> store st/schema arg1 :db.fulltext/autoDomain)
+       (when-not (-> store schema arg1 :db.fulltext/autoDomain)
          (raise ":db.fulltext/autoDomain is not true for " arg1
                 {})))
      (sequence
        (comp (mapcat #(fulltext* store lmdb engines query opts %))
           dd/datom->vec-xf)
        (if (seq domains) domains (keys engines))))))
+
+(defn fulltext-datoms
+  ([db query]
+   (fulltext-datoms db query nil))
+  ([^DB db query opts]
+   (let [store (.-store db)]
+     (if (instance? DatalogStore store)
+       (r/fulltext-datoms store query opts)
+       (fulltext db query opts)))))
 
 (defn- vec-neighbors*
   [store lmdb indices query opts domain]
@@ -198,7 +209,7 @@
              (if (clojure.core/= :g (nth d 0))
                (st/gt->datom lmdb (peek d))
                (st/e-aid-v->datom store d))))
-      (v/search-vec index query opts))))
+      (search-vec index query opts))))
 
 (defn vec-neighbors
   "Function that does vector similarity search. Returns matching datoms in the

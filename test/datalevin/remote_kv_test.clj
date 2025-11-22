@@ -1,6 +1,7 @@
 (ns datalevin.remote-kv-test
   (:require
    [datalevin.remote :as sut]
+   [datalevin.interface :as if]
    [datalevin.lmdb :as l]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
@@ -20,21 +21,21 @@
         store (sut/open-kv dir)]
     (is (instance? datalevin.remote.KVStore store))
 
-    (is (= c/default-env-flags (l/get-env-flags store)))
-    (l/set-env-flags store #{:nosync} true)
-    (is (= (conj c/default-env-flags :nosync) (l/get-env-flags store)))
+    (is (= c/default-env-flags (if/get-env-flags store)))
+    (if/set-env-flags store #{:nosync} true)
+    (is (= (conj c/default-env-flags :nosync) (if/get-env-flags store)))
 
-    (l/open-dbi store "a")
-    (l/open-dbi store "b")
-    (l/open-dbi store "c" {:key-size (inc Long/BYTES)
+    (if/open-dbi store "a")
+    (if/open-dbi store "b")
+    (if/open-dbi store "c" {:key-size (inc Long/BYTES)
                            :val-size (inc Long/BYTES)})
-    (l/open-dbi store "d")
+    (if/open-dbi store "d")
 
     (testing "list dbis"
-      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis store)))))
+      (is (= #{"a" "b" "c" "d"} (set (if/list-dbis store)))))
 
     (testing "transact-kv"
-      (l/transact-kv store
+      (if/transact-kv store
                      [[:put "a" 1 2]
                       [:put "a" 'a 1]
                       [:put "a" 5 {}]
@@ -61,77 +62,77 @@
                        [:keyword :double :string] [:long]]]))
 
     (testing "entries"
-      (is (= 5 (:entries (l/stat store))))
-      (is (= 6 (:entries (l/stat store "a"))))
-      (is (= 6 (l/entries store "a")))
-      (is (= 10 (l/entries store "b"))))
+      (is (= 5 (:entries (if/stat store))))
+      (is (= 6 (:entries (if/stat store "a"))))
+      (is (= 6 (if/entries store "a")))
+      (is (= 10 (if/entries store "b"))))
 
     (testing "get-value"
-      (is (= 2 (l/get-value store "a" 1)))
-      (is (= [1 2] (l/get-value store "a" 1 :data :data false)))
-      (is (= true (l/get-value store "a" :annunaki/enki :attr :data)))
-      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value store "a" 42 :long :datom)))
-      (is (nil? (l/get-value store "a" 2)))
-      (is (nil? (l/get-value store "b" 1)))
-      (is (= 5 (l/get-value store "b" [-1 -235254457N])))
-      (is (= 1 (l/get-value store "a" 'a)))
-      (is (= {} (l/get-value store "a" 5)))
-      (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
-      (is (= 3 (l/get-value store "b" 2)))
-      (is (= 4 (l/get-value store "b" :a)))
-      (is (= #{1 2} (l/get-value store "b" (byte 0x01) :byte)))
-      (is (= :bk (l/get-value store "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (= 2 (if/get-value store "a" 1)))
+      (is (= [1 2] (if/get-value store "a" 1 :data :data false)))
+      (is (= true (if/get-value store "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (if/get-value store "a" 42 :long :datom)))
+      (is (nil? (if/get-value store "a" 2)))
+      (is (nil? (if/get-value store "b" 1)))
+      (is (= 5 (if/get-value store "b" [-1 -235254457N])))
+      (is (= 1 (if/get-value store "a" 'a)))
+      (is (= {} (if/get-value store "a" 5)))
+      (is (= ["hello" "world"] (if/get-value store "a" :datalevin)))
+      (is (= 3 (if/get-value store "b" 2)))
+      (is (= 4 (if/get-value store "b" :a)))
+      (is (= #{1 2} (if/get-value store "b" (byte 0x01) :byte)))
+      (is (= :bk (if/get-value store "b" (byte-array [0x41 0x42]) :bytes)))
       (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                         ^bytes (l/get-value store "b" :bv :data :bytes)))
-      (is (= :long (l/get-value store "b" 1 :long :data)))
-      (is (= 1 (l/get-value store "b" :long :data :long)))
-      (is (= 3 (l/get-value store "b" 2 :long :long)))
-      (is (= 42 (l/get-value store "b" "ok" :string :int)))
-      (is (= :pi (l/get-value store "d" 3.14 :double :keyword)))
+                         ^bytes (if/get-value store "b" :bv :data :bytes)))
+      (is (= :long (if/get-value store "b" 1 :long :data)))
+      (is (= 1 (if/get-value store "b" :long :data :long)))
+      (is (= 3 (if/get-value store "b" 2 :long :long)))
+      (is (= 42 (if/get-value store "b" "ok" :string :int)))
+      (is (= :pi (if/get-value store "d" 3.14 :double :keyword)))
       (is (= "nice year"
-             (l/get-value store "d" #inst "1969-01-01" :instant :string))))
+             (if/get-value store "d" #inst "1969-01-01" :instant :string))))
 
     (testing "get-first and get-first-n"
-      (is (= [1 2] (l/get-first store "a" [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n store "a" 2 [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n store "a" 3 [:closed 1 10] :data))))
+      (is (= [1 2] (if/get-first store "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n store "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n store "a" 3 [:closed 1 10] :data))))
 
     (testing "delete"
-      (l/transact-kv store [[:del "a" 1]
+      (if/transact-kv store [[:del "a" 1]
                             [:del "a" :non-exist]
                             [:del "a" "random things that do not exist"]])
-      (is (nil? (l/get-value store "a" 1))))
+      (is (nil? (if/get-value store "a" 1))))
 
     (testing "entries-again"
-      (is (= 5 (l/entries store "a")))
-      (is (= 10 (l/entries store "b"))))
+      (is (= 5 (if/entries store "a")))
+      (is (= 10 (if/entries store "b"))))
 
     (testing "non-existent dbi"
-      (is (thrown? Exception (l/get-value store "z" 1))))
+      (is (thrown? Exception (if/get-value store "z" 1))))
 
     (testing "handle val overflow automatically"
-      (l/transact-kv store [[:put "c" 1 (range 50000)]])
-      (is (= (range 50000) (l/get-value store "c" 1))))
+      (if/transact-kv store [[:put "c" 1 (range 50000)]])
+      (is (= (range 50000) (if/get-value store "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception
-                   (l/transact-kv store [[:put "a" (range 1000) 1]]))))
+                   (if/transact-kv store [[:put "a" (range 1000) 1]]))))
 
     (testing "close then re-open, clear and drop"
-      (l/close-kv store)
-      (is (l/closed-kv? store))
+      (if/close-kv store)
+      (is (if/closed-kv? store))
       (let [store (sut/open-kv dir)]
-        (l/open-dbi store "a")
-        (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
-        (l/clear-dbi store "a")
-        (is (nil? (l/get-value store "a" :datalevin)))
-        (l/drop-dbi store "a")
-        (is (thrown? Exception (l/get-value store "a" 1)))
-        (l/close-kv store)))
+        (if/open-dbi store "a")
+        (is (= ["hello" "world"] (if/get-value store "a" :datalevin)))
+        (if/clear-dbi store "a")
+        (is (nil? (if/get-value store "a" :datalevin)))
+        (if/drop-dbi store "a")
+        (is (thrown? Exception (if/get-value store "a" 1)))
+        (if/close-kv store)))
 
     (testing "range and filter queries"
       (let [store (sut/open-kv dir)]
-        (l/open-dbi store "r" {:key-size (inc Long/BYTES)
+        (if/open-dbi store "r" {:key-size (inc Long/BYTES)
                                :val-size (inc Long/BYTES)})
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
@@ -143,25 +144,25 @@
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)
               rc   (count res)]
-          (l/transact-kv store txs)
-          (is (= rc (l/range-filter-count store "r" pred [:all] :long nil)))
-          (is (= fvs (l/range-filter store "r" pred [:all] :long :long true)))
-          (is (= res (l/range-filter store "r" pred [:all] :long :long)))
-          (is (= 12 (l/get-some store "r" pred [:all] :long :long true)))
-          (is (= [0 1] (l/get-first store "r" [:all] :long :long)))
-          (is (= 10000 (l/range-count store "r" [:all] :long)))
+          (if/transact-kv store txs)
+          (is (= rc (if/range-filter-count store "r" pred [:all] :long nil)))
+          (is (= fvs (if/range-filter store "r" pred [:all] :long :long true)))
+          (is (= res (if/range-filter store "r" pred [:all] :long :long)))
+          (is (= 12 (if/get-some store "r" pred [:all] :long :long true)))
+          (is (= [0 1] (if/get-first store "r" [:all] :long :long)))
+          (is (= 10000 (if/range-count store "r" [:all] :long)))
           (is (= (range 1 10001)
-                 (l/get-range store "r" [:all] :long :long true))))
-        (l/close-kv store)))))
+                 (if/get-range store "r" [:all] :long :long true))))
+        (if/close-kv store)))))
 
 (deftest async-basic-ops-test
   (let [dir  (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
         lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
 
-    (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "b")
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
-    (l/open-dbi lmdb "d")
+    (if/open-dbi lmdb "a")
+    (if/open-dbi lmdb "b")
+    (if/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (if/open-dbi lmdb "d")
 
     (testing "transacting nil will throw"
       (is (thrown? Exception @(dc/transact-kv-async lmdb [[:put "a" nil 1]])))
@@ -195,63 +196,63 @@
                                [:keyword :double :string] [:long]]]))
 
     (testing "entries"
-      (is (= 5 (:entries (l/stat lmdb))))
-      (is (= 6 (:entries (l/stat lmdb "a"))))
-      (is (= 6 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (:entries (if/stat lmdb))))
+      (is (= 6 (:entries (if/stat lmdb "a"))))
+      (is (= 6 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "get-value"
-      (is (= 1 (l/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
-      (is (= [1 2 3] (l/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
-      (is (= 2 (l/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
-                            [:long :string :keyword])))
-      (is (= [2 4] (l/get-value lmdb "d" [:ok -0.687 "nice"]
-                                [:keyword :double :string] [:long])))
-      (is (= 2 (l/get-value lmdb "a" 1)))
-      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
-      (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))
-      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value lmdb "a" 42 :long :datom)))
-      (is (nil? (l/get-value lmdb "a" 2)))
-      (is (nil? (l/get-value lmdb "b" 1)))
-      (is (= 5 (l/get-value lmdb "b" [-1 -235254457N])))
-      (is (= 1 (l/get-value lmdb "a" 'a)))
-      (is (= {} (l/get-value lmdb "a" 5)))
-      (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
-      (is (= 3 (l/get-value lmdb "b" 2)))
-      (is (= 4 (l/get-value lmdb "b" :a)))
-      (is (= #{1 2} (l/get-value lmdb "b" (byte 0x01) :byte)))
-      (is (= :bk (l/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (= 1 (if/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
+      (is (= [1 2 3] (if/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
+      (is (= 2 (if/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
+                             [:long :string :keyword])))
+      (is (= [2 4] (if/get-value lmdb "d" [:ok -0.687 "nice"]
+                                 [:keyword :double :string] [:long])))
+      (is (= 2 (if/get-value lmdb "a" 1)))
+      (is (= [1 2] (if/get-value lmdb "a" 1 :data :data false)))
+      (is (= true (if/get-value lmdb "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (if/get-value lmdb "a" 42 :long :datom)))
+      (is (nil? (if/get-value lmdb "a" 2)))
+      (is (nil? (if/get-value lmdb "b" 1)))
+      (is (= 5 (if/get-value lmdb "b" [-1 -235254457N])))
+      (is (= 1 (if/get-value lmdb "a" 'a)))
+      (is (= {} (if/get-value lmdb "a" 5)))
+      (is (= ["hello" "world"] (if/get-value lmdb "a" :datalevin)))
+      (is (= 3 (if/get-value lmdb "b" 2)))
+      (is (= 4 (if/get-value lmdb "b" :a)))
+      (is (= #{1 2} (if/get-value lmdb "b" (byte 0x01) :byte)))
+      (is (= :bk (if/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
       (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                         ^bytes (l/get-value lmdb "b" :bv :data :bytes)))
-      (is (= :long (l/get-value lmdb "b" 1 :long :data)))
-      (is (= 1 (l/get-value lmdb "b" :long :data :long)))
-      (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
-      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+                         ^bytes (if/get-value lmdb "b" :bv :data :bytes)))
+      (is (= :long (if/get-value lmdb "b" 1 :long :data)))
+      (is (= 1 (if/get-value lmdb "b" :long :data :long)))
+      (is (= 3 (if/get-value lmdb "b" 2 :long :long)))
+      (is (= 42 (if/get-value lmdb "b" "ok" :string :long)))
+      (is (= :pi (if/get-value lmdb "d" 3.14 :double :keyword)))
       (is (= "nice year"
-             (l/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
+             (if/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
 
     (testing "get-first and get-first-n"
-      (is (= [1 2] (l/get-first lmdb "a" [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
-      (is (= [[1 2] [5 {}]] (l/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
+      (is (= [1 2] (if/get-first lmdb "a" [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 2 [:closed 1 10] :data)))
+      (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 3 [:closed 1 10] :data))))
 
     (testing "delete"
       @(dc/transact-kv-async lmdb [[:del "a" 1]
                                    [:del "a" :non-exist]
                                    [:del "a" "random things that do not exist"]])
-      (is (nil? (l/get-value lmdb "a" 1))))
+      (is (nil? (if/get-value lmdb "a" 1))))
 
     (testing "entries-again"
-      (is (= 5 (l/entries lmdb "a")))
-      (is (= 10 (l/entries lmdb "b"))))
+      (is (= 5 (if/entries lmdb "a")))
+      (is (= 10 (if/entries lmdb "b"))))
 
     (testing "non-existent dbi"
-      (is (thrown? Exception (l/get-value lmdb "z" 1))))
+      (is (thrown? Exception (if/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
       @(dc/transact-kv-async lmdb [[:put "c" 1 (range 100000)]])
-      (is (= (range 100000) (l/get-value lmdb "c" 1))))
+      (is (= (range 100000) (if/get-value lmdb "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception
@@ -264,205 +265,205 @@
         lmdb    (l/open-kv dir)
         sum     (volatile! 0)
         visitor (i/inter-fn
-                  [vb]
+                    [vb]
                   (let [^long v (b/read-buffer vb :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
-    (l/open-list-dbi lmdb "l")
+    (if/open-list-dbi lmdb "l")
 
-    (l/put-list-items lmdb "l" "a" [1 2 3 4] :string :long)
-    (l/put-list-items lmdb "l" "b" [5 6 7] :string :long)
-    (l/put-list-items lmdb "l" "c" [3 6 9] :string :long)
+    (if/put-list-items lmdb "l" "a" [1 2 3 4] :string :long)
+    (if/put-list-items lmdb "l" "b" [5 6 7] :string :long)
+    (if/put-list-items lmdb "l" "c" [3 6 9] :string :long)
 
-    (is (= (l/entries lmdb "l") 10))
+    (is (= (if/entries lmdb "l") 10))
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
-           (l/get-range lmdb "l" [:all] :string :long)))
+           (if/get-range lmdb "l" [:all] :string :long)))
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "l" [:closed "a" "b"] :string :long)))
+           (if/get-range lmdb "l" [:closed "a" "b"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "l" [:closed "b" "b"] :string :long)))
+           (if/get-range lmdb "l" [:closed "b" "b"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "l" [:open-closed "a" "b"] :string :long)))
+           (if/get-range lmdb "l" [:open-closed "a" "b"] :string :long)))
     (is (= [["c" 3] ["c" 6] ["c" 9] ["b" 5] ["b" 6] ["b" 7]
             ["a" 1] ["a" 2] ["a" 3] ["a" 4]]
-           (l/get-range lmdb "l" [:all-back] :string :long)))
+           (if/get-range lmdb "l" [:all-back] :string :long)))
 
     (is (= ["a" 1]
-           (l/get-first lmdb "l" [:closed "a" "a"] :string :long)))
+           (if/get-first lmdb "l" [:closed "a" "a"] :string :long)))
     (is (= [["a" 1] ["a" 2]]
-           (l/get-first-n lmdb "l" 2 [:closed "a" "c"] :string :long)))
+           (if/get-first-n lmdb "l" 2 [:closed "a" "c"] :string :long)))
     (is (= [["a" 1] ["a" 2]]
-           (l/list-range-first-n lmdb "l" 2 [:closed "a" "c"] :string
-                                 [:closed 1 5] :long)))
+           (if/list-range-first-n lmdb "l" 2 [:closed "a" "c"] :string
+                                  [:closed 1 5] :long)))
     (is (= [3 6 9]
-           (l/get-list lmdb "l" "c" :string :long)))
+           (if/get-list lmdb "l" "c" :string :long)))
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
-           (l/list-range lmdb "l" [:all] :string [:all] :long)))
+           (if/list-range lmdb "l" [:all] :string [:all] :long)))
     (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
-           (l/list-range lmdb "l" [:closed "a" "c"] :string
-                         [:closed 2 4] :long)))
+           (if/list-range lmdb "l" [:closed "a" "c"] :string
+                          [:closed 2 4] :long)))
     (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
             ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
-           (l/list-range lmdb "l" [:all-back] :string [:all-back] :long)))
+           (if/list-range lmdb "l" [:all-back] :string [:all-back] :long)))
     (is (= [["c" 3]]
-           (l/list-range lmdb "l" [:at-least "b"] :string
-                         [:at-most-back 4] :long)))
+           (if/list-range lmdb "l" [:at-least "b"] :string
+                          [:at-most-back 4] :long)))
 
     (is (= [["b" 5]]
-           (l/list-range lmdb "l" [:open "a" "c"] :string
-                         [:less-than 6] :long)))
+           (if/list-range lmdb "l" [:open "a" "c"] :string
+                          [:less-than 6] :long)))
 
-    (is (= (l/list-count lmdb "l" "a" :string) 4))
-    (is (= (l/list-count lmdb "l" "b" :string) 3))
+    (is (= (if/list-count lmdb "l" "a" :string) 4))
+    (is (= (if/list-count lmdb "l" "b" :string) 3))
 
-    (is (not (l/in-list? lmdb "l" "a" 7 :string :long)))
-    (is (l/in-list? lmdb "l" "b" 7 :string :long))
+    (is (not (if/in-list? lmdb "l" "a" 7 :string :long)))
+    (is (if/in-list? lmdb "l" "b" 7 :string :long))
 
-    (is (= (l/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
-    (is (= (l/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
+    (is (= (if/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
+    (is (= (if/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
 
-    (l/visit-list lmdb "l" visitor "a" :string)
+    (if/visit-list lmdb "l" visitor "a" :string)
     (is (= @sum 10))
 
-    (l/del-list-items lmdb "l" "a" :string)
+    (if/del-list-items lmdb "l" "a" :string)
 
-    (is (= (l/list-count lmdb "l" "a" :string) 0))
-    (is (not (l/in-list? lmdb "l" "a" 1 :string :long)))
-    (is (empty? (l/get-list lmdb "l" "a" :string :long)))
+    (is (= (if/list-count lmdb "l" "a" :string) 0))
+    (is (not (if/in-list? lmdb "l" "a" 1 :string :long)))
+    (is (empty? (if/get-list lmdb "l" "a" :string :long)))
 
-    (l/put-list-items lmdb "l" "b" [1 2 3 4] :string :long)
+    (if/put-list-items lmdb "l" "b" [1 2 3 4] :string :long)
 
     (is (= [1 2 3 4 5 6 7]
-           (l/get-list lmdb "l" "b" :string :long)))
-    (is (= (l/list-count lmdb "l" "b" :string) 7))
-    (is (l/in-list? lmdb "l" "b" 1 :string :long))
+           (if/get-list lmdb "l" "b" :string :long)))
+    (is (= (if/list-count lmdb "l" "b" :string) 7))
+    (is (if/in-list? lmdb "l" "b" 1 :string :long))
 
-    (l/del-list-items lmdb "l" "b" [1 2] :string :long)
+    (if/del-list-items lmdb "l" "b" [1 2] :string :long)
 
-    (is (= (l/list-count lmdb "l" "b" :string) 5))
-    (is (not (l/in-list? lmdb "l" "b" 1 :string :long)))
+    (is (= (if/list-count lmdb "l" "b" :string) 5))
+    (is (not (if/in-list? lmdb "l" "b" 1 :string :long)))
     (is (= [3 4 5 6 7]
-           (l/get-list lmdb "l" "b" :string :long)))
-    (l/close-kv lmdb)))
+           (if/get-list lmdb "l" "b" :string :long)))
+    (if/close-kv lmdb)))
 
 (deftest list-string-test
   (let [dir   (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
         lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         pred  (i/inter-fn [kv]
-                          (let [^String v (b/read-buffer (l/v kv) :string)]
-                            (< (count v) 5)))
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (< (count v) 5)))
         pred1 (i/inter-fn [kv]
-                          (let [^String v (b/read-buffer (l/v kv) :string)]
-                            (when (< (count v) 5) v)))]
-    (l/open-list-dbi lmdb "str")
-    (is (l/list-dbi? lmdb "str"))
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (when (< (count v) 5) v)))]
+    (if/open-list-dbi lmdb "str")
+    (is (if/list-dbi? lmdb "str"))
 
-    (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
-    (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
+    (if/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
+    (if/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
 
     (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
             ["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:all] :string :string)))
+           (if/get-range lmdb "str" [:all] :string :string)))
     (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
             ["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
+           (if/get-range lmdb "str" [:closed "a" "b"] :string :string)))
     (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
+           (if/get-range lmdb "str" [:closed "b" "b"] :string :string)))
     (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-           (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+           (if/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
 
     (is (= [["b" "nice"]]
-           (l/list-range-filter lmdb "str" pred [:greater-than "a"] :string
-                                [:all] :string)))
+           (if/list-range-filter lmdb "str" pred [:greater-than "a"] :string
+                                 [:all] :string)))
 
     (is (= ["nice"]
-           (l/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
-                              [:all] :string)))
+           (if/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
+                               [:all] :string)))
     (is (= "nice"
-           (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
-                              [:all] :string)))
+           (if/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
+                               [:all] :string)))
 
     (is (= ["a" "abc"]
-           (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))
+           (if/get-first lmdb "str" [:closed "a" "a"] :string :string)))
 
-    (is (= (l/list-count lmdb "str" "a" :string) 3))
-    (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (= (if/list-count lmdb "str" "a" :string) 3))
+    (is (= (if/list-count lmdb "str" "b" :string) 3))
 
-    (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
-    (is (l/in-list? lmdb "str" "b" "hello" :string :string))
+    (is (not (if/in-list? lmdb "str" "a" "hello" :string :string)))
+    (is (if/in-list? lmdb "str" "b" "hello" :string :string))
 
-    (is (= (l/get-list lmdb "str" "a" :string :string)
+    (is (= (if/get-list lmdb "str" "a" :string :string)
            ["abc" "defg" "hi"]))
 
-    (l/del-list-items lmdb "str" "a" :string)
+    (if/del-list-items lmdb "str" "a" :string)
 
-    (is (= (l/list-count lmdb "str" "a" :string) 0))
-    (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-    (is (empty? (l/get-list lmdb "str" "a" :string :string)))
+    (is (= (if/list-count lmdb "str" "a" :string) 0))
+    (is (not (if/in-list? lmdb "str" "a" "hi" :string :string)))
+    (is (empty? (if/get-list lmdb "str" "a" :string :string)))
 
-    (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
+    (if/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 
-    (is (= (l/list-count lmdb "str" "b" :string) 5))
-    (is (l/in-list? lmdb "str" "b" "good" :string :string))
+    (is (= (if/list-count lmdb "str" "b" :string) 5))
+    (is (if/in-list? lmdb "str" "b" "good" :string :string))
 
-    (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
+    (if/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
 
-    (is (= (l/list-count lmdb "str" "b" :string) 3))
-    (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+    (is (= (if/list-count lmdb "str" "b" :string) 3))
+    (is (not (if/in-list? lmdb "str" "b" "world" :string :string)))
 
-    (l/close-kv lmdb)))
+    (if/close-kv lmdb)))
 
 (deftest copy-test
   (let [src    "dtlv://datalevin:datalevin@localhost/copytest"
         rstore (sut/open-kv src)
         dst    (u/tmp-dir (str "copy-test-" (UUID/randomUUID)))]
-    (l/open-dbi rstore "z")
+    (if/open-dbi rstore "z")
     (let [ks  (shuffle (range 0 10000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "z" k v :long :long]) ks vs)]
-      (l/transact-kv rstore txs))
-    (l/copy rstore dst)
+      (if/transact-kv rstore txs))
+    (if/copy rstore dst)
     (let [cstore (l/open-kv dst)]
-      (l/open-dbi cstore "z")
-      (is (= (l/get-range rstore "z" [:all] :long :long)
-             (l/get-range cstore "z" [:all] :long :long)))
-      (l/close-kv cstore))
-    (l/close-kv rstore)
+      (if/open-dbi cstore "z")
+      (is (= (if/get-range rstore "z" [:all] :long :long)
+             (if/get-range cstore "z" [:all] :long :long)))
+      (if/close-kv cstore))
+    (if/close-kv rstore)
     (u/delete-files dst)))
 
 (deftest re-index-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/re-index"
         lmdb (sut/open-kv dir)]
-    (l/open-dbi lmdb "misc")
+    (if/open-dbi lmdb "misc")
 
-    (l/transact-kv
-      lmdb
+    (if/transact-kv
+        lmdb
       [[:put "misc" :datalevin "Hello, world!"]
        [:put "misc" 42 {:saying "So Long, and thanks for all the fish"
                         :source "The Hitchhiker's Guide to the Galaxy"}]])
-    (let [lmdb1 (l/re-index lmdb {})]
-      (l/open-dbi lmdb1 "misc")
+    (let [lmdb1 (if/re-index lmdb {})]
+      (if/open-dbi lmdb1 "misc")
       (is (= [[42
                {:saying "So Long, and thanks for all the fish",
                 :source "The Hitchhiker's Guide to the Galaxy"}]
               [:datalevin "Hello, world!"]]
-             (l/get-range lmdb1 "misc" [:all])))
+             (if/get-range lmdb1 "misc" [:all])))
 
       ;; TODO https://github.com/juji-io/datalevin/issues/212
-      #_(l/visit
-          lmdb1 "misc"
-          (i/inter-fn
-            [kv]
-            (let [k (dc/read-buffer (dc/k kv) :data)]
-              (when (= k 42)
-                (l/transact-kv
-                  lmdb1
-                  [[:put "misc" 42 "Don't panic"]]))))
+      #_(if/visit
+            lmdb1 "misc"
+            (i/inter-fn
+                [kv]
+              (let [k (dc/read-buffer (dc/k kv) :data)]
+                (when (= k 42)
+                  (if/transact-kv
+                      lmdb1
+                    [[:put "misc" 42 "Don't panic"]]))))
 
-          [:all])
+            [:all])
       #_(is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
-               (l/get-range lmdb1 "misc" [:all])))
-      (l/close-kv lmdb1))))
+               (if/get-range lmdb1 "misc" [:all])))
+      (if/close-kv lmdb1))))

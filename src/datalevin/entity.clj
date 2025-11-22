@@ -16,11 +16,12 @@
    [datalevin.storage :as st]
    [datalevin.remote :as r]
    [datalevin.util :as u]
+   [datalevin.interface :refer [db-name]]
    [taoensso.nippy :as nippy]
    [clojure.set :as set])
   (:import
    [datalevin.db DB]
-   [datalevin.storage IStore]
+   [datalevin.interface IStore]
    [datalevin.remote DatalogStore]
    [java.io DataInput DataOutput]))
 
@@ -227,6 +228,12 @@
       (vreset! (.-touched e) true)))
   e)
 
+(defn entity-db
+  "Returns the Datalog DB that this entity was created from."
+  [^Entity entity]
+  {:pre [(entity? entity)]}
+  (.-db entity))
+
 (defn- load-cache [^Entity e cache]
   (vreset! (.-cache e) cache)
   (vreset! (.-touched e) true)
@@ -235,7 +242,7 @@
 (defn- ent->map
   [^Entity x]
   (let [^DB db  (.-db x)
-        db-name (st/db-name ^IStore (.-store db))
+        db-name (db-name ^IStore (.-store db))
         m       {:db/id   (.-eid x)
                  :db-name db-name}]
     (if @(.-touched x)

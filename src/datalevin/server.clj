@@ -13,6 +13,7 @@
   (:require
    [datalevin.util :as u]
    [datalevin.core :as d]
+   [datalevin.dump :as dump]
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.query :as q]
@@ -24,6 +25,7 @@
    [datalevin.vector :as v]
    [datalevin.built-ins :as dbq]
    [datalevin.constants :as c]
+   [datalevin.interface :as i]
    [taoensso.timbre :as log]
    [clojure.stacktrace :as stt]
    [clojure.string :as s])
@@ -39,8 +41,8 @@
    [java.util.concurrent Executors Executor ExecutorService
     ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
    [datalevin.db DB]
-   [datalevin.storage IStore Store]
-   [datalevin.lmdb ILMDB]
+   [datalevin.storage Store]
+   [datalevin.interface ILMDB IStore]
    [org.bouncycastle.crypto.generators Argon2BytesGenerator]
    [org.bouncycastle.crypto.params Argon2Parameters Argon2Parameters$Builder]))
 
@@ -475,9 +477,9 @@
 (defn- close-store
   [store]
   (cond
-    (instance? datalevin.storage.IStore store) (st/close store)
-    (instance? datalevin.lmdb.ILMDB store)     (l/close-kv store)
-    :else                                      (u/raise "Unknown store" {})))
+    (instance? IStore store) (i/close store)
+    (instance? ILMDB store)  (i/close-kv store)
+    :else                    (u/raise "Unknown store" {})))
 
 (defn- has-permission?
   [req-act req-obj req-tgt user-permissions]
@@ -812,8 +814,8 @@
   (dir->db-name
     server
     (cond
-      (instance? IStore store) (st/dir store)
-      (instance? ILMDB store)  (l/dir store)
+      (instance? IStore store) (i/dir store)
+      (instance? ILMDB store)  (i/env-dir store)
       :else                    (u/raise "Unknown store type" {}))))
 
 (defn- db-store
@@ -849,8 +851,8 @@
 (defn- store-closed?
   [store]
   (cond
-    (instance? IStore store) (st/closed? store)
-    (instance? ILMDB store)  (l/closed-kv? store)
+    (instance? IStore store) (i/closed? store)
+    (instance? ILMDB store)  (i/closed-kv? store)
     :else                    (u/raise "Unknown store type" {})))
 
 (defn- store-in-use?
@@ -871,7 +873,7 @@
      ~'skey
      {:type   :command-complete
       :result (apply
-                ~(symbol "datalevin.storage" (str f))
+                ~(symbol "datalevin.interface" (str f))
                 (store ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
@@ -882,7 +884,7 @@
      ~'skey
      {:type   :command-complete
       :result (apply
-                ~(symbol "datalevin.lmdb" (str f))
+                ~(symbol "datalevin.interface" (str f))
                 (lmdb ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
@@ -922,7 +924,7 @@
      ~'skey
      {:type   :command-complete
       :result (apply
-                ~(symbol "datalevin.search" (str f))
+                ~(symbol "datalevin.interface" (str f))
                 (search-engine ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
@@ -960,7 +962,7 @@
      ~'skey
      {:type   :command-complete
       :result (apply
-                ~(symbol "datalevin.vector" (str f))
+                ~(symbol "datalevin.interface" (str f))
                 (vector-index ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
@@ -970,7 +972,7 @@
     (if datalog?
       (st/open dir)
       (let [lmdb (l/open-kv dir)]
-        (doseq [dbi dbis] (l/open-dbi lmdb dbi))
+        (doseq [dbi dbis] (i/open-dbi lmdb dbi))
         lmdb))))
 
 (defn- open-server-store
@@ -984,18 +986,18 @@
           sys-conn            (.-sys-conn server)]
       (log/debug "open" db-name "that exist?" existing-db?)
       (wrap-permission
-        (if existing-db? ::view ::create)
-        ::database
-        (when existing-db? (db-eid sys-conn db-name))
-        "Don't have permission to open database"
+          (if existing-db? ::view ::create)
+          ::database
+          (when existing-db? (db-eid sys-conn db-name))
+          "Don't have permission to open database"
         (let [dir      (db-dir (.-root server) db-name)
               store    (or (when-let [ds (get-store server db-name)]
                              (if (instance? Store ds)
-                               (when-not (st/closed? ds)
+                               (when-not (i/closed? ds)
                                  (when schema
-                                   (st/set-schema ds schema))
+                                   (i/set-schema ds schema))
                                  ds)
-                               (when-not (l/closed-kv? ds)
+                               (when-not (i/closed-kv? ds)
                                  ds)))
                            (case db-type
                              :datalog   (st/open dir schema opts)
@@ -1021,7 +1023,7 @@
   [root]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
                              server-schema)]
-    (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
+    (when (= 0 (i/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
       (let [s   (salt)
             h   (password-hashing c/default-password s)
             txs [{:db/id        -1
@@ -1598,7 +1600,7 @@
   (wrap-error
     (let [db-name (nth args 0)
           res     (if-let [s (store server skey db-name writing?)]
-                    (st/closed? s)
+                    (i/closed? s)
                     true)]
       (write-message skey {:type :command-complete :result res}))))
 
@@ -1666,11 +1668,11 @@
     (let [db-name  (nth args 0)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (case mode
           :copy-in (let [dt-store (store server skey db-name writing?)]
-                     (st/load-datoms dt-store (copy-in server skey))
+                     (i/load-datoms dt-store (copy-in server skey))
                      (write-message skey {:type :command-complete}))
           :request (normal-dt-store-handler load-datoms)
           (u/raise "Missing :mode when loading datoms" {}))))))
@@ -1738,7 +1740,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          datoms  (apply st/slice
+          datoms  (apply i/slice
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1749,7 +1751,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          datoms  (apply st/rslice
+          datoms  (apply i/rslice
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1772,7 +1774,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          datoms  (apply st/e-datoms
+          datoms  (apply i/e-datoms
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1787,7 +1789,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          datoms  (apply st/av-datoms
+          datoms  (apply i/av-datoms
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1814,7 +1816,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          datoms  (apply st/v-datoms
+          datoms  (apply i/v-datoms
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1847,7 +1849,7 @@
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
-          datoms (apply st/slice-filter
+          datoms (apply i/slice-filter
                         (store server skey (nth args 0) writing?)
                         (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1859,7 +1861,7 @@
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
-          datoms (apply st/rslice-filter
+          datoms (apply i/rslice-filter
                         (store server skey (nth args 0) writing?)
                         (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1888,7 +1890,7 @@
           kv                  (lmdb server skey db-name writing?)
           args                (rest args)
           dbi-name            (first args)]
-      (apply l/open-dbi kv args)
+      (apply i/open-dbi kv args)
       (update-client server client-id
                      #(update-in % [:stores db-name :dbis] conj dbi-name)))
     (write-message skey {:type :command-complete})))
@@ -1905,7 +1907,7 @@
           kv                  (lmdb server skey db-name writing?)
           args                (rest args)
           dbi-name            (first args)]
-      (l/drop-dbi kv dbi-name)
+      (i/drop-dbi kv dbi-name)
       (update-client server client-id
                      #(update-in % [:stores db-name :dbis] disj dbi-name)))
     (write-message skey {:type :command-complete})))
@@ -1924,7 +1926,7 @@
           path               (Paths/get (str tf u/+separator+ "data.mdb")
                                         (into-array String []))]
       (try
-        (l/copy (lmdb server skey db-name writing?) tf compact?)
+        (i/copy (lmdb server skey db-name writing?) tf compact?)
         (copy-out skey
                   (b/encode-base64 (Files/readAllBytes path))
                   8192)
@@ -1960,13 +1962,13 @@
     (let [db-name  (nth args 0)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (.acquire ^Semaphore (get-lock server db-name))
         (let [kv-store (get-kv-store server db-name)]
           (locking kv-store
             (update-db server db-name
-                       #(assoc % :wlmdb (l/open-transact-kv kv-store)))
+                       #(assoc % :wlmdb (i/open-transact-kv kv-store)))
             (let [runner (write-txn-runner server db-name kv-store)]
               (write-message skey {:type :command-complete})
               (run-calls runner))))))))
@@ -1979,9 +1981,9 @@
           sys-conn (.-sys-conn server)
           dbs      (.-dbs server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
-        (l/close-transact-kv kv-store)
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (i/close-transact-kv kv-store)
         (halt-run (get-in dbs [db-name :runner]))
         (update-db server db-name #(dissoc % :runner :wlmdb))
         (write-message skey {:type :command-complete})
@@ -2003,12 +2005,12 @@
     (let [db-name  (nth args 0)
           sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
         (.acquire ^Semaphore (get-lock server db-name))
         (let [kv-store (get-kv-store server db-name)]
           (locking kv-store
-            (let [wlmdb  (l/open-transact-kv kv-store)
+            (let [wlmdb  (i/open-transact-kv kv-store)
                   ostore (get-store server db-name)
                   wstore (st/transfer ostore wlmdb)
                   runner (write-txn-runner server db-name kv-store)]
@@ -2028,9 +2030,9 @@
           sys-conn (.-sys-conn server)
           dbs      (.-dbs server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
-        (l/close-transact-kv kv-store)
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (i/close-transact-kv kv-store)
         (halt-run (get-in dbs [db-name :runner]))
         (add-store
           server db-name
@@ -2050,7 +2052,7 @@
       (wrap-permission
           ::alter ::database (db-eid sys-conn db-name)
           "Don't have permission to alter the database"
-        (l/abort-transact-kv kv-store)
+        (i/abort-transact-kv kv-store)
         (write-message skey {:type :command-complete})))))
 
 (defn- get-env-flags
@@ -2071,7 +2073,7 @@
       (wrap-permission
           ::alter ::database (db-eid sys-conn db-name)
           "Don't have permission to alter the database"
-        (l/sync kv-store force)
+        (i/sync kv-store force)
         (write-message skey {:type :command-complete})))))
 
 (defn- transact-kv
@@ -2084,7 +2086,7 @@
           ::alter ::database (db-eid sys-conn db-name)
           "Don't have permission to alter the database"
         (case mode
-          :copy-in (do (l/transact-kv kv-store (copy-in server skey))
+          :copy-in (do (i/transact-kv kv-store (copy-in server skey))
                        (write-message skey {:type :command-complete}))
           :request (normal-kv-store-handler transact-kv)
           (u/raise "Missing :mode when transacting kv" {}))))))
@@ -2105,7 +2107,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          data    (apply l/get-range
+          data    (apply i/get-range
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2116,7 +2118,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          data    (apply l/key-range
+          data    (apply i/key-range
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2155,7 +2157,7 @@
     (let [frozen  (nth args 2)
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
-          data    (apply l/range-filter
+          data    (apply i/range-filter
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2168,7 +2170,7 @@
     (let [frozen  (nth args 2)
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
-          data    (apply l/range-keep
+          data    (apply i/range-keep
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2200,7 +2202,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          data    (apply l/get-list
+          data    (apply i/get-list
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2226,7 +2228,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [db-name (nth args 0)
-          data    (apply l/list-range
+          data    (apply i/list-range
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2251,7 +2253,7 @@
     (let [frozen  (nth args 2)
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
-          data    (apply l/list-range-filter
+          data    (apply i/list-range-filter
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2264,7 +2266,7 @@
     (let [frozen  (nth args 2)
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
-          data    (apply l/list-range-keep
+          data    (apply i/list-range-keep
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -2377,7 +2379,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts] args
-          engine         (l/re-index (search-engine server skey db-name) opts)]
+          engine         (i/re-index (search-engine server skey db-name) opts)]
       (update-db server db-name #(assoc % :engine engine))
       (write-message skey {:type :command-complete}))))
 
@@ -2418,7 +2420,7 @@
   (wrap-error
     (let [[db-name opts] args
           old            (vector-index server skey db-name)
-          new            (l/re-index old opts)]
+          new            (i/re-index old opts)]
       (update-db server db-name #(assoc % :index new))
       (write-message skey {:type :command-complete}))))
 
@@ -2426,7 +2428,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts] args
-          db             (l/re-index (lmdb server skey db-name false) opts)]
+          db             (i/re-index (lmdb server skey db-name false) opts)]
       (update-db server db-name #(assoc % :store db))
       (write-message skey {:type :command-complete}))))
 
@@ -2436,7 +2438,7 @@
     (let [[db-name schema opts] args
           db                    (get-in (.-dbs server) [db-name :dt-db])
           conn                  (atom db)
-          conn1                 (d/re-index-datalog conn schema opts)
+          conn1                 (dump/re-index-datalog conn schema opts)
           ^DB db1               @conn1
           store1                (.-store db1)]
       (update-db server db-name #(assoc % :store store1 :dt-db db1))

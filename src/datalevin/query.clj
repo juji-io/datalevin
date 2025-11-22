@@ -25,16 +25,20 @@
    [datalevin.util :as u :refer [cond+ raise conjv concatv tuple-get map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
+   [datalevin.remote :as rt]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
-   [datalevin.bits :as b])
+   [datalevin.bits :as b]
+   [datalevin.interface
+    :refer [av-size]])
   (:import
    [java.util Arrays List Collection Comparator]
    [java.util.concurrent ConcurrentHashMap]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM LRUCache]
+   [datalevin.remote DatalogStore]
    [datalevin.db DB]
    [datalevin.storage Store]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
@@ -1483,7 +1487,7 @@
     (reduce
       (fn [{:keys [mcount] :as node} [k i {:keys [attr val range]}]]
         (let [^long c (cond
-                        (some? val) (s/av-size store attr val)
+                        (some? val) (av-size store attr val)
                         range       (range-count db attr range mcount)
                         :else       (db/-count db [nil attr nil] mcount))]
           (cond
@@ -1774,7 +1778,7 @@
     (u/long-inc
       (rd/fold
         +
-        (rd/map #(s/av-size store attr (aget ^objects % index))
+        (rd/map #(av-size store attr (aget ^objects % index))
                 (s/remove-end-scan tuples))))))
 
 (def magic-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
@@ -2442,7 +2446,7 @@
     (vswap! *explain* assoc :parsing-time
             (- (System/nanoTime) ^long *start-time*))))
 
-(defn q
+(defn- perform
   [q & inputs]
   (let [parsed-q (parsed-q q)
         _        (parse-explain)
@@ -2468,12 +2472,37 @@
             (-q false)
             (result-explain))))))
 
-(defn explain
+(defn- explain*
   [{:keys [run?] :or {run? false}} & args]
   (binding [*explain*    (volatile! {})
             *cache?*     false
             *start-time* (System/nanoTime)]
     (if run?
-      (do (apply q args) @*explain*)
+      (do (apply perform args) @*explain*)
       (do (apply plan-only args)
           (dissoc @*explain* :actual-result-size :execution-time)))))
+
+(defn- only-remote-db
+  "Return [remote-db [updated-inputs]] if the inputs contain only one db
+  and its backing store is a remote one, where the remote-db in the inputs is
+  replaced by `:remote-db-placeholder, otherwise return `nil`"
+  [inputs]
+  (let [dbs (filter db/-searchable? inputs)]
+    (when-let [rdb (first dbs)]
+      (let [rstore (.-store ^DB rdb)]
+        (when (and (= 1 (count dbs))
+                   (instance? DatalogStore rstore)
+                   (db/db? rdb))
+          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
+
+(defn q
+  [query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (rt/q store query inputs')
+    (apply perform query inputs)))
+
+(defn explain
+  [opts query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (rt/explain store opts query inputs')
+    (apply explain* opts query inputs)))

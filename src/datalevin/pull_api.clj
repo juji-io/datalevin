@@ -14,10 +14,12 @@
    [datalevin.db :as db]
    [datalevin.constants :as c]
    [datalevin.datom :as dd]
+   [datalevin.remote :as r]
    [datalevin.timeout :as timeout]
    [datalevin.util :as u :refer [cond+]])
   (:import
    [datalevin.db DB]
+   [datalevin.remote DatalogStore]
    [datalevin.utl LRUCache]
    [datalevin.datom Datom]
    [datalevin.pull_parser PullAttr PullPattern]))
@@ -321,7 +323,7 @@
                      res)))
     :context (Context. db visitor)}))
 
-(defn pull
+(defn pull*
   "Supported opts:
 
    :visitor a fn of 4 arguments, will be called for every entity/attribute pull touches
@@ -329,17 +331,35 @@
    (:db.pull/attr     e   a   nil) - when pulling a normal attribute, no matter if it has value or not
    (:db.pull/wildcard e   nil nil) - when pulling every attribute on an entity
    (:db.pull/reverse  nil a   v  ) - when pulling reverse attribute"
-  ([^DB db pattern id] (pull db pattern id {}))
+  ([^DB db pattern id] (pull* db pattern id {}))
   ([^DB db pattern id {:keys [timeout] :as opts}]
    {:pre [(db/db? db)]}
    (binding [timeout/*deadline* (timeout/to-deadline timeout)]
      (let [parsed-opts (parse-opts db pattern opts)]
        (pull-impl parsed-opts id)))))
 
-(defn pull-many
-  ([^DB db pattern ids] (pull-many db pattern ids {}))
+(defn pull
+  ([db pattern id opts]
+   (let [store (.-store ^DB db)]
+     (if (instance? DatalogStore store)
+       (r/pull store pattern id opts)
+       (pull* db pattern id opts))))
+  ([db pattern id]
+   (pull db pattern id {})))
+
+(defn pull-many*
+  ([^DB db pattern ids] (pull-many* db pattern ids {}))
   ([^DB db pattern ids {:keys [timeout] :as opts}]
    {:pre [(db/db? db)]}
    (binding [timeout/*deadline* (timeout/to-deadline timeout)]
      (let [parsed-opts (parse-opts db pattern opts)]
        (mapv #(pull-impl parsed-opts %) ids)))))
+
+(defn pull-many
+  ([db pattern id opts]
+   (let [store (.-store ^DB db)]
+     (if (instance? DatalogStore store)
+       (r/pull-many store pattern id opts)
+       (pull-many* db pattern id opts))))
+  ([db pattern id]
+   (pull-many db pattern id {})))

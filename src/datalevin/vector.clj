@@ -16,6 +16,7 @@
    [datalevin.constants :as c]
    [datalevin.async :as a]
    [datalevin.bits :as b]
+   [datalevin.interface :as i]
    [clojure.string :as s]
    [taoensso.nippy :as nippy])
   (:import
@@ -23,7 +24,7 @@
    [datalevin.cpp VecIdx VecIdx$SearchResult VecIdx$IndexInfo]
    [datalevin.spill SpillableMap]
    [datalevin.async IAsyncWork]
-   [datalevin.lmdb IAdmin]
+   [datalevin.interface IAdmin IVectorIndex]
    [java.io FileOutputStream FileInputStream DataOutputStream DataInputStream]
    [java.util Map]
    [java.util.concurrent.atomic AtomicLong]))
@@ -55,7 +56,7 @@
 
 (defn index-fname
   [lmdb domain]
-  (str (l/dir lmdb) u/+separator+ domain c/vector-index-suffix))
+  (str (i/env-dir lmdb) u/+separator+ domain c/vector-index-suffix))
 
 (defn- init-index
   [^String fname dimensions metric-key quantization connectivity expansion-add
@@ -129,10 +130,10 @@
 
 (defn- open-dbi
   [lmdb vecs-dbi]
-  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
+  (assert (not (i/closed-kv? lmdb)) "LMDB env is closed.")
 
   ;; vec-ref -> vec-ids
-  (l/open-list-dbi lmdb vecs-dbi {:key-size c/+max-key-size+
+  (i/open-list-dbi lmdb vecs-dbi {:key-size c/+max-key-size+
                                   :val-size c/+id-bytes+}))
 
 (defn- init-vecs
@@ -144,25 +145,12 @@
                        id  (b/read-buffer (l/v kv) :id)]
                    (when (< ^long @max-id ^long id) (vreset! max-id id))
                    (.put ^SpillableMap vecs id ref)))]
-    (l/visit-list-range lmdb vecs-dbi load [:all] :data [:all] :id)
+    (i/visit-list-range lmdb vecs-dbi load [:all] :data [:all] :id)
     [@max-id vecs]))
 
 (def default-search-opts {:display    :refs
                           :top        10
                           :vec-filter (constantly true)})
-
-(defprotocol IVectorIndex
-  (add-vec [this vec-ref vec-data] "add vector to in memory index")
-  (remove-vec [this vec-ref] "remove vector from in memory index")
-  (get-vec [this vec-ref] "retrieve the vectors of a vec-ref")
-  (persist-vecs [this] "persistent index on disk")
-  (close-vecs [this] "free the in memory index")
-  (closed? [this] "return true if this index is closed")
-  (clear-vecs [this] "close and remove this index")
-  (vecs-info [this] "return a map of info about this index")
-  (vec-indexed? [this vec-ref] "test if a rec-ref is in the index")
-  (search-vec [this query-vec] [this query-vec opts]
-    "search vector, return found vec-refs"))
 
 (defn- vec-save-key* [fname] (->> fname hash (str "vec-save-") keyword))
 
@@ -171,7 +159,7 @@
 (deftype AsyncVecSave [vec-index fname]
   IAsyncWork
   (work-key [_] (vec-save-key fname))
-  (do-work [_] (when-not (closed? vec-index) (persist-vecs vec-index)))
+  (do-work [_] (when-not (i/vec-closed? vec-index) (i/persist-vecs vec-index)))
   (combine [_] first)
   (callback [_] nil))
 
@@ -198,38 +186,38 @@
       (add index quantization vec-id vec-arr)
       (a/exec (a/get-executor) (AsyncVecSave. this fname))
       (.put vecs vec-id vec-ref)
-      (l/transact-kv
+      (i/transact-kv
         lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])
       vec-id))
 
   (get-vec [_ vec-ref]
-    (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
+    (let [ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
       (for [^long id ids]
         (get-vec* index id quantization dimensions))))
 
   (remove-vec [this vec-ref]
-    (let [ids (l/get-list lmdb vecs-dbi vec-ref :data :id)]
+    (let [ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
       (doseq [^long id ids]
         (VecIdx/remove index id)
         (.remove vecs id))
       (a/exec (a/get-executor) (AsyncVecSave. this fname))
-      (l/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
+      (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
 
   (persist-vecs [_] (when-not @closed? (VecIdx/save index fname)))
 
   (close-vecs [this]
-    (when-not (.closed? this)
+    (when-not (.vec-closed? this)
       (.persist_vecs this)
       (vreset! closed? true)
       (swap! l/vector-indices dissoc fname)
       (VecIdx/free index)))
 
-  (closed? [_] @closed?)
+  (vec-closed? [_] @closed?)
 
   (clear-vecs [this]
     (.close-vecs this)
     (.empty vecs)
-    (l/clear-dbi lmdb vecs-dbi)
+    (i/clear-dbi lmdb vecs-dbi)
     (u/delete-files fname))
 
   (vecs-info [_]
@@ -246,7 +234,7 @@
        :expansion-add    expansion-add
        :expansion-search expansion-search}))
 
-  (vec-indexed? [_ vec-ref] (l/get-value lmdb vecs-dbi vec-ref))
+  (vec-indexed? [_ vec-ref] (i/get-value lmdb vecs-dbi vec-ref))
 
   (search-vec [this query-vec]
     (.search-vec this query-vec {}))
@@ -274,12 +262,12 @@
         (let [new (new-vector-index lmdb opts)
               dis (DataInputStream. (FileInputStream. ^String dfname))]
           (doseq [[vec-ref vec-data] (nippy/thaw-from-in! dis)]
-            (add-vec new vec-ref vec-data))
+            (i/add-vec new vec-ref vec-data))
           (.close dis)
           (u/delete-files dfname)
           new))
       (catch Exception e
-        (u/raise "Unable to re-index vectors. " e {:dir (l/dir lmdb)})))))
+        (u/raise "Unable to re-index vectors. " e {:dir (i/env-dir lmdb)})))))
 
 (defn- get-ref
   [^VectorIndex index vec-filter vec-id _]

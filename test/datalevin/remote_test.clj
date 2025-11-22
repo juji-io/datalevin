@@ -3,6 +3,7 @@
    [datalevin.remote :as sut]
    [datalevin.storage :as st]
    [datalevin.interpret :as i]
+   [datalevin.interface :as if]
    [datalevin.datom :as d]
    [datalevin.core :as dc]
    [datalevin.db :as db]
@@ -57,12 +58,12 @@
     (let [dir   "dtlv://db-user:secret@localhost/ops-test"
           store (sut/open dir)]
       (is (instance? datalevin.remote.DatalogStore store))
-      (is (= c/implicit-schema (st/schema store)))
-      (is (= c/e0 (st/init-max-eid store)))
+      (is (= c/implicit-schema (if/schema store)))
+      (is (= c/e0 (if/init-max-eid store)))
       (let [a  :a/b
             v  (UUID/randomUUID)
             d  (d/datom c/e0 a v)
-            s  (assoc (st/schema store) a {:db/aid 3})
+            s  (assoc (if/schema store) a {:db/aid 3})
             b  :b/c
             p1 {:db/valueType :db.type/uuid}
             v1 (UUID/randomUUID)
@@ -73,107 +74,107 @@
             v2 (long (rand c/emax))
             d2 (d/datom c/e0 c v2)
             s2 (assoc s1 c (merge p2 {:db/aid 5}))
-            t1 (st/last-modified store)]
-        (st/load-datoms store [d])
-        (is (<= t1 (st/last-modified store)))
-        (is (= s (st/schema store)))
-        (is (= 1 (st/datom-count store :eav)))
-        (is (= 1 (st/datom-count store :ave)))
-        (is (= 0 (st/datom-count store :vae)))
-        (is (= [d] (st/fetch store d)))
-        (is (= [d] (st/slice store :eav d d)))
-        (is (st/populated? store :eav d d))
-        (is (= 1 (st/size store :eav d d)))
-        (is (= d (st/head store :eav d d)))
-        (st/swap-attr store b (i/inter-fn [& ms] (apply merge ms)) p1)
-        (st/load-datoms store [d1])
-        (is (= s1 (st/schema store)))
-        (is (= 2 (st/datom-count store :eav)))
-        (is (= 2 (st/datom-count store :ave)))
-        (is (= 0 (st/datom-count store :vae)))
-        (is (= [] (st/slice store :eav d (d/datom c/e0 :non-exist v1))))
-        (is (= 0 (st/size store :eav d (d/datom c/e0 :non-exist v1))))
-        (is (nil? (st/populated? store :eav d (d/datom c/e0 :non-exist v1))))
-        (is (= d (st/head store :eav d d1)))
-        (is (= 2 (st/size store :eav d d1)))
-        (is (= [d d1] (st/slice store :eav d d1)))
-        (is (= [d d1] (st/slice store :ave d d1)))
-        (is (= [d1 d] (st/rslice store :eav d1 d)))
-        (is (= [d d1] (st/slice store :eav
+            t1 (if/last-modified store)]
+        (if/load-datoms store [d])
+        (is (<= t1 (if/last-modified store)))
+        (is (= s (if/schema store)))
+        (is (= 1 (if/datom-count store :eav)))
+        (is (= 1 (if/datom-count store :ave)))
+        (is (= 0 (if/datom-count store :vae)))
+        (is (= [d] (if/fetch store d)))
+        (is (= [d] (if/slice store :eav d d)))
+        (is (if/populated? store :eav d d))
+        (is (= 1 (if/size store :eav d d)))
+        (is (= d (if/head store :eav d d)))
+        (if/swap-attr store b (i/inter-fn [& ms] (apply merge ms)) p1)
+        (if/load-datoms store [d1])
+        (is (= s1 (if/schema store)))
+        (is (= 2 (if/datom-count store :eav)))
+        (is (= 2 (if/datom-count store :ave)))
+        (is (= 0 (if/datom-count store :vae)))
+        (is (= [] (if/slice store :eav d (d/datom c/e0 :non-exist v1))))
+        (is (= 0 (if/size store :eav d (d/datom c/e0 :non-exist v1))))
+        (is (nil? (if/populated? store :eav d (d/datom c/e0 :non-exist v1))))
+        (is (= d (if/head store :eav d d1)))
+        (is (= 2 (if/size store :eav d d1)))
+        (is (= [d d1] (if/slice store :eav d d1)))
+        (is (= [d d1] (if/slice store :ave d d1)))
+        (is (= [d1 d] (if/rslice store :eav d1 d)))
+        (is (= [d d1] (if/slice store :eav
                                 (d/datom c/e0 a nil)
                                 (d/datom c/e0 nil nil))))
-        (is (= [d1 d] (st/rslice store :eav
+        (is (= [d1 d] (if/rslice store :eav
                                  (d/datom c/e0 b nil)
                                  (d/datom c/e0 nil nil))))
-        (is (= 1 (st/size-filter store :eav
+        (is (= 1 (if/size-filter store :eav
                                  (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
-        (is (= d (st/head-filter store :eav
+        (is (= d (if/head-filter store :eav
                                  (i/inter-fn [^Datom d]
                                              (when (= v (dc/datom-v d))
                                                d))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
-        (is (= [d] (st/slice-filter store :eav
+        (is (= [d] (if/slice-filter store :eav
                                     (i/inter-fn [^Datom d]
                                                 (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
-        (is (= [d1 d] (st/rslice store :ave d1 d)))
-        (is (= [d d1] (st/slice store :ave
+        (is (= [d1 d] (if/rslice store :ave d1 d)))
+        (is (= [d d1] (if/slice store :ave
                                 (d/datom c/e0 a nil)
                                 (d/datom c/e0 nil nil))))
-        (is (= [d1 d] (st/rslice store :ave
+        (is (= [d1 d] (if/rslice store :ave
                                  (d/datom c/e0 b nil)
                                  (d/datom c/e0 nil nil))))
-        (is (= [d] (st/slice-filter store :ave
+        (is (= [d] (if/slice-filter store :ave
                                     (i/inter-fn [^Datom d]
                                                 (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
-        (st/swap-attr store c (i/inter-fn [& ms] (apply merge ms)) p2)
-        (st/load-datoms store [d2])
-        (is (= s2 (st/schema store)))
-        (is (= 3 (st/datom-count store c/eav)))
-        (is (= 3 (st/datom-count store c/ave)))
-        (is (= 1 (st/datom-count store c/vae)))
-        (is (= [d2] (st/slice store :vae
+        (if/swap-attr store c (i/inter-fn [& ms] (apply merge ms)) p2)
+        (if/load-datoms store [d2])
+        (is (= s2 (if/schema store)))
+        (is (= 3 (if/datom-count store c/eav)))
+        (is (= 3 (if/datom-count store c/ave)))
+        (is (= 1 (if/datom-count store c/vae)))
+        (is (= [d2] (if/slice store :vae
                               (d/datom c/e0 nil v2)
                               (d/datom c/emax nil v2))))
-        (st/load-datoms store [(d/delete d)])
-        (is (= 2 (st/datom-count store c/eav)))
-        (is (= 2 (st/datom-count store c/ave)))
-        (is (= 1 (st/datom-count store c/vae)))
-        (st/close store)
-        (is (st/closed? store))
+        (if/load-datoms store [(d/delete d)])
+        (is (= 2 (if/datom-count store c/eav)))
+        (is (= 2 (if/datom-count store c/ave)))
+        (is (= 1 (if/datom-count store c/vae)))
+        (if/close store)
+        (is (if/closed? store))
         (let [store (sut/open dir)]
-          (is (= [d1] (st/slice store :eav d1 d1)))
-          (st/load-datoms store [(d/delete d1)])
-          (is (= 1 (st/datom-count store c/eav)))
-          (st/load-datoms store [d d1])
-          (is (= 3 (st/datom-count store c/eav)))
-          (st/close store))
+          (is (= [d1] (if/slice store :eav d1 d1)))
+          (if/load-datoms store [(d/delete d1)])
+          (is (= 1 (if/datom-count store c/eav)))
+          (if/load-datoms store [d d1])
+          (is (= 3 (if/datom-count store c/eav)))
+          (if/close store))
         (let [d     :d/e
               p3    {:db/valueType :db.type/long}
               s3    (assoc s2 d (merge p3 {:db/aid 6}))
               s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
               store (sut/open dir {d p3})]
-          (is (= s3 (st/schema store)))
-          (st/set-schema store {:f/g {:db/valueType :db.type/string}})
-          (is (= s4 (st/schema store)))
-          (st/close store)))))
+          (is (= s3 (if/schema store)))
+          (if/set-schema store {:f/g {:db/valueType :db.type/string}})
+          (is (= s4 (if/schema store)))
+          (if/close store)))))
 
   (testing "data viewer permission"
     (let [dir   "dtlv://viewer:secret@localhost/ops-test"
           store (sut/open dir)]
       (is (instance? datalevin.remote.DatalogStore store))
-      (is (not= c/implicit-schema (st/schema store)))
-      (is (= 3 (st/datom-count store c/eav)))
+      (is (not= c/implicit-schema (if/schema store)))
+      (is (= 3 (if/datom-count store c/eav)))
 
-      (is (thrown? Exception (st/set-schema store {:o/p {}})))
-      (is (thrown? Exception (st/load-datoms store [])))
-      (st/close store))))
+      (is (thrown? Exception (if/set-schema store {:o/p {}})))
+      (is (thrown? Exception (if/load-datoms store [])))
+      (if/close store))))
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
@@ -185,21 +186,21 @@
         pred  (i/inter-fn [d] (odd? (dc/datom-v d)))
         pred1 (i/inter-fn [d] (when (odd? (dc/datom-v d)) d))]
     (is (instance? datalevin.remote.DatalogStore store))
-    (st/load-datoms store txs)
+    (if/load-datoms store txs)
     (is (= (d/datom c/e0 :id 0)
-           (st/head store :eav (d/datom c/e0 :id nil)
+           (if/head store :eav (d/datom c/e0 :id nil)
                     (d/datom c/emax :id nil))))
     (is (= (d/datom (dec (+ c/e0 end) ) :id (dec (+ c/e0 end)))
-           (st/tail store :ave (d/datom c/emax :id nil)
+           (if/tail store :ave (d/datom c/emax :id nil)
                     (d/datom c/e0 :id nil))))
     (is (= (filter pred txs)
-           (st/slice-filter store :eav pred1
+           (if/slice-filter store :eav pred1
                             (d/datom c/e0 nil nil)
                             (d/datom c/emax nil nil))))
     (is (= (reverse txs)
-           (st/rslice store :eav
+           (if/rslice store :eav
                       (d/datom c/emax nil nil) (d/datom c/e0 nil nil))))
-    (st/close store)))
+    (if/close store)))
 
 (deftest same-client-multiple-dbs-test
   (let [uri-str "dtlv://datalevin:datalevin@localhost"

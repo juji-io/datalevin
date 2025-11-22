@@ -2,6 +2,7 @@
   (:require
    [datalevin.core :as d]
    [datalevin.lmdb :as l]
+   [datalevin.interface :as i]
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.test.core :refer [server-fixture]]
@@ -94,7 +95,7 @@
       (d/add-vec index 1 v1)
       (d/add-vec index 2 v2)
       (d/add-vec index 3 v3)
-      (let [new-index (l/re-index index {:dimensions   n
+      (let [new-index (i/re-index index {:dimensions   n
                                          :connectivity 32
                                          :metric-type  :cosine})
             new-info  (d/vector-index-info new-index)]

@@ -1,6 +1,7 @@
 (ns datalevin.vector-test
   (:require
    [datalevin.vector :as sut]
+   [datalevin.interface :as if]
    [datalevin.util :as u]
    [datalevin.lmdb :as l]
    [datalevin.core :as d]
@@ -28,7 +29,7 @@
           v1    (rand-float-vec n)
           v2    (rand-float-vec n)
           index ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})
-          info  (sut/vecs-info index)]
+          info  (if/vecs-info index)]
       (is (= (info :size) 0))
       (is (= (info :capacity) 0))
       (is (<= 0 (info :memory)))
@@ -41,60 +42,60 @@
       (is (= (info :expansion-add) c/default-expansion-add))
       (is (= (info :expansion-search) c/default-expansion-search))
 
-      (sut/add-vec index :ok v1)
-      (let [info1 (sut/vecs-info index)]
+      (if/add-vec index :ok v1)
+      (let [info1 (if/vecs-info index)]
         (is (= (info1 :size) 1))
         (is (<= 1 (info1 :capacity)))
         (is (<= 1 (info1 :memory))))
-      (is (sut/vec-indexed? index :ok))
-      (is (= [(vec v1)] (mapv vec (sut/get-vec index :ok))))
-      (is (= [:ok] (sut/search-vec index v1)))
-      (is (= [[:ok 0.0]] (sut/search-vec index v1 {:display :refs+dists})))
+      (is (if/vec-indexed? index :ok))
+      (is (= [(vec v1)] (mapv vec (if/get-vec index :ok))))
+      (is (= [:ok] (if/search-vec index v1)))
+      (is (= [[:ok 0.0]] (if/search-vec index v1 {:display :refs+dists})))
 
-      (sut/close-vecs index)
-      (sut/close-vecs index) ;; close should be idempotent
+      (if/close-vecs index)
+      (if/close-vecs index) ;; close should be idempotent
 
       (let [index1 ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})
-            info1  (sut/vecs-info index1)]
+            info1  (if/vecs-info index1)]
         (is (= (info1 :size) 1))
-        (is (sut/vec-indexed? index1 :ok))
-        (is (= [(vec v1)] (mapv vec (sut/get-vec index1 :ok))))
-        (is (= [:ok] (sut/search-vec index1 v1)))
-        (is (= [[:ok 0.0]] (sut/search-vec index1 v1 {:display :refs+dists})))
+        (is (if/vec-indexed? index1 :ok))
+        (is (= [(vec v1)] (mapv vec (if/get-vec index1 :ok))))
+        (is (= [:ok] (if/search-vec index1 v1)))
+        (is (= [[:ok 0.0]] (if/search-vec index1 v1 {:display :refs+dists})))
 
-        (sut/add-vec index1 :nice v2)
-        (let [info2 (sut/vecs-info index1)]
+        (if/add-vec index1 :nice v2)
+        (let [info2 (if/vecs-info index1)]
           (is (= 2 (info2 :size))))
-        (is (sut/vec-indexed? index1 :nice))
-        (is (= [(vec v1)] (mapv vec (sut/get-vec index1 :ok))))
-        (is (= [(vec v2)] (mapv vec (sut/get-vec index1 :nice))))
-        (is (= [:nice] (sut/search-vec index1 v2 {:top 1})))
-        (is (= [[:nice 0.0]] (sut/search-vec index1 v2 {:top 1 :display :refs+dists})))
-        (is (= [:nice :ok] (sut/search-vec index1 v2)))
+        (is (if/vec-indexed? index1 :nice))
+        (is (= [(vec v1)] (mapv vec (if/get-vec index1 :ok))))
+        (is (= [(vec v2)] (mapv vec (if/get-vec index1 :nice))))
+        (is (= [:nice] (if/search-vec index1 v2 {:top 1})))
+        (is (= [[:nice 0.0]] (if/search-vec index1 v2 {:top 1 :display :refs+dists})))
+        (is (= [:nice :ok] (if/search-vec index1 v2)))
 
-        (sut/remove-vec index1 :ok)
-        (is (= 1 (:size (sut/vecs-info index1))))
-        (is (not (sut/vec-indexed? index1 :ok)))
+        (if/remove-vec index1 :ok)
+        (is (= 1 (:size (if/vecs-info index1))))
+        (is (not (if/vec-indexed? index1 :ok)))
 
-        (is (= [(vec v2)] (mapv vec (sut/get-vec index1 :nice))))
-        (is (= [:nice] (sut/search-vec index1 v2)))
-        (is (= [[:nice 0.0]] (sut/search-vec index1 v2 {:display :refs+dists})))
+        (is (= [(vec v2)] (mapv vec (if/get-vec index1 :nice))))
+        (is (= [:nice] (if/search-vec index1 v2)))
+        (is (= [[:nice 0.0]] (if/search-vec index1 v2 {:display :refs+dists})))
 
-        (sut/close-vecs index1))
+        (if/close-vecs index1))
 
       (let [index2 ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})]
-        (is (= 1 (:size (sut/vecs-info index2))))
-        (is (sut/vec-indexed? index2 :nice))
-        (is (= [(vec v2)] (mapv vec (sut/get-vec index2 :nice))))
-        (is (= [:nice] (sut/search-vec index2 v2)))
-        (is (= [[:nice 0.0]] (sut/search-vec index2 v2 {:display :refs+dists})))
-        (sut/clear-vecs index2))
+        (is (= 1 (:size (if/vecs-info index2))))
+        (is (if/vec-indexed? index2 :nice))
+        (is (= [(vec v2)] (mapv vec (if/get-vec index2 :nice))))
+        (is (= [:nice] (if/search-vec index2 v2)))
+        (is (= [[:nice 0.0]] (if/search-vec index2 v2 {:display :refs+dists})))
+        (if/clear-vecs index2))
 
       (let [index3 ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})]
-        (is (= 0 (:size (sut/vecs-info index3))))
-        (is (= [] (mapv vec (sut/get-vec index3 :ok))))
-        (is (= [] (mapv vec (sut/get-vec index3 :nice))))
-        (sut/close-vecs index3))
+        (is (= 0 (:size (if/vecs-info index3))))
+        (is (= [] (mapv vec (if/get-vec index3 :ok))))
+        (is (= [] (mapv vec (if/get-vec index3 :nice))))
+        (if/close-vecs index3))
 
       (d/close-kv lmdb)
       (u/delete-files dir))))
@@ -108,14 +109,14 @@
           v2    (rand-float-vec n)
           v3    (rand-float-vec n)
           index ^VectorIndex (sut/new-vector-index lmdb {:dimensions n})
-          info  (sut/vecs-info index)]
-      (sut/add-vec index 1 v1)
-      (sut/add-vec index 2 v2)
-      (sut/add-vec index 3 v3)
-      (let [new-index (l/re-index index {:dimensions   n
-                                         :connectivity 32
-                                         :metric-type  :cosine})
-            new-info  (sut/vecs-info new-index)]
+          info  (if/vecs-info index)]
+      (if/add-vec index 1 v1)
+      (if/add-vec index 2 v2)
+      (if/add-vec index 3 v3)
+      (let [new-index (if/re-index index {:dimensions   n
+                                          :connectivity 32
+                                          :metric-type  :cosine})
+            new-info  (if/vecs-info new-index)]
         (is (= (new-info :size) 3))
         (is (<= 3 (new-info :capacity)))
         (is (<= 0 (new-info :memory)))
@@ -128,15 +129,15 @@
         (is (= (info :expansion-add) (new-info :expansion-add)))
         (is (= (info :expansion-search) (new-info :expansion-search)))
 
-        (is (sut/vec-indexed? new-index 1))
-        (is (sut/vec-indexed? new-index 2))
-        (is (sut/vec-indexed? new-index 3))
-        (is (= [(vec v1)] (mapv vec (sut/get-vec new-index 1))))
-        (is (= [(vec v2)] (mapv vec (sut/get-vec new-index 2))))
-        (is (= [(vec v3)] (mapv vec (sut/get-vec new-index 3))))
-        (is (= [1] (sut/search-vec new-index v1 {:top 1})))
-        (is (= [2] (sut/search-vec new-index v2 {:top 1})))
-        (is (= [3] (sut/search-vec new-index v3 {:top 1})))
+        (is (if/vec-indexed? new-index 1))
+        (is (if/vec-indexed? new-index 2))
+        (is (if/vec-indexed? new-index 3))
+        (is (= [(vec v1)] (mapv vec (if/get-vec new-index 1))))
+        (is (= [(vec v2)] (mapv vec (if/get-vec new-index 2))))
+        (is (= [(vec v3)] (mapv vec (if/get-vec new-index 3))))
+        (is (= [1] (if/search-vec new-index v1 {:top 1})))
+        (is (= [2] (if/search-vec new-index v2 {:top 1})))
+        (is (= [3] (if/search-vec new-index v3 {:top 1})))
         (d/close-vector-index new-index))
 
       (d/close-kv lmdb)

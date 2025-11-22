@@ -15,15 +15,21 @@
    [clojure.string :as s]
    [clojure.pprint :as p]
    [taoensso.nippy :as nippy]
+   [datalevin.async :as a]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.compress :as cp]
    [datalevin.buffer :as bf]
-   [datalevin.constants :as c])
+   [datalevin.constants :as c]
+   [datalevin.interface
+    :refer [close-kv list-dbis list-range-count range-count visit
+            visit-list-range entries get-range open-dbi transact-kv clear-dbi
+            env-dir copy list-dbi? open-transact-kv close-transact-kv]])
   (:import
-   [clojure.lang IPersistentVector]
+   [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
    [datalevin.cpp Util]
+   [clojure.lang IPersistentVector]
    [java.nio ByteBuffer]
    [java.io Writer PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
@@ -84,81 +90,6 @@
   (k [this] "Key of a key value pair")
   (v [this] "Value of a key value pair"))
 
-(defprotocol IList
-  (put-list-items [db list-name k vs k-type v-type]
-    "put some list items by a key")
-  (del-list-items
-    [db list-name k k-type]
-    [db list-name k vs k-type v-type]
-    "delete a list or some items of a list by the key")
-  (get-list [db list-name k k-type v-type] "get a list by key")
-  (visit-list
-    [db list-name visitor k k-type]
-    [db list-name visitor k k-type v-type]
-    [db list-name visitor k k-type v-type raw-pred?]
-    "visit a list, presumably for side effects")
-  (list-count [db list-name k k-type]
-    "return the number of items in the list of a key")
-  (in-list? [db list-name k v k-type v-type]
-    "return true if an item is in the value list of the key")
-  (near-list [db list-name k v k-type v-type]
-    "return the value buf that is equal to or greater than the given
-     value of the given key, return nil if not found")
-  (list-range
-    [db list-name k-range k-type v-range v-type]
-    "Return a seq of key-values in the specified value range of the
-     specified key range")
-  (list-range-first
-    [db list-name k-range k-type v-range v-type]
-    "Return the first key-value pair in the specified value range of the
-     specified key range")
-  (list-range-first-n
-    [db list-name n k-range k-type v-range v-type]
-    "Return the first n key-value pairs in the specified value range of the
-     specified key range")
-  (list-range-count
-    [db list-name k-range k-type v-range v-type]
-    [db list-name k-range k-type v-range v-type cap]
-    "Return the number of key-values in the specified value range of the
-     specified key range")
-  (list-range-filter
-    [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type raw-pred?]
-    "Return a seq of key-values in the specified value range of the
-     specified key range, filtered by pred call")
-  (list-range-keep
-    [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type raw-pred?]
-    "Return the non-nil results of pred calls in
-     the specified value range of the specified key range")
-  (list-range-some
-    [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type raw-pred?]
-    "Return the first logical true result of pred calls in
-     the specified value range of the specified key range")
-  (list-range-filter-count
-    [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type raw-pred?]
-    [db list-name pred k-range k-type v-range v-type raw-pred? cap]
-    "Return the count of key-values in the specified value range of the
-     specified key range for those pred call is true")
-  (visit-list-range
-    [db list-name visitor k-range k-type v-range v-type]
-    [db list-name visitor k-range k-type v-range v-type raw-pred?]
-    "visit a list range, presumably for side effects of vistor call")
-  (visit-list-key-range
-    [db list-name visitor k-range k-type v-type]
-    [db list-name visitor k-range k-type v-type raw-pred?]
-    "visit a list key range, presumably for side effects of vistor call")
-  (visit-list-sample
-    [db list-name indices budget step visitor k-range k-type v-type]
-    [db list-name indices budget step visitor k-range k-type v-type
-     raw-pred?]
-    "visit a list range, presumably for side effects of vistor call")
-  (operate-list-val-range
-    [db list-name operator v-range v-type]
-    "Take an operator function that operates a ListRandKeyValIterable"))
-
 (defprotocol IListRandKeyValIterable
   (val-iterator [this]
     "Return an IListRandKeyValIterator that can seek random key and iterate
@@ -169,171 +100,12 @@
   (has-next-val [this])
   (next-val [this]))
 
-(defprotocol ILMDB
-  (check-ready [db] "check if db is ready to be operated on")
-  (close-kv [db] "Close this LMDB env")
-  (closed-kv? [db] "Return true if this LMDB env is closed")
-  (dir [db] "Return the directory path of LMDB env")
-  (opts [db] "Return the option map of LMDB env")
-  (dbi-opts [db dbi-name] "Return option map of a given DBI")
-  (open-dbi
-    [db dbi-name]
-    [db dbi-name opts]
-    "Open a named DBI (i.e. sub-db) in the LMDB env")
-
-  (open-list-dbi
-    [db list-name]
-    [db list-name opts]
-    "Open a named inverted list, a special dbi, that permits a list of
-     values for the same key, with some corresponding special functions")
-
-  (clear-dbi [db dbi-name]
-    "Clear data in the DBI (i.e sub-db), but leave it open")
-  (drop-dbi [db dbi-name]
-    "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [db dbi-name] [db dbi-name create?])
-  (list-dbis [db] "List the names of the sub-databases")
-  (copy
-    [db dest]
-    [db dest compact?]
-    "Copy the database to a destination directory path, optionally compact
-     while copying, default not compact. ")
-  (stat
-    [db]
-    [db dbi-name]
-    "Return the statitics of the unnamed top level database or a named DBI
-     (i.e. sub-database) as a map")
-  (entries [db dbi-name]
-    "Get the number of data entries in a DBI (i.e. sub-db)")
-  (get-rtx [db])
-  (return-rtx [db rtx])
-  (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
-  (close-transact-kv [db] "close and commit the read/write rtx")
-  (abort-transact-kv [db] "abort the explicit read/write rtx")
-  (transact-kv
-    [db txs]
-    [db dbi-name txs]
-    [db dbi-name txs k-type]
-    [db dbi-name txs k-type v-type]
-    "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
-  (set-env-flags [db ks on-off]
-    "Set env flags, ks are flags to be changed, on-off is true to set, false to clear.")
-  (get-env-flags [db]
-    "return the set of flags that are set")
-  (sync [db] [db force]
-    "force synchronous flush to disk if force (int) is non-zero, otherwise respect env flags")
-  (get-value
-    [db dbi-name k]
-    [db dbi-name k k-type]
-    [db dbi-name k k-type v-type]
-    [db dbi-name k k-type v-type ignore-key?]
-    "Get kv pair of the specified key `k`. ")
-  (get-first
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
-    "Return the first kv pair in the specified key range;")
-  (get-first-n
-    [db dbi-name n k-range]
-    [db dbi-name n k-range k-type]
-    [db dbi-name n k-range k-type v-type]
-    [db dbi-name n k-range k-type v-type ignore-key?]
-    "Return the first n kv pairs in the specified key range;")
-  (range-seq
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
-    [db dbi-name k-range k-type v-type ignore-key? opts]
-    "Return a lazy seq of kv pairs in the specified key range;")
-  (get-range
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
-    "Return an eager seq of kv pairs in the specified key range;")
-  (key-range
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    "Return an eager seq of keys in the specified key range, does not read
-values;")
-  (visit-key-range
-    [db dbi-name visitor k-range]
-    [db dbi-name visitor k-range k-type]
-    [db dbi-name visitor k-range k-type raw-pred?]
-    "Visit keys in the specified key range for side effects. Return nil.")
-  (key-range-count
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    [db dbi-name k-range k-type cap]
-    "Return the number of keys in the specified key range, does not read
-values;")
-  (key-range-list-count
-    [db dbi-name k-range k-type]
-    [db dbi-name k-range k-type cap]
-    [db dbi-name k-range k-type cap budget]
-    "Return the total number of list items in the specified key range, does not read values;")
-  (range-count
-    [db dbi-name k-range]
-    [db dbi-name k-range k-type]
-    "Return the number of kv pairs in the specified key range, does not process
-     the kv pairs.")
-  (get-some
-    [db dbi-name pred k-range]
-    [db dbi-name pred k-range k-type]
-    [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type ignore-key?]
-    [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-    "Return the first kv pair that has logical true value of pred call")
-  (range-filter
-    [db dbi-name pred k-range]
-    [db dbi-name pred k-range k-type]
-    [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type ignore-key?]
-    [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-    "Return a seq of kv pair in the specified key range, for only those
-     return true value for pred call.")
-  (range-keep
-    [db dbi-name pred k-range]
-    [db dbi-name pred k-range k-type]
-    [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type raw-pred?]
-    "Return a seq of non-nil results of pred calls in the specified key
-     range.")
-  (range-some
-    [db dbi-name pred k-range]
-    [db dbi-name pred k-range k-type]
-    [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type raw-pred?]
-    "Return the first logical true result of pred calls in the specified key
-     range.")
-  (range-filter-count
-    [db dbi-name pred k-range]
-    [db dbi-name pred k-range k-type]
-    [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type raw-pred?]
-    "Return the number of kv pairs in the specified key range, for only those
-     return true value for pred call")
-  (visit
-    [db dbi-name visitor k-range]
-    [db dbi-name visitor k-range k-type]
-    [db dbi-name visitor k-range k-type v-type]
-    [db dbi-name visitor k-range k-type v-type raw-pred?]
-    "Call `visitor` function on each k, v pairs in the specified key range,
-     presumably for side effects of visitor call. Return nil."))
-
 (defprotocol IWriting
   "Used to mark the db so that it should use the write-txn"
   (writing? [db] "return true if this db should use write-txn")
   (write-txn [db]
     "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
-
-;; We have consolidated bindings to JavaCPP
-(defn- pick-binding [] :cpp)
-
-(defmulti open-kv (constantly (pick-binding)))
 
 (deftype RangeContext [^boolean forward?
                        ^boolean include-start?
@@ -440,8 +212,12 @@ values;")
        (set (list-dbis lmdb)))
      (dump-dbis-list lmdb))))
 
-(defn list-dbi? [db dbi-name]
-  (get-in (dbi-opts db dbi-name) [:flags :dupsort]))
+
+
+;; We have consolidated bindings to JavaCPP
+(defn- pick-binding [] :cpp)
+
+(defmulti open-kv (constantly (pick-binding)))
 
 (defn sample-key-freqs
   "return a long array of frequencies of 2 bytes symbols if there are enough
@@ -596,17 +372,13 @@ values;")
     (load-all db in true)
     (.close f)))
 
-(defprotocol IAdmin
-  "Some administrative functions"
-  (re-index [db opts] [db schema opts] "dump and reload the data"))
-
 (defn re-index*
   [db opts]
   (try
     (let [bk    (when (:backup? opts)
                   (u/tmp-dir
                     (str "dtlv-re-index-" (System/currentTimeMillis))))
-          d     (dir db)
+          d     (env-dir db)
           dfile (str d u/+separator+ "kv-dump")]
       (when bk (copy db bk true))
       (dump db dfile)
@@ -617,7 +389,7 @@ values;")
         (close-kv db))
       (open-kv d opts))
     (catch Exception e
-      (u/raise "Unable to re-index" e {:dir (dir db)}))))
+      (u/raise "Unable to re-index" e {:dir (env-dir db)}))))
 
 (defn resized? [e] (:resized (ex-data e)))
 
@@ -659,3 +431,38 @@ values;")
 
 ;; check if db is backed by DLMDB (rather than stock LMDB)
 (defonce dlmdb? (memoize (fn [] (s/starts-with? (Util/version) "D"))))
+
+(declare kv-tx-combine)
+
+(defn- kv-work-key* [dir] (->> dir hash (str "kv-tx") keyword))
+
+(def kv-work-key (memoize kv-work-key*))
+
+(deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb]
+  IAsyncWork
+  (work-key [_] (kv-work-key (env-dir lmdb)))
+  (do-work [_] (transact-kv lmdb dbi-name txs k-type v-type))
+  (combine [_] kv-tx-combine)
+  (callback [_] cb))
+
+(defn- kv-tx-combine
+  [coll]
+  (let [^AsyncKVTx fw (first coll)]
+    (->AsyncKVTx (.-lmdb fw)
+                 (.-dbi-name fw)
+                 (into [] (comp (map #(.-txs ^AsyncKVTx %)) cat) coll)
+                 (.-k-type fw)
+                 (.-v-type fw)
+                 (.-cb fw))))
+
+(defn transact-kv-async
+  ([this txs] (transact-kv-async this nil txs))
+  ([this dbi-name txs]
+   (transact-kv-async this dbi-name txs :data :data))
+  ([this dbi-name txs k-type]
+   (transact-kv-async this dbi-name txs k-type :data))
+  ([this dbi-name txs k-type v-type]
+   (transact-kv-async this dbi-name txs k-type v-type nil))
+  ([this dbi-name txs k-type v-type callback]
+   (a/exec (a/get-executor)
+           (->AsyncKVTx this dbi-name txs k-type v-type callback))))

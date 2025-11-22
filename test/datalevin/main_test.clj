@@ -4,6 +4,7 @@
    [datalevin.util :as u]
    [datalevin.core :as d]
    [datalevin.interpret :as i]
+   [datalevin.interface :as if]
    [datalevin.lmdb :as l]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [taoensso.nippy :as nippy]
@@ -72,7 +73,7 @@
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (sut/copy src dst true)
-    (is (= (l/stat db)
+    (is (= (if/stat db)
            (if (u/apple-silicon?)
              {:psize          16384,
               :depth          1,
@@ -87,9 +88,9 @@
               :overflow-pages 0,
               :entries        2})))
     ;; TODO
-    #_(doseq [i (l/list-dbis db)]
+    #_(doseq [i (if/list-dbis db)]
         (println i)
-        (is (= (l/stat db i)
+        (is (= (if/stat db i)
                (if (u/apple-silicon?)
                  {:psize          16384,
                   :depth          1,

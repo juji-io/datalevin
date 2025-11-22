@@ -13,7 +13,8 @@
    [datalevin.bits :as b]
    [datalevin.spill :as sp]
    [datalevin.util :as u :refer [raise]]
-   [datalevin.lmdb :as l])
+   [datalevin.lmdb :as l]
+   [datalevin.interface :as i])
   (:import
    [datalevin.spill SpillableVector]
    [clojure.lang Seqable IReduceInit]
@@ -23,11 +24,11 @@
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
-  (l/check-ready lmdb)
-  (let [dbi (l/get-dbi lmdb dbi-name false)
+  (i/check-ready lmdb)
+  (let [dbi (i/get-dbi lmdb dbi-name false)
         rtx (if (l/writing? lmdb)
               @(l/write-txn lmdb)
-              (l/get-rtx lmdb))]
+              (i/get-rtx lmdb))]
     (try
       (l/put-key rtx k k-type)
       (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
@@ -39,18 +40,18 @@
                {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
       (finally
         (when-not (l/writing? lmdb)
-          (l/return-rtx lmdb rtx))))))
+          (i/return-rtx lmdb rtx))))))
 
 (defmacro scan
   ([call error]
    `(scan ~call ~error false))
   ([call error keep-rtx?]
    `(do
-      (l/check-ready ~'lmdb)
-      (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
+      (i/check-ready ~'lmdb)
+      (let [~'dbi (i/get-dbi ~'lmdb ~'dbi-name false)
             ~'rtx (if (l/writing? ~'lmdb)
                     @(l/write-txn ~'lmdb)
-                    (l/get-rtx ~'lmdb))
+                    (i/get-rtx ~'lmdb))
             ~'cur (l/get-cursor ~'dbi ~'rtx)]
         (try
           ~call
@@ -61,7 +62,7 @@
               (l/return-cursor ~'dbi ~'cur)
               (l/close-cursor ~'dbi ~'cur))
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
-              (l/return-rtx ~'lmdb ~'rtx))))))))
+              (i/return-rtx ~'lmdb ~'rtx))))))))
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
@@ -87,7 +88,7 @@
                 (.iterator
                   ^Iterable (l/iterate-kv dbi rtx cur k-range k-type v-type))]
       (let [^SpillableVector holder
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+            (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
         (loop [i 0]
           (if (and (< i ^long n) (.hasNext ^Iterator iter))
             (let [kv (.next ^Iterator iter)
@@ -111,7 +112,7 @@
                 (.iterator
                   ^Iterable (l/iterate-kv dbi rtx cur k-range k-type v-type))]
       (let [^SpillableVector holder
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+            (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
         (loop []
           (if (.hasNext ^Iterator iter)
             (let [kv (.next ^Iterator iter)
@@ -178,7 +179,7 @@
       AutoCloseable
       (close [_]
         (.close ^AutoCloseable iter)
-        (l/return-rtx lmdb rtx))
+        (i/return-rtx lmdb rtx))
 
       Object
       (toString [this] (str (apply list this))))))
@@ -201,7 +202,7 @@
                 (.iterator
                   ^Iterable (l/iterate-key dbi rtx cur k-range k-type))]
       (let [^SpillableVector holder
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+            (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
         (loop []
           (if (.hasNext ^Iterator iter)
             (let [kv (.next ^Iterator iter)]
@@ -263,7 +264,7 @@
           "Cannot ignore both key and value")
   (scan
     (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+          (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
       (with-open [^AutoCloseable iter
                   (.iterator
                     ^Iterable (l/iterate-kv dbi rtx cur k-range k-type v-type))]
@@ -313,7 +314,7 @@
 (defn range-keep
   [lmdb dbi-name pred k-range k-type v-type raw-pred?]
   (scan
-    (let [holder (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+    (let [holder (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))
 
           iterable (l/iterate-kv dbi rtx cur k-range k-type v-type)]
       (range-keep* iterable holder pred k-type v-type raw-pred?))
@@ -407,7 +408,7 @@
   [lmdb dbi-name k-range k-type v-range v-type]
   (scan
     (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+          (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
       (with-open [^AutoCloseable iter
                   (.iterator
                     ^Iterable (l/iterate-list dbi rtx cur k-range k-type
@@ -439,7 +440,7 @@
   [lmdb dbi-name n k-range k-type v-range v-type]
   (scan
     (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+          (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
       (with-open [^AutoCloseable iter
                   (.iterator
                     ^Iterable (l/iterate-list dbi rtx cur k-range k-type
@@ -458,7 +459,7 @@
   [lmdb dbi-name pred k-range k-type v-range v-type raw-pred?]
   (scan
     (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+          (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
       (with-open [^AutoCloseable iter
                   (.iterator
                     ^Iterable (l/iterate-list dbi rtx cur k-range k-type
@@ -488,7 +489,7 @@
   [lmdb dbi-name pred k-range k-type v-range v-type raw-pred?]
   (scan
     (let [^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+          (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))
           iterable (l/iterate-list dbi rtx cur k-range k-type
                                    v-range v-type)]
       (range-keep* iterable holder pred k-type v-type raw-pred?))
@@ -585,7 +586,7 @@
 (defn get-list*
   [lmdb iter k kt vt]
   (let [^SpillableVector holder
-        (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+        (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
     (loop [next? (l/seek-key iter k kt)]
       (when next?
         (.cons holder (b/read-buffer (l/next-val iter) vt))

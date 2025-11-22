@@ -4,6 +4,7 @@
    [datalevin.search-utils :as su]
    [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
+   [datalevin.interface :as if]
    [datalevin.core :as d]
    [datalevin.constants :as c]
    [datalevin.analyzer :as a]
@@ -81,9 +82,9 @@
   (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb)]
-    (add-docs sut/add-doc engine)
-    (is (= [:doc1 :doc5] (sut/search engine "dogs")))
-    (l/close-kv lmdb)
+    (add-docs if/add-doc engine)
+    (is (= [:doc1 :doc5] (if/search engine "dogs")))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest blank-analyzer-test
@@ -97,20 +98,20 @@
         engine         (sut/new-search-engine
                          lmdb {:analyzer        blank-analyzer
                                :index-position? true})]
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
     (is (= [[:doc1 [["dogs." [43]]]]]
-           (sut/search engine "dogs." {:display :offsets})))
-    (is (= [:doc5] (sut/search engine "dogs")))
-    (l/close-kv lmdb)
+           (if/search engine "dogs." {:display :offsets})))
+    (is (= [:doc5] (if/search engine "dogs")))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest boolean-expression-test
   (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb)]
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
 
-    (are [query result] (= result (set (sut/search engine query)))
+    (are [query result] (= result (set (if/search engine query)))
       [:and "red" [:not "fleece"]]          #{:doc1 :doc5}
       [:and "red" [:not "nonexistentterm"]] #{:doc1 :doc2 :doc4 :doc5}
       [:and "man" "whale"]                  #{:doc3}
@@ -129,7 +130,7 @@
       #{:doc1 :doc2 :doc4 :doc5}
       )
 
-    (are [query] (empty? (sut/search engine query))
+    (are [query] (empty? (if/search engine query))
       ""
       "  "
       "nonexistentterm"
@@ -138,16 +139,16 @@
       [:or "" ""]
       )
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest phrase-test
   (let [dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb {:index-position? true})]
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
 
-    (are [query result] (= result (set (sut/search engine query)))
+    (are [query result] (= result (set (if/search engine query)))
       {:phrase "red dogs"}                               #{:doc1 :doc5}
       [:and "red" [:not {:phrase "red fox"}]]            #{:doc2 :doc4 :doc5}
       [:and {:phrase "red dogs"} {:phrase "red fox"}]    #{:doc1}
@@ -167,13 +168,13 @@
       #{:doc2 :doc3}
       )
 
-    (are [query] (empty? (sut/search engine query))
+    (are [query] (empty? (if/search engine query))
       {:phrase "nonexistent phrase"}
       [:and "red" {:phrase "nonexistent term"}]
       [:and "fleece" {:phrase "red dogs"}]
       )
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest index-test
@@ -186,21 +187,21 @@
         docs-dbi      (.-docs-dbi engine)
         positions-dbi (.-positions-dbi engine)]
 
-    (is (= (sut/doc-count engine) 0))
-    (is (not (sut/doc-indexed? engine :doc4)))
+    (is (= (if/doc-count engine) 0))
+    (is (not (if/doc-indexed? engine :doc4)))
 
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
 
-    (is (sut/doc-indexed? engine :doc4))
-    (is (not (sut/doc-indexed? engine :non-existent)))
-    (is (not (sut/doc-indexed? engine "non-existent")))
+    (is (if/doc-indexed? engine :doc4))
+    (is (not (if/doc-indexed? engine :non-existent)))
+    (is (not (if/doc-indexed? engine "non-existent")))
 
-    (is (= (sut/doc-count engine) 5))
+    (is (= (if/doc-count engine) 5))
 
     (let [[tid _ ^SparseIntArrayList sl]
-          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-      (is (= (l/range-count lmdb terms-dbi [:all] :string) 32))
-      (is (= (l/get-value lmdb terms-dbi "red" :string :int) tid))
+          (if/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= (if/range-count lmdb terms-dbi [:all] :string) 32))
+      (is (= (if/get-value lmdb terms-dbi "red" :string :int) tid))
 
       (is (sl/contains-index? sl 1))
       (is (sl/contains-index? sl 5))
@@ -209,53 +210,53 @@
 
       (is (= (count
                (first
-                 (l/get-value lmdb positions-dbi [1 tid] :int-int :pos-info)))
+                 (if/get-value lmdb positions-dbi [1 tid] :int-int :pos-info)))
              (sl/get sl 1)
              2))
       (is (= (count
                (peek
-                 (l/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
+                 (if/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
              (sl/get sl 2)
              1))
 
-      (is (nil? (l/get-value lmdb positions-dbi [3 tid] :int-int :pos-info)))
+      (is (nil? (if/get-value lmdb positions-dbi [3 tid] :int-int :pos-info)))
       (is (nil? (sl/get sl 3)))
 
       (is (= (map #(apply vector %)
-                  (l/get-value lmdb positions-dbi [5 tid] :int-int :pos-info))
+                  (if/get-value lmdb positions-dbi [5 tid] :int-int :pos-info))
              [[9] [48]]))
-      (is (= (update (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi :doc1 :data :doc-info true)
                      2 count)
              [1 7 0]))
-      (is (= (update (l/get-value lmdb docs-dbi :doc2 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi :doc2 :data :doc-info true)
                      2 count)
              [2 8 0]))
-      (is (= (update (l/get-value lmdb docs-dbi :doc3 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi :doc3 :data :doc-info true)
                      2 count)
              [3 6 0]))
-      (is (= (update (l/get-value lmdb docs-dbi :doc4 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi :doc4 :data :doc-info true)
                      2 count)
              [4 7 0]))
-      (is (= (update (l/get-value lmdb docs-dbi :doc5 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi :doc5 :data :doc-info true)
                      2 count)
              [5 9 0]))
-      (is (= (l/range-count lmdb docs-dbi [:all]) 5))
+      (is (= (if/range-count lmdb docs-dbi [:all]) 5))
 
-      (sut/remove-doc engine :doc1)
+      (if/remove-doc engine :doc1)
 
-      (is (= (sut/doc-count engine) 4))
+      (is (= (if/doc-count engine) 4))
 
       (let [[tid _ ^SparseIntArrayList sl]
-            (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-        (is (not (sut/doc-indexed? engine :doc1)))
-        (is (= (l/range-count lmdb docs-dbi [:all]) 4))
+            (if/get-value lmdb terms-dbi "red" :string :term-info true)]
+        (is (not (if/doc-indexed? engine :doc1)))
+        (is (= (if/range-count lmdb docs-dbi [:all]) 4))
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
-        (is (nil? (l/get-value lmdb positions-dbi [1 tid] :int-int))))
+        (is (nil? (if/get-value lmdb positions-dbi [1 tid] :int-int))))
 
-      (sut/clear-docs engine)
-      (is (= (sut/doc-count engine) 0)))
-    (l/close-kv lmdb)
+      (if/clear-docs engine)
+      (is (= (if/doc-count engine) 0)))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest search-test
@@ -264,34 +265,34 @@
                                (conj c/default-env-flags :nosync)})
         engine ^SearchEngine (sut/new-search-engine
                                lmdb {:index-position? true})]
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
 
-    (is (= [:doc3 :doc2] (sut/search engine "mary moby")))
-    (is (= [:doc1 :doc4 :doc2 :doc5] (sut/search engine "red cat")))
-    (is (= (sut/search engine "cap" {:display :offsets})
+    (is (= [:doc3 :doc2] (if/search engine "mary moby")))
+    (is (= [:doc1 :doc4 :doc2 :doc5] (if/search engine "red cat")))
+    (is (= (if/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
-    (is (= (sut/search engine "notaword cap" {:display :offsets})
+    (is (= (if/search engine "notaword cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
-    (is (= (sut/search engine "fleece" {:display :offsets})
+    (is (= (if/search engine "fleece" {:display :offsets})
            [[:doc4 [["fleece" [22]]]] [:doc2 [["fleece" [29]]]]]))
-    (is (= (sut/search engine "red fox" {:display :offsets})
+    (is (= (if/search engine "red fox" {:display :offsets})
            [[:doc1 [["fox" [14]] ["red" [10 39]]]]
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]
             [:doc5 [["red" [48]]]]]))
-    (is (= (sut/search engine "red fox" {:doc-filter #(not= % :doc2)})
+    (is (= (if/search engine "red fox" {:doc-filter #(not= % :doc2)})
            [:doc1 :doc4 :doc5]))
-    (is (= (sut/search engine "red dogs" {:display :offsets})
+    (is (= (if/search engine "red dogs" {:display :offsets})
            [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
             [:doc5 [["dogs" [52]] ["red" [48]]]]
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]]))
-    (is (= (sut/search engine "solar cap" {:display :offsets})
+    (is (= (if/search engine "solar cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
-    (is (empty? (sut/search engine "")))
-    (is (empty? (sut/search engine "solar")))
-    (is (empty? (sut/search engine "solar wind")))
-    (l/close-kv lmdb)
+    (is (empty? (if/search engine "")))
+    (is (empty? (if/search engine "solar")))
+    (is (empty? (if/search engine "solar wind")))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest search-143-test
@@ -304,15 +305,15 @@
         positions-dbi (.-positions-dbi engine)
         docs-dbi      (.-docs-dbi engine)]
 
-    (sut/add-doc engine 1 "a tent")
-    (sut/add-doc engine 2 "tent")
+    (if/add-doc engine 1 "a tent")
+    (if/add-doc engine 2 "tent")
 
-    (is (= (sut/doc-count engine) 2))
+    (is (= (if/doc-count engine) 2))
 
     (let [[tid mw ^SparseIntArrayList sl]
-          (l/get-value lmdb terms-dbi "tent" :string :term-info true)]
-      (is (= (l/range-count lmdb terms-dbi [:all] :string) 1))
-      (is (= (l/get-value lmdb terms-dbi "tent" :string :int) tid))
+          (if/get-value lmdb terms-dbi "tent" :string :term-info true)]
+      (is (= (if/range-count lmdb terms-dbi [:all] :string) 1))
+      (is (= (if/get-value lmdb terms-dbi "tent" :string :int) tid))
       (is (= mw 1.0))
 
       (is (sl/contains-index? sl 1))
@@ -321,25 +322,25 @@
 
       (is (= (count
                (peek
-                 (l/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
+                 (if/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
              (sl/get sl 2)
              1))
 
-      (is (nil? (l/get-value lmdb positions-dbi [3 tid] :int-int)))
+      (is (nil? (if/get-value lmdb positions-dbi [3 tid] :int-int)))
       (is (nil? (sl/get sl 3)))
 
       (is (= (map #(apply vector %)
-                  (l/get-value lmdb positions-dbi [1 tid] :int-int :pos-info))
+                  (if/get-value lmdb positions-dbi [1 tid] :int-int :pos-info))
              [[1] [2]]))
 
-      (is (= (update (l/get-value lmdb docs-dbi 1 :data :doc-info true)
+      (is (= (update (if/get-value lmdb docs-dbi 1 :data :doc-info true)
                      2 set)
              [1 1 #{}]))
-      (is (= (l/range-count lmdb docs-dbi [:all]) 2))
+      (is (= (if/range-count lmdb docs-dbi [:all]) 2))
       )
 
-    (is (= (sut/search engine "tent") [2 1]))
-    (l/close-kv lmdb)
+    (is (= (if/search engine "tent") [2 1]))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest multi-domains-test
@@ -349,16 +350,16 @@
         engine1 ^SearchEngine (sut/new-search-engine lmdb)
         engine2 ^SearchEngine (sut/new-search-engine
                                 lmdb {:domain "another"})]
-    (sut/add-doc engine1 1 "hello world")
-    (sut/add-doc engine1 2 "Mars is a red planet")
-    (sut/add-doc engine1 3 "Earth is a blue planet")
-    (add-docs sut/add-doc engine2)
+    (if/add-doc engine1 1 "hello world")
+    (if/add-doc engine1 2 "Mars is a red planet")
+    (if/add-doc engine1 3 "Earth is a blue planet")
+    (add-docs if/add-doc engine2)
 
-    (is (empty? (sut/search engine1 "solar")))
-    (is (empty? (sut/search engine2 "solar")))
-    (is (= (sut/search engine1 "red") [2]))
-    (is (= (sut/search engine2 "red") [:doc1 :doc4 :doc2 :doc5]))
-    (l/close-kv lmdb)
+    (is (empty? (if/search engine1 "solar")))
+    (is (empty? (if/search engine2 "solar")))
+    (is (= (if/search engine1 "red") [2]))
+    (is (= (if/search engine2 "red") [:doc1 :doc4 :doc2 :doc5]))
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest search-kv-test
@@ -371,47 +372,47 @@
                 2 "Mary had a little lamb whose fleece was red as fire."
                 3 "Moby Dick is a story of a whale and a man obsessed."}]
 
-    (doseq [i [1 2 3]] (sut/add-doc engine i (texts i)))
+    (doseq [i [1 2 3]] (if/add-doc engine i (texts i)))
 
-    (is (not (sut/doc-indexed? engine 0)))
-    (is (sut/doc-indexed? engine 1))
+    (is (not (if/doc-indexed? engine 0)))
+    (is (if/doc-indexed? engine 1))
 
-    (is (= 3 (sut/doc-count engine)))
+    (is (= 3 (if/doc-count engine)))
 
-    (is (= (sut/search engine "lazy") [1]))
-    (is (= (sut/search engine "red" ) [1 2]))
-    (is (= (sut/search engine "red" {:display :offsets})
+    (is (= (if/search engine "lazy") [1]))
+    (is (= (if/search engine "red" ) [1 2]))
+    (is (= (if/search engine "red" {:display :offsets})
            [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
-    (is (= (sut/search engine "red" {:display :texts})
+    (is (= (if/search engine "red" {:display :texts})
            [[1 "The quick red fox jumped over the lazy red dogs."]
             [2 "Mary had a little lamb whose fleece was red as fire."]]))
-    (is (= (sut/search engine "red" {:display :texts+offsets})
+    (is (= (if/search engine "red" {:display :texts+offsets})
            [[1  "The quick red fox jumped over the lazy red dogs."
              [["red" [10 39]]]]
             [2  "Mary had a little lamb whose fleece was red as fire."
              [["red" [40]]]]]))
 
     (testing "update"
-      (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
-      (is (= (sut/search engine "red" ) [2])))
+      (if/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
+      (is (= (if/search engine "red" ) [2])))
 
     (testing "parallel update"
-      (dorun (pmap #(sut/add-doc engine %1 %2)
+      (dorun (pmap #(if/add-doc engine %1 %2)
                    [2 1 4]
                    ["May has a little lamb."
                     "The quick red fox jumped over the lazy dogs."
                     "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>"]))
-      (is (= (sut/search engine "red" ) [1]))
-      (is (= (sut/search engine "truth" ) [4])))
+      (is (= (if/search engine "red" ) [1]))
+      (is (= (if/search engine "truth" ) [4])))
 
     (testing "duplicated docs"
-      (sut/add-doc engine 5
-                   "Pricing how much is the price for each juji Whats the price of using juji for classes Hello, what is the price of Juji? <p>You can create me or any of my brothers and sisters FREE. You can also chat with us privately FREE, as long as you want.</p><p><br></p><p>If you wish to make me or any of my sisters or brothers public so we can chat with other folks, I'd be happy to help you find the right price package.</p>")
-      (sut/add-doc engine 4
-                   "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)")
-      (is (= (sut/search engine "truth" ) [4])))
+      (if/add-doc engine 5
+                  "Pricing how much is the price for each juji Whats the price of using juji for classes Hello, what is the price of Juji? <p>You can create me or any of my brothers and sisters FREE. You can also chat with us privately FREE, as long as you want.</p><p><br></p><p>If you wish to make me or any of my sisters or brothers public so we can chat with other folks, I'd be happy to help you find the right price package.</p>")
+      (if/add-doc engine 4
+                  "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)")
+      (is (= (if/search engine "truth" ) [4])))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest fulltext-fns-test
@@ -532,14 +533,14 @@
   (let [dir       (u/tmp-dir (str "update-doc-test-" (UUID/randomUUID)))
         lmdb      (d/open-kv dir {:flags
                                   (conj c/default-env-flags :nosync)})
-        engine    ^SearchEngine (d/new-search-engine lmdb)
+        engine    ^SearchEngine (sut/new-search-engine lmdb)
         terms-dbi (.-terms-dbi engine)]
     (add-docs d/add-doc engine)
     (let [[_ _ sl]
-          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+          (if/get-value lmdb terms-dbi "fox" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {1 1}))))
     (let [[_ _ sl]
-          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+          (if/get-value lmdb terms-dbi "red" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
     (is (= {(int 1) :doc1 (int 2) :doc2 (int 3) :doc3 (int 4) :doc4
             (int 5) :doc5}
@@ -551,10 +552,10 @@
     (d/add-doc engine :doc1
                "The quick brown fox jumped over the lazy black dogs.")
     (let [[_ _ sl]
-          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+          (if/get-value lmdb terms-dbi "fox" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {6 1}))))
     (let [[_ _ sl]
-          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+          (if/get-value lmdb terms-dbi "red" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
     (is (= {(int 6) :doc1 (int 2) :doc2 (int 3) :doc3 (int 4) :doc4
             (int 5) :doc5}
@@ -591,11 +592,11 @@
     (d/add-doc engine "Romeo and Juliet" (slurp "test/data/romeo.txt"))
     (is (= ["Romeo and Juliet"] (d/search engine "romeo")))
     (is (= 4283 (count (.-terms engine))))
-    (is (= 299 (count (peek (l/get-value
-                              lmdb (.-positions-dbi engine)
-                              [1 (l/get-value lmdb (.-terms-dbi engine)
-                                              "romeo" :string :int true)]
-                              :int-int :pos-info)))))
+    (is (= 299 (count (peek (if/get-value
+                                lmdb (.-positions-dbi engine)
+                                [1 (if/get-value lmdb (.-terms-dbi engine)
+                                                 "romeo" :string :int true)]
+                                :int-int :pos-info)))))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
@@ -609,9 +610,9 @@
     (sut/commit writer)
 
     (let [engine (sut/new-search-engine lmdb)]
-      (is (= (sut/search engine "cap" {:display :offsets})
+      (is (= (if/search engine "cap" {:display :offsets})
              [[:doc4 [["cap" [51]]]]])))
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest proximity-span-test
@@ -756,13 +757,13 @@ A love that's never spent.
 
 - ChatGPT (2023 -)")
     (is (= ["Erosion" "GPT4-1" "Sea-Gulls" "GPT4-2" "Horizons"]
-           (sut/search engine "sea thousand years" {:proximity-max-dist 10})))
+           (if/search engine "sea thousand years" {:proximity-max-dist 10})))
     (is (= ["Erosion" "GPT4-1" "Sea-Gulls"]
-           (sut/search engine "thousand years")))
+           (if/search engine "thousand years")))
     (is (= ["Erosion" "GPT4-1" "GPT4-2" "Horizons" "Sea-Gulls"]
-           (sut/search engine "sea cliff")))
+           (if/search engine "sea cliff")))
     (is (= ["Erosion" "Horizons" "Sea-Gulls" ]
-           (sut/search engine "e j pratt")))
+           (if/search engine "e j pratt")))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
@@ -772,11 +773,11 @@ A love that's never spent.
                                (conj c/default-env-flags :nosync)})
         engine ^SearchEngine (d/new-search-engine
                                lmdb {:index-position? true})]
-    (sut/add-doc engine "bug1"
-                 "How would we use this for a membership association.")
+    (if/add-doc engine "bug1"
+                "How would we use this for a membership association.")
     (is (= ["bug1"]
-           (sut/search engine "membership association")))
-    (is (nil? (sut/search engine "bug")))
+           (if/search engine "membership association")))
+    (is (nil? (if/search engine "bug")))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
@@ -788,19 +789,19 @@ A love that's never spent.
                 :include-text?   true}
         engine (sut/new-search-engine lmdb opts)]
 
-    (add-docs sut/add-doc engine)
+    (add-docs if/add-doc engine)
 
-    (is (empty? (sut/search engine "dog")))
+    (is (empty? (if/search engine "dog")))
 
-    (let [engine1 (l/re-index
-                    engine (merge opts {:analyzer
-                                        (su/create-analyzer
-                                          {:token-filters
-                                           [(su/create-stemming-token-filter
-                                              "english")]})}))]
-      (is (= [:doc1 :doc5] (sut/search engine1 "dog"))))
+    (let [engine1 (if/re-index
+                      engine (merge opts {:analyzer
+                                          (su/create-analyzer
+                                            {:token-filters
+                                             [(su/create-stemming-token-filter
+                                                "english")]})}))]
+      (is (= [:doc1 :doc5] (if/search engine1 "dog"))))
 
-    (l/close-kv lmdb)
+    (if/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest domain-test
@@ -913,8 +914,8 @@ A love that's never spent.
 ;;                     terms)
 ;;         wqs (reduce (fn [m [term freq]]
 ;;                       (assoc m term
-;;                              (* ^double (sut/tf* freq)
-;;                                 ^double (sut/idf (dfs term) doc-num))))
+;;                              (* ^double (if/tf* freq)
+;;                                 ^double (if/idf (dfs term) doc-num))))
 ;;                     {}
 ;;                     qfreqs)
 ;;         rc  (count results)]
@@ -928,7 +929,7 @@ A love that's never spent.
 ;;                   (map (fn [term]
 ;;                          (/ ^double
 ;;                             (* (double (or (wqs term) 0.0))
-;;                                ^double (sut/tf*
+;;                                ^double (if/tf*
 ;;                                          (or (get-in dfreqs [ref term])
 ;;                                              0.0)))
 ;;                             (double (norms ref))))
@@ -959,6 +960,6 @@ A love that's never spent.
 ;;           ok      (every? #(search-correct data % (d/search engine %))
 ;;                           queries)
 ;;           ]
-;;       (l/close-kv lmdb)
+;;       (if/close-kv lmdb)
 ;;       (u/delete-files dir)
 ;;       ok)))

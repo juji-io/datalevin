@@ -22,10 +22,22 @@
    [datalevin.lmdb :as l]
    [datalevin.bits :as b]
    [datalevin.remote :as r]
-   [datalevin.inline :refer [update assoc]])
+   [datalevin.inline :refer [update assoc]]
+   [datalevin.interface :as i
+    :refer [last-modified dir opts schema rschema ave-tuples ave-tuples-list
+            sample-ave-tuples sample-ave-tuples-list e-sample eav-scan-v
+            eav-scan-v-list val-eq-scan-e val-eq-scan-e-list val-eq-filter-e
+            val-eq-filter-e-list fetch slice slice-filter e-datoms av-datoms
+            ea-first-datom head-filter e-first-datom av-first-datom head
+            size size-filter e-size av-size actual-a-size a-size v-size
+            datom-count populated? rslice actual-cardinality cardinality
+            av-range-size init-max-eid db-name start-sampling load-datoms
+            stop-sampling close av-first-e ea-first-v v-datoms assoc-opt
+            max-tx get-env-flags set-env-flags sync abort-transact-kv]])
   (:import
    [datalevin.datom Datom]
-   [datalevin.storage IStore Store]
+   [datalevin.interface IStore]
+   [datalevin.storage Store]
    [datalevin.remote DatalogStore]
    [datalevin.utl LRUCache]
    [java.util SortedSet Comparator Date]
@@ -42,7 +54,8 @@
 
 (defprotocol IIndexAccess
   (-populated? [db index c1 c2 c3])
-  (-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
+  (-datoms [db index] [db index c1] [db index c1 c2] [db index c1 c2 c3]
+    [db index c1 c2 c3 n])
   (-e-datoms [db e])
   (-av-datoms [db attr v])
   (-range-datoms [db index start-datom end-datom])
@@ -97,34 +110,34 @@
 
 (defn refresh-cache
   ([store]
-   (refresh-cache store (s/last-modified store)))
+   (refresh-cache store (last-modified store)))
   ([store target]
-   (.put ^ConcurrentHashMap caches (s/dir store)
-         (LRUCache. (:cache-limit (s/opts store)) target))))
+   (.put ^ConcurrentHashMap caches (dir store)
+         (LRUCache. (:cache-limit (opts store)) target))))
 
 (defn cache-disabled?
   [store]
-  (.isDisabled ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+  (.isDisabled ^LRUCache (.get ^ConcurrentHashMap caches (dir store))))
 
 (defn disable-cache
   [store]
-  (.disable ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+  (.disable ^LRUCache (.get ^ConcurrentHashMap caches (dir store))))
 
 (defn enable-cache
   [store]
-  (.enable ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store))))
+  (.enable ^LRUCache (.get ^ConcurrentHashMap caches (dir store))))
 
 (defn cache-get
   [store k]
-  (.get ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store)) k))
+  (.get ^LRUCache (.get ^ConcurrentHashMap caches (dir store)) k))
 
 (defn cache-put
   [store k v]
-  (.put ^LRUCache (.get ^ConcurrentHashMap caches (s/dir store)) k v))
+  (.put ^LRUCache (.get ^ConcurrentHashMap caches (dir store)) k v))
 
 (defmacro wrap-cache
   [store pattern body]
-  `(let [cache# (.get ^ConcurrentHashMap caches (s/dir ~store))]
+  `(let [cache# (.get ^ConcurrentHashMap caches (dir ~store))]
      (if-some [cached# (.get ^LRUCache cache# ~pattern)]
        cached#
        (let [res# ~body]
@@ -152,8 +165,8 @@
   (-searchable? [_] true)
 
   IDB
-  (-schema [_] (s/schema store))
-  (-rschema [_] (s/rschema store))
+  (-schema [_] (schema store))
+  (-rschema [_] (rschema store))
   (-attrs-by [db property] ((-rschema db) property))
   (-is-attr? [db attr property] (contains? (-attrs-by db property) attr))
   (-clear-tx-cache
@@ -167,69 +180,69 @@
   ITuples
   (-init-tuples
     [db out a v-ranges pred get-v?]
-    (s/ave-tuples store out a v-ranges pred get-v?))
+    (ave-tuples store out a v-ranges pred get-v?))
 
   (-init-tuples-list
     [db a v-ranges pred get-v?]
     (wrap-cache
         store [:init-tuples a v-ranges pred get-v?]
-      (s/ave-tuples-list store a v-ranges pred get-v?)))
+      (ave-tuples-list store a v-ranges pred get-v?)))
 
   (-sample-init-tuples
     [db out a mcount v-ranges pred get-v?]
-    (s/sample-ave-tuples store out a mcount v-ranges pred get-v?))
+    (sample-ave-tuples store out a mcount v-ranges pred get-v?))
 
   (-sample-init-tuples-list
     [db a mcount v-ranges pred get-v?]
     (wrap-cache
         store [:sample-init-tuples a mcount v-ranges pred get-v?]
-      (s/sample-ave-tuples-list store a mcount v-ranges pred get-v?)))
+      (sample-ave-tuples-list store a mcount v-ranges pred get-v?)))
 
   (-e-sample
     [db a]
     (wrap-cache
         store [:e-sample a]
-      (s/e-sample store a)))
+      (e-sample store a)))
 
   (-eav-scan-v
     [db in out eid-idx attrs-v]
-    (s/eav-scan-v store in out eid-idx attrs-v))
+    (eav-scan-v store in out eid-idx attrs-v))
 
   (-eav-scan-v-list
     [db in eid-idx attrs-v]
     (wrap-cache
         store [:eav-scan-v in eid-idx attrs-v]
-      (s/eav-scan-v-list store in eid-idx attrs-v)))
+      (eav-scan-v-list store in eid-idx attrs-v)))
 
   (-val-eq-scan-e
     [db in out v-idx attr]
-    (s/val-eq-scan-e store in out v-idx attr))
+    (val-eq-scan-e store in out v-idx attr))
 
   (-val-eq-scan-e-list
     [db in v-idx attr]
     (wrap-cache
         store [:val-eq-scan-e in v-idx attr]
-      (s/val-eq-scan-e-list store in v-idx attr)))
+      (val-eq-scan-e-list store in v-idx attr)))
 
   (-val-eq-scan-e
     [db in out v-idx attr bound]
-    (s/val-eq-scan-e store in out v-idx attr bound))
+    (val-eq-scan-e store in out v-idx attr bound))
 
   (-val-eq-scan-e-list
     [db in v-idx attr bound]
     (wrap-cache
         store [:val-eq-scan-e in v-idx attr bound]
-      (s/val-eq-scan-e-list store in v-idx attr bound)))
+      (val-eq-scan-e-list store in v-idx attr bound)))
 
   (-val-eq-filter-e
     [db in out v-idx attr f-idx]
-    (s/val-eq-filter-e store in out v-idx attr f-idx))
+    (val-eq-filter-e store in out v-idx attr f-idx))
 
   (-val-eq-filter-e-list
     [db in v-idx attr f-idx]
     (wrap-cache
         store [:val-eq-filter-e in v-idx attr f-idx]
-      (s/val-eq-filter-e-list store in v-idx attr f-idx)))
+      (val-eq-filter-e-list store in v-idx attr f-idx)))
 
   ISearch
   (-search
@@ -239,22 +252,22 @@
           store [:search e a v]
         (case-tree
           [e a (some? v)]
-          [(s/fetch store (datom e a v)) ; e a v
-           (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
-           (s/slice-filter store :eav
-                           (fn [^Datom d] (when ((vpred v) (.-v d)) d))
-                           (datom e nil nil)
-                           (datom e nil nil))  ; e _ v
-           (s/e-datoms store e) ; e _ _
-           (s/av-datoms store a v) ; _ a v
+          [(fetch store (datom e a v)) ; e a v
+           (slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+           (slice-filter store :eav
+                         (fn [^Datom d] (when ((vpred v) (.-v d)) d))
+                         (datom e nil nil)
+                         (datom e nil nil))  ; e _ v
+           (e-datoms store e) ; e _ _
+           (av-datoms store a v) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                 (s/ave-tuples-list
+                 (ave-tuples-list
                    store a [[[:closed c/v0] [:closed c/vmax]]] nil true)) ; _ a _
-           (s/slice-filter store :eav
-                           (fn [^Datom d] (when ((vpred v) (.-v d)) d))
-                           (datom e0 nil nil)
-                           (datom emax nil nil)) ; _ _ v
-           (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
+           (slice-filter store :eav
+                         (fn [^Datom d] (when ((vpred v) (.-v d)) d))
+                         (datom e0 nil nil)
+                         (datom emax nil nil)) ; _ _ v
+           (slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
     [db pattern]
@@ -263,22 +276,22 @@
           store [:first e a v]
         (case-tree
           [e a (some? v)]
-          [(first (s/fetch store (datom e a v))) ; e a v
-           (s/ea-first-datom store e a) ; e a _
-           (s/head-filter store :eav
-                          (fn [^Datom d]
-                            (when ((vpred v) (.-v d)) d))
-                          (datom e nil nil)
-                          (datom e nil nil))  ; e _ v
-           (s/e-first-datom store e) ; e _ _
-           (s/av-first-datom store a v) ; _ a v
-           (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/head-filter store :eav
-                          (fn [^Datom d]
-                            (when ((vpred v) (.-v d)) d))
-                          (datom e0 nil nil)
-                          (datom emax nil nil)) ; _ _ v
-           (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
+          [(first (fetch store (datom e a v))) ; e a v
+           (ea-first-datom store e a) ; e a _
+           (head-filter store :eav
+                        (fn [^Datom d]
+                          (when ((vpred v) (.-v d)) d))
+                        (datom e nil nil)
+                        (datom e nil nil))  ; e _ v
+           (e-first-datom store e) ; e _ _
+           (av-first-datom store a v) ; _ a v
+           (head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
+           (head-filter store :eav
+                        (fn [^Datom d]
+                          (when ((vpred v) (.-v d)) d))
+                        (datom e0 nil nil)
+                        (datom emax nil nil)) ; _ _ v
+           (head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-count
     [db pattern]
@@ -293,100 +306,108 @@
           store [:count e a v cap]
         (case-tree
           [e a (some? v)]
-          [(s/size store :eav (datom e a v) (datom e a v) cap) ; e a v
-           (s/size store :eav (datom e a c/v0) (datom e a c/vmax) cap) ; e a _
-           (s/size-filter store :eav
-                          (fn [^Datom d] ((vpred v) (.-v d)))
-                          (datom e nil nil) (datom e nil nil) cap)  ; e _ v
-           (s/e-size store e) ; e _ _
-           (s/av-size store a v) ; _ a v
-           (if actual? (s/actual-a-size store a) (s/a-size store a)) ; _ a _
-           (s/v-size store v) ; _ _ v, for ref only
-           (s/datom-count store :eav)])))) ; _ _ _
+          [(size store :eav (datom e a v) (datom e a v) cap) ; e a v
+           (size store :eav (datom e a c/v0) (datom e a c/vmax) cap) ; e a _
+           (size-filter store :eav
+                        (fn [^Datom d] ((vpred v) (.-v d)))
+                        (datom e nil nil) (datom e nil nil) cap)  ; e _ v
+           (e-size store e) ; e _ _
+           (av-size store a v) ; _ a v
+           (if actual? (actual-a-size store a) (a-size store a)) ; _ a _
+           (v-size store v) ; _ _ v, for ref only
+           (datom-count store :eav)])))) ; _ _ _
 
   IIndexAccess
   (-populated?
     [db index c1 c2 c3]
     (wrap-cache
         store [:populated? index c1 c2 c3]
-      (s/populated? store index
-                    (components->pattern db index c1 c2 c3 e0 v0)
-                    (components->pattern db index c1 c2 c3 emax vmax))))
+      (populated? store index
+                  (components->pattern db index c1 c2 c3 e0 v0)
+                  (components->pattern db index c1 c2 c3 emax vmax))))
 
+  (-datoms
+    [db index]
+    (-datoms db index nil nil nil))
+  (-datoms
+    [db index c1]
+    (-datoms db index c1 nil nil))
+  (-datoms
+    [db index c1 c2]
+    (-datoms db index c1 c2 nil))
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
         store [:datoms index c1 c2 c3]
-      (s/slice store index
-               (components->pattern db index c1 c2 c3 e0 v0)
-               (components->pattern db index c1 c2 c3 emax vmax))))
-
+      (slice store index
+             (components->pattern db index c1 c2 c3 e0 v0)
+             (components->pattern db index c1 c2 c3 emax vmax))))
   (-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
         store [:datoms index c1 c2 c3 n]
-      (s/slice store index
-               (components->pattern db index c1 c2 c3 e0 v0)
-               (components->pattern db index c1 c2 c3 emax vmax)
-               n)))
+      (slice store index
+             (components->pattern db index c1 c2 c3 e0 v0)
+             (components->pattern db index c1 c2 c3 emax vmax)
+             n)))
 
-  (-e-datoms [db e] (wrap-cache store [:e-datoms e] (s/e-datoms store e)))
+  (-e-datoms [db e] (wrap-cache store [:e-datoms e] (e-datoms store e)))
 
   (-av-datoms
     [db attr v]
-    (wrap-cache store [:av-datoms attr v] (s/av-datoms store attr v)))
+    (wrap-cache store [:av-datoms attr v] (av-datoms store attr v)))
 
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
         store [:range-datoms index start-datom end-datom]
-      (s/slice store index start-datom end-datom)))
+      (slice store index start-datom end-datom)))
 
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
         store [:seek index c1 c2 c3]
-      (s/slice store index
-               (components->pattern db index c1 c2 c3 e0 v0)
-               (components->end-datom db index c1 c2 c3 emax vmax))))
+      (slice store index
+             (components->pattern db index c1 c2 c3 e0 v0)
+             (components->end-datom db index c1 c2 c3 emax vmax))))
   (-seek-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
         store [:seek index c1 c2 c3 n]
-      (s/slice store index
-               (components->pattern db index c1 c2 c3 e0 v0)
-               (components->end-datom db index c1 c2 c3 emax vmax)
-               n)))
+      (slice store index
+             (components->pattern db index c1 c2 c3 e0 v0)
+             (components->end-datom db index c1 c2 c3 emax vmax)
+             n)))
 
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
         store [:rseek index c1 c2 c3]
-      (s/rslice store index
-                (components->pattern db index c1 c2 c3 emax vmax)
-                (components->end-datom db index c1 c2 c3 e0 v0))))
+      (rslice store index
+              (components->pattern db index c1 c2 c3 emax vmax)
+              (components->end-datom db index c1 c2 c3 e0 v0))))
   (-rseek-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
         store [:rseek index c1 c2 c3 n]
-      (s/rslice store index
-                (components->pattern db index c1 c2 c3 emax vmax)
-                (components->end-datom db index c1 c2 c3 e0 v0)
-                n)))
+      (rslice store index
+              (components->pattern db index c1 c2 c3 emax vmax)
+              (components->end-datom db index c1 c2 c3 e0 v0)
+              n)))
 
   (-cardinality [db attr] (-cardinality db attr false))
   (-cardinality
     [db attr actual?]
     (wrap-cache store [:cardinality attr actual?]
-      (if actual? (s/actual-cardinality store attr) (s/cardinality store attr))))
+      (if actual? (actual-cardinality store attr) (cardinality store attr))))
 
   (-index-range
     [db attr start end]
     (wrap-cache
         store [:index-range attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
-          (s/slice store :ave (resolve-datom db nil attr start e0 v0)
-                   (resolve-datom db nil attr end emax vmax)))))
+          (slice store :ave (resolve-datom db nil attr start e0 v0)
+                 (resolve-datom db nil attr end emax vmax)))))
 
   (-index-range-size
     [db attr start end]
@@ -395,7 +416,7 @@
     [db attr start end cap]
     (wrap-cache
         store [:index-range-size attr start end]
-      (s/av-range-size store attr start end cap))))
+      (av-range-size store attr start end cap))))
 
 ;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
 ;;   (binding [*out* w]
@@ -412,11 +433,49 @@
   [x]
   (when (-searchable? x)
     (let [store  (.-store ^DB x)
-          target (s/last-modified store)
-          cache  (.get ^ConcurrentHashMap caches (s/dir store))]
+          target (last-modified store)
+          cache  (.get ^ConcurrentHashMap caches (dir store))]
       (when (< ^long (.target ^LRUCache cache) ^long target)
         (refresh-cache store target)))
     true))
+
+(defn search-datoms [db e a v] (-search db [e a v]))
+
+(defn count-datoms [db e a v] (-count db [e a v] nil true))
+
+(defn seek-datoms
+  ([db index]
+   (-seek-datoms db index nil nil nil))
+  ([db index c1]
+   (-seek-datoms db index c1 nil nil))
+  ([db index c1 c2]
+   (-seek-datoms db index c1 c2 nil))
+  ([db index c1 c2 c3]
+   (-seek-datoms db index c1 c2 c3))
+  ([db index c1 c2 c3 n]
+   (-seek-datoms db index c1 c2 c3 n)))
+
+(defn rseek-datoms
+  ([db index]
+   (-rseek-datoms db index nil nil nil))
+  ([db index c1]
+   (-rseek-datoms db index c1 nil nil))
+  ([db index c1 c2]
+   (-rseek-datoms db index c1 c2 nil))
+  ([db index c1 c2 c3]
+   (-rseek-datoms db index c1 c2 c3))
+  ([db index c1 c2 c3 n]
+   (-rseek-datoms db index c1 c2 c3 n)))
+
+(defn cardinality [db a] (-cardinality db a true))
+
+(defn max-eid [db] (init-max-eid (:store db)))
+
+(defn analyze
+  ([db] {:pre [(db? db)]}
+   (i/analyze (:store db) nil))
+  ([db attr] {:pre [(db? db)]}
+   (i/analyze (:store db) attr)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -511,15 +570,15 @@
   [^IStore store]
   (let [db (map->DB
              {:store         store
-              :max-eid       (s/init-max-eid store)
-              :max-tx        (s/max-tx store)
+              :max-eid       (init-max-eid store)
+              :max-tx        (max-tx store)
               :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
               :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
               :vaet          (TreeSortedSet. ^Comparator d/cmp-datoms-vaet)
               :pull-patterns (LRUCache. 64)})]
-    (swap! dbs assoc (s/db-name store) db)
+    (swap! dbs assoc (db-name store) db)
     (refresh-cache store (System/currentTimeMillis))
-    (s/start-sampling store)
+    (start-sampling store)
     db))
 
 (defn transfer
@@ -538,8 +597,8 @@
 
 (defn- validate-type
   [store a v]
-  (let [opts   (s/opts store)
-        schema (s/schema store)
+  (let [opts   (opts store)
+        schema (schema store)
         vt     (s/value-type (schema a))]
     (or (not (opts :validate-data?))
         (b/valid-data? v vt)
@@ -599,25 +658,25 @@
                             (map #(correct-datom store %))
                             (partition-all c/*fill-db-batch-size*))
                           datoms)]
-    (s/load-datoms store batch)))
+    (load-datoms store batch)))
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
-    (s/stop-sampling store)
-    (.remove ^ConcurrentHashMap caches (s/dir store))
-    (swap! dbs dissoc (s/db-name store))
-    (s/close store)
+    (stop-sampling store)
+    (.remove ^ConcurrentHashMap caches (dir store))
+    (swap! dbs dissoc (db-name store))
+    (close store)
     nil))
 
 (defn- quick-fill
   [^Store store datoms]
   (let [lmdb    (.-lmdb store)
-        flags   (l/get-env-flags lmdb)
+        flags   (get-env-flags lmdb)
         nosync? (:nosync flags)]
-    (l/set-env-flags lmdb #{:nosync} true)
+    (set-env-flags lmdb #{:nosync} true)
     (pour store datoms)
-    (when-not nosync? (l/set-env-flags lmdb #{:nosync} false))
-    (l/sync lmdb)))
+    (when-not nosync? (set-env-flags lmdb #{:nosync} false))
+    (sync lmdb)))
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil nil))
@@ -710,13 +769,13 @@
         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                              (datom e0 attr value tx0)
                              (datom emax attr value txmax))))
-            (s/av-first-e (:store db) attr value))))
+            (av-first-e (:store db) attr value))))
 
     (keyword? eid)
     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                          (datom e0 :db/ident eid tx0)
                          (datom emax :db/ident eid txmax))))
-        (s/av-first-e (:store db) :db/ident eid))
+        (av-first-e (:store db) :db/ident eid))
 
     :else
     (raise "Expected number or lookup ref for entity id, got " eid
@@ -866,7 +925,7 @@
   ([tx-time report e eid]
    (let [db   (:db-after report)
          new? (new-eid? db eid)
-         opts (s/opts (.-store ^DB db))]
+         opts (opts (.-store ^DB db))]
      (cond-> report
        (tx-id? e)
        (->
@@ -914,7 +973,7 @@
                                (.subSet ^TreeSortedSet (:eavt db)
                                         (d/datom e tuple nil tx0)
                                         (d/datom e tuple nil txmax))))
-                         (s/ea-first-v (:store db) e tuple)
+                         (ea-first-v (:store db) e tuple)
                          (vec (repeat (-> db -schema (get tuple)
                                           :db/tupleAttrs count)
                                       nil)))
@@ -960,13 +1019,13 @@
                       (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                            (d/datom e0 a v tx0)
                                            (d/datom emax a v txmax))))
-                          (s/av-first-e store a v))
+                          (av-first-e store a v))
                       (not (tempid? v))
                       (let [rv (entid db v)]
                         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                              (d/datom e0 a rv tx0)
                                              (d/datom emax a rv txmax))))
-                            (s/av-first-e store a rv)))))
+                            (av-first-e store a rv)))))
 
           split (fn [a vs]
                   (reduce
@@ -1084,11 +1143,11 @@
           (or (sf (.subSet ^TreeSortedSet (:eavt db)
                            (datom e a v tx0)
                            (datom e a v txmax)))
-              (first (s/fetch (:store db) (datom e a v))))
+              (first (fetch (:store db) (datom e a v))))
           (or (sf (.subSet ^TreeSortedSet (:eavt db)
                            (datom e a nil tx0)
                            (datom e a nil txmax)))
-              (s/ea-first-datom (:store db) e a)))]
+              (ea-first-datom (:store db) e a)))]
     (cond
       (nil? old-datom)
       (transact-report report new-datom)
@@ -1173,7 +1232,7 @@
                     current (or (:v (sf (.subSet ^TreeSortedSet (:eavt db)
                                                  (d/datom eid tuple nil tx0)
                                                  (d/datom eid tuple nil txmax))))
-                                (s/ea-first-v store eid tuple))]
+                                (ea-first-v store eid tuple))]
                 (cond
                   (= value current) entities
                   (nil? value)
@@ -1196,7 +1255,7 @@
                              initial-es (repeat ::flush-tuples))
                            initial-es)
          store           (.-store db)
-         schema          (s/schema store)
+         schema          (schema store)
          rp
          (loop [report initial-report'
                 es     initial-es']
@@ -1280,7 +1339,7 @@
                                             ^TreeSortedSet (:eavt db)
                                             (d/datom ident :db/fn nil tx0)
                                             (d/datom ident :db/fn nil txmax))))
-                                  (s/ea-first-v store ident :db/fn))
+                                  (ea-first-v store ident :db/fn))
                          args (next entity)]
                      (if (fn? fun)
                        (recur report (concat (apply fun db args) entities))
@@ -1304,9 +1363,9 @@
                                        (.subSet ^TreeSortedSet (:eavt db)
                                                 (datom e a nil tx0)
                                                 (datom e a nil txmax))
-                                       (s/slice (:store db) :eav
-                                                (datom e a c/v0)
-                                                (datom e a c/vmax)))]
+                                       (slice (:store db) :eav
+                                              (datom e a c/v0)
+                                              (datom e a c/vmax)))]
                    (if (multival? db a)
                      (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
                        (recur (transact-add report [:db/add e a nv]) entities)
@@ -1341,7 +1400,7 @@
                                                      ^TreeSortedSet (:avet db)
                                                      (d/datom e0 a v tx0)
                                                      (d/datom emax a v txmax))))
-                                           (s/av-first-e store a v)))
+                                           (av-first-e store a v)))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                      (retry-with-tempid initial-report report initial-es e upserted-eid
@@ -1353,7 +1412,7 @@
                  :let [upserted-eid (when (and (-is-attr? db a :db.unique/identity)
                                                (contains? (::reverse-tempids report) e)
                                                e)
-                                      (s/av-first-e store a v))]
+                                      (av-first-e store a v))]
 
                  (and upserted-eid (not= e upserted-eid))
                  (let [tempids (get (::reverse-tempids report) e)
@@ -1379,7 +1438,7 @@
                                                ^TreeSortedSet (:eavt db)
                                                (d/datom e tuple-attr nil tx0)
                                                (d/datom e tuple-attr nil txmax))))
-                                       (s/ea-first-v store e tuple-attr))]
+                                       (ea-first-v store e tuple-attr))]
                                (= tuple-value db-value)))
                            (mapv vector tuple-attrs v)))
                      (recur report entities)
@@ -1435,9 +1494,9 @@
                  (if-some [e (entid db e)]
                    (let [_      (validate-attr a entity)
                          datoms (concatv
-                                  (s/slice (:store db) :eav
-                                           (datom e a c/v0)
-                                           (datom e a c/vmax))
+                                  (slice (:store db) :eav
+                                         (datom e a c/v0)
+                                         (datom e a c/vmax))
                                   (.subSet ^TreeSortedSet (:eavt db)
                                            (datom e a nil tx0)
                                            (datom e a nil txmax)))]
@@ -1449,12 +1508,12 @@
                      (identical? op :db/retractEntity))
                  (if-some [e (entid db e)]
                    (let [e-datoms (concatv
-                                    (s/e-datoms (:store db) e)
+                                    (e-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:eavt db)
                                              (datom e nil nil tx0)
                                              (datom e nil nil txmax)))
                          v-datoms (concatv
-                                    (s/v-datoms (:store db) e)
+                                    (v-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)
                                              (datom emax nil e txmax)))]
@@ -1481,7 +1540,7 @@
              ))
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
-       (s/load-datoms pstore (:tx-data rp))
+       (load-datoms pstore (:tx-data rp))
        (refresh-cache pstore (System/currentTimeMillis)))
      rp)))
 
@@ -1534,7 +1593,7 @@
   (let [aat #(assoc-auto-tempid db %)
         uet #(update-entity-time % tx-time)]
     (sequence
-      (if (:auto-entity-time? (s/opts (.-store db)))
+      (if (:auto-entity-time? (opts (.-store db)))
         (comp (mapcat expand-transactable-entity)
            (map aat)
            (mapcat uet))
@@ -1588,13 +1647,13 @@
   (let [s (.-store ^DB (deref conn))]
     (if (instance? DatalogStore s)
       (r/abort-transact s)
-      (l/abort-transact-kv (.-lmdb ^Store s)))))
+      (abort-transact-kv (.-lmdb ^Store s)))))
 
 (defn datalog-index-cache-limit
   ([^DB db]
    (let [^Store store (.-store db)]
-     (:cache-limit (s/opts store))))
+     (:cache-limit (opts store))))
   ([^DB db ^long n]
    (let [^Store store (.-store db)]
-     (s/assoc-opt store :cache-limit n)
+     (assoc-opt store :cache-limit n)
      (refresh-cache store (System/currentTimeMillis)))))

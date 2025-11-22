@@ -17,10 +17,12 @@
    [clojure.stacktrace :as st]
    [sci.core :as sci]
    [datalevin.core :as d]
+   [datalevin.dump :as dump]
    [datalevin.util :as u]
    [datalevin.interpret :as i]
    [datalevin.lmdb :as l]
    [datalevin.server :as srv]
+   [datalevin.interface :as if]
    [pod.huahaiy.datalevin :as pod]
    [datalevin.constants :as c])
   (:import
@@ -312,8 +314,8 @@
   [src-dir dest-dir compact?]
   (let [lmdb (l/open-kv src-dir)]
     (println "Opened database, copying...")
-    (l/copy lmdb dest-dir compact?)
-    (l/close-kv lmdb)
+    (if/copy lmdb dest-dir compact?)
+    (if/close-kv lmdb)
     (println "Copied database.")))
 
 (defn- dtlv-copy [{:keys [dir compact]} arguments]
@@ -337,12 +339,12 @@
   (let [lmdb (l/open-kv dir)]
     (if delete
       (doseq [dbi dbis]
-        (l/drop-dbi lmdb dbi)
+        (if/drop-dbi lmdb dbi)
         (println (str "Dropped " dbi)))
       (doseq [dbi dbis]
-        (l/clear-dbi lmdb dbi)
+        (if/clear-dbi lmdb dbi)
         (println (str "Cleared " dbi))))
-    (l/close-kv lmdb)))
+    (if/close-kv lmdb)))
 
 (defn- dtlv-drop [{:keys [dir delete]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." drop-help]))
@@ -384,16 +386,16 @@
        (cond
          list?      (let [lmdb (l/open-kv src-dir)]
                       (l/dump-dbis-list lmdb d)
-                      (l/close-kv lmdb))
+                      (if/close-kv lmdb))
          datalog?   (let [conn (d/create-conn src-dir)]
-                      (d/dump-datalog conn d)
+                      (dump/dump-datalog conn d)
                       (d/close conn))
          all?       (let [lmdb (l/open-kv src-dir)]
                       (l/dump-all lmdb d)
-                      (l/close-kv lmdb))
+                      (if/close-kv lmdb))
          (seq dbis) (let [lmdb (l/open-kv src-dir)]
                       (doseq [dbi dbis] (l/dump-dbi lmdb dbi d))
-                      (l/close-kv lmdb))
+                      (if/close-kv lmdb))
          :else      (binding [*out* o] (println dump-help))))
      (when w (.flush w) (.close w))
      (when d (.flush d) (.close d)))))
@@ -427,13 +429,13 @@
               (DataInputStream. f)
               (PushbackReader. (or r *in*)))]
      (cond
-       datalog? (d/load-datalog dir in {} {} nippy?)
+       datalog? (dump/load-datalog dir in {} {} nippy?)
        dbi      (let [lmdb (l/open-kv dir)]
                   (l/load-dbi lmdb dbi in nippy?)
-                  (l/close-kv lmdb))
+                  (if/close-kv lmdb))
        :else    (let [lmdb (l/open-kv dir)]
                   (l/load-all lmdb in nippy?)
-                  (l/close-kv lmdb)))
+                  (if/close-kv lmdb)))
      (when f (.close f)))))
 
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]
@@ -450,15 +452,15 @@
   (assert dir (s/join \newline ["Missing data directory path." stat-help]))
   (try
     (let [lmdb (l/open-kv dir)
-          dbis (if all (l/list-dbis lmdb) arguments)]
+          dbis (if all (if/list-dbis lmdb) arguments)]
       (if (seq dbis)
         (p/pprint (cond-> []
-                    all  (conj {"Main DB" (l/stat lmdb)})
+                    all  (conj {"Main DB" (if/stat lmdb)})
                     true (into (for [dbi  dbis
-                                     :let [_ (l/open-dbi lmdb dbi)]]
-                                 {dbi (l/stat lmdb dbi)}))))
-        (p/pprint {"Main DB" (l/stat lmdb)}))
-      (l/close-kv lmdb))
+                                     :let [_ (if/open-dbi lmdb dbi)]]
+                                 {dbi (if/stat lmdb dbi)}))))
+        (p/pprint {"Main DB" (if/stat lmdb)}))
+      (if/close-kv lmdb))
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Stat error: " (.getMessage e)))))

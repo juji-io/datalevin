@@ -10,25 +10,19 @@
 (ns ^:no-doc datalevin.conn
   "Datalog DB connection"
   (:require
-   [clojure.java.io :as io]
-   [clojure.java.shell :as shell]
    [datalevin.constants :as c]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
    [datalevin.storage :as s]
    [datalevin.async :as a]
    [datalevin.remote :as r]
-   [datalevin.util :as u :refer [raise]])
+   [datalevin.util :as u]
+   [datalevin.interface :as i])
   (:import
    [datalevin.db DB]
    [datalevin.storage Store]
-   [datalevin.remote DatalogStore KVStore]
-   [datalevin.async IAsyncWork]
-   [java.io File]
-   [java.net URL]
-   [java.nio.file AtomicMoveNotSupportedException Files Paths
-    StandardCopyOption]
-   [java.util UUID]))
+   [datalevin.remote DatalogStore]
+   [datalevin.async IAsyncWork]))
 
 (defn conn?
   [conn]
@@ -54,14 +48,14 @@
 (defn close
   [conn]
   (when-let [store (.-store ^DB @conn)]
-    (s/close ^Store store))
+    (i/close ^Store store))
   nil)
 
 (defn closed?
   [conn]
   (or (nil? conn)
       (nil? @conn)
-      (s/closed? ^Store (.-store ^DB @conn))))
+      (i/closed? ^Store (.-store ^DB @conn))))
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
@@ -186,13 +180,13 @@
 
 (defn opts
   [conn]
-  (s/opts ^Store (.-store ^DB @conn)))
+  (i/opts ^Store (.-store ^DB @conn)))
 
 (defn schema
   "Return the schema of Datalog DB"
   [conn]
   {:pre [(conn? conn)]}
-  (s/schema ^Store (.-store ^DB @conn)))
+  (i/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
   ([conn schema-update]
@@ -203,9 +197,9 @@
    {:pre [(conn? conn)]}
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
-     (s/set-schema store schema-update)
-     (doseq [attr del-attrs] (s/del-attr store attr))
-     (doseq [[old new] rename-map] (s/rename-attr store old new))
+     (i/set-schema store schema-update)
+     (doseq [attr del-attrs] (i/del-attr store attr))
+     (doseq [[old new] rename-map] (i/rename-attr store old new))
      (schema conn))))
 
 (defonce ^:private connections (atom {}))
@@ -265,7 +259,7 @@
 
 (deftype ^:no-doc AsyncDLTx [conn store tx-data tx-meta cb]
   IAsyncWork
-  (work-key [_] (->> (.-store ^DB @conn) s/db-name dl-work-key))
+  (work-key [_] (->> (.-store ^DB @conn) i/db-name dl-work-key))
   (do-work [_] (transact! conn tx-data tx-meta))
   (combine [_] dl-tx-combine)
   (callback [_] cb))
@@ -297,3 +291,25 @@
    (let [fut (transact-async conn tx-data tx-meta)]
      @fut
      fut)))
+
+(defn open-kv
+  "it's here to access remote ns"
+  ([dir]
+   (open-kv dir nil))
+  ([dir opts]
+   (if (r/dtlv-uri? dir)
+     (r/open-kv dir opts)
+     (l/open-kv dir opts))))
+
+(defn clear
+  "Close the Datalog database, then clear all data, including schema."
+  [conn]
+  (let [store (.-store ^DB @conn)
+        lmdb  (if (instance? DatalogStore store)
+                (let [dir (i/dir store)]
+                  (close conn)
+                  (open-kv dir))
+                (.-lmdb ^Store store))]
+    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
+      (i/clear-dbi lmdb dbi))
+    (i/close-kv lmdb)))

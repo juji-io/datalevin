@@ -16,12 +16,13 @@
    [datalevin.bits :as b]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
-   [datalevin.migrate :as m]
    [datalevin.async :as a]
    [datalevin.scan :as scan]
-   [datalevin.vector :as v]
+   [datalevin.interface
+    :refer [IList ILMDB IAdmin open-dbi close-kv dbi-opts env-dir close-vecs
+            transact-kv get-range range-filter stat]]
    [datalevin.lmdb :as l
-    :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
+    :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
@@ -630,15 +631,15 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
-      (swap! l/lmdb-dirs disj (l/dir this))
+      (swap! l/lmdb-dirs disj (env-dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
         (u/shutdown-worker-thread-pool)
         (u/shutdown-scheduler))
       (.sync env 1)
       (.close env)
-      (doseq [idx (keep @l/vector-indices (u/list-files (.dir this)))]
-        (v/close-vecs idx))
+      (doseq [idx (keep @l/vector-indices (u/list-files (.env-dir this)))]
+        (close-vecs idx))
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
@@ -646,9 +647,9 @@
 
   (check-ready [this] (assert (not (.closed-kv? this)) "LMDB env is closed."))
 
-  (dir [_] (@info :dir))
+  (env-dir [_] (@info :dir))
 
-  (opts [_] (dissoc @info :dbis))
+  (env-opts [_] (dissoc @info :dbis))
 
   (dbi-opts [_ dbi-name] (get-in @info [:dbis dbi-name]))
 
@@ -677,8 +678,8 @@
               db       (DBI. dbi (new-pools) kp vp dupsort? counted? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
-            (l/transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
-                                          [:keyword :string])]))
+            (transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
+                                        [:keyword :string])]))
           (.put dbis dbi-name db)
           db)
         (u/raise (str "Reached maximal number of DBI: " max-dbis) {}))))
@@ -715,8 +716,8 @@
         (Util/checkRc (DTLV/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
         (vswap! info update :dbis dissoc dbi-name)
-        (l/transact-kv this c/kv-info
-                       [[:del [:dbis dbi-name]]] [:keyword :string])
+        (transact-kv this c/kv-info
+                     [[:del [:dbis dbi-name]]] [:keyword :string])
         (.remove dbis dbi-name)
         nil)
       (catch Exception e (raise "Fail to drop DBI: " dbi-name e {}))))
@@ -783,7 +784,7 @@
           (catch Exception e
             (raise "Fail to get statistics: " e {:dbi dbi-name}))
           (finally (.return-rtx this rtx))))
-      (l/stat this)))
+      (stat this)))
 
   (entries [this dbi-name]
     (let [^DBI dbi (.get-dbi this dbi-name)
@@ -1042,6 +1043,8 @@
     (.open-list-dbi lmdb dbi-name nil))
 
   IList
+  (list-dbi? [this dbi-name]
+    (get-in (.dbi-opts this dbi-name) [:flags :dupsort]))
   (put-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [(l/kv-tx :put-list dbi-name k vs kt vt)]))
 
@@ -1272,20 +1275,20 @@
 
 (defn- init-info
   [^CppLMDB lmdb new-info]
-  (l/transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info))
+  (transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info))
   (let [dbis (into {}
                    (map (fn [[[_ dbi-name] opts]] [dbi-name opts]))
-                   (l/get-range lmdb c/kv-info
-                                [:closed
-                                 [:dbis :db.value/sysMin]
-                                 [:dbis :db.value/sysMax]]
-                                [:keyword :string]))
+                   (get-range lmdb c/kv-info
+                              [:closed
+                               [:dbis :db.value/sysMin]
+                               [:dbis :db.value/sysMax]]
+                              [:keyword :string]))
         info (into {}
-                   (l/range-filter lmdb c/kv-info
-                                   (fn [kv]
-                                     (let [b (b/read-buffer (l/k kv) :byte)]
-                                       (not= b c/type-hete-tuple)))
-                                   [:all]))]
+                   (range-filter lmdb c/kv-info
+                                 (fn [kv]
+                                   (let [b (b/read-buffer (l/k kv) :byte)]
+                                     (not= b c/type-hete-tuple)))
+                                 [:all]))]
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
 (defn- open-kv*
@@ -1327,12 +1330,12 @@
                                    false
                                    nil)]
       (swap! l/lmdb-dirs conj dir)
-      (l/open-dbi lmdb c/kv-info)
+      (open-dbi lmdb c/kv-info)
       (if temp?
         (u/delete-on-exit file)
         (do (init-info lmdb info)
             (.addShutdownHook (Runtime/getRuntime)
-                              (Thread. #(l/close-kv lmdb)))
+                              (Thread. #(close-kv lmdb)))
             (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
       lmdb)
     (catch Exception e

@@ -585,7 +585,7 @@
             "type": "datalevin.search.IPositions"
         },
         {
-            "type": "datalevin.search.ISearchEngine"
+            "type": "datalevin.interface.ISearchEngine"
         },
         {
             "type": "datalevin.search.ISpan"
@@ -639,7 +639,7 @@
             "type": "datalevin.spill.SpillableVector"
         },
         {
-            "type": "datalevin.storage.IStore"
+            "type": "datalevin.interface.IStore"
         },
         {
             "type": "datalevin.storage.ITuplePipe"
