@@ -15,7 +15,6 @@
    [datalevin.conn :as conn]
    [datalevin.dump :as dump]
    [datalevin.csv :as csv]
-   [datalevin.remote :as r]
    [datalevin.search :as sc]
    [datalevin.vector :as v]
    [datalevin.db :as db]
@@ -27,9 +26,9 @@
    [datalevin.query :as dq]
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
+   [datalevin.bits :as b]
    [datalevin.binding.cpp]
-   [datalevin.datafy]
-   [datalevin.bits :as b]))
+   [datalevin.datafy]))
 
 ;; Entities
 
@@ -616,7 +615,10 @@ Only usable for debug output.
        :doc      "Creates a mutable reference to a given Datalog database. See [[create-conn]]."}
   conn-from-db conn/conn-from-db)
 
-(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
+(def ^{:arglists '([datoms]
+                   [datoms dir]
+                   [datoms dir schema]
+                   [datoms dir schema opts])
        :doc      "Create a mutable reference to a Datalog database with the given datoms added to it.
   `dir` could be a local directory path or a dtlv connection URI string.
 
@@ -637,7 +639,10 @@ Only usable for debug output.
   "}
   conn-from-datoms conn/conn-from-datoms)
 
-(def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
+(def ^{:arglists '([]
+                   [dir]
+                   [dir schema]
+                   [dir schema opts])
        :doc      "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
@@ -689,7 +694,8 @@ Only usable for debug output.
        :doc      "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"}
   closed? conn/closed?)
 
-(def ^{:arglists '([conn tx-data] [conn tx-data tx-meta])
+(def ^{:arglists '([conn tx-data]
+                   [conn tx-data tx-meta])
        :doc      "Synchronously applies transaction to the underlying Datalog database of a
   connection.
 
@@ -777,11 +783,13 @@ Only usable for debug output.
                        [:db/add 296 :friend -1]])"}
   transact! conn/transact!)
 
-(def ^{:arglists '([conn db] [conn db tx-meta])
+(def ^{:arglists '([conn db]
+                   [conn db tx-meta])
        :doc      "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that will remove everything from old value and insert everything from the new one."}
   reset-conn! conn/reset-conn!)
 
-(def ^{:arglists '([conn callback] [conn key callback])
+(def ^{:arglists '([conn callback]
+                   [conn key callback])
        :doc      "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
   to the database via [[transact!]], the callback is called with the transaction
   report. `key` is any opaque unique value.
@@ -795,29 +803,6 @@ Only usable for debug output.
 (def ^{:arglists '([conn key])
        :doc      "Removes registered listener from connection. See also [[listen!]]."}
   unlisten! conn/unlisten!)
-
-;; Datomic compatibility layer
-
-(def ^{:arglists '([part] [part x])
-       :doc      "allocates and returns an unique temporary id (a negative integer). ignores `part`. returns `x` if it is specified.
-
-   exists for datomic api compatibility. prefer using negative integers directly if possible."}
-  tempid u/tempid)
-
-(def ^{:arglists '([_db tempids tempid])
-       :doc      "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
-
-   Exists for Datomic API compatibility. Prefer using map lookup directly if possible."}
-  resolve-tempid u/resolve-tempid)
-
-(def ^{:arglists '([] [msec])
-       :doc      "Generates a UUID that grow with time."}
-  squuid u/squuid)
-
-(def ^{:arglists '([uuid])
-       :doc      "Returns time that was used in [[squuid]] call, in milliseconds,
-  rounded to the closest second."}
-  squuid-time-millis u/squuid-time-millis)
 
 (def ^{:arglists '([conn])
        :doc      "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object. "}
@@ -893,6 +878,31 @@ Only usable for debug output.
   calls, and when this function returns, it indicates that all those previous
   async transactions are also committed."}
   transact conn/transact)
+;; Datomic compatibility layer
+
+(def ^{:arglists '([part]
+                   [part x])
+       :doc      "allocates and returns an unique temporary id (a negative integer). ignores `part`. returns `x` if it is specified.
+
+   exists for datomic api compatibility. prefer using negative integers directly if possible."}
+  tempid u/tempid)
+
+(def ^{:arglists '([_db
+                    tempids tempid])
+       :doc      "Does a lookup in tempids map, returning an entity id that tempid was resolved to.
+
+   Exists for Datomic API compatibility. Prefer using map lookup directly if possible."}
+  resolve-tempid u/resolve-tempid)
+
+(def ^{:arglists '([]
+                   [msec])
+       :doc      "Generates a UUID that grow with time."}
+  squuid u/squuid)
+
+(def ^{:arglists '([uuid])
+       :doc      "Returns time that was used in [[squuid]] call, in milliseconds,
+  rounded to the closest second."}
+  squuid-time-millis u/squuid-time-millis)
 
 ;; -------------------------------------
 
@@ -906,7 +916,8 @@ Only usable for debug output.
        :doc      "Value of a key value pair"}
   v l/v)
 
-(def ^{:arglists '([dir] [dir opts])
+(def ^{:arglists '([dir]
+                   [dir opts])
        :doc      "Open a LMDB key-value database, return the connection.
 
   `dir` is a directory path or a dtlv connection URI string.
@@ -998,12 +1009,14 @@ Only usable for debug output.
        :doc      "List the names of the sub-databases in the key-value store"}
   list-dbis i/list-dbis)
 
-(def ^{:arglists '([db dest] [db dest compact?])
+(def ^{:arglists '([db dest]
+                   [db dest compact?])
        :doc      "Copy a Datalog or a key-value database to a destination directory path,
   optionally compact while copying, default not compact. "}
   copy dump/copy)
 
-(def ^{:arglists '([db] [db dbi-name])
+(def ^{:arglists '([db]
+                   [db dbi-name])
        :doc      "Return the statitics of the unnamed top level database or a named DBI (i.e. sub-database) of the key-value store as a map:
   * `:psize` is the size of database page
   * `:depth` is the depth of the B-tree
@@ -1017,7 +1030,9 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries i/entries)
 
-(def ^{:arglists '([db txs] [db dbi-name txs] [db dbi-name txs k-type]
+(def ^{:arglists '([db txs]
+                   [db dbi-name txs]
+                   [db dbi-name txs k-type]
                    [db dbi-name txs k-type v-type])
        :doc      "Synchronously update key-value DB, insert or delete key value pairs.
 
@@ -1538,7 +1553,8 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
 ;; List related functions
 
-(def ^{:arglists '([db list-name] [db list-name opts])
+(def ^{:arglists '([db list-name]
+                   [db list-name opts])
        :doc      "Open a special kind of DBI, that permits a list of
   values for the same key.
 
@@ -1719,7 +1735,8 @@ This function is eager and attempts to load all matching data in range into memo
 ;; -------------------------------------
 ;; Search API
 
-(def ^{:arglists '([lmdb] [lmdb opts])
+(def ^{:arglists '([lmdb]
+                   [lmdb opts])
        :doc      "Create a full-text search engine.
 
    The search index is stored in the passed-in key-value database
@@ -1789,7 +1806,8 @@ engine index."}
        :doc      "Return the number of documents in the search index"}
   doc-count i/doc-count)
 
-(def ^{:arglists '([engine query] [engine query opts])
+(def ^{:arglists '([engine query]
+                   [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` could be a
        string of words or a search data structure. The search data structure
        is a boolean expression, formally with the following grammar:
@@ -1835,7 +1853,8 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
     value is `45`. It is only applicable when `index-position?` is `true`"}
   search i/search)
 
-(def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
+(def ^{:arglists '([writer doc-ref doc-text]
+                   [writer doc-ref doc-text opts])
        :doc      "Create a writer for writing documents to the search index
   in bulk. Note that this is not supported in the client/server mode.
 
@@ -1870,8 +1889,8 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
 ;; -------------------------------------
 ;; vector
 
-(defn new-vector-index
-  "Create a Hierarchical Navigable Small World (HNSW) graph index
+(def ^{:arglists '([lmdb opts])
+       :doc      "Create a Hierarchical Navigable Small World (HNSW) graph index
   for vectors.
 
   The mapping of semantic references to vectors is stored in the
@@ -1918,11 +1937,8 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
       - `:vec-filter` is a function that takes a semantic reference and returns
         `true` only for those references that need to be in the results.
 
-   * `:domain` is a string, indicates the domain of this vector index."
-  [lmdb opts]
-  (if (instance? datalevin.remote.KVStore lmdb)
-    (r/new-vector-index lmdb opts)
-    (v/new-vector-index lmdb opts)))
+   * `:domain` is a string, indicates the domain of this vector index."}
+  new-vector-index v/new-vector-index)
 
 (def ^{:arglists '([index])
        :doc      "Close the vector index and free memory"}

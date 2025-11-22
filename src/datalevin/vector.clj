@@ -15,6 +15,7 @@
    [datalevin.spill :as sp]
    [datalevin.constants :as c]
    [datalevin.async :as a]
+   [datalevin.remote :as r]
    [datalevin.bits :as b]
    [datalevin.interface :as i]
    [clojure.string :as s]
@@ -24,6 +25,7 @@
    [datalevin.cpp VecIdx VecIdx$SearchResult VecIdx$IndexInfo]
    [datalevin.spill SpillableMap]
    [datalevin.async IAsyncWork]
+   [datalevin.remote KVStore]
    [datalevin.interface IAdmin IVectorIndex]
    [java.io FileOutputStream FileInputStream DataOutputStream DataInputStream]
    [java.util Map]
@@ -294,7 +296,7 @@
                    :expansion-search c/default-expansion-search
                    :search-opts      default-search-opts})
 
-(defn new-vector-index
+(defn new-vector-index*
   [lmdb {:keys [domain metric-type quantization dimensions connectivity
                 expansion-add expansion-search search-opts]
          :or   {metric-type      (default-opts :metric-type)
@@ -327,6 +329,12 @@
                      vecs
                      (AtomicLong. max-vec-id)
                      search-opts))))
+
+(defn new-vector-index
+  [lmdb opts]
+  (if (instance? KVStore lmdb)
+    (r/new-vector-index lmdb opts)
+    (new-vector-index* lmdb opts)))
 
 (defn transfer
   [^VectorIndex old lmdb]

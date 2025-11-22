@@ -1184,7 +1184,7 @@
     ts))
 
 (defn- analyze*
-  [store attr]
+  [^Store store attr]
   (when-let [aid (:db/aid ((schema store) attr))]
     (e-sample* store attr aid (.actual-a-size store attr))))
 

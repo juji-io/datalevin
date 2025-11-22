@@ -12,8 +12,7 @@
   (:require
    [datalevin.lmdb :as l]
    [datalevin.interface :as if
-    :refer [clear-dbi env-dir get-value visit transact-kv closed-kv?
-            open-dbi]]
+    :refer [clear-dbi env-dir get-value visit transact-kv closed-kv? open-dbi]]
    [datalevin.util :as u :refer [cond+ raise conjs]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
@@ -697,7 +696,7 @@
           (let [new (new-search-engine* lmdb opts)
                 dis (DataInputStream. (FileInputStream. ^String dfname))]
             (doseq [[doc-ref rawtext] (nippy/thaw-from-in! dis)]
-              (.add-doc new doc-ref rawtext))
+              (if/add-doc new doc-ref rawtext))
             (.close dis)
             (u/delete-files dfname)
             new))
