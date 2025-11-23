@@ -734,8 +734,9 @@
   (get-rtx [this]
     (when-not (.closed-kv? this)
       (try
-        (or (when-let [^Rtx rtx (.get tl-reader)]
-              (.renew rtx))
+        (or (when-not (.isVirtual (Thread/currentThread))
+              (when-let [^Rtx rtx (.get tl-reader)]
+                (.renew rtx)))
             (let [rtx (Rtx. this
                             (Txn/createReadOnly env)
                             (volatile! 1)
