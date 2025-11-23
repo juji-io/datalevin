@@ -19,7 +19,7 @@
    [datalevin.async :as a]
    [datalevin.scan :as scan]
    [datalevin.interface
-    :refer [IList ILMDB IAdmin open-dbi close-kv dbi-opts env-dir close-vecs
+    :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
             transact-kv get-range range-filter stat]]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting
@@ -33,8 +33,7 @@
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
-   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture
-    Semaphore]
+   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
    [java.util Iterator HashMap ArrayDeque]
@@ -600,7 +599,6 @@
 (deftype CppLMDB [^Env env
                   info
                   ^ThreadLocal tl-reader
-                  ^Semaphore readers
                   ^HashMap dbis
                   scheduled-sync
                   ^BufVal kp-w
@@ -620,7 +618,7 @@
 
   (mark-write [_]
     (->CppLMDB
-      env info tl-reader readers dbis scheduled-sync kp-w vp-w start-kp-w
+      env info tl-reader dbis scheduled-sync kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true meta))
 
   IObj
@@ -1318,7 +1316,6 @@
           ^CppLMDB lmdb (->CppLMDB env
                                    (volatile! info)
                                    (ThreadLocal.)
-                                   (Semaphore. max-readers)
                                    (HashMap.)
                                    (volatile! nil)
                                    (new-bufval c/+max-key-size+)
