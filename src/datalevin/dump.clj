@@ -17,7 +17,6 @@
    [datalevin.util :as u]
    [datalevin.conn :as conn]
    [datalevin.db :as db]
-   [datalevin.lmdb :as l]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
    [datalevin.interface :as i :refer [dir]])
@@ -112,9 +111,10 @@
   ([db dest]
    (copy db dest false))
   ([db dest compact?]
-   (if (instance? DB db)
-     (i/copy (.-lmdb ^Store (.-store ^DB db)) dest compact?)
-     (i/copy db dest compact?))))
+   (let [lmdb (if (instance? DB db)
+                (.-lmdb ^Store (.-store ^DB db))
+                db)]
+     (i/copy lmdb dest compact?))))
 
 (defn re-index
   ([db opts]

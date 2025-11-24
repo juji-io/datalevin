@@ -23,7 +23,8 @@
    [java.util.concurrent Executors ExecutorService Future TimeUnit
     ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
-   [java.nio.file Files Paths LinkOption AccessDeniedException]
+   [java.nio.file Files Paths LinkOption AccessDeniedException
+    StandardCopyOption]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
 
 ;; for when we need to use datalevin specific print method
@@ -165,6 +166,16 @@
   "test if the given File is an empty directory"
   [^File file]
   (and (.isDirectory file) (-> file .list empty?)))
+
+(defn copy-file
+  "copy a file src to dst"
+  [^String src ^String dst]
+  (let [src-path (Paths/get src (make-array String 0))
+        dst-path (Paths/get dst (make-array String 0))]
+    (Files/copy src-path dst-path
+                ^"[Ljava.nio.file.StandardCopyOption;"
+                (into-array java.nio.file.CopyOption
+                            [StandardCopyOption/REPLACE_EXISTING]))))
 
 (def +separator+ java.io.File/separator)
 

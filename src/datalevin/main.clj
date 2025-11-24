@@ -313,10 +313,8 @@
   `compact?` is true."
   [src-dir dest-dir compact?]
   (let [lmdb (l/open-kv src-dir)]
-    (println "Opened database, copying...")
     (if/copy lmdb dest-dir compact?)
-    (if/close-kv lmdb)
-    (println "Copied database.")))
+    (if/close-kv lmdb)))
 
 (defn- dtlv-copy [{:keys [dir compact]} arguments]
   (assert dir (s/join \newline
@@ -339,11 +337,9 @@
   (let [lmdb (l/open-kv dir)]
     (if delete
       (doseq [dbi dbis]
-        (if/drop-dbi lmdb dbi)
-        (println (str "Dropped " dbi)))
+        (if/drop-dbi lmdb dbi))
       (doseq [dbi dbis]
-        (if/clear-dbi lmdb dbi)
-        (println (str "Cleared " dbi))))
+        (if/clear-dbi lmdb dbi)))
     (if/close-kv lmdb)))
 
 (defn- dtlv-drop [{:keys [dir delete]} arguments]

@@ -351,7 +351,8 @@
         (u/create-dirs dest))
       (Files/write file ^bytes bs
                    ^"[Ljava.nio.file.StandardOpenOption;"
-                   (into-array StandardOpenOption []))))
+                   (into-array StandardOpenOption []))
+      (spit (str dest u/+separator+ c/version-file-name) c/version)))
 
   (stat [db] (.stat db nil))
   (stat [_ dbi-name]

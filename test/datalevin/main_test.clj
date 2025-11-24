@@ -5,10 +5,9 @@
    [datalevin.core :as d]
    [datalevin.interpret :as i]
    [datalevin.interface :as if]
-   [datalevin.lmdb :as l]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [taoensso.nippy :as nippy]
-   [clojure.test :refer [deftest testing is use-fixtures]]
+   [clojure.test :refer [deftest is use-fixtures]]
    [clojure.test.check.generators :as gen]
    [clojure.string :as s]
    [clojure.edn :as edn])
@@ -65,14 +64,12 @@
     (is (s/includes? res "(1)"))
     (u/delete-files dir)))
 
-(deftest copy-stat-test
-  (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
-        dst (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
-        db  (d/open-kv src)
+(deftest stat-test
+  (let [dir (u/tmp-dir (str "datalevin-stat-test-" (UUID/randomUUID)))
+        db  (d/open-kv dir)
         dbi "a"]
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
-    (sut/copy src dst true)
     (is (= (if/stat db)
            (if (u/apple-silicon?)
              {:psize          16384,
@@ -87,23 +84,33 @@
               :leaf-pages     1,
               :overflow-pages 0,
               :entries        2})))
-    ;; TODO
-    #_(doseq [i (if/list-dbis db)]
-        (println i)
-        (is (= (if/stat db i)
-               (if (u/apple-silicon?)
-                 {:psize          16384,
-                  :depth          1,
-                  :branch-pages   0,
-                  :leaf-pages     1,
-                  :overflow-pages 0,
-                  :entries        1}
-                 {:psize          4096,
-                  :depth          1,
-                  :branch-pages   0,
-                  :leaf-pages     1,
-                  :overflow-pages 0,
-                  :entries        1}))))
+    (doseq [i (if/list-dbis db)]
+      (is (= (if/stat db i)
+             (if (u/apple-silicon?)
+               {:psize          16384,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1}
+               {:psize          4096,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1}))))
+
+    (d/close-kv db)
+    (u/delete-files dir)))
+
+(deftest copy-test
+  (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
+        dst (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
+        db  (d/open-kv src)
+        dbi "a"]
+    (d/open-dbi db dbi)
+    (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
+    (sut/copy src dst true)
     (let [db-copied (d/open-kv dst)]
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))

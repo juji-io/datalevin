@@ -17,6 +17,7 @@
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
    [datalevin.async :as a]
+   [datalevin.migrate :as m]
    [datalevin.scan :as scan]
    [datalevin.interface
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
@@ -724,9 +725,12 @@
 
   (copy [this dest]
     (.copy this dest false))
-  (copy [_ dest compact?]
+  (copy [this dest compact?]
     (if (-> dest u/file u/empty-dir?)
-      (.copy env dest (if compact? true false))
+      (do (.copy env dest (if compact? true false))
+          (let [src (str (env-dir this) u/+separator+ c/version-file-name)
+                dst (str dest u/+separator+ c/version-file-name)]
+            (u/copy-file src dst)))
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]
@@ -1344,24 +1348,27 @@
   ([dir] (open-kv dir {}))
   ([dir opts]
    (assert (string? dir) "directory should be a string.")
-   (let [file (u/file dir)
-         ]
-     (open-kv* dir file opts))))
-#_(defmethod open-kv :cpp
-    ([dir] (open-kv dir {}))
-    ([dir opts]
-     (assert (string? dir) "directory should be a string.")
-     (let [file    (u/file dir)
-           version (read-version-file file)]
-       (if version
-         (do
-           (when (not= version c/version)
-             (if-let [{:keys [major minor patch]} (c/parse-version version)]
-               (let [{:keys [cmajor cminor]} (c/parse-version c/version)]
-                 (when (and c/require-migration?
-                            (or (< cmajor major) (< cminor minor)))
-                   (m/perform-migration dir major minor patch)))
-               (raise "Corrupt VERSION file" {:input version})))
-           (open-kv* dir file opts))
-         (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
-                {:dir dir})))))
+   (let [dir-file  (u/file dir)
+         db-file   (io/file dir "data.mdb")
+         exist-db? (.exists db-file)
+         version   (read-version-file dir-file)]
+     (cond
+       (not exist-db?)
+       (let [lmdb (open-kv* dir dir-file opts)]
+         (write-version-file dir-file c/version)
+         lmdb)
+       version
+       (do
+         (when (not= version c/version)
+           (if-let [{:keys [major minor patch]} (c/parse-version version)]
+             (let [{cmajor :major cminor :minor} (c/parse-version c/version)]
+               (when (and c/require-migration?
+                          (or (< ^long major ^long cmajor)
+                              (< ^long minor ^long cminor)))
+                 (m/perform-migration dir major minor patch))
+               (write-version-file dir-file c/version))
+             (raise "Corrupt VERSION file" {:input version})))
+         (open-kv* dir dir-file opts))
+       :else
+       (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
+              {:dir dir})))))
