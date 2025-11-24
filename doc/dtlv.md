@@ -131,7 +131,7 @@ Type (doc <function name>) to read documentation of the function
 user> (def conn (get-conn "/tmp/test-db"))
 #'user/conn
 user> (transact! conn [{:greeting "hello"}])
-#datalevin.db.TxReport{:db-before #datalevin.db.DB{:store #object[datalevin.storage.Store 0x3004662 "datalevin.storage.Store@3004662"], :max-eid 0, :max-tx 1, :eavt #{#datalevin/Datom [1 :greeting "hello"]}, :avet #{#datalevin/Datom [1 :greeting "hello"]}, :vaet #{}, :pull-patterns #object[datalevin.utl.LRUCache 0x9ce4d38 "datalevin.utl.LRUCache@9ce4d38"]}, :db-after #datalevin.db.DB{:store #object[datalevin.storage.Store 0x48cb33af "datalevin.storage.Store@48cb33af"], :max-eid 1, :max-tx 2, :eavt #{}, :avet #{}, :vaet #{}, :pull-patterns #object[datalevin.utl.LRUCache 0x5c6fc4f2 "datalevin.utl.LRUCache@5c6fc4f2"]}, :tx-data [#datalevin/Datom [1 :greeting "hello"]], :tempids {:db/current-tx 2}, :tx-meta nil}
+#datalevin.db.TxReport{:db-before #datalevin.db.DB{:store #object[datalevin.storage.Store 0x3004662 "datalevin.storage.Store@3004662"], :max-eid 0, :max-tx 1, :eavt #{#datalevin/Datom [1 :greeting "hello"]}, :avet #{#datalevin/Datom [1 :greeting "hello"]}, :pull-patterns #object[datalevin.utl.LRUCache 0x9ce4d38 "datalevin.utl.LRUCache@9ce4d38"]}, :db-after #datalevin.db.DB{:store #object[datalevin.storage.Store 0x48cb33af "datalevin.storage.Store@48cb33af"], :max-eid 1, :max-tx 2, :eavt #{}, :avet #{}, :pull-patterns #object[datalevin.utl.LRUCache 0x5c6fc4f2 "datalevin.utl.LRUCache@5c6fc4f2"]}, :tx-data [#datalevin/Datom [1 :greeting "hello"]], :tempids {:db/current-tx 2}, :tx-meta nil}
 user>
 ```
 We are unapologetic about the use of Clojure language. Unlike most other

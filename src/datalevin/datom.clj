@@ -194,13 +194,6 @@
     (long-compare (.-e d1) (.-e d2))
     (long-compare (datom-tx d1) (datom-tx d2))))
 
-(defcomp cmp-datoms-vaet [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (nil-cmp-type (.-v d1) (.-v d2))
-    (nil-cmp (.-a d1) (.-a d2))
-    (long-compare (.-e d1) (.-e d2))
-    (long-compare (datom-tx d1) (datom-tx d2))))
-
 (defn datom-e [^Datom d] (.-e d))
 
 (defn datom-a [^Datom d] (.-a d))

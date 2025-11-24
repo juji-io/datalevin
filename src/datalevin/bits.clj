@@ -800,11 +800,6 @@
     (do (put-byte bf c/separator)
         (put-byte bf c/false-value))))
 
-(defn- put-ae
-  [bf ^Indexable x]
-  (put-int bf (.-a x))
-  (put-long bf (.-e x)))
-
 (deftype Retrieved [e a v g])
 
 (defn pr-retrieved [^Retrieved r]
@@ -836,12 +831,6 @@
       (do (.position bf 4)
           (Retrieved. nil nil (get-value bf 2) c/normal)))))
 
-(defn- get-ae
-  [bf]
-  (let [a (get-int bf)
-        e (get-long bf)]
-    (Retrieved. e a nil nil)))
-
 (defn- indexable->retrieved
   [^Indexable i]
   (Retrieved. (.-e i) (.-a i) (.-v i) (.-g i)))
@@ -850,7 +839,7 @@
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
-    (:eav :vae :ave) (indexable->retrieved x)
+    (:eav :ave) (indexable->retrieved x)
     x))
 
 (defn put-buffer
@@ -909,7 +898,6 @@
                        (cp/put-sorted-ints bf i2))
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
-     :ae             (put-ae bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
        (if (= 1 (count x-type))
@@ -962,7 +950,6 @@
      :int            (get-int bf)
      :attr           (get-attr bf)
      :avg            (get-avg bf)
-     :ae             (get-ae bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
      ;; range query are NOT supported on these

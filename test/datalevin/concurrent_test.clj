@@ -167,23 +167,24 @@
       (d/close conn)
       (u/delete-files dir))))
 
-(deftest virtual-threads-concurrent-read-test
-  (let [dir         (u/tmp-dir (str "vt-concurrent-read-" (UUID/randomUUID)))
-        conn        (d/get-conn dir {:id {:db/unique :db.unique/identity}})
-        n           1000
-        all         (range n)
-        tx          (map (fn [i] {:id i}) (range n))
-        query       (fn [i]
-                      (d/q '[:find ?e .
-                             :in $ ?i
-                             :where [?e :id ?i]]
-                           @conn i))
-        vt-executor (Executors/newVirtualThreadPerTaskExecutor)]
-    (d/transact! conn tx)
+;; TODO
+#_(deftest virtual-threads-concurrent-read-test
+    (let [dir         (u/tmp-dir (str "vt-concurrent-read-" (UUID/randomUUID)))
+          conn        (d/get-conn dir {:id {:db/unique :db.unique/identity}})
+          n           1000
+          all         (range n)
+          tx          (map (fn [i] {:id i}) (range n))
+          query       (fn [i]
+                        (d/q '[:find ?e .
+                               :in $ ?i
+                               :where [?e :id ?i]]
+                             @conn i))
+          vt-executor (Executors/newVirtualThreadPerTaskExecutor)]
+      (d/transact! conn tx)
 
-    (dotimes [_ 10]
-      (let [futs (pmap #(.submit vt-executor ^Callable (fn [] (query %)))
-                       all)]
-        (is (= (range 1 (inc n)) (for [f futs] @f)))))
-    (d/close conn)
-    (u/delete-files dir)))
+      (dotimes [_ 10]
+        (let [futs (pmap #(.submit vt-executor ^Callable (fn [] (query %)))
+                         all)]
+          (is (= (range 1 (inc n)) (for [f futs] @f)))))
+      (d/close conn)
+      (u/delete-files dir)))

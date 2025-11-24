@@ -188,31 +188,23 @@
               {:v v}))
           (b/indexable e am vm :db.type/sysMin gm))))))
 
-(defonce index->dbi {:eav c/eav
-                     :ave c/ave
-                     :vae c/vae})
+(defonce index->dbi {:eav c/eav :ave c/ave})
 
-(defonce index->ktype {:eav :id
-                       :ave :avg
-                       :vae :id})
+(defonce index->ktype {:eav :id :ave :avg})
 
-(defonce index->vtype {:eav :avg
-                       :ave :id
-                       :vae :ae})
+(defonce index->vtype {:eav :avg :ave :id})
 
 (defn- index->k
   [index schema ^Datom datom high?]
   (case index
     :eav (or (.-e datom) (if high? c/emax c/e0))
-    :ave (datom->indexable schema datom high?)
-    :vae (or (.-v datom) (if high? c/vmax c/v0))))
+    :ave (datom->indexable schema datom high?)))
 
 (defn- index->v
   [index schema ^Datom datom high?]
   (case index
     :eav (datom->indexable schema datom high?)
-    :ave (or (.-e datom) (if high? c/emax c/e0))
-    :vae (datom->indexable schema datom high?)))
+    :ave (or (.-e datom) (if high? c/emax c/e0))))
 
 (defn gt->datom [lmdb gt] (get-value lmdb c/giants gt :id :data))
 
@@ -748,7 +740,17 @@
         (analyze* this attr)))
     :done)
 
-  (v-size [_ v] (list-count lmdb c/vae v :id))
+  (v-size [_ v]
+    (reduce-kv
+      (fn [total _ props]
+        (if (identical? (:db/valueType props) :db.type/ref)
+          (let [aid (:db/aid props)
+                vt  (value-type props)]
+            (+ ^long total
+               ^long (list-count
+                       lmdb c/ave (b/indexable nil aid v vt c/gmax) :avg)))
+          total))
+      0 schema))
 
   (av-size [_ a v]
     (list-count
@@ -865,8 +867,17 @@
       (retrieved->v lmdb r)))
 
   (v-datoms [_ v]
-    (mapv #(ae-retrieved->datom attrs v %)
-          (get-list lmdb c/vae v :id :ae)))
+    (mapcat
+      (fn [[attr props]]
+        (when (identical? (:db/valueType props) :db.type/ref)
+          (let [aid (:db/aid props)
+                vt  (value-type props)]
+            (when-let [es (not-empty (get-list
+                                       lmdb c/ave
+                                       (b/indexable nil aid v vt c/gmax)
+                                       :avg :id))]
+              (map #(d/datom % attr v) es)))))
+      schema))
 
   (size-filter [store index pred low-datom high-datom]
     (.size-filter store index pred low-datom high-datom nil))
@@ -1306,9 +1317,6 @@
         (.put giants gd max-gt)
         (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
                               :id :data [:append]))))
-
-    (when (identical? vt :db.type/ref)
-      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (identical? vt :db.type/vec)
       (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                    (if giant? [:g [max-gt v]] [:a [e aid v]])]))
@@ -1354,8 +1362,6 @@
       (when gt
         (when gt-cur (.remove giants d-eav))
         (.add txs (lmdb/kv-tx :del c/giants gt :id)))
-      (when (identical? vt :db.type/ref)
-        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae)))
       (when (identical? vt :db.type/vec)
         (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                      (if gt [:r gt] [:d [e aid v]])])))))
@@ -1381,10 +1387,7 @@
   (open-dbi lmdb c/giants {:key-size c/+id-bytes+})
   (open-dbi lmdb c/meta {:key-size c/+max-key-size+})
   (open-dbi lmdb c/opts {:key-size c/+max-key-size+})
-  (open-dbi lmdb c/schema {:key-size c/+max-key-size+})
-  (open-list-dbi lmdb c/vae
-                 {:key-size c/+id-bytes+
-                  :val-size (+ c/+short-id-bytes+ c/+id-bytes+)}))
+  (open-dbi lmdb c/schema {:key-size c/+max-key-size+}))
 
 (defn- default-search-domain
   [dms search-opts search-domains]

@@ -10,6 +10,8 @@
 - [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [KV] Default `:max-readers` is now 1024.
+- [Datalog] Removed VAE index to reduce DB size. VAE was only used in entity
+  retraction and the replacement is less than 10% slower.
 - [Vector] Vector index is now stored inside the database file and is ACID
   compliant.
 - [Platform] Native dependencies are statically compiled and bundled in the

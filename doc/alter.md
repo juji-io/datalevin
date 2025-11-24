@@ -52,8 +52,7 @@ to LMDB storage, but has since deviated from that origin signficantly.
   to LIKE and NOT LIKE operators in SQL; `in` and `not-in` that are similar to
   IN and NOT IN operators in SQL, among others.
 
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute;
-  The attribute and value leading index (AVE) is enabled for all datoms, so
+* The attribute and value leading index (AVE) is enabled for all datoms, so
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
   have AEV index, in order to save storage and improve write speed.
 

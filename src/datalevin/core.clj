@@ -417,7 +417,7 @@ Only usable for debug output.
                    [db index c1 c2 c3 n])
        :doc      "Lookup datoms in specified index of Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
+   Datoms are sorted in index sort order. Possible `index` values are: `:eav` or `:ave`.
 
    `n` is the number of datoms desired.
 

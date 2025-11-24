@@ -310,6 +310,6 @@
                   (close conn)
                   (open-kv dir))
                 (.-lmdb ^Store store))]
-    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
+    (doseq [dbi [c/eav c/ave c/giants c/schema c/meta]]
       (i/clear-dbi lmdb dbi))
     (i/close-kv lmdb)))
