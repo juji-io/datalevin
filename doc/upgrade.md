@@ -4,7 +4,7 @@ Before introducing steps to upgrade Datalevin databases, let us discuss the
 versioning of Datalevin, so we have the right expectations as to when a database
 upgrade is needed.
 
-## Versioning
+## Versions
 
 Datalevin version numbers roughly follow this numbering schema:
 `major.minor.non-breaking`.
@@ -32,9 +32,20 @@ existing databases when upgrading. Major version bumps may not require migration
  not, data migration is needed. Non-breaking version bumps do not require data
  migration.
 
-## Database Upgrade
+## Automatic Data Migration
 
-Now we know when a database upgrade is needed, here is how to do it.
+For databases that is newer than version 0.9.27, a later version of Datalevin
+can automatically migrating the data when opening them. This process involves
+downloading the old version of Datalevin uberjar to dump the data, then load the
+data with the newer version of Datalevin.
+
+This process may take a long time if the database is big, so some down time is
+expected for now.
+
+## Manual Data Migration
+
+For databases that are older than verison 0.9.27, manual migration is needed.
+Here is how to do data migration manually.
 
 ### Command line
 
