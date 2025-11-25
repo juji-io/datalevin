@@ -424,7 +424,7 @@
 
 (def ^{:dynamic true
        :doc     "Size reduction a predicate induces during scan"}
-  magic-size-pred 0.7)
+  magic-size-pred 0.6)
 
 (def ^{:dynamic true
        :doc     "Size reduction a filter induces during scan"}
@@ -436,7 +436,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding a variable during scan"}
-  magic-cost-var 4.5)
+  magic-cost-var 5.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
@@ -448,7 +448,7 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 5.0)
+  magic-cost-merge-scan-v 7.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}

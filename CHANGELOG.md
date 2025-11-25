@@ -10,8 +10,10 @@
 - [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [KV] Default `:max-readers` is now 1024.
-- [Datalog] Removed VAE index to reduce DB size. VAE was only used in entity
-  retraction and the replacement is less than 10% slower.
+- [Datalog] Removed VAE index. This may reduce DB size by 30% and cut write time
+  by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
+  DB). VAE was only used in entity retraction and current replacement is less
+  than 10% slower.
 - [Vector] Vector index is now stored inside the database file and is ACID
   compliant.
 - [Platform] Native dependencies are statically compiled and bundled in the
@@ -40,7 +42,8 @@
   [#322](https://github.com/juji-io/datalevin/issues/322).
 
 ### Improved
-- [Datalog] Smaller DB size due to prefix compression and key/value compression.
+- [Datalog] Smaller DB size due to VAE index removal, prefix compression, and
+  key/value compression.
 - [Datalog] Cut query planning time in half due to faster range counts and
   sampling of `:counted` feature in DLMDB.
 - [Datalog] Reduced query execution time due to more optimized DLMDB iterators.

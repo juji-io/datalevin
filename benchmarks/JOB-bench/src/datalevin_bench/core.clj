@@ -460,7 +460,7 @@
     (d/read-csv reader)))
 
 (defn db [&opts]
-  (println "Loading data to db, please wait up to 30 minutes...")
+  (println "Loading data to db, please wait...")
   (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
               movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")
               movie-keyword-rdr  (io/reader "data/movie_keyword.csv")
@@ -3277,15 +3277,15 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [0.6 0.7 0.8]
-          ;; v [4.5 5.5 5.0]
+  (doseq [p [0.6 0.7]
+          ;; v [4.5 5.0]
           f [0.8 0.9]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
           (binding [c/magic-size-pred p
+                    ;; c/magic-cost-var  v
                     c/magic-size-fidx f
-                    ;; c/magic-cost-val-eq-scan-e f
                     q/*cache?*        false]
             (let [start (System/currentTimeMillis)]
               (d/q query (d/db conn))
