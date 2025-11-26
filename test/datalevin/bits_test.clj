@@ -21,12 +21,6 @@
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.bits Indexable Retrieved]))
 
-;; (def freqs (repeatedly 65536 #(rand-int 1000000)))
-;; (def kc    (cp/key-compressor (long-array (map inc freqs))))
-
-
-(def sample-bas (gen/sample gen/bytes c/*compress-sample-size*))
-
 ;; binary index preserves the order of values
 
 (def e 123456)

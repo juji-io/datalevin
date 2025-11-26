@@ -85,10 +85,10 @@
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.3.8\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.3.0\"}
-                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.13.28\"}
-                  org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.13.28\"}
-                  org.clojars.huahaiy/dtlvnative-linux-x86_64 {:mvn/version \"0.13.28\"}
-                  org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version \"0.13.28\"}
+                  org.clojars.huahaiy/dtlvnative-macosx-arm64 {:mvn/version \"0.13.32\"}
+                  org.clojars.huahaiy/dtlvnative-linux-arm64 {:mvn/version \"0.13.32\"}
+                  org.clojars.huahaiy/dtlvnative-linux-x86_64 {:mvn/version \"0.13.32\"}
+                  org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version \"0.13.32\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"13.0.0\"}
                   }}"
                   )

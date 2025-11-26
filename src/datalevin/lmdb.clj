@@ -8,7 +8,8 @@
 ;; You must not remove this notice, or any other, from this software.
 ;;
 (ns ^:no-doc datalevin.lmdb
-  "API for LMDB Key Value Store"
+  "Private API for local LMDB Key Value Store.
+  Public API is in datalevin.interface"
   (:refer-clojure :exclude [load sync])
   (:require
    [clojure.edn :as edn]
@@ -22,9 +23,9 @@
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.interface
-    :refer [close-kv list-dbis list-range-count range-count visit
-            visit-list-range entries get-range open-dbi transact-kv clear-dbi
-            env-dir copy list-dbi? open-transact-kv close-transact-kv]])
+    :refer [close-kv list-dbis visit visit-list-key-range entries get-range
+            open-dbi transact-kv clear-dbi env-dir copy list-dbi?
+            open-transact-kv close-transact-kv]])
   (:import
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
@@ -63,6 +64,9 @@
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx cur k-range k-type]
     "Return an Iterable based on key range only")
+  (iterate-key-sample [this rtx cur indices k-range k-type]
+    "Return an Iterable of a sample of keys given key range, and an array
+    of indices.")
   (iterate-list [this rtx cur k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
      applicable only to list dbi")
@@ -212,8 +216,6 @@
        (set (list-dbis lmdb)))
      (dump-dbis-list lmdb))))
 
-
-
 ;; We have consolidated bindings to JavaCPP
 (defn- pick-binding [] :cpp)
 
@@ -227,10 +229,9 @@
   (^longs [db dbi-name size]
    (sample-key-freqs db dbi-name size nil))
   (^longs [db dbi-name ^long size compressor]
-   (let [list?   (list-dbi? db dbi-name)
-         ^long n (if list?
-                   (list-range-count db dbi-name [:all] :raw [:all] :raw)
-                   (range-count db dbi-name [:all]))]
+   (let [list?    (list-dbi? db dbi-name)
+         ^long n  (entries db dbi-name)
+         ^long kn ()]
      (when-let [ia (u/reservoir-sampling n size)]
        (let [b (when compressor (bf/get-direct-buffer c/+max-key-size+))
              f (cp/init-key-freqs)
@@ -266,7 +267,7 @@
                                (recur (+ i 2)))))))
                      (vswap! i u/long-inc))))]
          (if list?
-           (visit-list-range db dbi-name v [:all] :raw [:all] :raw)
+           (visit-list-key-range db dbi-name v [:all] :raw :raw)
            (visit db dbi-name v [:all]))
          f)))))
 

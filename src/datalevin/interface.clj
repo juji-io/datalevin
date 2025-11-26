@@ -316,8 +316,6 @@ values;")
   (av-range-size [this a lv hv] [this a lv hv cap]
     "Return the numbers of datoms with given a and v range")
   (cardinality [this a]
-    "Return the number of distinct values of an attribute, an estimate")
-  (actual-cardinality [this a]
     "Return the number of distinct values of an attribute")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")

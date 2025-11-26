@@ -42,6 +42,11 @@ data with the newer version of Datalevin.
 This process may take a long time if the database is big, so some down time is
 expected for now.
 
+The auto migration detects the presence of `datalevin/eav` DBI and dumps the
+database as a Datalog store, otherwise, it dumps all DBIs as key value
+stores. If there are mixed KV DBIs in the same file as the Datalog store, these
+extra KV DBIs will need to be dumped manually.
+
 ## Manual Data Migration
 
 For databases that are older than verison 0.9.27, manual migration is needed.

@@ -17,8 +17,7 @@
   (:import
    [java.util UUID Arrays]
    [java.lang Long]
-   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
-   [org.eclipse.collections.impl.list.mutable FastList]))
+   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]))
 
 (use-fixtures :each db-fixture)
 

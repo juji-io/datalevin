@@ -765,25 +765,14 @@
        (datom->indexable schema (d/datom c/emax a hv) true)]
       :avg cap))
 
-  (cardinality [this a]
-    (if-let [aid (:db/aid (schema a))]
-      (let [^long c (get-value lmdb c/meta [aid :cardinality]
-                               [:long :keyword] :id)]
-        (or (when (and c (not (zero? c))) c)
-            (.actual-cardinality this a)))
-      0))
-
-  (actual-cardinality [_ a]
+  (cardinality [_ a]
     (if-let [aid (:db/aid (schema a)) ]
-      (let [c (key-range-count
-                lmdb c/ave
-                [:closed
-                 (datom->indexable schema (d/datom c/e0 a nil) false)
-                 (datom->indexable schema (d/datom c/emax a nil) true)]
-                :avg)]
-        (transact-kv lmdb [[:put c/meta [aid :cardinality] c
-                            [:long :keyword] :id]])
-        c)
+      (key-range-count
+        lmdb c/ave
+        [:closed
+         (datom->indexable schema (d/datom c/e0 a nil) false)
+         (datom->indexable schema (d/datom c/emax a nil) true)]
+        :avg)
       0))
 
   (head [this index low-datom high-datom]

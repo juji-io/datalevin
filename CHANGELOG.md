@@ -25,10 +25,11 @@
 - [Platform] Automatically upgrade DB from version 0.9.27 onwards when opening
   the DB. The migration may take a while, and it needs Internet access to
   download old uberjar. [#276](https://github.com/juji-io/datalevin/issues/276)
-- [KV] DB wide option `:key-compression :hu-tucker`, which compresses data with
+- [KV] DB wide option `:key-compress :hu`, which compresses keys with
   order preserving Hu-Tucker coding. This also applies to DUPSORT values if
   enabled.
-- [KV] DB wide option `:value-compression :lz4`, which compresses with LZ4.
+- [KV] DB wide option `:val-compress :lz4`, which compresses values with
+  LZ4.
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs.
 - [KV] Range count functions in O(log n) time for `:counted` DBIs.

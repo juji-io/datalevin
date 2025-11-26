@@ -29,7 +29,7 @@
             val-eq-filter-e-list fetch slice slice-filter e-datoms av-datoms
             ea-first-datom head-filter e-first-datom av-first-datom head
             size size-filter e-size av-size actual-a-size a-size v-size
-            datom-count populated? rslice actual-cardinality
+            datom-count populated? rslice cardinality
             av-range-size init-max-eid db-name start-sampling load-datoms
             stop-sampling close av-first-e ea-first-v v-datoms assoc-opt
             max-tx get-env-flags set-env-flags sync abort-transact-kv]])
@@ -60,7 +60,7 @@
   (-range-datoms [db index start-datom end-datom])
   (-seek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
   (-rseek-datoms [db index c1 c2 c3] [db index c1 c2 c3 n])
-  (-cardinality [db attr] [db attr actual?])
+  (-cardinality [db attr])
   (-index-range [db attr start end])
   (-index-range-size [db attr start end] [db attr start end cap]))
 
@@ -392,13 +392,10 @@
               (components->end-datom db index c1 c2 c3 e0 v0)
               n)))
 
-  (-cardinality [db attr] (-cardinality db attr false))
   (-cardinality
-    [db attr actual?]
-    (wrap-cache store [:cardinality attr actual?]
-      (if actual?
-        (actual-cardinality store attr)
-        (i/cardinality store attr))))
+    [db attr]
+    (wrap-cache store [:cardinality attr]
+      (cardinality store attr)))
 
   (-index-range
     [db attr start end]
@@ -465,8 +462,6 @@
    (-rseek-datoms db index c1 c2 c3))
   ([db index c1 c2 c3 n]
    (-rseek-datoms db index c1 c2 c3 n)))
-
-(defn cardinality [db a] (-cardinality db a true))
 
 (defn max-eid [db] (init-max-eid (:store db)))
 

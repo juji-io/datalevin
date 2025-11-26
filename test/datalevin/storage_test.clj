@@ -335,11 +335,9 @@
         ]
     (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
     (is (= 6 (if/cardinality store :a)))
-    (is (= 6 (if/actual-cardinality store :a)))
     (is (= 6 (if/a-size store :a)))
 
     (is (= 7 (if/cardinality store :b)))
-    (is (= 7 (if/actual-cardinality store :b)))
     (is (= 9 (if/a-size store :b)))
 
     (is (= 1 (if/av-size store :a "8a")))
