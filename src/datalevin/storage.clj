@@ -683,25 +683,13 @@
 
   (e-size [_ e] (list-count lmdb c/eav e :id))
 
-  (a-size [this a]
-    (if (lmdb/dlmdb?)
-      (.actual-a-size this a)
-      (if-let [aid (:db/aid (schema a))]
-        (let [^long ms (get-value lmdb c/meta aid :int :id)]
-          (or (when (and ms (not (zero? ms))) ms)
-              (.actual-a-size this a)))
-        0)))
-
-  (actual-a-size [_ a]
-    (if-let [aid (:db/aid (schema a))]
-      (let [as (key-range-list-count
-                 lmdb c/ave
-                 [:closed
-                  (datom->indexable schema (d/datom c/e0 a nil) false)
-                  (datom->indexable schema (d/datom c/emax a nil) true)] :avg)]
-        (when-not (lmdb/dlmdb?)
-          (transact-kv lmdb [[:put c/meta aid as :int :id]]))
-        as)
+  (a-size [_ a]
+    (if (:db/aid (schema a))
+      (key-range-list-count
+        lmdb c/ave
+        [:closed
+         (datom->indexable schema (d/datom c/e0 a nil) false)
+         (datom->indexable schema (d/datom c/emax a nil) true)] :avg)
       0))
 
   (e-sample [this a]
@@ -1186,7 +1174,7 @@
 (defn- analyze*
   [^Store store attr]
   (when-let [aid (:db/aid ((schema store) attr))]
-    (e-sample* store attr aid (.actual-a-size store attr))))
+    (e-sample* store attr aid (.a-size store attr))))
 
 (defn sampling
   "sample a random changed attribute at a time"

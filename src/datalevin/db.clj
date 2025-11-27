@@ -28,7 +28,7 @@
             eav-scan-v-list val-eq-scan-e val-eq-scan-e-list val-eq-filter-e
             val-eq-filter-e-list fetch slice slice-filter e-datoms av-datoms
             ea-first-datom head-filter e-first-datom av-first-datom head
-            size size-filter e-size av-size actual-a-size a-size v-size
+            size size-filter e-size av-size a-size v-size
             datom-count populated? rslice cardinality
             av-range-size init-max-eid db-name start-sampling load-datoms
             stop-sampling close av-first-e ea-first-v v-datoms assoc-opt
@@ -48,7 +48,7 @@
 
 (defprotocol ISearch
   (-search [db pattern])
-  (-count [db pattern] [data pattern cap] [data pattern cap actual?])
+  (-count [db pattern] [data pattern cap])
   (-first [db pattern]))
 
 (defprotocol IIndexAccess
@@ -295,9 +295,6 @@
     (.-count db pattern nil))
   (-count
     [db pattern cap]
-    (.-count db pattern cap false))
-  (-count
-    [db pattern cap actual?]
     (let [[e a v] pattern]
       (wrap-cache
           store [:count e a v cap]
@@ -310,7 +307,7 @@
                         (datom e nil nil) (datom e nil nil) cap)  ; e _ v
            (e-size store e) ; e _ _
            (av-size store a v) ; _ a v
-           (if actual? (actual-a-size store a) (a-size store a)) ; _ a _
+           (a-size store a) ; _ a _
            (v-size store v) ; _ _ v, for ref only
            (datom-count store :eav)])))) ; _ _ _
 
@@ -437,7 +434,7 @@
 
 (defn search-datoms [db e a v] (-search db [e a v]))
 
-(defn count-datoms [db e a v] (-count db [e a v] nil true))
+(defn count-datoms [db e a v] (-count db [e a v] nil))
 
 (defn seek-datoms
   ([db index]

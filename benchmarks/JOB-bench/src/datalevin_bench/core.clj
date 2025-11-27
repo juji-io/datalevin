@@ -3311,9 +3311,9 @@
   (time (st/size store :ave (d/datom c/e0 :person-info/person c/v0) (d/datom c/emax :person-info/person c/vmax)))
   (time (st/size store :ave (d/datom c/e0 :title/title c/v0) (d/datom c/emax :title/title c/vmax)))
 
-  (time (st/actual-a-size store :cast-info/movie))
-  (time (st/actual-a-size store :person-info/person))
-  (time (st/actual-a-size store :title/title))
+  (time (st/a-size store :cast-info/movie))
+  (time (st/a-size store :person-info/person))
+  (time (st/a-size store :title/title))
   ;; => 2528312
 
   (time (st/cardinality store :cast-info/person-role))

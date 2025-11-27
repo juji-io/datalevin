@@ -302,8 +302,6 @@ values;")
     "Return the numbers of datoms with the given e value")
   (a-size [this a]
     "Return the number of datoms with the given attribute, an estimate")
-  (actual-a-size [this a]
-    "Return the number of datoms with the given attribute")
   (start-sampling [this])
   (stop-sampling [this])
   (analyze [this a])
