@@ -19,19 +19,14 @@
    [datalevin.async :as a]
    [datalevin.bits :as b]
    [datalevin.util :as u]
-   [datalevin.compress :as cp]
-   [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.interface
-    :refer [close-kv list-dbis visit visit-list-key-range entries get-range
-            open-dbi transact-kv clear-dbi env-dir copy list-dbi?
-            open-transact-kv close-transact-kv]])
+    :refer [close-kv list-dbis entries get-range open-dbi transact-kv clear-dbi
+            env-dir copy open-transact-kv close-transact-kv]])
   (:import
    [datalevin.async IAsyncWork]
-   [datalevin.utl BitOps]
    [datalevin.cpp Util]
    [clojure.lang IPersistentVector]
-   [java.nio ByteBuffer]
    [java.io Writer PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
    [java.lang RuntimeException]))
@@ -64,7 +59,7 @@
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx cur k-range k-type]
     "Return an Iterable based on key range only")
-  (iterate-key-sample [this rtx cur indices k-range k-type]
+  (iterate-key-sample [this rtx cur indices budget step k-range k-type]
     "Return an Iterable of a sample of keys given key range, and an array
     of indices.")
   (iterate-list [this rtx cur k-range k-type v-range v-type]
@@ -220,56 +215,6 @@
 (defn- pick-binding [] :cpp)
 
 (defmulti open-kv (constantly (pick-binding)))
-
-(defn sample-key-freqs
-  "return a long array of frequencies of 2 bytes symbols if there are enough
-  keys, otherwise return nil"
-  (^longs [db dbi-name]
-   (sample-key-freqs db dbi-name c/*compress-sample-size*))
-  (^longs [db dbi-name size]
-   (sample-key-freqs db dbi-name size nil))
-  (^longs [db dbi-name ^long size compressor]
-   (let [list?    (list-dbi? db dbi-name)
-         ^long n  (entries db dbi-name)
-         ^long kn ()]
-     (when-let [ia (u/reservoir-sampling n size)]
-       (let [b (when compressor (bf/get-direct-buffer c/+max-key-size+))
-             f (cp/init-key-freqs)
-             i (volatile! 0)
-             j (volatile! 0)
-             v (fn [kv]
-                 (if (= @j size)
-                   :datalevin/terminate-visit
-                   (do
-                     (when (= @i (aget ^longs ia @j))
-                       (vswap! j u/long-inc)
-                       (let [bf             (if list? (v kv) (k kv))
-                             ^ByteBuffer bf (if b
-                                              (do
-                                                (.clear ^ByteBuffer b)
-                                                (cp/bf-uncompress
-                                                  compressor bf b)
-                                                (.flip b)
-                                                b)
-                                              bf)
-                             total          (.remaining bf)
-                             t-1            (dec total)]
-                         (loop [i 0]
-                           (when (<= i total)
-                             (let [idx (if (= i t-1)
-                                         (-> (.get bf)
-                                             (BitOps/intAnd 0x000000FF)
-                                             (bit-shift-left 8))
-                                         (BitOps/intAnd (.getShort bf)
-                                                        0x0000FFFF))
-                                   cur (aget f idx)]
-                               (aset f idx (inc cur))
-                               (recur (+ i 2)))))))
-                     (vswap! i u/long-inc))))]
-         (if list?
-           (visit-list-key-range db dbi-name v [:all] :raw :raw)
-           (visit db dbi-name v [:all]))
-         f)))))
 
 (defn- nippy-dbi [lmdb dbi]
   [{:dbi dbi :entries (entries lmdb dbi)}

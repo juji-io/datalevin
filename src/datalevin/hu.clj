@@ -12,8 +12,10 @@
   (:require
    [datalevin.util :as u])
   (:import
-   [java.util LinkedList]
-   [java.nio ByteBuffer]
+   [java.util LinkedList Arrays]
+   [java.nio ByteBuffer ByteOrder]
+   [java.io DataOutputStream BufferedOutputStream FileOutputStream
+    DataInputStream BufferedInputStream InputStream]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.map.mutable.primitive ObjectLongHashMap]
    [datalevin.utl LeftistHeap BitOps]))
@@ -259,7 +261,7 @@
 
 (defn- new-decode-node
   ([prefix len] (DecodeNode. prefix len nil nil nil))
-  ([sym] (DecodeNode. 0 0 (short sym) nil nil)))
+  ([sym] (DecodeNode. 0 0 sym nil nil)))
 
 (defn- child-prefix
   [^DecodeNode n left?]
@@ -449,3 +451,75 @@
 (defn codes->hu-tucker
   [^bytes lens ^ints codes]
   (HuTucker. lens codes (create-decode-tables lens codes)))
+
+(def ^:private magic-bytes (.getBytes "HUTU" "US-ASCII"))
+(def ^:private version (byte 1))
+(def ^:private order ByteOrder/LITTLE_ENDIAN)
+
+(defn dump-hu-tucker
+  [^HuTucker hu ^String path]
+  (with-open [out (DataOutputStream.
+                    (BufferedOutputStream.
+                      (FileOutputStream. path)))]
+    ;; header
+    (.write out magic-bytes)
+    (.writeByte out version)
+    (.writeByte out 0)   ;; flag
+    (.writeShort out 0)  ;; reserved
+
+    (let [lens   ^bytes (.-lens hu)
+          llen   (alength lens)
+          codes  ^ints (.-codes hu)
+          lcodes (alength codes)]
+
+      (.writeInt out (int llen))
+      (.writeInt out (int lcodes))
+
+      ;; lens
+      (.write out lens)
+
+      ;; codes, as little-endian ints
+      (let [bf (doto (ByteBuffer/allocate 4)
+                 (.order order))]
+        (dotimes [i lcodes]
+          (.clear bf)
+          (.putInt bf (aget codes i))
+          (.write out (.array bf)))))))
+
+(defn load-hu-tucker
+  "Expect an InputStream"
+  [^InputStream is]
+  (with-open [in (DataInputStream. (BufferedInputStream. is))]
+    (let [magic (byte-array 4)]
+      (.readFully in magic)
+      (when-not (Arrays/equals magic magic-bytes)
+        (u/raise "Invalid magic header" {:magic magic})))
+
+    (let [v (.readUnsignedByte in)]
+      (when (not= v (int version))
+        (u/raise "Unsupported version" {:version v})))
+
+    (let [flags (.readUnsignedByte in)]
+      (when (pos? (bit-and flags 1))
+        (u/raise "Big-endian not supported" {:flags flags})))
+
+    (.readUnsignedShort in)
+
+    (let [llen   (.readInt in)
+          lcodes (.readInt in)]
+      (when (or (> llen Integer/MAX_VALUE) (> lcodes Integer/MAX_VALUE))
+        (u/raise "Array sizes too large for Java" {:llen llen :lcodes lcodes}))
+
+      (let [lens  (byte-array (int llen))
+            codes (int-array (int lcodes))
+            ibuf  (byte-array 4)
+            bb    (doto (ByteBuffer/wrap ibuf)
+                    (.order order))]
+
+        (.readFully in lens)
+
+        (dotimes [i lcodes]
+          (.readFully in ibuf)
+          (aset-int codes i (.getInt bb 0)))
+
+        (codes->hu-tucker lens codes)))))

@@ -339,13 +339,14 @@
 
   (list-dbis [db] (cl/normal-request client :list-dbis [db-name] writing?))
 
+  ;; TODO need to zip the dir and checksum
   (copy [db dest] (.copy db dest false))
   (copy [_ dest compact?]
     (let [bs   (->> (cl/normal-request client :copy [db-name compact?] writing?)
                     (apply str)
                     b/decode-base64)
           dir  (Paths/get dest (into-array String []))
-          file (Paths/get (str dest u/+separator+ "data.mdb")
+          file (Paths/get (str dest u/+separator+ c/data-file-name)
                           (into-array String []))]
       (when-not (Files/exists dir (into-array LinkOption []))
         (u/create-dirs dest))

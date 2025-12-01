@@ -802,7 +802,7 @@
 (defn- db-exists?
   [^Server server db-name]
   (u/file-exists
-    (str (db-dir (.-root server) db-name) u/+separator+ "data.mdb")))
+    (str (db-dir (.-root server) db-name) u/+separator+ c/data-file-name)))
 
 (defn- dir->db-name
   [^Server server dir]
@@ -1917,13 +1917,12 @@
   (wrap-error (normal-kv-store-handler list-dbis)))
 
 ;; TODO use LMDB copyfd to write to socket directly
-;; However, LMDBJava does not wrap copyfd
 (defn- copy
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name compact?] args
           tf                 (u/tmp-dir (str "copy-" (UUID/randomUUID)))
-          path               (Paths/get (str tf u/+separator+ "data.mdb")
+          path               (Paths/get (str tf u/+separator+ c/data-file-name)
                                         (into-array String []))]
       (try
         (i/copy (lmdb server skey db-name writing?) tf compact?)

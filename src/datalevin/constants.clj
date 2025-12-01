@@ -23,7 +23,7 @@
   "0.10.0")
 
 (def version-file-name
-  "Name of the file that store version on disk"
+  "Name of the file that stores version on disk"
   "VERSION")
 
 (def version-regex #"^(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
@@ -38,6 +38,14 @@
 (def require-migration?
   "if this version of Datalevin calls for migrating db"
   true)
+
+(def data-file-name
+  "Name of the file that stores data on disk"
+  "data.mdb")
+
+(def keycode-file-name
+  "Name of the file that stores key compression codes on disk"
+  "keycode.bin")
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -233,6 +241,9 @@
 
 (def ^:no-doc ^:const +value-compress-threshold+ 36)
 
+(def ^:no-doc ^:const +default-keycode-file+  "default-keycode.bin")
+
+
 ;; search
 
 (def ^:const default-domain "datalevin")
@@ -396,7 +407,7 @@
   "pick a map size from the growing factor schedule that is larger than or
   equal to the current size"
   [dir]
-  (let [^File file (u/file (str dir u/+separator+ "data.mdb"))
+  (let [^File file (u/file (str dir u/+separator+ data-file-name))
         cur-size   (.length file)]
     (some #(when (<= cur-size (* ^long % 1024 1024)) %)
           (iterate #(* ^long +buffer-grow-factor+ ^long %)

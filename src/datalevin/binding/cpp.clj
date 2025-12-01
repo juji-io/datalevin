@@ -14,15 +14,18 @@
    [clojure.java.io :as io]
    [clojure.string :as s]
    [datalevin.bits :as b]
+   [datalevin.hu :as hu]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
    [datalevin.compress :as cp]
+   [datalevin.buffer :as bf]
    [datalevin.async :as a]
    [datalevin.migrate :as m]
    [datalevin.scan :as scan]
    [datalevin.interface
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
-            transact-kv get-range range-filter stat]]
+            transact-kv get-range range-filter stat key-range-count
+            list-dbi? entries]]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting
             IListRandKeyValIterable IListRandKeyValIterator]])
@@ -36,6 +39,7 @@
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
+   [java.util HashSet]
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
@@ -43,7 +47,7 @@
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
-   [clojure.lang IObj]))
+   [clojure.lang IObj Ratio]))
 
 (defn- version-file
   [^File dir]
@@ -281,9 +285,9 @@
   (iterate-key [this rtx cur [range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable this cur rtx ctx)))
-  (iterate-key-sample [this rtx cur indices [range-type k1 k2] k-type]
-    #_(let [ctx (l/range-info rtx range-type k1 k2 k-type)]
-        (->KeySampleIterable this cur rtx ctx)))
+  (iterate-key-sample [this rtx cur indices budget step [range-type k1 k2] k-type]
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
+      (->KeySampleIterable this indices budget step cur rtx ctx)))
   (iterate-list [this rtx cur [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
@@ -400,9 +404,9 @@
 
         AutoCloseable
         (close [_]
-          (if l/dlmdb?
-            (DTLV/dtlv_list_rank_sample_iter_destroy iter)
-            (DTLV/dtlv_list_sample_iter_destroy iter)))))))
+          (if dlmdb?
+            (DTLV/dtlv_key_rank_sample_iter_destroy iter)
+            (DTLV/dtlv_key_sample_iter_destroy iter)))))))
 
 (deftype ListIterable [^DBI db
                        ^Cursor cur
@@ -663,6 +667,8 @@
                   ^BufVal stop-vp-w
                   write-txn
                   writing?
+                  k-comp
+                  v-comp
                   ^:unsynchronized-mutable meta]
 
   IWriting
@@ -673,7 +679,7 @@
   (mark-write [_]
     (->CppLMDB
       env info tl-reader dbis scheduled-sync kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w write-txn true meta))
+      stop-kp-w start-vp-w stop-vp-w write-txn true k-comp v-comp meta))
 
   IObj
   (withMeta [this m] (set! meta m) this)
@@ -707,20 +713,25 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
-                            :or   {key-size       c/+max-key-size+
-                                   val-size       c/*init-val-size*
-                                   flags          c/default-dbi-flags
-                                   validate-data? false}}]
+  (open-dbi [this dbi-name
+             {:keys [key-size val-size flags validate-data?]
+              :or   {key-size       (or (get-in @info [:dbis dbi-name :key-size])
+                                        c/+max-key-size+)
+                     val-size       (or (get-in @info [:dbis dbi-name :val-size])
+                                        c/*init-val-size*)
+                     flags          (or (get-in @info [:dbis dbi-name :flags])
+                                        c/default-dbi-flags)
+                     validate-data? (or (get-in @info
+                                                [:dbis dbi-name :validate-data?])
+                                        false)}}]
     (.check-ready this)
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
-        (let [opts     (merge (get info-dbis dbi-name)
-                              {:key-size       key-size
-                               :val-size       val-size
-                               :flags          flags
-                               :validate-data? validate-data?})
+        (let [opts     {:key-size       key-size
+                        :val-size       val-size
+                        :flags          flags
+                        :validate-data? validate-data?}
               flags    (set flags)
               dupsort? (if (:dupsort flags) true false)
               counted? (if (:counted flags) true false)
@@ -1095,6 +1106,15 @@
   (visit [this dbi-name visitor k-range k-type v-type raw-pred?]
     (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?))
 
+  (visit-key-sample
+    [db dbi-name indices budget step visitor k-range k-type]
+    (.visit-key-sample
+      db dbi-name indices budget step visitor k-range k-type true))
+  (visit-key-sample
+    [db dbi-name indices budget step visitor k-range k-type raw-pred?]
+    (scan/visit-key-sample
+      db dbi-name indices budget step visitor k-range k-type raw-pred?))
+
   (open-list-dbi [this dbi-name {:keys [key-size val-size flags]
                                  :or   {key-size c/+max-key-size+
                                         val-size c/+max-key-size+
@@ -1377,11 +1397,20 @@
                           flags)
           ^Env env      (Env/create dir mapsize max-readers max-dbs
                                     (kv-flags flags))
-          info          (merge opts {:dir         dir
-                                     :flags       flags
-                                     :max-readers max-readers
-                                     :max-dbs     max-dbs
-                                     :temp?       temp?})
+          info          (cond-> (merge opts {:dir          dir
+                                             :flags        flags
+                                             :max-readers  max-readers
+                                             :max-dbs      max-dbs
+                                             :temp?        temp?})
+                          key-compress (assoc :key-compress key-compress)
+                          val-compress (assoc :val-compress val-compress))
+          k-comp        (when key-compress
+                          (if (.exists (io/file dir c/keycode-file-name))
+                            (cp/load-key-compressor
+                              (str dir u/+separator+ c/keycode-file-name))
+                            (cp/load-key-compressor)))
+          v-comp        (when val-compress
+                          (cp/get-dict-less-compressor))
           ^CppLMDB lmdb (->CppLMDB env
                                    (volatile! info)
                                    (ThreadLocal.)
@@ -1395,6 +1424,8 @@
                                    (new-bufval c/+max-key-size+)
                                    (volatile! nil)
                                    false
+                                   k-comp
+                                   v-comp
                                    nil)]
       (swap! l/lmdb-dirs conj dir)
       (open-dbi lmdb c/kv-info)
@@ -1414,7 +1445,7 @@
   ([dir opts]
    (assert (string? dir) "directory should be a string.")
    (let [dir-file  (u/file dir)
-         db-file   (io/file dir "data.mdb")
+         db-file   (io/file dir c/data-file-name)
          exist-db? (.exists db-file)
          version   (read-version-file dir-file)]
      (cond
@@ -1437,3 +1468,83 @@
        :else
        (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
               {:dir dir})))))
+
+(defn- collect
+  [freqs bf b compressor]
+  (let [^ByteBuffer bf (if b
+                         (do (.clear ^ByteBuffer b)
+                             (cp/bf-uncompress compressor bf b)
+                             (.flip b)
+                             b)
+                         bf)]
+    (.rewind bf)
+    (while (< 0 (.remaining bf))
+      (let [idx (if (= 1 (.remaining bf))
+                  (-> (.get bf)
+                      (BitOps/intAnd 0x000000FF)
+                      (bit-shift-left 8))
+                  (let [s (.getShort bf)]
+                    (BitOps/intAnd s 0x0000FFFF)))
+            cur (aget freqs idx)]
+        (aset freqs idx (inc cur))))))
+
+(defn- pick [ratio size] (long (Math/ceil (* ^Ratio ratio ^long size))))
+
+(defn- sample-plain
+  [^CppLMDB db dbi-name size ratio freqs]
+  (let [compress (.-k-comp db)
+        b        (when compress (bf/get-direct-buffer c/+max-key-size+))
+        in       (u/reservoir-sampling size (pick ratio size))
+        visitor  (fn [kv] (collect freqs (l/k kv) b compress))]
+    (.visit-key-sample db dbi-name in c/sample-time-budget
+                       c/sample-iteration-step visitor [:all] :raw)))
+
+(defn- sample-list
+  [^CppLMDB db dbi-name size ratio freqs]
+  (let [compress (.-k-comp db)
+        b        (when compress (bf/get-direct-buffer c/+max-key-size+))
+        in       (u/reservoir-sampling size (pick ratio size))
+        key-set  (HashSet.)
+        visitor  (fn [kv]
+                   (collect freqs (l/v kv) b compress)
+                   (let [kb ^ByteBuffer (l/k kv)
+                         ba (byte-array (.remaining kb))]
+                     (.get kb ba)
+                     (.rewind kb)
+                     (let [bs (b/encode-base64 ba)]
+                       (when-not (.contains key-set bs)
+                         (.add key-set bs)
+                         (collect freqs kb b compress)))))]
+    (.visit-list-sample db dbi-name in c/sample-time-budget
+                        c/sample-iteration-step visitor [:all]
+                        :raw :raw)))
+
+(defn sample-key-freqs
+  "return a long array of frequencies of 2 bytes symbols if there are enough
+  keys, otherwise return nil"
+  ^longs [^CppLMDB db]
+  (let [dbis  (.list-dbis db)
+        lists (map #(do (open-dbi db %) (list-dbi? db %)) dbis)
+        sizes (map #(entries db %) dbis)
+        total (reduce + 0 sizes)]
+    (when (< c/*compress-sample-size* total)
+      (let [freqs (cp/init-key-freqs)
+            ratio (/ c/*compress-sample-size* total)]
+        (mapv (fn [dbi size lst?]
+                (if lst?
+                  (sample-list db dbi size ratio freqs)
+                  (sample-plain db dbi size ratio freqs)))
+              dbis sizes lists)
+        freqs))))
+
+(comment
+
+  (def db (open-kv "benchmarks/JOB-bench/db"))
+  (def freqs (sample-key-freqs db))
+  ;; cold 7989ms, hot 3069ms
+  (def hu (hu/new-hu-tucker freqs))
+  (hu/dump-hu-tucker hu "resources/default-key-code.bin")
+  (def k-comp (cp/key-compressor freqs))
+
+  (close-kv db)
+  )

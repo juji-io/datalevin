@@ -239,7 +239,11 @@ values;")
     [db dbi-name visitor k-range k-type v-type]
     [db dbi-name visitor k-range k-type v-type raw-pred?]
     "Call `visitor` function on each k, v pairs in the specified key range,
-     presumably for side effects of visitor call. Return nil."))
+     presumably for side effects of visitor call. Return nil.")
+  (visit-key-sample
+    [db dbi-name indices budget step visitor k-range k-type]
+    [db dbi-name indices budget step visitor k-range k-type raw-pred?]
+    "visit a key range, presumably for side effects of vistor call"))
 
 (defprotocol IAdmin
   "Some administrative functions"

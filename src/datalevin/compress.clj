@@ -10,6 +10,7 @@
 (ns ^:no-doc datalevin.compress
   "Various data compressors"
   (:require
+   [clojure.java.io :as io]
    [datalevin.constants :as c]
    [datalevin.buffer :as bf]
    [datalevin.hu :as hu])
@@ -129,3 +130,11 @@
    (hu-compressor (hu/new-hu-tucker freqs)))
   ([^bytes lens ^ints codes]
    (hu-compressor (hu/codes->hu-tucker lens codes))))
+
+(defn load-key-compressor
+  ([]
+   (hu-compressor (hu/load-hu-tucker
+                    (io/input-stream
+                      (io/resource c/+default-keycode-file+)))))
+  ([^String path]
+   (hu-compressor (hu/load-hu-tucker (io/input-stream path)))))

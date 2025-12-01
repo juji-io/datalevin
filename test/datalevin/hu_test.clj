@@ -5,13 +5,14 @@
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
+   [clojure.java.io :as io]
    [clojure.test :refer [deftest testing is are]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
-   [clojure.test.check.properties :as prop]
-   [taoensso.nippy :as nippy])
+   [clojure.test.check.properties :as prop])
   (:import
-   [java.util Arrays]
+   [datalevin.hu HuTucker]
+   [java.util Arrays UUID]
    [java.nio ByteBuffer]))
 
 (deftest encoding-test
@@ -69,7 +70,6 @@
   1000
   (let [freqs (repeatedly 65536 #(rand-int 1000000))
         ht    (sut/new-hu-tucker (long-array (map inc freqs)))
-        ;; ht      (nippy/fast-thaw (nippy/fast-freeze ht-orig))
 
         ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
         ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
@@ -87,6 +87,30 @@
       (sut/decode ht dst res)
       (.flip res)
       (is (Arrays/equals bs ^bytes (b/get-bytes res))))))
+
+(deftest dump-load-test
+  (let [freqs             (repeatedly 65536 #(rand-int 1000000))
+        ^HuTucker orig-ht (sut/new-hu-tucker (long-array (map inc freqs)))
+        path              (u/tmp-dir (str "hu-test-" (UUID/randomUUID)))
+        _                 (sut/dump-hu-tucker orig-ht path)
+        ^HuTucker  new-ht (sut/load-hu-tucker (io/input-stream path))
+        ^ByteBuffer src   (bf/allocate-buffer c/+max-key-size+)
+        ^ByteBuffer dst   (bf/allocate-buffer c/+max-key-size+)
+        ^ByteBuffer res   (bf/allocate-buffer c/+max-key-size+)]
+    (is (Arrays/equals ^bytes (.-lens orig-ht) ^bytes (.-lens new-ht)))
+    (is (Arrays/equals ^ints (.-codes orig-ht) ^ints (.-codes new-ht)))
+    (dotimes [_ 100]
+      (let [bs (.getBytes (u/random-string (inc (rand-int 64))) "US-ASCII")]
+        (.clear src)
+        (.clear dst)
+        (.clear res)
+        (b/put-bytes src bs)
+        (.flip src)
+        (sut/encode orig-ht src dst)
+        (.flip dst)
+        (sut/decode new-ht dst res)
+        (.flip res)
+        (is (Arrays/equals bs ^bytes (b/get-bytes res)))))))
 
 (comment
 

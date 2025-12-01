@@ -708,3 +708,8 @@
   (-> (.getMostSignificantBits ^UUID uuid)
       (bit-shift-right 32)
       (* 1000)))
+
+(defn random-string
+  [n]
+  (let [chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"]
+    (apply str (repeatedly n #(nth chars (rand-int (count chars)))))))
