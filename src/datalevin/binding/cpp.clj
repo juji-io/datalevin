@@ -647,10 +647,24 @@
                     TimeUnit/SECONDS)]
     (vreset! scheduled-sync fut)))
 
-(defn- stop-scheduled-sync [scheduled-sync]
+(defn- stop-scheduled-sync
+  [scheduled-sync]
   (when-let [fut @scheduled-sync]
     (.cancel ^ScheduledFuture fut true)
     (vreset! scheduled-sync nil)))
+
+(defn- copy-version-file
+  [lmdb dest]
+  (let [src (str (env-dir lmdb) u/+separator+ c/version-file-name)
+        dst (str dest u/+separator+ c/version-file-name)]
+    (u/copy-file src dst)))
+
+(defn- copy-keycode-file
+  [lmdb dest]
+  (let [src (str (env-dir lmdb) u/+separator+ c/keycode-file-name)
+        dst (str dest u/+separator+ c/keycode-file-name)]
+    (when (.exists (io/file src))
+      (u/copy-file src dst))))
 
 (declare key-range-list-count-fast key-range-list-count-slow)
 
@@ -792,9 +806,8 @@
   (copy [this dest compact?]
     (if (-> dest u/file u/empty-dir?)
       (do (.copy env dest (if compact? true false))
-          (let [src (str (env-dir this) u/+separator+ c/version-file-name)
-                dst (str dest u/+separator+ c/version-file-name)]
-            (u/copy-file src dst)))
+          (copy-version-file this dest)
+          (copy-keycode-file this dest))
       (raise "Destination directory is not empty." {})))
 
   (get-rtx [this]

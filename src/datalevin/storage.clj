@@ -536,7 +536,9 @@
 
   (dir [_] (env-dir lmdb))
 
-  (close [_] (close-kv lmdb))
+  (close [this]
+    (.stop-sampling this)
+    (close-kv lmdb))
 
   (closed? [_] (closed-kv? lmdb))
 

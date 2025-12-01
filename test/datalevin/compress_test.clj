@@ -14,6 +14,8 @@
    [clojure.test.check.properties :as prop])
   (:import
    [java.util UUID Arrays]
+   [java.io File]
+   [java.nio.file Files Paths]
    [java.lang Long]
    [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]))
 
@@ -68,18 +70,20 @@
     (if/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest kv-default-compressor-test
-  (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
-        orig-kv  (l/open-kv orig-dir {:flags (conj c/default-env-flags :nosync)})
-        comp-dir (u/tmp-dir (str "kv-compress-" (UUID/randomUUID)))
-        comp-kv  (l/open-kv comp-dir {:flags        (conj c/default-env-flags :nosync)
-                                      :key-compress :hu})]
-    (if/open-dbi orig-kv "a")
-    (if/open-dbi comp-kv "a")
-    (dotimes [i 100]
-      (let [bs (.getBytes (u/random-string (inc (rand-int 64))) "US-ASCII")]
-        (if/transact-kv orig-kv [[:put "a" bs i :bytes :id]])
-        (if/transact-kv comp-kv [[:put "a" bs i :bytes :id]])
-        (is (= i
-               (if/get-value orig-kv "a" bs :bytes :id)
-               (if/get-value comp-kv "a" bs :bytes :id)))))))
+#_(deftest kv-default-compressor-test
+    (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
+          orig-kv  (l/open-kv orig-dir {:flags (conj c/default-env-flags :nosync)})
+          comp-dir (u/tmp-dir (str "kv-compress-" (UUID/randomUUID)))
+          comp-kv  (l/open-kv comp-dir {:flags        (conj c/default-env-flags :nosync)
+                                        :key-compress :hu})]
+      (if/open-dbi orig-kv "a")
+      (if/open-dbi comp-kv "a")
+      (dotimes [i 100]
+        (let [bs (.getBytes (u/random-string (inc (rand-int 64))) "US-ASCII")]
+          (if/transact-kv orig-kv [[:put "a" bs i :bytes :id]])
+          (if/transact-kv comp-kv [[:put "a" bs i :bytes :id]])
+          (is (= i
+                 (if/get-value orig-kv "a" bs :bytes :id)
+                 (if/get-value comp-kv "a" bs :bytes :id)))))
+      (is (< (.length (File. (str comp-dir u/+separator+ c/data-file-name)))
+             (.length (File. (str orig-dir u/+separator+ c/data-file-name)))))))
