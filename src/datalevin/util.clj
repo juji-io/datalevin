@@ -21,8 +21,7 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays Iterator List UUID]
    [java.util.concurrent Executors ExecutorService Future TimeUnit
-    ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue
-    ThreadLocalRandom]
+    ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException
     StandardCopyOption]
@@ -614,45 +613,30 @@
         (link-vars ~vr (var ~n))
         ~vr))))
 
-;; (defonce sample-cache (LRUCache. 128))
+(defonce sample-cache (LRUCache. 128))
 
 (defn reservoir-sampling
   "optimized reservoir sampling, random sample n out of m items, returns a
   sorted array of sampled indices, or returns nil if n > m"
   ^longs [^long m ^long n]
-  (cond
-    (< n m)
-    (let [indices (long-array (range n))
-          r       (Random.)
-          p       (Math/log (- 1.0 (double (/ n m))))]
-      (loop [i n]
-        (when (< i m)
-          (aset indices (.nextInt r n) i)
-          (recur (+ i
-                    (long (/ (Math/log (- 1.0 (.nextDouble r))) p))
-                    1))))
-      (Arrays/sort indices)
-      indices)
-    (= n m) (long-array (range n))
-    :else   nil)
-  #_(or (.get ^LRUCache sample-cache [m n])
-        (let [res (cond
-                    (< n m)
-                    (let [indices (long-array (range n))
-                          r       (Random.)
-                          p       (Math/log (- 1.0 (double (/ n m))))]
-                      (loop [i n]
-                        (when (< i m)
-                          (aset indices (.nextInt r n) i)
-                          (recur (+ i
-                                    (long (/ (Math/log (- 1.0 (.nextDouble r))) p))
-                                    1))))
-                      (Arrays/sort indices)
-                      indices)
-                    (= n m) (long-array (range n))
-                    :else   nil)]
-          (.put ^LRUCache sample-cache [m n] res)
-          res)))
+  (or (.get ^LRUCache sample-cache [m n])
+      (let [res (cond
+                  (< n m)
+                  (let [indices (long-array (range n))
+                        r       (Random.)
+                        p       (Math/log (- 1.0 (double (/ n m))))]
+                    (loop [i n]
+                      (when (< i m)
+                        (aset indices (.nextInt r n) i)
+                        (recur (+ i
+                                  (long (/ (Math/log (- 1.0 (.nextDouble r))) p))
+                                  1))))
+                    (Arrays/sort indices)
+                    indices)
+                  (= n m) (long-array (range n))
+                  :else   nil)]
+        (.put ^LRUCache sample-cache [m n] res)
+        res)))
 
 (defn factorial
   [^long n]
@@ -725,14 +709,15 @@
       (bit-shift-right 32)
       (* 1000)))
 
-(def ^:private chars
+(def ^:private characters
   (char-array "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"))
 
-(def ^:private chars-len (alength ^chars chars))
-(def ^:private rng (ThreadLocalRandom/current))
+(def ^:private chars-len (alength ^chars characters))
+(def ^:private rng (Random.))
 
-(defn random-string ^String [n]
-  (let [sb (StringBuilder. n)]
+(defn random-string
+  ^String [n]
+  (let [sb (StringBuilder. (int n))]
     (dotimes [_ n]
-      (.append sb (aget chars (.nextInt rng chars-len))))
+      (.append sb (aget ^chars characters (.nextInt ^Random rng chars-len))))
     (.toString sb)))

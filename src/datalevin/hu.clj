@@ -458,11 +458,11 @@
 
 (defn dump-hu-tucker
   [^HuTucker hu ^String path]
-  (with-open [out (DataOutputStream.
-                    (BufferedOutputStream.
-                      (FileOutputStream. path)))]
+  (with-open [^DataOutputStream out (DataOutputStream.
+                                      (BufferedOutputStream.
+                                        (FileOutputStream. path)))]
     ;; header
-    (.write out magic-bytes)
+    (.write out ^bytes magic-bytes)
     (.writeByte out version)
     (.writeByte out 0)   ;; flag
     (.writeShort out 0)  ;; reserved
@@ -492,7 +492,7 @@
   (with-open [in (DataInputStream. (BufferedInputStream. is))]
     (let [magic (byte-array 4)]
       (.readFully in magic)
-      (when-not (Arrays/equals magic magic-bytes)
+      (when-not (Arrays/equals magic ^bytes magic-bytes)
         (u/raise "Invalid magic header" {:magic magic})))
 
     (let [v (.readUnsignedByte in)]

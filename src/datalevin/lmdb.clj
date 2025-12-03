@@ -347,12 +347,14 @@
 (defn data-size
   "data size in bytes, excluding kv-info DBI"
   [db]
-  (* (:psize (stat db))
-     (reduce
-       (fn [pages dbi]
-         (+ pages (let [m (stat db dbi)]
-                    (+ (:branch-pages m) (:leaf-pages m) (:overflow-pages m)))))
-       0 (list-dbis db))))
+  (* ^long (:psize (stat db))
+     ^long (reduce
+             (fn [^long pages dbi]
+               (+ pages (let [m (stat db dbi)]
+                          (+ ^long (:branch-pages m)
+                             ^long (:leaf-pages m)
+                             ^long (:overflow-pages m)))))
+             0 (list-dbis db))))
 
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,

@@ -90,7 +90,8 @@
 
 (test/defspec key-compressed-data-generative-test
   200
-  (let [freqs           (long-array (repeatedly 65536 #(inc (rand-int 60000))))
+  (let [freqs           (long-array (repeatedly 65536
+                                                #(inc ^int (rand-int 60000))))
         compresssor     (sut/key-compressor freqs)
         ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
         ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
@@ -128,7 +129,7 @@
   (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
         orig-kv  (l/open-kv orig-dir
                             {:flags (conj c/default-env-flags :nosync)})
-        ks       (repeatedly 100000 #(u/random-string (inc (rand-int 256))))
+        ks       (repeatedly 100000 #(u/random-string (inc ^int (rand-int 256))))
         vs       (range)
         txs      (map (fn [k v] [:put "a" k v :string :id]) ks vs)]
     (if/open-dbi orig-kv "a")

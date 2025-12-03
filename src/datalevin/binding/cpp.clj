@@ -229,7 +229,7 @@
   [^BufVal vp lmdb rtx]
   (let [bf (.outBuf vp)]
     (if-let [compressor (val-compressor lmdb)]
-      (let [cbf (l/val-bf rtx)]
+      (let [^ByteBuffer cbf (l/val-bf rtx)]
         (cp/bf-uncompress compressor bf cbf)
         (.flip cbf)
         cbf)
@@ -240,7 +240,7 @@
   (k [_]
     (let [bf (.outBuf kp)]
       (if-let [compressor (key-compressor lmdb)]
-        (let [cbf (l/key-bf rtx)]
+        (let [^ByteBuffer cbf (l/key-bf rtx)]
           (cp/bf-uncompress compressor bf cbf)
           (.flip cbf)
           cbf)
@@ -910,8 +910,8 @@
       (try
         (or (when-not (.isVirtual (Thread/currentThread))
               (when-let [^Rtx rtx (.get tl-reader)]
-                (when (<= (.max-val-size this)
-                          (.capacity ^ByteBuffer (l/val-bf rtx)))
+                (when (<= ^long (.max-val-size this)
+                          ^int (.capacity ^ByteBuffer (l/val-bf rtx)))
                   (.renew rtx))))
             (let [rtx (Rtx. this
                             (Txn/createReadOnly env)
@@ -1569,12 +1569,11 @@
               {:dir dir})))))
 
 (defn- collect
-  [freqs bf b compressor]
+  [^longs freqs bf b compressor]
   (let [^ByteBuffer bf (if b
-                         (do (.clear ^ByteBuffer b)
-                             (cp/bf-uncompress compressor bf b)
-                             (.flip b)
-                             b)
+                         (do (cp/bf-uncompress compressor bf
+                                               (.clear ^ByteBuffer b))
+                             (.flip ^ByteBuffer b))
                          bf)]
     (.rewind bf)
     (while (< 0 (.remaining bf))
@@ -1583,11 +1582,11 @@
                       (BitOps/intAnd 0x000000FF)
                       (bit-shift-left 8))
                   (let [s (.getShort bf)]
-                    (BitOps/intAnd s 0x0000FFFF)))
-            cur (aget freqs idx)]
-        (aset freqs idx (inc cur))))))
+                    (BitOps/intAnd s 0x0000FFFF)))]
+        (aset freqs idx (inc (aget freqs idx)))))))
 
-(defn- pick [ratio size] (long (Math/ceil (* ^Ratio ratio ^long size))))
+(defn- pick [ratio size]
+  (long (Math/ceil (* (double ratio) ^long size))))
 
 (defn- sample-plain
   [^CppLMDB db dbi-name size ratio freqs]
@@ -1625,10 +1624,10 @@
   (let [dbis  (.list-dbis db)
         lists (map #(do (open-dbi db %) (list-dbi? db %)) dbis)
         sizes (map #(entries db %) dbis)
-        total (reduce + 0 sizes)]
-    (when (< c/*compress-sample-size* total)
+        total ^long (reduce + 0 sizes)]
+    (when (< ^long c/*compress-sample-size* total)
       (let [freqs (cp/init-key-freqs)
-            ratio (/ c/*compress-sample-size* total)]
+            ratio (/ ^long c/*compress-sample-size* total)]
         (mapv (fn [dbi size lst?]
                 (if lst?
                   (sample-list db dbi size ratio freqs)
