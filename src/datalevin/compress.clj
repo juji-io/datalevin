@@ -12,14 +12,15 @@
   (:require
    [clojure.java.io :as io]
    [datalevin.constants :as c]
-   [datalevin.buffer :as bf]
    [datalevin.hu :as hu])
   (:import
-   [datalevin.hu HuTucker]
    [java.nio ByteBuffer]
+   [java.nio.file Files Path Paths]
+   [datalevin.hu HuTucker]
    [me.lemire.integercompression IntCompressor]
    [me.lemire.integercompression.differential IntegratedIntCompressor]
-   [io.airlift.compress.lz4 Lz4Compressor Lz4Decompressor]))
+   [com.github.luben.zstd Zstd ZstdDictCompress ZstdDictDecompress
+    ZstdDictTrainer]))
 
 (defprotocol ICompressor
   (method [this] "compression method, a keyword")
@@ -76,45 +77,44 @@
 
 (defn put-sorted-ints [bf ar] (put-ints* sorted-int-compressor bf ar))
 
-;; dictionary-less compressor
-;; using lz4
+;; Value compressor using zstd
 
-(defn- create-dict-less-compressor
-  []
-  (let [^Lz4Compressor compressor     (Lz4Compressor.)
-        ^Lz4Decompressor decompressor (Lz4Decompressor.)]
+(defn train-zstd
+  "given a sample of bytes, return the zstd dictionary bytes"
+  [samples]
+  (let [sample-size (transduce (map alength) + samples)
+        dict-size   (* c/+value-compress-dict-size+ 1024)
+        trainer     (ZstdDictTrainer. sample-size dict-size)]
+    (doseq [sample samples]
+      (.addSample trainer sample))
+    (.trainSamples trainer)))
+
+(defn- zstd-compressor
+  [^bytes dict level]
+  (let [dict-compress   (ZstdDictCompress. dict (int level))
+        dict-decompress (ZstdDictDecompress. dict)]
     (reify
       ICompressor
-      (method [_] :lz4)
-      (bf-compress [_ src dst]
-        (let [src   ^ByteBuffer src
-              dst   ^ByteBuffer dst
-              total (.remaining src)]
-          (if (< total ^long c/+value-compress-threshold+)
-            (do (.putInt dst (int 0))
-                (bf/buffer-transfer src dst))
-            (do (.putInt dst (int (.limit src)))
-                (.compress compressor src dst)))))
+      (method [_] :zstd)
+      (bf-compress [_  src dst]
+        (Zstd/compress ^ByteBuffer dst ^ByteBuffer src dict-compress))
       (bf-uncompress [_ src dst]
-        (let [src   ^ByteBuffer src
-              dst   ^ByteBuffer dst
-              total (.getInt src)]
-          (if (zero? total)
-            (bf/buffer-transfer src dst)
-            (do (.limit dst total)
-                (.decompress decompressor src dst))))))))
+        (Zstd/decompress ^ByteBuffer dst ^ByteBuffer src dict-decompress)))))
 
-(defonce dict-less-compressor (atom nil))
+(defn val-compressor
+  [^bytes dict]
+  (zstd-compressor dict 3))
 
-(defn get-dict-less-compressor
-  []
-  (or @dict-less-compressor
-      (do (reset! dict-less-compressor (create-dict-less-compressor))
-          @dict-less-compressor)))
+(defn load-val-compressor
+  [^String path]
+  (let [dict (Files/readAllBytes (Paths/get path))]
+    (zstd-compressor dict 3)))
 
-;; key compressor
+;; key compressor using Hu-Tucker coding
 
-(defn init-key-freqs ^longs []
+(defn init-key-freqs
+  "We assume a Dirichlet prior"
+  ^longs []
   (long-array c/+key-compress-num-symbols+ (repeat 1)))
 
 (defn- hu-compressor
@@ -132,9 +132,5 @@
    (hu-compressor (hu/codes->hu-tucker lens codes))))
 
 (defn load-key-compressor
-  ([]
-   (hu-compressor (hu/load-hu-tucker
-                    (io/input-stream
-                      (io/resource c/+default-keycode-file+)))))
-  ([^String path]
-   (hu-compressor (hu/load-hu-tucker (io/input-stream path)))))
+  [^String path]
+  (hu-compressor (hu/load-hu-tucker (io/input-stream path))))

@@ -5,7 +5,6 @@
    [datalevin.sparselist :as sl]
    [datalevin.datom :as d]
    [datalevin.constants :as c]
-   [datalevin.compress :as cp]
    [clojure.test :refer [deftest is]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -44,45 +43,12 @@
                   (sut/put-bf bf k :data)
                   (= k (sut/read-buffer bf :data)))))
 
-(test/defspec key-compressed-data-generative-test
-  100
-  (prop/for-all [k gen/any-equatable]
-                (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                  (sut/put-bf bf k :data)
-                  (= k (sut/read-buffer bf :data)))))
-
-(test/defspec general-compressed-data-generative-test
-  100
-  (let [compressor (cp/get-dict-less-compressor)]
-    (prop/for-all [k gen/any-equatable]
-                  (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                    (sut/put-bf bf k :data compressor)
-                    (= k (sut/read-buffer bf :data compressor))))))
-
-(test/defspec string-generative-test
-  100
-  (let [compressor (cp/get-dict-less-compressor)]
-    (prop/for-all [k (gen/such-that
-                       (partial string-size-less-than? c/+val-bytes-wo-hdr+)
-                       gen/string)]
-                  (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                    (sut/put-bf bf k :string compressor)
-                    (= k (sut/read-buffer bf :string compressor))))))
-
 (test/defspec int-generative-test
   100
   (prop/for-all [k gen/int]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
                   (sut/put-bf bf k :int)
                   (= k (sut/read-buffer bf :int)))))
-
-(test/defspec value-compress-int-generative-test
-  100
-  (let [compressor (cp/get-dict-less-compressor)]
-    (prop/for-all [k gen/int]
-                  (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                    (sut/put-bf bf k :int compressor)
-                    (= k (sut/read-buffer bf :int compressor))))))
 
 (test/defspec int-int-generative-test
   100
@@ -325,18 +291,6 @@
                       d              (d/datom e a v t)]
                   (sut/put-bf bf d :datom)
                   (is (= d (sut/read-buffer bf :datom))))))
-
-(test/defspec compressed-datom-generative-test
-  100
-  (let [compressor (cp/get-dict-less-compressor)]
-    (prop/for-all [e gen/large-integer
-                   a gen/keyword-ns
-                   v gen/any-equatable
-                   t gen/large-integer]
-                  (let [^ByteBuffer bf (bf/allocate-buffer 16384)
-                        d              (d/datom e a v t)]
-                    (sut/put-bf bf d :datom compressor)
-                    (is (= d (sut/read-buffer bf :datom compressor)))))))
 
 (test/defspec attr-generative-test
   100

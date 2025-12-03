@@ -261,7 +261,7 @@
 
 (defn- new-decode-node
   ([prefix len] (DecodeNode. prefix len nil nil nil))
-  ([sym] (DecodeNode. 0 0 sym nil nil)))
+  ([sym] (DecodeNode. 0 0 (short sym) nil nil)))
 
 (defn- child-prefix
   [^DecodeNode n left?]

@@ -22,7 +22,7 @@
    [datalevin.constants :as c]
    [datalevin.interface
     :refer [close-kv list-dbis entries get-range open-dbi transact-kv clear-dbi
-            env-dir copy open-transact-kv close-transact-kv]])
+            env-dir copy open-transact-kv close-transact-kv stat]])
   (:import
    [datalevin.async IAsyncWork]
    [datalevin.cpp Util]
@@ -45,6 +45,10 @@
   (reset [this] "reset a read only transaction")
   (renew [this] "renew a read only transaction")
   (read-only? [this] "is this a read only transaction"))
+
+(defprotocol ICompress
+  (key-bf [this] "return the working buffer for key compression")
+  (val-bf [this] "return the working buffer for value compression"))
 
 (defprotocol IDB
   (dbi [this] "Return the underlying dbi")
@@ -100,11 +104,12 @@
   (next-val [this]))
 
 (defprotocol IWriting
-  "Used to mark the db so that it should use the write-txn"
+  "Used to mark the DB so that it should use the write-txn"
   (writing? [db] "return true if this db should use write-txn")
   (write-txn [db]
     "return deref'able object that is the write-txn or a mutex for locking")
-  (mark-write [db] "return a new db what uses write-txn"))
+  (mark-write [db] "return a new db what uses write-txn")
+  (reset-write [db] "Reset buffers for writing"))
 
 (deftype RangeContext [^boolean forward?
                        ^boolean include-start?
@@ -338,6 +343,16 @@
       (u/raise "Unable to re-index" e {:dir (env-dir db)}))))
 
 (defn resized? [e] (:resized (ex-data e)))
+
+(defn data-size
+  "data size in bytes, excluding kv-info DBI"
+  [db]
+  (* (:psize (stat db))
+     (reduce
+       (fn [pages dbi]
+         (+ pages (let [m (stat db dbi)]
+                    (+ (:branch-pages m) (:leaf-pages m) (:overflow-pages m)))))
+       0 (list-dbis db))))
 
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,

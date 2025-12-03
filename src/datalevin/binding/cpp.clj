@@ -24,10 +24,11 @@
    [datalevin.scan :as scan]
    [datalevin.interface
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
-            transact-kv get-range range-filter stat key-range-count
-            list-dbi? entries]]
+            transact-kv get-range range-filter stat list-dbi? entries
+            key-compressor val-compressor set-max-val-size max-val-size
+            set-key-compressor set-val-compressor]]
    [datalevin.lmdb :as l
-    :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting
+    :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting ICompress
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
@@ -85,11 +86,6 @@
              (get [_] (ArrayDeque.))))))
 
 (defn- new-bufval [size] (BufVal. size))
-
-(deftype KV [^BufVal kp ^BufVal vp]
-  IKV
-  (k [_] (.outBuf kp))
-  (v [_] (.outBuf vp)))
 
 (defn- flag-value
   "flag key to int value, cover all flags"
@@ -159,11 +155,16 @@
     #{} env-flag-map))
 
 (defn- put-bufval
-  [^BufVal vp k kt]
+  [^BufVal vp k kt compressor ^ByteBuffer cbf]
   (when-some [x k]
     (let [^ByteBuffer bf (.inBuf vp)]
       (.clear bf)
-      (b/put-buffer bf x kt)
+      (if compressor
+        (do (.clear cbf)
+            (b/put-buffer cbf x kt)
+            (.flip cbf)
+            (cp/bf-compress compressor cbf bf))
+        (b/put-buffer bf x kt))
       (.flip bf)
       (.reset vp))))
 
@@ -176,12 +177,18 @@
               ^BufVal stop-kp
               ^BufVal start-vp
               ^BufVal stop-vp
+              ^ByteBuffer k-comp-bf
+              ^:volatile-mutable ^ByteBuffer v-comp-bf
               aborted?]
+
+  ICompress
+  (key-bf [_] (.clear k-comp-bf))
+  (val-bf [_] (.clear v-comp-bf))
 
   IBuffer
   (put-key [_ x t]
     (try
-      (put-bufval kp x t)
+      (put-bufval kp x t (key-compressor lmdb) k-comp-bf)
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -192,15 +199,15 @@
 
   IRange
   (range-info [_ range-type k1 k2 kt]
-    (put-bufval start-kp k1 kt)
-    (put-bufval stop-kp k2 kt)
+    (put-bufval start-kp k1 kt (key-compressor lmdb) k-comp-bf)
+    (put-bufval stop-kp k2 kt (key-compressor lmdb) k-comp-bf)
     (l/range-table range-type start-kp stop-kp))
 
   (list-range-info [_ k-range-type k1 k2 kt v-range-type v1 v2 vt]
-    (put-bufval start-kp k1 kt)
-    (put-bufval stop-kp k2 kt)
-    (put-bufval start-vp v1 vt)
-    (put-bufval stop-vp v2 vt)
+    (put-bufval start-kp k1 kt (key-compressor lmdb) k-comp-bf)
+    (put-bufval stop-kp k2 kt (key-compressor lmdb) k-comp-bf)
+    (put-bufval start-vp v1 vt (val-compressor lmdb) v-comp-bf)
+    (put-bufval stop-vp v2 vt (val-compressor lmdb) v-comp-bf)
     [(l/range-table k-range-type start-kp stop-kp)
      (l/range-table v-range-type start-vp stop-vp)])
 
@@ -218,22 +225,59 @@
     (vswap! depth u/long-inc)
     this))
 
+(defn- v-bf
+  [^BufVal vp lmdb rtx]
+  (let [bf (.outBuf vp)]
+    (if-let [compressor (val-compressor lmdb)]
+      (let [cbf (l/val-bf rtx)]
+        (cp/bf-uncompress compressor bf cbf)
+        (.flip cbf)
+        cbf)
+      bf)))
+
+(deftype KV [^BufVal kp ^BufVal vp lmdb rtx]
+  IKV
+  (k [_]
+    (let [bf (.outBuf kp)]
+      (if-let [compressor (key-compressor lmdb)]
+        (let [cbf (l/key-bf rtx)]
+          (cp/bf-uncompress compressor bf cbf)
+          (.flip cbf)
+          cbf)
+        bf)))
+
+  (v [_] (v-bf vp lmdb rtx)))
+
 (defn- stat-map [^Stat stat]
-  {:psize          (.ms_psize ^DTLV$MDB_stat (.get stat))
-   :depth          (.ms_depth ^DTLV$MDB_stat (.get stat))
-   :branch-pages   (.ms_branch_pages ^DTLV$MDB_stat (.get stat))
-   :leaf-pages     (.ms_leaf_pages ^DTLV$MDB_stat (.get stat))
-   :overflow-pages (.ms_overflow_pages ^DTLV$MDB_stat (.get stat))
-   :entries        (.ms_entries ^DTLV$MDB_stat (.get stat))})
+  (let [^DTLV$MDB_stat s (.get stat)]
+    {:psize          (.ms_psize s)
+     :depth          (.ms_depth s)
+     :branch-pages   (.ms_branch_pages s)
+     :leaf-pages     (.ms_leaf_pages s)
+     :overflow-pages (.ms_overflow_pages s)
+     :entries        (.ms_entries s)}))
 
 (declare ->KeyIterable ->KeySampleIterable ->ListIterable
          ->ListRandKeyValIterable ->ListFullValIterable ->ListSampleIterable
          ->ListKeyRangeFullValIterable)
 
-(deftype DBI [^Dbi db
+(defn- val-size
+  [x]
+  (let [^long val-size (b/measure-size x)]
+    (if (< Integer/MAX_VALUE val-size)
+      (raise "Value size is too large" {:size val-size})
+      (let [try-size (* ^long c/+buffer-grow-factor+ val-size)]
+        (if (< Integer/MAX_VALUE try-size)
+          val-size
+          try-size)))))
+
+(deftype DBI [lmdb
+              ^Dbi db
               ^Pool curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
+              ^ByteBuffer k-comp-bf
+              ^:volatile-mutable ^ByteBuffer v-comp-bf
               ^boolean dupsort?
               ^boolean counted?
               ^boolean validate-data?]
@@ -245,7 +289,7 @@
     (try
       (if (nil? x)
         (raise "Key cannot be nil" {})
-        (put-bufval kp x t))
+        (put-bufval kp x t (key-compressor lmdb) k-comp-bf))
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -258,11 +302,13 @@
     (try
       (if (nil? x)
         (raise "Value cannot be nil" {})
-        (put-bufval vp x t))
+        (put-bufval vp x t (val-compressor lmdb) v-comp-bf))
       (catch BufferOverflowException _
-        (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
+        (let [size (val-size x)]
           (set! vp (new-bufval size))
-          (put-bufval vp x t)))
+          (set! v-comp-bf (bf/allocate-buffer size))
+          (set-max-val-size lmdb size)
+          (put-bufval vp x t (val-compressor lmdb) v-comp-bf)))
       (catch Exception e
         (raise "Error putting r/w value buffer of "
                (.dbi-name this)": " e {:value x :type t}))))
@@ -284,26 +330,26 @@
         (.outBuf vp))))
   (iterate-key [this rtx cur [range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
-      (->KeyIterable this cur rtx ctx)))
+      (->KeyIterable lmdb this cur rtx ctx)))
   (iterate-key-sample [this rtx cur indices budget step [range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
-      (->KeySampleIterable this indices budget step cur rtx ctx)))
+      (->KeySampleIterable lmdb this indices budget step cur rtx ctx)))
   (iterate-list [this rtx cur [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
-      (->ListIterable this cur rtx ctx)))
+      (->ListIterable lmdb this cur rtx ctx)))
   (iterate-list-sample [this rtx cur indices budget step [k-range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx k-range-type k1 k2 k-type)]
-      (->ListSampleIterable this indices budget step cur rtx ctx)))
+      (->ListSampleIterable lmdb this indices budget step cur rtx ctx)))
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
     (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
-      (->ListRandKeyValIterable this cur rtx ctx)))
+      (->ListRandKeyValIterable lmdb this cur rtx ctx)))
   (iterate-list-val-full [this rtx cur]
-    (->ListFullValIterable this cur rtx))
+    (->ListFullValIterable lmdb this cur rtx))
   (iterate-list-key-range-val-full [this rtx cur [range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
-      (->ListKeyRangeFullValIterable this cur rtx ctx)))
+      (->ListKeyRangeFullValIterable lmdb this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -335,7 +381,8 @@
     (u/raise "Native counter returns error code" x {})
     x))
 
-(deftype KeyIterable [^DBI db
+(deftype KeyIterable [lmdb
+                      ^DBI db
                       ^Cursor cur
                       ^Rtx rtx
                       ^RangeContext ctx]
@@ -356,12 +403,13 @@
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_key_iter_has_next iter)))
-        (next [_] (KV. k v))
+        (next [_] (KV. k v lmdb rtx))
 
         AutoCloseable
         (close [_] (DTLV/dtlv_key_iter_destroy iter))))))
 
-(deftype KeySampleIterable [^DBI db
+(deftype KeySampleIterable [lmdb
+                            ^DBI db
                             ^longs indices
                             ^long budget
                             ^long step
@@ -400,7 +448,7 @@
             (if dlmdb?
               (DTLV/dtlv_key_rank_sample_iter_has_next iter)
               (DTLV/dtlv_key_sample_iter_has_next iter))))
-        (next [_] (KV. k v))
+        (next [_] (KV. k v lmdb rtx))
 
         AutoCloseable
         (close [_]
@@ -408,7 +456,8 @@
             (DTLV/dtlv_key_rank_sample_iter_destroy iter)
             (DTLV/dtlv_key_sample_iter_destroy iter)))))))
 
-(deftype ListIterable [^DBI db
+(deftype ListIterable [lmdb
+                       ^DBI db
                        ^Cursor cur
                        ^Rtx rtx
                        ctx]
@@ -438,12 +487,13 @@
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_list_iter_has_next iter)))
-        (next [_] (KV. k v))
+        (next [_] (KV. k v lmdb rtx))
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_iter_destroy iter))))))
 
-(deftype ListSampleIterable [^DBI db
+(deftype ListSampleIterable [lmdb
+                             ^DBI db
                              ^longs indices
                              ^long budget
                              ^long step
@@ -478,7 +528,7 @@
             (if dlmdb?
               (DTLV/dtlv_list_rank_sample_iter_has_next iter)
               (DTLV/dtlv_list_sample_iter_has_next iter))))
-        (next [_] (KV. k v))
+        (next [_] (KV. k v lmdb rtx))
 
         AutoCloseable
         (close [_]
@@ -486,7 +536,8 @@
             (DTLV/dtlv_list_rank_sample_iter_destroy iter)
             (DTLV/dtlv_list_sample_iter_destroy iter)))))))
 
-(deftype ListRandKeyValIterable [^DBI db
+(deftype ListRandKeyValIterable [lmdb
+                                 ^DBI db
                                  ^Cursor cur
                                  ^Rtx rtx
                                  ^RangeContext ctx]
@@ -505,12 +556,13 @@
           (l/put-key rtx x t)
           (dtlv-rc (DTLV/dtlv_list_val_iter_seek iter (.ptr ^BufVal (.-kp rtx)))))
         (has-next-val [_] (dtlv-rc (DTLV/dtlv_list_val_iter_has_next iter)))
-        (next-val [_] (.outBuf v))
+        (next-val [_] (v-bf v lmdb rtx))
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_val_iter_destroy iter))))))
 
-(deftype ListKeyRangeFullValIterable [^DBI db
+(deftype ListKeyRangeFullValIterable [lmdb
+                                      ^DBI db
                                       ^Cursor cur
                                       ^Rtx rtx
                                       ^RangeContext ctx]
@@ -531,12 +583,13 @@
         Iterator
         (hasNext [_]
           (dtlv-rc (DTLV/dtlv_list_key_range_full_val_iter_has_next iter)))
-        (next [_] (KV. k v))
+        (next [_] (KV. k v lmdb rtx))
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_key_range_full_val_iter_destroy iter))))))
 
-(deftype ListFullValIterable [^DBI db
+(deftype ListFullValIterable [lmdb
+                              ^DBI db
                               ^Cursor cur
                               ^Rtx rtx]
   IListRandKeyValIterable
@@ -554,7 +607,7 @@
             (DTLV/dtlv_list_val_full_iter_seek iter (.ptr ^BufVal (.-kp rtx)))))
         (has-next-val [_]
           (dtlv-rc (DTLV/dtlv_list_val_full_iter_has_next iter)))
-        (next-val [_] (.outBuf v))
+        (next-val [_] (v-bf v lmdb rtx))
 
         AutoCloseable
         (close [_] (DTLV/dtlv_list_val_full_iter_destroy iter))))))
@@ -614,14 +667,13 @@
               DTLV/MDB_GET_BOTH_RANGE)
     (.outBuf (.val cur))))
 
-(declare create-rw-txn reset-write-txn ->CppLMDB)
+(declare ->CppLMDB)
 
 (defn- up-db-size [^Env env]
   (let [^Info info (Info/create env)]
     (.setMapSize env (* ^long c/+buffer-grow-factor+
                         (.me_mapsize ^DTLV$MDB_envinfo (.get info))))
     (.close info)))
-
 
 (defn- sync-key* [dir] (->> dir hash (str "lmdb-sync-") keyword))
 
@@ -679,10 +731,12 @@
                   ^BufVal stop-kp-w
                   ^BufVal start-vp-w
                   ^BufVal stop-vp-w
+                  ^ByteBuffer k-comp-bf-w
+                  ^:volatile-mutable ^ByteBuffer v-comp-bf-w
                   write-txn
                   writing?
-                  k-comp
-                  v-comp
+                  ^:volatile-mutable k-comp
+                  ^:volatile-mutable v-comp
                   ^:unsynchronized-mutable meta]
 
   IWriting
@@ -693,13 +747,43 @@
   (mark-write [_]
     (->CppLMDB
       env info tl-reader dbis scheduled-sync kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w write-txn true k-comp v-comp meta))
+      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w v-comp-bf-w
+      write-txn true k-comp v-comp meta))
+
+  (reset-write
+    [this]
+    (.clear kp-w)
+    (.clear vp-w)
+    (.clear start-kp-w)
+    (.clear stop-kp-w)
+    (.clear start-vp-w)
+    (.clear stop-vp-w)
+    (.clear k-comp-bf-w)
+    (.clear v-comp-bf-w)
+    (vreset! write-txn (Rtx. this
+                             (Txn/create env)
+                             (volatile! 1)
+                             kp-w
+                             vp-w
+                             start-kp-w
+                             stop-kp-w
+                             start-vp-w
+                             stop-vp-w
+                             k-comp-bf-w
+                             v-comp-bf-w
+                             (volatile! false))))
 
   IObj
   (withMeta [this m] (set! meta m) this)
   (meta [_] meta)
 
   ILMDB
+  (max-val-size [_] (or (:max-val-size @info) c/*init-val-size*))
+
+  (set-max-val-size [_ size]
+    (set! v-comp-bf-w (bf/allocate-buffer size))
+    (vswap! info assoc :max-val-size size :max-val-size-changed? true))
+
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
@@ -724,6 +808,14 @@
   (env-opts [_] (dissoc @info :dbis))
 
   (dbi-opts [_ dbi-name] (get-in @info [:dbis dbi-name]))
+
+  (key-compressor [_] k-comp)
+
+  (set-key-compressor [_ c] (set! k-comp c))
+
+  (val-compressor [_] v-comp)
+
+  (set-val-compressor [_ c] (set! v-comp c))
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
@@ -751,8 +843,11 @@
               counted? (if (:counted flags) true false)
               kp       (new-bufval key-size)
               vp       (new-bufval val-size)
+              kc       (bf/allocate-buffer key-size)
+              vc       (bf/allocate-buffer val-size)
               dbi      (Dbi/create env dbi-name (kv-flags flags))
-              db       (DBI. dbi (new-pools) kp vp dupsort? counted? validate-data?)]
+              db       (DBI. this dbi (new-pools) kp vp kc vc
+                             dupsort? counted? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
             (transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
@@ -815,7 +910,9 @@
       (try
         (or (when-not (.isVirtual (Thread/currentThread))
               (when-let [^Rtx rtx (.get tl-reader)]
-                (.renew rtx)))
+                (when (<= (.max-val-size this)
+                          (.capacity ^ByteBuffer (l/val-bf rtx)))
+                  (.renew rtx))))
             (let [rtx (Rtx. this
                             (Txn/createReadOnly env)
                             (volatile! 1)
@@ -825,6 +922,8 @@
                             (new-bufval c/+max-key-size+)
                             (new-bufval c/+max-key-size+)
                             (new-bufval c/+max-key-size+)
+                            (bf/allocate-buffer c/+max-key-size+)
+                            (bf/allocate-buffer (.max-val-size this))
                             (volatile! false))]
               (.set tl-reader rtx)
               rtx))
@@ -868,14 +967,19 @@
 
   (entries [this dbi-name]
     (let [^DBI dbi (.get-dbi this dbi-name)
-          ^Rtx rtx (.get-rtx this)]
+          ^Rtx rtx (.get-rtx this)
+          ^Dbi db  (.-db dbi)
+          ^Txn txn (.-txn rtx)]
       (try
-        (let [^Dbi db    (.-db dbi)
-              ^Txn txn   (.-txn rtx)
-              ^Stat stat (Stat/create txn db)
-              entries    (.ms_entries ^DTLV$MDB_stat (.get stat))]
-          (.close stat)
-          entries)
+        (if (.-counted? dbi)
+          (with-open [^LongPointer ptr (LongPointer. 1)]
+            (DTLV/mdb_count_all (.get txn) (.get db) (int 0) ptr)
+            (.get ptr))
+          (let [
+                ^Stat stat (Stat/create txn db)
+                entries    (.ms_entries ^DTLV$MDB_stat (.get stat))]
+            (.close stat)
+            entries))
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
@@ -883,7 +987,7 @@
   (open-transact-kv [this]
     (.check-ready this)
     (try
-      (reset-write-txn this)
+      (.reset-write this)
       (.mark-write this)
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
@@ -931,12 +1035,16 @@
                         (or (.get dbis dbi-name)
                             (raise dbi-name " is not open" {})))
             ^Txn txn  (if one-shot?
-                        (create-rw-txn this)
+                        (Txn/create env)
                         (.-txn rtx))]
         (try
           (if dbi
             (transact1* txs dbi txn k-type v-type)
             (transact* txs dbis txn))
+          (when (:max-val-size-changed? @info)
+            (transact* [[:put c/kv-info :max-val-size (:max-val-size @info)]]
+                       dbis txn)
+            (vswap! info assoc :max-val-size-changed? false))
           (when one-shot? (.commit txn))
           :transacted
           (catch Util$MapFullException _
@@ -944,7 +1052,7 @@
             (up-db-size env)
             (if one-shot?
               (.transact-kv this dbi-name txs k-type v-type)
-              (do (reset-write-txn this)
+              (do (.reset-write this)
                   (raise "DB resized" {:resized true}))))
           (catch Exception e
             (when one-shot? (.close txn))
@@ -1345,34 +1453,6 @@
             forward start end sk ek))))
     (raise "Fail to count (slow) list in key range: " e {:dbi dbi-name})))
 
-(defn- create-rw-txn [^CppLMDB lmdb] (Txn/create (.-env lmdb)))
-
-(defn- reset-write-txn
-  [^CppLMDB lmdb]
-  (let [kp-w       ^BufVal (.-kp-w lmdb)
-        vp-w       ^BufVal (.-vp-w lmdb)
-        start-kp-w ^BufVal (.-start-kp-w lmdb)
-        stop-kp-w  ^BufVal (.-stop-kp-w lmdb)
-        start-vp-w ^BufVal (.-start-vp-w lmdb)
-        stop-vp-w  ^BufVal (.-stop-vp-w lmdb)]
-    (.clear kp-w)
-    (.clear vp-w)
-    (.clear start-kp-w)
-    (.clear stop-kp-w)
-    (.clear start-vp-w)
-    (.clear stop-vp-w)
-    (vreset! (.-write-txn lmdb)
-             (Rtx. lmdb
-                   (create-rw-txn lmdb)
-                   (volatile! 1)
-                   kp-w
-                   vp-w
-                   start-kp-w
-                   stop-kp-w
-                   start-vp-w
-                   stop-vp-w
-                   (volatile! false)))))
-
 (defn- init-info
   [^CppLMDB lmdb new-info]
   (transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info))
@@ -1392,18 +1472,18 @@
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
 (defn- open-kv*
-  [dir file {:keys [mapsize max-readers flags max-dbs temp?
-                    key-compress val-compress]
-             :or   {max-readers c/*max-readers*
-                    max-dbs     c/*max-dbs*
-                    mapsize     c/*init-db-size*
-                    flags       c/default-env-flags
-                    temp?       false}
-             :as   opts}]
+  [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?
+                                key-compress val-compress]
+                         :or   {max-readers c/*max-readers*
+                                max-dbs     c/*max-dbs*
+                                mapsize     c/*init-db-size*
+                                flags       c/default-env-flags
+                                temp?       false}
+                         :as   opts}]
   (try
-    (let [mapsize       (* (long (if (u/empty-dir? file)
-                                   mapsize
-                                   (c/pick-mapsize dir)))
+    (let [mapsize       (* (long (if (.exists ^File db-file)
+                                   (c/pick-mapsize db-file)
+                                   mapsize))
                            1024 1024)
           flags         (if temp?
                           (conj flags :nosync)
@@ -1417,13 +1497,6 @@
                                              :temp?        temp?})
                           key-compress (assoc :key-compress key-compress)
                           val-compress (assoc :val-compress val-compress))
-          k-comp        (when key-compress
-                          (if (.exists (io/file dir c/keycode-file-name))
-                            (cp/load-key-compressor
-                              (str dir u/+separator+ c/keycode-file-name))
-                            (cp/load-key-compressor)))
-          v-comp        (when val-compress
-                          (cp/get-dict-less-compressor))
           ^CppLMDB lmdb (->CppLMDB env
                                    (volatile! info)
                                    (ThreadLocal.)
@@ -1435,19 +1508,32 @@
                                    (new-bufval c/+max-key-size+)
                                    (new-bufval c/+max-key-size+)
                                    (new-bufval c/+max-key-size+)
+                                   (bf/allocate-buffer c/+max-key-size+)
+                                   nil
                                    (volatile! nil)
                                    false
-                                   k-comp
-                                   v-comp
+                                   nil
+                                   nil
                                    nil)]
       (swap! l/lmdb-dirs conj dir)
-      (open-dbi lmdb c/kv-info)
+      (open-dbi lmdb c/kv-info) ;; never compressed
       (if temp?
-        (u/delete-on-exit file)
-        (do (init-info lmdb info)
-            (.addShutdownHook (Runtime/getRuntime)
-                              (Thread. #(close-kv lmdb)))
-            (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
+        (u/delete-on-exit dir-file)
+        (let [k-comp (when (and key-compress
+                                (.exists (io/file dir c/keycode-file-name)))
+                       (cp/load-key-compressor
+                         (str dir u/+separator+ c/keycode-file-name)))
+              v-comp (when (and val-compress
+                                (.exists (io/file dir c/valcode-file-name)))
+                       (cp/load-val-compressor
+                         (str dir u/+separator+ c/valcode-file-name)))]
+          (init-info lmdb info)
+          (set-max-val-size lmdb (max-val-size lmdb))
+          (set-key-compressor lmdb k-comp)
+          (set-val-compressor lmdb v-comp)
+          (.addShutdownHook (Runtime/getRuntime)
+                            (Thread. #(close-kv lmdb)))
+          (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
       lmdb)
     (catch Exception e
       (stt/print-stack-trace e)
@@ -1463,7 +1549,7 @@
          version   (read-version-file dir-file)]
      (cond
        (not exist-db?)
-       (let [lmdb (open-kv* dir dir-file opts)]
+       (let [lmdb (open-kv* dir dir-file db-file opts)]
          (write-version-file dir-file c/version)
          lmdb)
        version
@@ -1477,7 +1563,7 @@
                  (m/perform-migration dir major minor patch))
                (write-version-file dir-file c/version))
              (raise "Corrupt VERSION file" {:input version})))
-         (open-kv* dir dir-file opts))
+         (open-kv* dir dir-file db-file opts))
        :else
        (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
               {:dir dir})))))
@@ -1505,7 +1591,7 @@
 
 (defn- sample-plain
   [^CppLMDB db dbi-name size ratio freqs]
-  (let [compress (.-k-comp db)
+  (let [compress (key-compressor db)
         b        (when compress (bf/get-direct-buffer c/+max-key-size+))
         in       (u/reservoir-sampling size (pick ratio size))
         visitor  (fn [kv] (collect freqs (l/k kv) b compress))]
@@ -1514,7 +1600,7 @@
 
 (defn- sample-list
   [^CppLMDB db dbi-name size ratio freqs]
-  (let [compress (.-k-comp db)
+  (let [compress (key-compressor db)
         b        (when compress (bf/get-direct-buffer c/+max-key-size+))
         in       (u/reservoir-sampling size (pick ratio size))
         key-set  (HashSet.)

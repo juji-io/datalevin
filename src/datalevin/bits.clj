@@ -905,25 +905,15 @@
              (put-homo-tuple bf x (nth x-type 0)))
          (do (put-byte bf c/type-hete-tuple)
              (put-hete-tuple bf x x-type)))
-       (put-data bf x))))
-  ([^ByteBuffer bf x x-type compressor]
-   (if compressor
-     (let [^ByteBuffer bf1 (bf/get-direct-buffer (.capacity bf))]
-       (put-buffer bf1 x x-type)
-       (.flip bf1)
-       (cp/bf-compress compressor bf1 bf)
-       (bf/return-direct-buffer bf1))
-     (put-buffer bf x x-type))))
+       (put-data bf x)))))
 
 (defn put-bf
   "clear the buffer, put in the data, and prepare it for reading"
-  ([^ByteBuffer bf data type compressor]
-   (when-some [x data]
-     (.clear bf)
-     (put-buffer bf x type compressor)
-     (.flip bf)))
-  ([bf data type]
-   (put-bf bf data type nil)))
+  [^ByteBuffer bf data type]
+  (when-some [x data]
+    (.clear bf)
+    (put-buffer bf x type )
+    (.flip bf)))
 
 (defn read-buffer
   ([bf]
@@ -964,16 +954,7 @@
            (if (= 1 (count v-type))
              (get-homo-tuple bf)
              (get-hete-tuple bf)))
-       (get-data bf))))
-  ([^ByteBuffer bf v-type compressor]
-   (if compressor
-     (let [bf1 (bf/get-direct-buffer (.capacity bf))
-           _   (cp/bf-uncompress compressor bf bf1)
-           _   (.flip bf1)
-           res (read-buffer bf1 v-type)]
-       (bf/return-direct-buffer bf1)
-       res)
-     (read-buffer bf v-type))))
+       (get-data bf)))))
 
 ;; data validation
 

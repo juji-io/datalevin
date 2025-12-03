@@ -37,8 +37,8 @@
         freqs2 [[0 1 1 8 18 19 10 11 6 7] [3 3 2 4 5 5 4 4 3 3]]))))
 
 (test/defspec order-preservation-test
-  1000
-  (let [freqs            (repeatedly 65536 #(rand-int 1000000))
+  2000
+  (let [freqs            (repeatedly 65536 #(rand-int 10000))
         ht               (sut/new-hu-tucker (long-array (map inc freqs)))
         ^ByteBuffer src1 (bf/allocate-buffer c/+max-key-size+)
         ^ByteBuffer src2 (bf/allocate-buffer c/+max-key-size+)
@@ -67,8 +67,8 @@
                         (bf/compare-buffer dst1 dst2))))))
 
 (test/defspec encode-decode-round-trip-test
-  1000
-  (let [freqs (repeatedly 65536 #(rand-int 1000000))
+  2000
+  (let [freqs (repeatedly 65536 #(rand-int 10000))
         ht    (sut/new-hu-tucker (long-array (map inc freqs)))
 
         ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
@@ -89,7 +89,7 @@
       (is (Arrays/equals bs ^bytes (b/get-bytes res))))))
 
 (deftest dump-load-test
-  (let [freqs             (repeatedly 65536 #(rand-int 1000000))
+  (let [freqs             (repeatedly 65536 #(rand-int 20000))
         ^HuTucker orig-ht (sut/new-hu-tucker (long-array (map inc freqs)))
         path              (u/tmp-dir (str "hu-test-" (UUID/randomUUID)))
         _                 (sut/dump-hu-tucker orig-ht path)
@@ -99,8 +99,8 @@
         ^ByteBuffer res   (bf/allocate-buffer c/+max-key-size+)]
     (is (Arrays/equals ^bytes (.-lens orig-ht) ^bytes (.-lens new-ht)))
     (is (Arrays/equals ^ints (.-codes orig-ht) ^ints (.-codes new-ht)))
-    (dotimes [_ 100]
-      (let [bs (.getBytes (u/random-string (inc (rand-int 64))) "US-ASCII")]
+    (dotimes [_ 2000]
+      (let [bs (.getBytes (u/random-string (rand-int 256)) "US-ASCII")]
         (.clear src)
         (.clear dst)
         (.clear res)
@@ -114,7 +114,7 @@
 
 (comment
 
-  (def freqs (repeatedly c/*compress-sample-size* #(rand-int 1000000)))
+  (def freqs (repeatedly c/*compress-sample-size* #(rand-int 100000)))
   (def hu (sut/new-hu-tucker (long-array (map inc freqs))))
   (require '[clj-memory-meter.core :as mm])
   (mm/measure hu)

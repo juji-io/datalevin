@@ -477,7 +477,8 @@
           db
           ;; hard-code dir to be "db" for now
           (-> (d/empty-db "db" schema {:closed-schema? true
-                                       :kv-opts        {:mapsize 100000}})
+                                       :kv-opts        {:mapsize      100000
+                                                        :key-compress :hu}})
               (show "empty db")
               (d/fill-db (add-comp-cast-type))
               (show "comp-cast-type")

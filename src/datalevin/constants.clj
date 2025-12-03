@@ -47,6 +47,10 @@
   "Name of the file that stores key compression codes on disk"
   "keycode.bin")
 
+(def valcode-file-name
+  "Name of the file that stores value compression codes on disk"
+  "valcode.bin")
+
 ;;---------------------------------------------
 ;; system constants, fixed
 ;;---------------------------------------------
@@ -239,9 +243,7 @@
 
 (def ^:no-doc ^:const +key-compress-num-symbols+ 65536)
 
-(def ^:no-doc ^:const +value-compress-threshold+ 36)
-
-(def ^:no-doc ^:const +default-keycode-file+  "default-keycode.bin")
+(def ^:no-doc ^:const +value-compress-dict-size+ 32) ;; in KB
 
 
 ;; search
@@ -406,9 +408,8 @@
 (defn ^:no-doc pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or
   equal to the current size"
-  [dir]
-  (let [^File file (u/file (str dir u/+separator+ data-file-name))
-        cur-size   (.length file)]
+  [^File db-file]
+  (let [cur-size (.length db-file)]
     (some #(when (<= cur-size (* ^long % 1024 1024)) %)
           (iterate #(* ^long +buffer-grow-factor+ ^long %)
                    *init-db-size*))))

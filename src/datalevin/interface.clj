@@ -94,17 +94,21 @@
   (env-dir [db] "Return the directory path of LMDB env")
   (env-opts [db] "Return the option map of LMDB env")
   (dbi-opts [db dbi-name] "Return option map of a given DBI")
+  (max-val-size [db] "Return the max size for value buffer")
+  (set-max-val-size [db size] "Set the max size for value buffer")
+  (key-compressor [db] "Return the key compressor of this LMDB env")
+  (set-key-compressor [db c] "Set the key compressor of this LMDB env")
+  (val-compressor [db] "Return the value compressor of this LMDB env")
+  (set-val-compressor [db c] "Set the value compressor of this LMDB env")
   (open-dbi
     [db dbi-name]
     [db dbi-name opts]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
-
   (open-list-dbi
     [db list-name]
     [db list-name opts]
     "Open a named inverted list, a special dbi, that permits a list of
      values for the same key, with some corresponding special functions")
-
   (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]

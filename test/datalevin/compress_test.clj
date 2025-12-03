@@ -1,20 +1,34 @@
+;;
+;; Copyright (c) Huahai Yang. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://opensource.org/license/epl-2-0)
+;; which can be found in the file LICENSE at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+;;
 (ns datalevin.compress-test
   (:require
+   [datalevin.compress :as sut]
    [datalevin.constants :as c]
    [datalevin.interface :as if]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.lmdb :as l]
    [datalevin.interface :as if]
    [datalevin.util :as u]
+   [datalevin.hu :as hu]
    [datalevin.binding.cpp :as cpp]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest is use-fixtures]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
-   [clojure.test.check.properties :as prop])
+   [clojure.test.check.properties :as prop]
+   [datalevin.hu :as hu])
   (:import
-   [java.util UUID Arrays]
+   [java.util UUID Arrays HashSet]
    [java.io File]
+   [java.nio ByteBuffer]
    [java.nio.file Files Paths]
    [java.lang Long]
    [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]))
@@ -26,19 +40,19 @@
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         m    10
         ks   (shuffle (range 0 m))
-        txs  #(map (fn [k v] [:put % k v :long :long]) ks ks)
+        txs  (map (fn [k v] [:put "u" k v :long :long]) ks ks)
 
         n    1000000
         ks1  (shuffle (range 0 n))
-        txs1 #(map (fn [k v] [:put % k v :long :long]) ks1 ks1)]
+        txs1 (map (fn [k v] [:put "v" k v :long :long]) ks1 ks1)]
 
     (if/open-dbi lmdb "u")
-    (if/transact-kv lmdb (txs "u"))
+    (if/transact-kv lmdb txs)
     (let [freqs (cpp/sample-key-freqs lmdb)]
       (is (nil? freqs)))
 
     (if/open-dbi lmdb "v")
-    (if/transact-kv lmdb (txs1 "v"))
+    (if/transact-kv lmdb txs1)
     (let [^longs freqs (cpp/sample-key-freqs lmdb)]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
@@ -56,10 +70,10 @@
         n    1000
         ks   (shuffle (range 0 m))
         vs   (shuffle (range 0 n))
-        txs  #(for [k ks v vs] [:put % k v :id :id])]
+        txs  (for [k ks v vs] [:put "l" k v :id :id])]
 
     (if/open-list-dbi lmdb "l")
-    (if/transact-kv lmdb (txs "l"))
+    (if/transact-kv lmdb txs)
     (let [^longs freqs (cpp/sample-key-freqs lmdb)]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
@@ -70,20 +84,74 @@
     (if/close-kv lmdb)
     (u/delete-files dir)))
 
-#_(deftest kv-default-compressor-test
-    (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
-          orig-kv  (l/open-kv orig-dir {:flags (conj c/default-env-flags :nosync)})
-          comp-dir (u/tmp-dir (str "kv-compress-" (UUID/randomUUID)))
-          comp-kv  (l/open-kv comp-dir {:flags        (conj c/default-env-flags :nosync)
-                                        :key-compress :hu})]
-      (if/open-dbi orig-kv "a")
-      (if/open-dbi comp-kv "a")
-      (dotimes [i 100]
-        (let [bs (.getBytes (u/random-string (inc (rand-int 64))) "US-ASCII")]
-          (if/transact-kv orig-kv [[:put "a" bs i :bytes :id]])
-          (if/transact-kv comp-kv [[:put "a" bs i :bytes :id]])
-          (is (= i
-                 (if/get-value orig-kv "a" bs :bytes :id)
-                 (if/get-value comp-kv "a" bs :bytes :id)))))
-      (is (< (.length (File. (str comp-dir u/+separator+ c/data-file-name)))
-             (.length (File. (str orig-dir u/+separator+ c/data-file-name)))))))
+(defn data-size-less-than?
+  [^long limit data]
+  (< (alength ^bytes (b/serialize data)) limit))
+
+(test/defspec key-compressed-data-generative-test
+  200
+  (let [freqs           (long-array (repeatedly 65536 #(inc (rand-int 60000))))
+        compresssor     (sut/key-compressor freqs)
+        ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
+        ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
+        ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)]
+    (prop/for-all
+      [k (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
+                        gen/any-equatable)]
+      (.clear src)
+      (.clear dst)
+      (.clear res)
+      (b/put-buffer src k :data)
+      (sut/bf-compress compresssor (.flip src) dst)
+      (sut/bf-uncompress compresssor (.flip dst) res)
+      (zero? (bf/compare-buffer (.flip src) (.flip res))))))
+
+(test/defspec val-compressed-data-generative-test
+  200
+  (let [samples         (repeatedly 5000 #(.getBytes (u/random-string 1024)))
+        dict            (sut/train-zstd samples)
+        compresssor     (sut/val-compressor dict)
+        ^ByteBuffer src (bf/allocate-buffer c/*init-val-size*)
+        ^ByteBuffer dst (bf/allocate-buffer c/*init-val-size*)
+        ^ByteBuffer res (bf/allocate-buffer c/*init-val-size*)]
+    (prop/for-all
+      [v gen/any-equatable]
+      (.clear src)
+      (.clear dst)
+      (.clear res)
+      (b/put-buffer src v :data)
+      (sut/bf-compress compresssor (.flip src) dst)
+      (sut/bf-uncompress compresssor (.flip dst) res)
+      (zero? (bf/compare-buffer (.flip src) (.flip res))))))
+
+(deftest kv-key-compressor-test
+  (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
+        orig-kv  (l/open-kv orig-dir
+                            {:flags (conj c/default-env-flags :nosync)})
+        ks       (repeatedly 100000 #(u/random-string (inc (rand-int 256))))
+        vs       (range)
+        txs      (map (fn [k v] [:put "a" k v :string :id]) ks vs)]
+    (if/open-dbi orig-kv "a")
+    (if/transact-kv orig-kv txs)
+
+    (dotimes [_ 5]
+      (let [freqs    (cpp/sample-key-freqs orig-kv)
+            hu       (hu/new-hu-tucker freqs)
+            comp-dir (u/tmp-dir (str "kv-compress-" (UUID/randomUUID)))
+            _        (u/create-dirs comp-dir)
+            _        (hu/dump-hu-tucker
+                       hu (str comp-dir u/+separator+ c/keycode-file-name))
+            comp-kv  (l/open-kv comp-dir
+                                {:flags        (conj c/default-env-flags :nosync)
+                                 :key-compress :hu})]
+        (if/open-dbi comp-kv "a")
+        (if/transact-kv comp-kv txs)
+
+        (is (= (if/get-range orig-kv "a" [:all] :string :id)
+               (if/get-range comp-kv "a" [:all] :string :id)))
+        (is (< (l/data-size comp-kv) (l/data-size orig-kv)))
+
+        (if/close-kv comp-kv)
+        (u/delete-files comp-dir)))
+    (if/close-kv orig-kv)
+    (u/delete-files orig-dir)))

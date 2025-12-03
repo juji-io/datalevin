@@ -1,6 +1,7 @@
 (ns datalevin.lmdb-test
   (:require
    [datalevin.lmdb :as l]
+   [datalevin.binding.cpp :as cpp]
    [datalevin.bits :as b]
    [datalevin.interpret :as i]
    [datalevin.interface :as if]
