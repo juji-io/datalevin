@@ -24,7 +24,7 @@
     ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException
-    StandardCopyOption]
+    StandardCopyOption StandardOpenOption Path]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
 
 ;; for when we need to use datalevin specific print method
@@ -202,6 +202,14 @@
    neutral temporary directory path."
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
+
+(defn dump-bytes
+  [^String path ^bytes bs]
+  (Files/write (Paths/get path (make-array String 0)) bs
+               ^"[Ljava.nio.file.StandardOpenOption;"
+               (into-array java.nio.file.OpenOption
+                           [StandardOpenOption/CREATE
+                            StandardOpenOption/WRITE])))
 
 (defn graal? [] (System/getProperty "org.graalvm.nativeimage.kind"))
 

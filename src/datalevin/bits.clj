@@ -173,8 +173,7 @@
   "Copy content from a ByteBuffer to a byte array, useful for
    e.g. read txn result, as buffer content is gone when txn is done"
   ([^ByteBuffer bb]
-   (let [n  (.remaining bb)
-         ba (byte-array n)]
+   (let [ba (byte-array (.remaining bb))]
      (.get bb ba)
      ba))
   ([^ByteBuffer bb n]

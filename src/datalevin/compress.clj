@@ -107,7 +107,7 @@
 
 (defn load-val-compressor
   [^String path]
-  (let [dict (Files/readAllBytes (Paths/get path))]
+  (let [dict (Files/readAllBytes (Paths/get path (make-array String 0)))]
     (zstd-compressor dict 3)))
 
 ;; key compressor using Hu-Tucker coding

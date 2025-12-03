@@ -48,6 +48,7 @@
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [clojure.lang IObj Ratio]))
 
 (defn- version-file
@@ -160,10 +161,8 @@
     (let [^ByteBuffer bf (.inBuf vp)]
       (.clear bf)
       (if compressor
-        (do (.clear cbf)
-            (b/put-buffer cbf x kt)
-            (.flip cbf)
-            (cp/bf-compress compressor cbf bf))
+        (do (b/put-buffer (.clear cbf) x kt)
+            (cp/bf-compress compressor (.flip cbf) bf))
         (b/put-buffer bf x kt))
       (.flip bf)
       (.reset vp))))
@@ -231,8 +230,7 @@
     (if-let [compressor (val-compressor lmdb)]
       (let [^ByteBuffer cbf (l/val-bf rtx)]
         (cp/bf-uncompress compressor bf cbf)
-        (.flip cbf)
-        cbf)
+        (.flip cbf))
       bf)))
 
 (deftype KV [^BufVal kp ^BufVal vp lmdb rtx]
@@ -242,8 +240,7 @@
       (if-let [compressor (key-compressor lmdb)]
         (let [^ByteBuffer cbf (l/key-bf rtx)]
           (cp/bf-uncompress compressor bf cbf)
-          (.flip cbf)
-          cbf)
+          (.flip cbf))
         bf)))
 
   (v [_] (v-bf vp lmdb rtx)))
@@ -1568,80 +1565,74 @@
        (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
               {:dir dir})))))
 
-(defn- collect
-  [^longs freqs bf b compressor]
-  (let [^ByteBuffer bf (if b
-                         (do (cp/bf-uncompress compressor bf
-                                               (.clear ^ByteBuffer b))
-                             (.flip ^ByteBuffer b))
-                         bf)]
-    (.rewind bf)
-    (while (< 0 (.remaining bf))
-      (let [idx (if (= 1 (.remaining bf))
-                  (-> (.get bf)
-                      (BitOps/intAnd 0x000000FF)
-                      (bit-shift-left 8))
-                  (let [s (.getShort bf)]
-                    (BitOps/intAnd s 0x0000FFFF)))]
-        (aset freqs idx (inc (aget freqs idx)))))))
+(defn- collect-keys
+  [^longs freqs ^ByteBuffer bf]
+  (while (< 0 (.remaining bf))
+    (let [idx (if (= 1 (.remaining bf))
+                (-> (.get bf)
+                    (BitOps/intAnd 0x000000FF)
+                    (bit-shift-left 8))
+                (let [s (.getShort bf)]
+                  (BitOps/intAnd s 0x0000FFFF)))]
+      (aset freqs idx (inc (aget freqs idx))))))
 
 (defn- pick [ratio size]
   (long (Math/ceil (* (double ratio) ^long size))))
 
 (defn- sample-plain
-  [^CppLMDB db dbi-name size ratio freqs]
-  (let [compress (key-compressor db)
-        b        (when compress (bf/get-direct-buffer c/+max-key-size+))
-        in       (u/reservoir-sampling size (pick ratio size))
-        visitor  (fn [kv] (collect freqs (l/k kv) b compress))]
+  [^CppLMDB db dbi-name size ratio freqs ^FastList valbytes]
+  (let [in      (u/reservoir-sampling size (pick ratio size))
+        visitor (fn [kv]
+                  (collect-keys freqs (l/k kv))
+                  (.add valbytes (b/get-bytes (l/v kv))))]
     (.visit-key-sample db dbi-name in c/sample-time-budget
                        c/sample-iteration-step visitor [:all] :raw)))
 
 (defn- sample-list
   [^CppLMDB db dbi-name size ratio freqs]
-  (let [compress (key-compressor db)
-        b        (when compress (bf/get-direct-buffer c/+max-key-size+))
-        in       (u/reservoir-sampling size (pick ratio size))
-        key-set  (HashSet.)
-        visitor  (fn [kv]
-                   (collect freqs (l/v kv) b compress)
-                   (let [kb ^ByteBuffer (l/k kv)
-                         ba (byte-array (.remaining kb))]
-                     (.get kb ba)
-                     (.rewind kb)
-                     (let [bs (b/encode-base64 ba)]
-                       (when-not (.contains key-set bs)
-                         (.add key-set bs)
-                         (collect freqs kb b compress)))))]
+  (let [in      (u/reservoir-sampling size (pick ratio size))
+        key-set (HashSet.)
+        visitor (fn [kv]
+                  (collect-keys freqs (l/v kv))
+                  (let [kb ^ByteBuffer (l/k kv)
+                        bs (b/encode-base64 (b/get-bytes kb))]
+                    (when-not (.contains key-set bs)
+                      (.add key-set bs)
+                      (collect-keys freqs (.rewind kb)))))]
     (.visit-list-sample db dbi-name in c/sample-time-budget
                         c/sample-iteration-step visitor [:all]
                         :raw :raw)))
 
-(defn sample-key-freqs
-  "return a long array of frequencies of 2 bytes symbols if there are enough
-  keys, otherwise return nil"
-  ^longs [^CppLMDB db]
+(defn sample-for-compressors
+  "return a vector of a long array of frequencies of 2 bytes symbols for keys,
+  and a collection of value bytes if there are enough key values in DB,
+  otherwise return nil"
+  [^CppLMDB db]
   (let [dbis  (.list-dbis db)
         lists (map #(do (open-dbi db %) (list-dbi? db %)) dbis)
         sizes (map #(entries db %) dbis)
         total ^long (reduce + 0 sizes)]
     (when (< ^long c/*compress-sample-size* total)
-      (let [freqs (cp/init-key-freqs)
-            ratio (/ ^long c/*compress-sample-size* total)]
+      (let [freqs    (cp/init-key-freqs)
+            valbytes (FastList.)
+            ratio    (/ ^long c/*compress-sample-size* total)]
         (mapv (fn [dbi size lst?]
                 (if lst?
                   (sample-list db dbi size ratio freqs)
-                  (sample-plain db dbi size ratio freqs)))
+                  (sample-plain db dbi size ratio freqs valbytes)))
               dbis sizes lists)
-        freqs))))
+        [freqs valbytes]))))
 
 (comment
 
   (def db (open-kv "benchmarks/JOB-bench/db"))
-  (def freqs (sample-key-freqs db))
+  (def res (sample-for-compressors db))
   ;; cold 7989ms, hot 3069ms
+  (def freqs (first res))
   (def hu (hu/new-hu-tucker freqs))
-  (hu/dump-hu-tucker hu "resources/default-key-code.bin")
+  (hu/dump-hu-tucker hu "key-code.bin")
+  (def valbtyes (peek res))
+
   (def k-comp (cp/key-compressor freqs))
 
   (close-kv db)
