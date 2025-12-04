@@ -14,7 +14,6 @@
    [clojure.java.io :as io]
    [clojure.string :as s]
    [datalevin.bits :as b]
-   [datalevin.hu :as hu]
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
    [datalevin.compress :as cp]
@@ -22,11 +21,12 @@
    [datalevin.async :as a]
    [datalevin.migrate :as m]
    [datalevin.scan :as scan]
-   [datalevin.interface
+   [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
-            transact-kv get-range range-filter stat list-dbi? entries
-            key-compressor val-compressor set-max-val-size max-val-size
-            set-key-compressor set-val-compressor]]
+            transact-kv get-range range-filter stat key-compressor
+            val-compressor set-max-val-size max-val-size
+            set-key-compressor set-val-compressor
+            bf-compress bf-uncompress]]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting ICompress
             IListRandKeyValIterable IListRandKeyValIterator]])
@@ -40,7 +40,6 @@
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
-   [java.util HashSet]
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
@@ -48,8 +47,7 @@
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
-   [org.eclipse.collections.impl.list.mutable FastList]
-   [clojure.lang IObj Ratio]))
+   [clojure.lang IObj]))
 
 (defn- version-file
   [^File dir]
@@ -162,7 +160,7 @@
       (.clear bf)
       (if compressor
         (do (b/put-buffer (.clear cbf) x kt)
-            (cp/bf-compress compressor (.flip cbf) bf))
+            (bf-compress compressor (.flip cbf) bf))
         (b/put-buffer bf x kt))
       (.flip bf)
       (.reset vp))))
@@ -229,7 +227,7 @@
   (let [bf (.outBuf vp)]
     (if-let [compressor (val-compressor lmdb)]
       (let [^ByteBuffer cbf (l/val-bf rtx)]
-        (cp/bf-uncompress compressor bf cbf)
+        (bf-uncompress compressor bf cbf)
         (.flip cbf))
       bf)))
 
@@ -239,7 +237,7 @@
     (let [bf (.outBuf kp)]
       (if-let [compressor (key-compressor lmdb)]
         (let [^ByteBuffer cbf (l/key-bf rtx)]
-          (cp/bf-uncompress compressor bf cbf)
+          (bf-uncompress compressor bf cbf)
           (.flip cbf))
         bf)))
 
@@ -1564,76 +1562,3 @@
        :else
        (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
               {:dir dir})))))
-
-(defn- collect-keys
-  [^longs freqs ^ByteBuffer bf]
-  (while (< 0 (.remaining bf))
-    (let [idx (if (= 1 (.remaining bf))
-                (-> (.get bf)
-                    (BitOps/intAnd 0x000000FF)
-                    (bit-shift-left 8))
-                (let [s (.getShort bf)]
-                  (BitOps/intAnd s 0x0000FFFF)))]
-      (aset freqs idx (inc (aget freqs idx))))))
-
-(defn- pick [ratio size]
-  (long (Math/ceil (* (double ratio) ^long size))))
-
-(defn- sample-plain
-  [^CppLMDB db dbi-name size ratio freqs ^FastList valbytes]
-  (let [in      (u/reservoir-sampling size (pick ratio size))
-        visitor (fn [kv]
-                  (collect-keys freqs (l/k kv))
-                  (.add valbytes (b/get-bytes (l/v kv))))]
-    (.visit-key-sample db dbi-name in c/sample-time-budget
-                       c/sample-iteration-step visitor [:all] :raw)))
-
-(defn- sample-list
-  [^CppLMDB db dbi-name size ratio freqs]
-  (let [in      (u/reservoir-sampling size (pick ratio size))
-        key-set (HashSet.)
-        visitor (fn [kv]
-                  (collect-keys freqs (l/v kv))
-                  (let [kb ^ByteBuffer (l/k kv)
-                        bs (b/encode-base64 (b/get-bytes kb))]
-                    (when-not (.contains key-set bs)
-                      (.add key-set bs)
-                      (collect-keys freqs (.rewind kb)))))]
-    (.visit-list-sample db dbi-name in c/sample-time-budget
-                        c/sample-iteration-step visitor [:all]
-                        :raw :raw)))
-
-(defn sample-for-compressors
-  "return a vector of a long array of frequencies of 2 bytes symbols for keys,
-  and a collection of value bytes if there are enough key values in DB,
-  otherwise return nil"
-  [^CppLMDB db]
-  (let [dbis  (.list-dbis db)
-        lists (map #(do (open-dbi db %) (list-dbi? db %)) dbis)
-        sizes (map #(entries db %) dbis)
-        total ^long (reduce + 0 sizes)]
-    (when (< ^long c/*compress-sample-size* total)
-      (let [freqs    (cp/init-key-freqs)
-            valbytes (FastList.)
-            ratio    (/ ^long c/*compress-sample-size* total)]
-        (mapv (fn [dbi size lst?]
-                (if lst?
-                  (sample-list db dbi size ratio freqs)
-                  (sample-plain db dbi size ratio freqs valbytes)))
-              dbis sizes lists)
-        [freqs valbytes]))))
-
-(comment
-
-  (def db (open-kv "benchmarks/JOB-bench/db"))
-  (def res (sample-for-compressors db))
-  ;; cold 7989ms, hot 3069ms
-  (def freqs (first res))
-  (def hu (hu/new-hu-tucker freqs))
-  (hu/dump-hu-tucker hu "key-code.bin")
-  (def valbtyes (peek res))
-
-  (def k-comp (cp/key-compressor freqs))
-
-  (close-kv db)
-  )

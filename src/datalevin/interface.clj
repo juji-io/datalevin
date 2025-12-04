@@ -387,3 +387,10 @@ values;")
     "emit tuples to out")
   (val-eq-filter-e-list [this in v-idx attr f-idx]
     "Return tuples filtered by the given attribute values"))
+
+(defprotocol ICompressor
+  (method [this] "compression method, a keyword")
+  (compress [this obj] "compress into byte array")
+  (uncompress [this obj] "takes a byte array")
+  (bf-compress [this src-bf dst-bf] "compress between byte buffers")
+  (bf-uncompress [this src-bf dst-bf] "decompress between byte buffers"))

@@ -8,74 +8,26 @@
 ;; You must not remove this notice, or any other, from this software.
 ;;
 (ns ^:no-doc datalevin.compress
-  "Various data compressors"
+  "key value compressors"
   (:require
    [clojure.java.io :as io]
    [datalevin.constants :as c]
+   [datalevin.lmdb :as l]
+   [datalevin.bits :as b]
+   [datalevin.util :as u]
+   [datalevin.interface :as i
+    :refer [open-dbi close-kv list-dbi? entries visit-key-sample
+            visit-list-sample list-dbis ICompressor]]
    [datalevin.hu :as hu])
   (:import
    [java.nio ByteBuffer]
-   [java.nio.file Files Path Paths]
+   [java.nio.file Files Paths]
+   [java.util HashSet]
    [datalevin.hu HuTucker]
-   [me.lemire.integercompression IntCompressor]
-   [me.lemire.integercompression.differential IntegratedIntCompressor]
+   [datalevin.utl BitOps]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [com.github.luben.zstd Zstd ZstdDictCompress ZstdDictDecompress
     ZstdDictTrainer]))
-
-(defprotocol ICompressor
-  (method [this] "compression method, a keyword")
-  (compress [this obj] "compress into byte array")
-  (uncompress [this obj] "takes a byte array")
-  (bf-compress [this src-bf dst-bf] "compress between byte buffers")
-  (bf-uncompress [this src-bf dst-bf] "decompress between byte buffers"))
-
-;; int compressors
-
-(defonce int-compressor
-  (let [^IntCompressor compressor (IntCompressor.)]
-    (reify
-      ICompressor
-      (method [_] :int)
-      (compress [_ ar] (.compress compressor ar))
-      (uncompress [_ ar] (.uncompress compressor ar)))) )
-
-(defonce sorted-int-compressor
-  (let [^IntegratedIntCompressor sorted-compressor (IntegratedIntCompressor.)]
-    (reify
-      ICompressor
-      (method [_] :sorted-int)
-      (compress [_ ar] (.compress sorted-compressor ar))
-      (uncompress [_ ar] (.uncompress sorted-compressor ar)))) )
-
-(defn- get-ints*
-  [compressor ^ByteBuffer bf]
-  (let [csize (.getInt bf)
-        comp? (neg? csize)
-        size  (if comp? (- csize) csize)
-        car   (int-array size)]
-    (dotimes [i size] (aset car i (.getInt bf)))
-    (if comp?
-      (uncompress ^ICompressor compressor car)
-      car)))
-
-(defn- put-ints*
-  [compressor ^ByteBuffer bf ^ints ar]
-  (let [osize     (alength ar)
-        comp?     (< 3 osize) ;; don't compress small array
-        ^ints car (if comp?
-                    (compress ^ICompressor compressor ar)
-                    ar)
-        size      (alength car)]
-    (.putInt bf (if comp? (- size) size))
-    (dotimes [i size] (.putInt bf (aget car i)))))
-
-(defn get-ints [bf] (get-ints* int-compressor bf))
-
-(defn put-ints [bf ar] (put-ints* int-compressor bf ar))
-
-(defn get-sorted-ints [bf] (get-ints* sorted-int-compressor bf))
-
-(defn put-sorted-ints [bf ar] (put-ints* sorted-int-compressor bf ar))
 
 ;; Value compressor using zstd
 
@@ -134,3 +86,100 @@
 (defn load-key-compressor
   [^String path]
   (hu-compressor (hu/load-hu-tucker (io/input-stream path))))
+
+;; db samplers
+
+(defn- collect-keys
+  [^longs freqs ^ByteBuffer bf]
+  (while (< 0 (.remaining bf))
+    (let [idx (if (= 1 (.remaining bf))
+                (-> (.get bf)
+                    (BitOps/intAnd 0x000000FF)
+                    (bit-shift-left 8))
+                (let [s (.getShort bf)]
+                  (BitOps/intAnd s 0x0000FFFF)))]
+      (aset freqs idx (inc (aget freqs idx))))))
+
+(defn- pick [ratio size]
+  (long (Math/ceil (* (double ratio) ^long size))))
+
+(defn- sample-plain-keys
+  [db dbi-name size ratio freqs]
+  (let [in      (u/reservoir-sampling size (pick ratio size))
+        visitor (fn [kv] (collect-keys freqs (l/k kv)))]
+    (visit-key-sample db dbi-name in c/sample-time-budget
+                      c/sample-iteration-step visitor [:all] :raw)))
+
+(defn- sample-values
+  [db dbi-name size ratio ^FastList valbytes]
+  (let [in      (u/reservoir-sampling size (pick ratio size))
+        visitor (fn [kv] (.add valbytes (b/get-bytes (l/v kv))))]
+    (visit-key-sample db dbi-name in c/sample-time-budget
+                      c/sample-iteration-step visitor [:all] :raw)))
+
+(defn- sample-list
+  [db dbi-name size ratio freqs]
+  (let [in      (u/reservoir-sampling size (pick ratio size))
+        key-set (HashSet.)
+        visitor (fn [kv]
+                  (collect-keys freqs (l/v kv))
+                  (let [kb ^ByteBuffer (l/k kv)
+                        bs (b/encode-base64 (b/get-bytes kb))]
+                    (when-not (.contains key-set bs)
+                      (.add key-set bs)
+                      (collect-keys freqs (.rewind kb)))))]
+    (visit-list-sample db dbi-name in c/sample-time-budget
+                       c/sample-iteration-step visitor [:all] :raw :raw)))
+
+(defn sample-key-freqs
+  "return a long array of frequencies of 2 bytes symbols for keys,
+  if there are enough key in DB, otherwise return nil"
+  [db]
+  (let [dbis  (list-dbis db)
+        lists (map #(do (open-dbi db %) (list-dbi? db %)) dbis)
+        sizes (map #(entries db %) dbis)
+        total ^long (reduce + 0 sizes)]
+    (when (< ^long c/*compress-sample-size* total)
+      (let [freqs (init-key-freqs)
+            ratio (/ ^long c/*compress-sample-size* total)]
+        (mapv (fn [dbi size lst?]
+                (if lst?
+                  (sample-list db dbi size ratio freqs)
+                  (sample-plain-keys db dbi size ratio freqs)))
+              dbis sizes lists)
+        freqs))))
+
+(defn sample-value-bytes
+  "return a list of bytes if there are enough values in DB,
+  otherwise return nil"
+  [db]
+  (let [dbis  (filter #(when-not (list-dbi? db %) (open-dbi db %) %)
+                      (list-dbis db))
+        sizes (map #(entries db %) dbis)
+        total ^long (reduce + 0 sizes)]
+    (println "total values" total)
+    (when (< ^long c/*compress-sample-size* total)
+      (let [valbytes (FastList.)
+            ratio    (/ ^long c/*compress-sample-size* total)]
+        (mapv (fn [dbi size]
+                (sample-values db dbi size ratio valbytes))
+              dbis sizes)
+        valbytes))))
+
+(comment
+
+  (def db (l/open-kv "benchmarks/JOB-bench/db"))
+  (time (def freqs (sample-key-freqs db)))
+  ;; cold 5400ms, hot 125ms
+  (def hu (hu/new-hu-tucker freqs))
+  (hu/dump-hu-tucker hu "key-code.bin")
+  (def valbtyes (sample-value-bytes db))
+  (i/range-count db "datalevin/giants" [:all])
+  (count valbtyes)
+  (count freqs)
+  (u/dump-bytes "val-code.bin" (cp/train-zstd valbtyes))
+
+  (def k-comp (cp/key-compressor freqs))
+
+  (close-kv db)
+  )

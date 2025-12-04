@@ -11,7 +11,8 @@
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
   (:require
-   [datalevin.compress :as c]
+   [datalevin.ints :as i]
+   [datalevin.interface :refer [compress uncompress]]
    [taoensso.nippy :as nippy])
   (:import
    [java.io Writer DataInput DataOutput]
@@ -58,11 +59,11 @@
     (.get items nth))
 
   (serialize [_ bf]
-    (c/put-ints bf (.toArray items))
+    (i/put-ints bf (.toArray items))
     (.serialize indices ^ByteBuffer bf))
 
   (deserialize [_ bf]
-    (.addAll items (c/get-ints bf))
+    (.addAll items (i/get-ints bf))
     (.deserialize indices ^ByteBuffer bf))
 
   Object
@@ -77,13 +78,13 @@
   (.serialize x out))
 
 (nippy/extend-freeze
-  GrowingIntArray :dtlv/gia
-  [^GrowingIntArray x ^DataOutput out]
+    GrowingIntArray :dtlv/gia
+    [^GrowingIntArray x ^DataOutput out]
   (let [ar        (.toArray  x)
         osize     (alength ar)
         comp?     (< 3 osize)
         ^ints car (if comp?
-                    (c/compress c/int-compressor ar)
+                    (compress i/int-compressor ar)
                     ar)
         size      (alength car)]
     (.writeInt out (if comp? (- size) size))
@@ -100,7 +101,7 @@
   (doto (RoaringBitmap.) (.deserialize in)))
 
 (nippy/extend-thaw
-  :dtlv/gia [^DataInput in]
+    :dtlv/gia [^DataInput in]
   (let [csize (.readInt in)
         comp? (neg? csize)
         size  (if comp? (- csize) csize)
@@ -109,7 +110,7 @@
     (dotimes [i size] (aset car i (.readInt in)))
     (.addAll items
              (if comp?
-               (c/uncompress c/int-compressor car)
+               (uncompress i/int-compressor car)
                car))
     items))
 

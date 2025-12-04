@@ -17,7 +17,6 @@
    [datalevin.lmdb :as l]
    [datalevin.util :as u]
    [datalevin.hu :as hu]
-   [datalevin.binding.cpp :as cpp]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest is use-fixtures]]
    [clojure.test.check.generators :as gen]
@@ -33,8 +32,8 @@
 
 (use-fixtures :each db-fixture)
 
-(deftest sample-for-compressors-test
-  (let [dir  (u/tmp-dir (str "sample-" (UUID/randomUUID)))
+(deftest plain-sample-test
+  (let [dir  (u/tmp-dir (str "sample-key-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         m    10
         ks   (shuffle (range 0 m))
@@ -46,14 +45,15 @@
 
     (if/open-dbi lmdb "u")
     (if/transact-kv lmdb txs)
-    (let [res (cpp/sample-for-compressors lmdb)]
-      (is (nil? res)))
+    (let [freqs  (sut/sample-key-freqs lmdb)
+          vbytes (sut/sample-value-bytes lmdb)]
+      (is (nil? freqs))
+      (is (nil? vbytes)))
 
     (if/open-dbi lmdb "v")
     (if/transact-kv lmdb txs1)
-    (let [res            (cpp/sample-for-compressors lmdb)
-          ^longs freqs   (first res)
-          ^List valbytes (peek res)]
+    (let [^longs freqs   (sut/sample-key-freqs lmdb)
+          ^List valbytes (sut/sample-value-bytes lmdb)]
       (is (<= c/*compress-sample-size* (count valbytes) ))
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
@@ -75,7 +75,7 @@
 
     (if/open-list-dbi lmdb "l")
     (if/transact-kv lmdb txs)
-    (let [[^longs freqs _] (cpp/sample-for-compressors lmdb)]
+    (let [^longs freqs (sut/sample-key-freqs lmdb)]
       (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
       (is (< (aget freqs 1) (aget freqs 0)))
@@ -104,8 +104,8 @@
       (.clear dst)
       (.clear res)
       (b/put-buffer src k :data)
-      (sut/bf-compress compresssor (.flip src) dst)
-      (sut/bf-uncompress compresssor (.flip dst) res)
+      (if/bf-compress compresssor (.flip src) dst)
+      (if/bf-uncompress compresssor (.flip dst) res)
       (zero? (bf/compare-buffer (.flip src) (.flip res))))))
 
 (test/defspec val-compressed-data-generative-test
@@ -122,8 +122,8 @@
       (.clear dst)
       (.clear res)
       (b/put-buffer src v :data)
-      (sut/bf-compress compresssor (.flip src) dst)
-      (sut/bf-uncompress compresssor (.flip dst) res)
+      (if/bf-compress compresssor (.flip src) dst)
+      (if/bf-uncompress compresssor (.flip dst) res)
       (zero? (bf/compare-buffer (.flip src) (.flip res))))))
 
 (deftest kv-compressor-test
@@ -136,9 +136,10 @@
     (if/open-dbi orig-kv "a")
     (if/transact-kv orig-kv txs)
 
-    (let [[freqs samples] (cpp/sample-for-compressors orig-kv)
-          hu              (hu/new-hu-tucker freqs)
-          dict            (sut/train-zstd samples)
+    (let [freqs   (sut/sample-key-freqs orig-kv)
+          samples (sut/sample-value-bytes orig-kv)
+          hu      (hu/new-hu-tucker freqs)
+          dict    (sut/train-zstd samples)
           test-fn
           (fn [comp-opt]
             (let [comp-dir (u/tmp-dir (str "kv-compress-" (UUID/randomUUID)))

@@ -11,9 +11,9 @@
   "Handle binary encoding of data, and read/write to buffers, etc."
   (:require
    [datalevin.constants :as c]
-   [datalevin.compress :as cp]
    [datalevin.buffer :as bf]
    [datalevin.util :as u]
+   [datalevin.ints :as i]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
    [taoensso.nippy :as nippy])
@@ -882,7 +882,7 @@
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
                        (put-int bf i2))
-     :ints           (cp/put-ints bf x)
+     :ints           (i/put-ints bf x)
      :bitmap         (put-bitmap bf x)
      :term-info      (let [[i1 i2 i3] x]
                        (put-int bf i1)
@@ -891,10 +891,10 @@
      :doc-info       (let [[i1 i2 i3] x]
                        (put-int bf i1)
                        (put-short bf i2)
-                       (cp/put-ints bf i3))
+                       (i/put-ints bf i3))
      :pos-info       (let [[i1 i2] x]
-                       (cp/put-sorted-ints bf i1)
-                       (cp/put-sorted-ints bf i2))
+                       (i/put-sorted-ints bf i1)
+                       (i/put-sorted-ints bf i2))
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
      :raw            (put-bytes bf x)
@@ -943,11 +943,11 @@
      :raw            (get-bytes bf)
      ;; range query are NOT supported on these
      :int-int        [(get-int bf) (get-int bf)]
-     :ints           (cp/get-ints bf)
+     :ints           (i/get-ints bf)
      :bitmap         (get-bitmap bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info       [(get-int bf) (get-short bf) (cp/get-ints bf)]
-     :pos-info       [(cp/get-sorted-ints bf) (cp/get-sorted-ints bf)]
+     :doc-info       [(get-int bf) (get-short bf) (i/get-ints bf)]
+     :pos-info       [(i/get-sorted-ints bf) (i/get-sorted-ints bf)]
      (if (vector? v-type)
        (do (get-byte bf)
            (if (= 1 (count v-type))
