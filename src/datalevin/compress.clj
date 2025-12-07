@@ -157,7 +157,6 @@
                       (list-dbis db))
         sizes (map #(entries db %) dbis)
         total ^long (reduce + 0 sizes)]
-    (println "total values" total)
     (when (< ^long c/*compress-sample-size* total)
       (let [valbytes (FastList.)
             ratio    (/ ^long c/*compress-sample-size* total)]
