@@ -25,6 +25,7 @@
    [datalevin.util :as u :refer [cond+ raise conjv concatv tuple-get map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
+   [datalevin.pipe :as p]
    [datalevin.remote :as rt]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
@@ -104,12 +105,15 @@
         (.addAll ^Collection sink result)
         (cond
           know-e?
-          (let [src (doto ^Collection (s/tuple-pipe)
+          (let [src (doto ^Collection
+                        (if *explain*
+                          (p/counted-tuple-pipe)
+                          (p/tuple-pipe))
                       (.add (object-array [e]))
-                      (s/finish-output))]
+                      (p/finish))]
             (if get-v?
               (db/-eav-scan-v db src sink 0 [[attr {:skip? false}]])
-              (s/drain-to src sink)))
+              (p/drain-to src sink)))
           (nil? val)
           (db/-init-tuples
             db sink attr
@@ -1779,7 +1783,7 @@
       (rd/fold
         +
         (rd/map #(av-size store attr (aget ^objects % index))
-                (s/remove-end-scan tuples))))))
+                (p/remove-end-scan tuples))))))
 
 (def magic-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
 
@@ -2019,9 +2023,9 @@
                 (assoc m (:out step)
                        {:tuples-count
                         (let [sink (aget sinks i)]
-                          (if (s/pipe? sink)
-                            (s/total sink)
-                            (.size ^Collection (s/remove-end-scan sink))))}))
+                          (if (p/pipe? sink)
+                            (p/total sink)
+                            (.size ^Collection (p/remove-end-scan sink))))}))
               {(:out (peek steps)) {:tuples-count (.size tuples)}}
               (butlast steps)))))
 
@@ -2039,7 +2043,9 @@
   [context db attrs steps n]
   (let [n-1    (dec ^long n)
         tuples (FastList.)
-        pipes  (object-array (repeatedly n-1 s/tuple-pipe))
+        pipes  (object-array (repeatedly n-1 #(if *explain*
+                                                (p/counted-tuple-pipe)
+                                                (p/tuple-pipe))))
         work   (fn [step ^long i]
                  (if (zero? i)
                    (-execute-pipe step db nil (aget pipes 0))
@@ -2047,11 +2053,11 @@
                      (if (= i n-1)
                        (-execute-pipe step db src tuples)
                        (-execute-pipe step db src (aget pipes i))))))
-        finish #(s/finish-output (if (= % n-1) tuples (aget pipes %)))]
+        finish #(when (not= % n-1) (p/finish (aget pipes %)))]
     (dorun ((if (writing? db) map map+)
             (fn [step i] (work step i) (finish i))
             steps (range)))
-    (s/remove-end-scan tuples)
+    (p/remove-end-scan tuples)
     (save-intermediates context steps pipes tuples)
     (r/relation! attrs tuples)))
 

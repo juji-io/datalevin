@@ -14,10 +14,8 @@
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
   DB). VAE was only used in entity retraction and current replacement is less
   than 10% slower.
-- [Vector] Vector index is now stored inside the database file and is ACID
-  compliant.
-- [Platform] Native dependencies are statically compiled and bundled in the
-  release jars.
+- [Platform] Native dependencies are mostly statically compiled and bundled in the
+  release jars (with exception of libc, as glibc is much faster than musl).
 - [Platform] Drop support for Intel macOS.
 - [Platform] Minimal Java version is now 21.
 

@@ -17,6 +17,7 @@
    [datalevin.util :as u :refer [conjs conjv]]
    [datalevin.relation :as r]
    [datalevin.bits :as b]
+   [datalevin.pipe :as p]
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.search :as s]
    [datalevin.vector :as v]
@@ -35,8 +36,8 @@
    [clojure.string :as str])
   (:import
    [java.util List Comparator Collection HashMap UUID]
-   [java.util.concurrent LinkedBlockingQueue TimeUnit ScheduledExecutorService
-    ConcurrentHashMap ScheduledFuture]
+   [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap
+    ScheduledFuture]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -266,52 +267,6 @@
   [lmdb kv]
   (ave-kv->retrieved
     lmdb (b/read-buffer (lmdb/k kv) :avg) (b/read-buffer (lmdb/v kv) :id)))
-
-(defprotocol ITuplePipe
-  (pipe? [this] "test if implements this protocol")
-  (produce [this]
-    "take a tuple from the pipe, block if there is nothing to take, if encounter :datalevin/end-scan, return it and end the pipe, return nil if pipe has ended")
-  (drain-to [this sink] "pour all remaining content into sink")
-  (reset [this] "reset the pipe for next round of operation")
-  (total [this] "return the total number of tuples pass through the pipe"))
-
-(extend-type Object ITuplePipe (pipe? [_] false))
-(extend-type nil ITuplePipe (pipe? [_] false))
-
-(deftype TuplePipe [^LinkedBlockingQueue queue
-                    ^:unsynchronized-mutable total]
-  ITuplePipe
-  (pipe? [_] true)
-  (produce [_]
-    (let [o (.take queue)]
-      (when-not (identical? :datalevin/end-scan o)
-        (set! total (u/long-inc total))
-        o)))
-  (drain-to [_ sink] (.drainTo queue sink))
-  (reset [_] (.clear queue))
-  (total [_] total)
-
-  Collection
-  (add [_ o] (.add queue o))
-  (addAll [_ o] (.addAll queue o)))
-
-(defn tuple-pipe [] (->TuplePipe (LinkedBlockingQueue.) 0))
-
-(defn finish-output
-  [^Collection sink]
-  (.add sink :datalevin/end-scan))
-
-(defn remove-end-scan
-  [tuples]
-  (if (.isEmpty ^Collection tuples)
-    tuples
-    (let [size (.size ^List tuples)
-          s-1  (dec size)
-          l    (.get ^List tuples s-1)]
-      (if (identical? :datalevin/end-scan l)
-        (do (.remove ^List tuples s-1)
-            (recur tuples))
-        tuples))))
 
 (defn- ave-tuples-scan*
   [lmdb aid vt val-ranges sample-indices work]
@@ -930,14 +885,14 @@
   (ave-tuples-list [store attr val-ranges vpred get-v?]
     (let [out (FastList.)]
       (.ave-tuples store out attr val-ranges vpred get-v? nil)
-      (remove-end-scan out)
+      (p/remove-end-scan out)
       out))
 
   (sample-ave-tuples [store out attr mcount val-ranges vpred get-v?]
     (when mcount
       (let [indices (u/reservoir-sampling mcount c/init-exec-size-threshold)]
         (.ave-tuples store out attr val-ranges vpred get-v? indices)
-        (remove-end-scan out))))
+        (p/remove-end-scan out))))
 
   (sample-ave-tuples-list [store attr mcount val-ranges vpred get-v?]
     (let [out (FastList.)]
@@ -964,20 +919,20 @@
                       (lmdb/val-iterator
                         (lmdb/iterate-list-val-full dbi rtx cur))]
             (if (single-attrs? schema attrs-v)
-              (loop [tuple (produce in)]
+              (loop [tuple (p/produce in)]
                 (when tuple
                   (eav-scan-v-single* lmdb iter na out tuple eid-idx
                                       seen aids preds fidxs skips)
-                  (recur (produce in))))
+                  (recur (p/produce in))))
               (let [gcounts (group-counts aids)
                     gstarts ^ints (group-starts gcounts)
                     gcounts (int-array gcounts)]
-                (loop [tuple (produce in)]
+                (loop [tuple (p/produce in)]
                   (when tuple
                     (eav-scan-v-multi* lmdb iter na out tuple eid-idx
                                        seen aids preds fidxs skips gstarts
                                        gcounts)
-                    (recur (produce in)))))))
+                    (recur (p/produce in)))))))
           (u/raise "Fail to eav-scan-v: " e
                    {:eid-idx eid-idx :attrs-v attrs-v})))))
 
@@ -1029,11 +984,11 @@
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
                           (lmdb/iterate-list-val-full dbi rtx cur))]
-              (loop [^objects tuple (produce in)]
+              (loop [^objects tuple (p/produce in)]
                 (when tuple
                   (let [v (aget tuple v-idx)]
                     (val-eq-scan-e* iter out tuple seen aid v vt)
-                    (recur (produce in))))))
+                    (recur (p/produce in))))))
             (u/raise "Fail to val-eq-scan-e: " e {:v-idx v-idx :attr attr}))))))
 
   (val-eq-scan-e-list [_ in v-idx attr]
@@ -1065,11 +1020,11 @@
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
                           (lmdb/iterate-list-val-full dbi rtx cur))]
-              (loop [^objects tuple (produce in)]
+              (loop [^objects tuple (p/produce in)]
                 (when tuple
                   (let [v (aget tuple v-idx)]
                     (val-eq-scan-e-bound* iter out tuple aid v vt bound)
-                    (recur (produce in))))))
+                    (recur (p/produce in))))))
             (u/raise "Fail to val-eq-scan-e-bound: " e
                      {:v-idx v-idx :attr attr}))))))
 
@@ -1103,12 +1058,12 @@
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
                           (lmdb/iterate-list-val-full dbi rtx cur))]
-              (loop [^objects tuple (produce in)]
+              (loop [^objects tuple (p/produce in)]
                 (when tuple
                   (let [old-e (aget tuple f-idx)
                         v     (aget tuple v-idx)]
                     (val-eq-filter-e* iter out tuple aid v vt old-e)
-                    (recur (produce in))))))
+                    (recur (p/produce in))))))
             (u/raise "Fail to val-eq-filter-e: " e
                      {:v-idx v-idx :attr attr}))))))
 
@@ -1195,7 +1150,10 @@
 (deftype SamplingWork [^Store store exe]
   IAsyncWork
   (work-key [_] (->> (db-name store) hash (str "sampling") keyword))
-  (do-work [_] (when (a/running? exe) (sampling store)))
+  (do-work [_]
+    (when (a/running? exe)
+      (try (sampling store)
+           (catch Throwable _))))
   (combine [_] nil)
   (callback [_] nil))
 

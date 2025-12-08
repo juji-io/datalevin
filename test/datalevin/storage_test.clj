@@ -5,7 +5,7 @@
    [datalevin.constants :as c]
    [datalevin.interface :as if]
    [datalevin.datom :as d]
-   [datalevin.lmdb :as lmdb]
+   [datalevin.pipe :as p]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -442,15 +442,15 @@
                                :db/valueType   :db.type/string}}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})
-        in      (sut/tuple-pipe)
+        in      (p/tuple-pipe)
         out     (FastList.)]
     (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13])
 
     (are [tuples eid-idx attrs-v result]
         (do (.clear out)
-            (sut/reset in)
+            (p/reset in)
             (.addAll ^Collection in tuples)
-            (.add ^Collection in :datalevin/end-scan)
+            (p/finish in)
             (if/eav-scan-v store in out eid-idx attrs-v)
             (is (= (set result) (set (mapv vec out)))))
 
@@ -583,15 +583,15 @@
                            :b {:db/valueType :db.type/string}}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})
-        in      (sut/tuple-pipe)
+        in      (p/tuple-pipe)
         out     (FastList.)]
     (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8])
 
     (are [tuples veid-idx attr result]
         (do (.clear out)
-            (sut/reset in)
+            (p/reset in)
             (.addAll ^Collection in tuples)
-            (.add ^Collection in :datalevin/end-scan)
+            (p/finish in)
             (if/val-eq-scan-e store in out veid-idx attr)
             (is (= result (mapv vec out))))
 

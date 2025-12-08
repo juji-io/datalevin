@@ -161,7 +161,10 @@
 (deftype AsyncVecSave [vec-index fname]
   IAsyncWork
   (work-key [_] (vec-save-key fname))
-  (do-work [_] (when-not (i/vec-closed? vec-index) (i/persist-vecs vec-index)))
+  (do-work [_]
+    (when-not (i/vec-closed? vec-index)
+      (try (i/persist-vecs vec-index)
+           (catch Throwable _))))
   (combine [_] first)
   (callback [_] nil))
 
