@@ -93,27 +93,37 @@
       (when (nil? (index node)) (connect node)))
     @sccs))
 
-(defn- dependency-graph
+(defn dependency-graph
   [rules]
-  (reduce-kv
-    (fn [g head branches]
-      (reduce
-        (fn [g branch]
-          (let [[_ & clauses] branch]
+  ;; Preserve stratification metadata on the graph for reuse (SCC + temporal cache).
+  (let [graph
+        (reduce-kv
+          (fn [g head branches]
             (reduce
-              (fn [g clause]
-                (if (sequential? clause)
-                  (let [sym (first clause)]
-                    (if (contains? rules sym)
-                      (update g head (fnil conj #{}) sym)
-                      g))
-                  g))
-              g clauses)))
-        (update g head #(or % #{})) ;; Ensure node exists
-        branches))
-    {} rules))
+              (fn [g branch]
+                (let [[_ & clauses] branch]
+                  (reduce
+                    (fn [g clause]
+                      (if (sequential? clause)
+                        (let [sym (first clause)]
+                          (if (contains? rules sym)
+                            (update g head (fnil conj #{}) sym)
+                            g))
+                        g))
+                    g clauses)))
+              (update g head #(or % #{})) ;; Ensure node exists
+              branches))
+          {} rules)]
+    (with-meta graph {:sccs (delay (tarjans-scc graph))
+                      :temporal-idx-cache (volatile! {})})))
 
-(defn stratify [rules] (-> rules dependency-graph tarjans-scc))
+(defn- dependency-sccs
+  [deps]
+  (if-let [sccs (:sccs (meta deps))]
+    (if (delay? sccs) @sccs sccs)
+    (tarjans-scc deps)))
+
+(defn stratify [rules] (-> rules dependency-graph dependency-sccs))
 
 ;; SNE
 
@@ -397,30 +407,42 @@
                       comp)))
             ag-sccs)))
 
-(defn- build-apdg [scc rules temporal-comp]
-  (let [comp-set (set temporal-comp)
-        apdg (atom {})]
-    (doseq [r-head scc]
-      (let [branches (get rules r-head)]
-        (doseq [branch branches]
-          (let [[head & clauses] branch]
-            (doseq [clause clauses]
-              (when (sequential? clause)
-                (let [c-head (if (qu/source? (first clause)) (second clause) (first clause))]
-                  (when (contains? (set scc) c-head)
-                    (let [rule-edges (extract-attr-dependencies r-head [branch] (set scc))
-                          relevant-edges (filter (fn [[src tgt w]]
-                                                   (and (= (first src) c-head)
-                                                        (= (first tgt) r-head)
-                                                        (contains? comp-set src)
-                                                        (contains? comp-set tgt)))
-                                                 rule-edges)
-                          weight (if (seq relevant-edges)
-                                   (apply max (map last relevant-edges))
-                                   0)]
-                      (swap! apdg update c-head (fnil conj []) {:target r-head :weight weight})
-                      )))))))))
-    @apdg))
+(defn- build-apdg [scc rules temporal-comp ag]
+  (let [comp-set   (set temporal-comp)
+        scc-set    (set scc)
+        ;; Precompute max weights for edges within the temporal component keyed
+        ;; by rule heads, so clause scanning is O(1) lookups.
+        weight-map (reduce-kv
+                     (fn [m src edges]
+                       (if (contains? comp-set src)
+                         (reduce (fn [m {:keys [target weight]}]
+                                   (if (contains? comp-set target)
+                                     (update m [(first src) (first target)]
+                                             (fnil max 0) weight)
+                                     m))
+                                 m edges)
+                         m))
+                     {} ag)]
+    (reduce
+      (fn [graph r-head]
+        (let [branches (get rules r-head)]
+          (reduce
+            (fn [g clause]
+              (if (sequential? clause)
+                (let [c-head (if (qu/source? (first clause))
+                               (second clause)
+                               (first clause))]
+                  (if (contains? scc-set c-head)
+                    (update g c-head
+                            (fnil conj [])
+                            {:target r-head
+                             :weight (get weight-map [c-head r-head] 0)})
+                    g))
+                g))
+            graph
+            (mapcat rest branches))))
+      {}
+      scc)))
 
 (defn- check-positive-cycles [graph nodes]
   (let [zero-graph (reduce-kv (fn [m k edges]
@@ -442,38 +464,47 @@
                 :else true))
             sccs)))
 
-(defn- temporal-index [scc rules]
-  (let [ag (build-attributes-graph scc rules)
-        candidates (find-temporal-candidates ag)]
-    (loop [cands candidates]
-      (if (empty? cands)
-        nil
-        (let [cand (first cands)
-              apdg (build-apdg scc rules cand)
-              valid? (check-positive-cycles apdg scc)]
-          (if valid?
-            (let [rname (first scc)
-                  match (first (filter #(= (first %) rname) cand))]
-              (if match
-                (second match)
-                (recur (rest cands))))
-            (recur (rest cands))))))))
+(defn- temporal-index
+  ([scc rules] (temporal-index scc rules nil))
+  ([scc rules cache]
+   (let [cache-map (when cache @cache)]
+     (if (and cache-map (contains? cache-map scc))
+       (get cache-map scc)
+       (let [ag         (build-attributes-graph scc rules)
+             candidates (find-temporal-candidates ag)
+             res
+             (loop [cands candidates]
+               (if (empty? cands)
+                 nil
+                 (let [cand   (first cands)
+                       apdg   (build-apdg scc rules cand ag)
+                       valid? (check-positive-cycles apdg scc)]
+                   (if valid?
+                     (let [rname (first scc)
+                           match (first (filter #(= (first %) rname) cand))]
+                       (if match
+                         (second match)
+                         (recur (rest cands))))
+                     (recur (rest cands))))))]
+         (when cache (vswap! cache assoc scc res))
+         res)))))
 
 (defn solve-stratified
   [context rule-name args resolve-clause-fn]
   (let [rules      (:rules context)
+        deps       (or (:rules-deps context) (dependency-graph rules))
         cached-rel (get-in context [:rule-rels rule-name])
         head-vars  (rest (first (first (get rules rule-name))))]
     (if cached-rel
       (map-rule-result cached-rel head-vars args)
-      (let [sccs       (stratify rules)
-            stratum    (first (filter #(contains? (set %) rule-name) sccs))
-            deps       (dependency-graph rules)
+      (let [sccs       (dependency-sccs deps)
+            stratum    (first (filter #(contains? % rule-name) sccs))
             recursive? (or (< 1 (count stratum))
                            (contains? (get deps rule-name) rule-name))]
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
-          (let [;; 1. Rename rules in stratum to avoid collision & freshen vars
+          (let [temporal-cache (:temporal-idx-cache (meta deps))
+                ;; 1. Rename rules in stratum to avoid collision & freshen vars
                 renamed-rules-map
                 (reduce
                   (fn [m rname]
@@ -483,7 +514,8 @@
                 full-renamed-rules (merge rules renamed-rules-map)
 
                 ;; Detection of Temporal Elimination
-                temporal-idx   (when recursive? (temporal-index stratum renamed-rules-map))
+                temporal-idx   (when recursive?
+                                 (temporal-index stratum renamed-rules-map temporal-cache))
                 temporal-elim? (or *temporal-elimination*
                                    (and *auto-optimize-temporal* temporal-idx))
 
@@ -536,7 +568,8 @@
                   []
                   seed-indices)
 
-                clean-context (select-keys context [:sources :rule-rels]) ;; :rules updated below
+                clean-context (assoc (select-keys context [:sources :rule-rels :rules-deps])
+                                     :rules-deps deps) ;; :rules updated below
 
                 ;; Split branches into base (non-recursive) and recursive
                 stratum-set (set stratum)
@@ -604,10 +637,13 @@
                                start-totals)
 
                 final-totals
-                (loop [totals    start-totals
-                       deltas    start-totals
-                       iteration 0]
-                  (if (or (every? #(empty? (:tuples %)) (vals deltas))
+                (loop [totals          start-totals
+                       deltas          start-totals
+                       deltas-present? (boolean
+                                         (some #(not (empty? (:tuples %)))
+                                               (vals start-totals)))
+                       iteration       0]
+                  (if (or (not deltas-present?)
                           (> iteration 1000000))
                     totals
                     (let [iter-context (assoc clean-context
@@ -658,7 +694,7 @@
                                     acc)))
                               totals stratum))]
 
-                      (recur new-totals new-deltas (inc iteration)))))]
+                      (recur new-totals new-deltas (boolean (seq new-deltas)) (inc iteration)))))]
 
             (let [rule-rel (get final-totals rule-name)]
               (map-rule-result rule-rel entry-renamed-head args))))))))

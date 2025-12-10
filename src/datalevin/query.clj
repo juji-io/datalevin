@@ -264,7 +264,10 @@
     (update context :sources assoc (get-in binding [:variable :symbol]) value)
     (and (instance? BindScalar binding)
          (instance? RulesVar (:variable binding)))
-    (assoc context :rules (rules/parse-rules value))
+    (let [parsed (rules/parse-rules value)]
+      (assoc context
+             :rules parsed
+             :rules-deps (rules/dependency-graph parsed)))
     :else
     (update context :rels conj (in->rel binding value))))
 
