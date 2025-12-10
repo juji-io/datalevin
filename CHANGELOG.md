@@ -23,6 +23,15 @@
 - [Platform] Automatically upgrade DB from version 0.9.27 onwards when opening
   the DB. The migration may take a while, and it needs Internet access to
   download old uberjar. [#276](https://github.com/juji-io/datalevin/issues/276)
+- [KV] TTL support: in `:put` transaction vector, append an optional
+  `:expire-at` value to make the value expiring at the given Unix epoch
+  timestamp.
+- [KV] `:default-ttl-ms` option for `open-dbi` to give a default TTL for
+  values of the DBI, default is `0`, means "no expiration".
+- [KV] `:ttl-sweep-interval` and `:ttl-sweep-batch` options for `open-kv` to
+  control the background TTL sweeper.
+- [Datalog] Allow `:db/expire-at` attribute for an entity, which retracts the
+  entity at the given Unix epoch timestamp.
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs.
 - [KV] Range count functions in O(log n) time for `:counted` DBIs.

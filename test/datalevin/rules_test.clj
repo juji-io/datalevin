@@ -40,7 +40,7 @@
     [#{:e} #{:b} #{:a} #{:h :i :g} #{:c :j :f :d}]))
 
 (deftest reachability-data-test
-  (let [dir (u/tmp-dir (str "reachability-test-" (UUID/randomUUID)))
+  (let [dir (u/tmp-dir (str "reachability-test" (UUID/randomUUID)))
         db  (-> (d/empty-db
                   dir
                   {:node {:db/unique    :db.unique/identity
@@ -199,7 +199,7 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-;; Need to extend the Datalog syntax to allow aggregation function in
+;; TODO Need to extend the Datalog syntax to allow aggregation function in
 ;; the rule head
 #_(deftest single-linear-regression-test
     (let [dir (u/tmp-dir (str "single-regression-test-" (UUID/randomUUID)))

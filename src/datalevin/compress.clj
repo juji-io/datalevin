@@ -176,9 +176,9 @@
   (i/range-count db "datalevin/giants" [:all])
   (count valbtyes)
   (count freqs)
-  (u/dump-bytes "val-code.bin" (cp/train-zstd valbtyes))
+  (u/dump-bytes "val-code.bin" (train-zstd valbtyes))
 
-  (def k-comp (cp/key-compressor freqs))
+  (def k-comp (key-compressor freqs))
 
   (close-kv db)
   )

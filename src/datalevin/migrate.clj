@@ -13,14 +13,12 @@
    [clojure.java.io :as io]
    [clojure.java.shell :as sh]
    [clojure.edn :as edn]
-   [taoensso.nippy :as nippy]
    [datalevin.datom :as dd]
    [datalevin.lmdb :as l]
    [datalevin.interface :as if]
    [datalevin.util :as u :refer [raise]])
   (:import
-   [java.io File FileInputStream DataInputStream InputStreamReader
-    PushbackReader]
+   [java.io File FileInputStream PushbackReader]
    [java.net URL]
    [java.nio.file AtomicMoveNotSupportedException Files Paths Path
     StandardCopyOption]

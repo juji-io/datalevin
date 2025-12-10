@@ -173,16 +173,14 @@
   (testing "Rule vars validation"
     (is (thrown-msg? "Cannot parse var, expected symbol starting with ?, got: $e1"
                      (d/q '[:find ?e :in $ % :where [?e]]
-                          (d/empty-db)
+                          []
                           '[[(rule $e1 ?e2)
                              [?e1 :ref ?e2]]]))))
   )
 
 (deftest test-false-arguments
-  (let [dir   (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
-        db    (d/db-with (d/empty-db dir)
-                         [[:db/add 1 :attr true]
-                          [:db/add 2 :attr false]])
+  (let [db    [[1 :attr true]
+               [2 :attr false]]
         rules '[[(is ?id ?val)
                  [?id :attr ?val]]]]
     (is (= (d/q '[:find ?id :in $ %
@@ -191,9 +189,7 @@
            #{[1]}))
     (is (= (d/q '[:find ?id :in $ %
                   :where (is ?id false)] db rules)
-           #{[2]}))
-    (d/close-db db)
-    (u/delete-files dir)))
+           #{[2]}))))
 
 (deftest test-rule-performance-on-larger-datasets
   (let [now        (fn [] (/ (System/nanoTime) 1000000.0))
@@ -214,27 +210,14 @@
                      (let [start  (now)
                            result (apply f args)]
                        [(- ^long (now) ^long start) result]))
-        txs        (for [x (range 1 50000)]
-                     {:db/id       (- ^long x)
-                      :item/id     x
-                      :item/status (rand-nth
-                                     ["started" "pending" "stopped"])})
-        dir-inline (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
-        db-inline  (-> (d/empty-db dir-inline)
-                       (d/db-with txs))
-        dir-rule   (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
-        db-rule    (-> (d/empty-db dir-rule)
-                       (d/db-with txs))
-
-        [inline-time inline-result] (measure inline db-inline)
-        [rule-time rule-result]     (measure rule db-rule)]
+        txs        (vec
+                     (for [x (range 1 50000)]
+                       [(- ^long x) :item/status
+                        (rand-nth ["started" "pending" "stopped"])]))
+        [inline-time inline-result] (measure inline txs)
+        [rule-time rule-result]     (measure rule txs)]
     ;; (println "inline-time" inline-time "ms, rule-time" rule-time "ms")
     (is (= inline-result rule-result))
     ;; show that rule performance continues to be within an order of
     ;; magnitude of inline performance
-    (is (<= 0 rule-time (* 10 ^long inline-time)))
-
-    (d/close-db db-inline)
-    (u/delete-files dir-inline)
-    (d/close-db db-rule)
-    (u/delete-files dir-rule)))
+    (is (<= 0 rule-time (* 10 ^long inline-time)))))

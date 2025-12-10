@@ -10,12 +10,22 @@
 (ns ^:no-doc datalevin.rules
   "Rules evaluation engine"
   (:require
+   [clojure.set :as set]
    [clojure.edn :as edn]
    [clojure.walk :as walk]
    [datalevin.parser :as dp]
    [datalevin.query-util :as qu]
-   [datalevin.util :as u :refer [cond+ raise conjv concatv]]
-   [datalevin.relation :as r]))
+   [datalevin.join :as j]
+   [datalevin.util :as u :refer [cond+ raise conjv concatv index-of]]
+   [datalevin.relation :as r])
+  (:import
+   [org.eclipse.collections.impl.list.mutable FastList]))
+
+(defn parse-rules
+  [rules]
+  (let [rules (if (string? rules) (edn/read-string rules) rules)]
+    (dp/parse-rules rules) ;; validation
+    (group-by ffirst rules)))
 
 ;; stratification
 
@@ -47,6 +57,7 @@
             {} v->node)))
 
 (defn tarjans-scc
+  "returns SCCs in reverse topological order (bottom-up)"
   [graph]
   (let [nodes (init-nodes graph)
         cur   (volatile! 0)
@@ -81,5 +92,319 @@
       (when (nil? (index node)) (connect node)))
     @sccs))
 
-;; (defn solve-rule
-;;   [context clause])
+(defn- dependency-graph
+  [rules]
+  (reduce-kv
+    (fn [g head branches]
+      (reduce
+        (fn [g branch]
+          (let [[_ & clauses] branch]
+            (reduce
+              (fn [g clause]
+                (if (sequential? clause)
+                  (let [sym (first clause)]
+                    (if (contains? rules sym)
+                      (update g head (fnil conj #{}) sym)
+                      g))
+                  g))
+              g clauses)))
+        (update g head #(or % #{})) ;; Ensure node exists
+        branches))
+    {} rules))
+
+(defn stratify [rules] (-> rules dependency-graph tarjans-scc))
+
+;; SNE
+
+(defn- empty-rel-for-rule
+  "Create an empty relation with attributes matching the rule head args"
+  [rule-name rules]
+  (let [head-vars (rest (ffirst (get rules rule-name)))
+        attrs     (zipmap head-vars (range))]
+    (r/relation! attrs (FastList.))))
+
+(defn- project-rule-result
+  "Project body-rel to head-vars"
+  [body-rel head-vars]
+  (if (seq head-vars)
+    (let [final-attrs (zipmap head-vars (range))
+          idxs        (mapv (:attrs body-rel) head-vars)]
+      (r/relation! final-attrs
+                   (u/map-fl
+                     (fn [t]
+                       (let [tg (u/tuple-get t)]
+                         (object-array (map #(tg t %) idxs))))
+                     (:tuples body-rel))))
+    body-rel))
+
+(defn- eval-rule-body
+  [context rule-name rule-branches resolve-fn]
+  (reduce
+    (fn [rel branch]
+      (let [[[_ & args] & clauses] branch
+            body-res-context       (reduce resolve-fn context clauses)
+            body-rel               (reduce j/hash-join (:rels body-res-context))
+
+            filtered-rel
+            (if (some (complement qu/free-var?) args)
+              (let [projected (project-rule-result body-rel args)]
+                projected)
+              (project-rule-result body-rel args))]
+        (r/sum-rel rel filtered-rel)))
+    (empty-rel-for-rule rule-name (:rules context))
+    rule-branches))
+
+(defn- map-rule-result
+  [rule-rel rule-head-vars call-args]
+  (let [attrs (:attrs rule-rel)
+        ;; 1. Filter
+        filtered-tuples
+        (filter
+          (fn [tuple]
+            (let [tg (u/tuple-get tuple)]
+              (every?
+                true?
+                (for [[v arg] (map vector rule-head-vars call-args)
+                      :when   (not (qu/free-var? arg))]
+                  (if-let [idx (get attrs v)]
+                    (= (tg tuple idx) arg)
+                    (throw (ex-info "Missing var in rule-rel attrs (filter)" {:var v :attrs attrs :head rule-head-vars})))))))
+          (:tuples rule-rel))
+
+        ;; 2. Enforce repeated vars equality
+        var-indices (group-by second (map-indexed vector call-args))
+
+        consistent-tuples
+        (filter
+          (fn [tuple]
+            (let [tg (u/tuple-get tuple)]
+              (every?
+                (fn [[_ idxs]]
+                  (let [vals (map (fn [idx]
+                                    (let [v (nth rule-head-vars idx)]
+                                      (if-let [i (get attrs v)]
+                                        (tg tuple i)
+                                        (throw (ex-info "Missing var in rule-rel attrs (equality)" {:var v :attrs attrs :head rule-head-vars})))))
+                                  (map first idxs))]
+                    (apply = vals)))
+                var-indices)))
+          filtered-tuples)
+
+        ;; 3. Project and Rename
+        unique-call-vars (distinct (filter qu/free-var? call-args))
+        new-attrs        (zipmap unique-call-vars (range))
+
+        new-tuples
+        (map
+          (fn [tuple]
+            (let [tg (u/tuple-get tuple)]
+              (object-array
+                (map
+                  (fn [target-var]
+                    (let [idx      (u/index-of #(= % target-var) call-args)
+                          rule-var (nth rule-head-vars idx)]
+                      (if-let [i (get attrs rule-var)]
+                        (tg tuple i)
+                        (throw (ex-info "Missing var in rule-rel attrs (project)" {:var rule-var :attrs attrs :head rule-head-vars})))))
+                  unique-call-vars))))
+          consistent-tuples)]
+    (r/relation! new-attrs (u/map-fl identity new-tuples))))
+
+(defn- rename-rule
+  [branches]
+  (let [mapping (volatile! {})]
+    (walk/postwalk
+      (fn [x]
+        (if (and (symbol? x) (qu/free-var? x))
+          (if-let [n (get @mapping x)]
+            n
+            (let [n (gensym (str (name x) "__"))]
+              (vswap! mapping assoc x n)
+              n))
+          x))
+      branches)))
+
+(defn- rule-call?
+  [context clause]
+  (when (sequential? clause)
+    (let [head (if (qu/source? (first clause))
+                 (second clause)
+                 (first clause))]
+      (boolean
+        (and (symbol? head)
+             (not (qu/free-var? head))
+             (not (contains? qu/rule-head head))
+             (contains? (:rules context) head))))))
+
+(defn- clause-required-vars
+  "Vars that must be bound before evaluating a clause."
+  [clause context]
+  (cond
+    ;; predicate style list, but not a rule call
+    (and (sequential? clause)
+         (not (vector? clause))
+         (not (rule-call? context clause)))
+    (set (filter qu/free-var? clause))
+
+    ;; function binding clause: [ (f ?in ...) ?out ...]
+    (and (vector? clause)
+         (sequential? (first clause)))
+    (set (filter qu/free-var? (rest (first clause))))
+
+    :else
+    #{}))
+
+(defn- clause-bound-vars
+  "Vars that become bound after a clause is evaluated."
+  [clause context]
+  (cond
+    (and (sequential? clause)
+         (not (vector? clause)))
+    (if (rule-call? context clause)
+      (set (filter qu/free-var? (rest clause)))
+      (set (filter qu/free-var? clause)))
+
+    (vector? clause)
+    (set (filter qu/free-var? (flatten clause)))
+
+    :else
+    #{}))
+
+(defn- branch-requires?
+  [branch var context]
+  (let [clauses (rest branch)]
+    (loop [cs clauses bound #{}]
+      (if (empty? cs)
+        false
+        (let [c            (first cs)
+              required     (clause-required-vars c context)
+              next-clauses (rest cs)]
+          (cond
+            (and (seq? c) (= 'and (first c)))
+            (recur (concat (rest c) next-clauses) bound)
+
+            (and (some #{var} required) (not (contains? bound var)))
+            true
+
+            :else
+            (recur next-clauses (into bound (clause-bound-vars c context)))))))))
+
+(defn- required-seeds
+  [branches head-vars context]
+  (let [head-vec (vec head-vars)]
+    (set
+      (keep-indexed
+        (fn [idx var]
+          (when (every? #(branch-requires? % var context) branches)
+            idx))
+        head-vec))))
+
+(defn solve-stratified
+  [context rule-name args resolve-clause-fn]
+  (let [rules      (:rules context)
+        cached-rel (get-in context [:rule-rels rule-name])
+        head-vars  (rest (first (first (get rules rule-name))))]
+    (if cached-rel
+      (map-rule-result cached-rel head-vars args)
+      (let [sccs    (stratify rules)
+            stratum (first (filter #(contains? (set %) rule-name) sccs))
+            deps    (dependency-graph rules)
+            recursive? (or (< 1 (count stratum))
+                           (contains? (get deps rule-name) rule-name))]
+        (if-not stratum
+          (raise "Rule not found in strata" {:rule rule-name})
+          (let [;; 1. Rename rules in stratum to avoid collision & freshen vars
+                renamed-rules-map
+                (reduce
+                  (fn [m rname]
+                    (assoc m rname (rename-rule (get rules rname))))
+                  {} stratum)
+
+                full-renamed-rules (merge rules renamed-rules-map)
+
+                ;; 2. Determine Required Seeds
+                entry-renamed-branches (get renamed-rules-map rule-name)
+                entry-renamed-head     (rest (first (first entry-renamed-branches)))
+
+                required-indices (required-seeds entry-renamed-branches entry-renamed-head context)
+
+                ;; 3. Build Seed Relations (required seeds; constants only when non-recursive)
+                seed-indices (if recursive?
+                               (filter #(contains? required-indices %)
+                                       (range (count args)))
+                               (filter #(or (contains? required-indices %)
+                                            (not (qu/free-var? (nth args %))))
+                                       (range (count args))))
+
+                seed-rels
+                (reduce
+                  (fn [rels idx]
+                    (let [hv  (nth entry-renamed-head idx)
+                          arg (nth args idx)]
+                      (if (qu/free-var? arg)
+                        ;; Bind to Outer Context Var
+                        (let [outer-rels (filter #(contains? (:attrs %) arg) (:rels context))]
+                          (if (seq outer-rels)
+                            (into rels
+                                  (map (fn [rel]
+                                         (let [idx (get (:attrs rel) arg)]
+                                           (assoc rel :attrs {hv idx}))) ;; View: Rename attr
+                                       outer-rels))
+                            rels))
+                        ;; Bind to Constant
+                        (conj rels (r/relation! {hv 0} (doto (FastList.) (.add (object-array [arg]))))))))
+                  []
+                  seed-indices)
+
+                clean-context (select-keys context [:sources :rule-rels]) ;; :rules updated below
+
+                start-totals (reduce (fn [m r]
+                                       (if (contains? m r)
+                                         m
+                                         (assoc m r (empty-rel-for-rule r full-renamed-rules))))
+                                     (select-keys (:rule-rels context) stratum)
+                                     stratum)
+
+                final-totals
+                (loop [totals    start-totals
+                       iteration 0]
+                  (let [iter-context (assoc clean-context
+                                            :rules full-renamed-rules
+                                            :rels seed-rels
+                                            :rule-rels (merge (:rule-rels context) totals))
+                        _            (when *assert*
+                                       (println "iter" iteration "rule" rule-name
+                                                "cur" (some-> (get totals rule-name)
+                                                              :tuples count)))
+                        new-totals
+                        (reduce
+                          (fn [acc rname]
+                            (let [branches (get full-renamed-rules rname)
+                                  rel      (eval-rule-body iter-context rname
+                                                           branches
+                                                           resolve-clause-fn)]
+                              (assoc acc rname rel)))
+                          totals stratum)
+
+                        deltas
+                        (reduce
+                          (fn [acc rname]
+                            (let [old-rel (get totals rname (empty-rel-for-rule rname full-renamed-rules))
+                                  new-rel (get new-totals rname)
+                                  diff    (r/difference new-rel old-rel)]
+                              (when *assert*
+                                (println "delta" iteration rname
+                                         "old" (count (:tuples old-rel))
+                                         "new" (count (:tuples new-rel))
+                                         "diff" (count (:tuples diff))))
+                              (if (not-empty (:tuples diff))
+                                (assoc acc rname diff)
+                                acc)))
+                          {} stratum)]
+
+                    (if (empty? deltas)
+                      totals
+                      (recur new-totals (inc iteration)))))]
+
+            (let [rule-rel  (get final-totals rule-name)]
+              (map-rule-result rule-rel entry-renamed-head args))))))))

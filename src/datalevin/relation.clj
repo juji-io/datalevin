@@ -37,12 +37,6 @@
 
 ;; Relation algebra
 
-(defn empty-rel
-  ^Relation [binding]
-  (let [vars (->> (dp/collect-vars-distinct binding)
-                  (map :symbol))]
-    (relation! (zipmap vars (range)) (FastList.))))
-
 (defn join-tuples
   ([^objects t1 ^objects t2]
    (let [l1  (alength t1)
@@ -164,27 +158,42 @@
   (doto (FastList. (count coll))
     (.addAll (mapv #(object-array [%]) coll))))
 
-(defn horizontal-tuples
-  [coll]
-  (doto (FastList.) (.add (object-array coll))))
+#_(defn horizontal-tuples
+    [coll]
+    (doto (FastList.) (.add (object-array coll))))
 
 (defn single-tuples [tuple] (doto (FastList.) (.add tuple)))
 
 (defn many-tuples [values] (transduce (map vertical-tuples) prod-tuples values))
 
-(defn filter-rel
-  [{:keys [attrs ^List tuples]} v pred]
-  (let [new-tuples (FastList.)
-        idx        (attrs v)]
-    (dotimes [i (.size tuples)]
-      (let [tuple ^objects (.get tuples i)]
-        (when (pred (aget tuple idx))
-          (.add new-tuples tuple))))
-    (relation! attrs new-tuples)))
+#_(defn filter-rel
+    [{:keys [attrs ^List tuples]} v pred]
+    (let [new-tuples (FastList.)
+          idx        (attrs v)]
+      (dotimes [i (.size tuples)]
+        (let [tuple ^objects (.get tuples i)]
+          (when (pred (aget tuple idx))
+            (.add new-tuples tuple))))
+      (relation! attrs new-tuples)))
 
-(defn projection
-  [tuples index]
-  (persistent!
-    (reduce
-      (fn [s ^objects t] (conj! s (aget t index)))
-      (transient #{}) tuples)))
+#_(defn projection
+    [tuples index]
+    (persistent!
+      (reduce
+        (fn [s ^objects t] (conj! s (aget t index)))
+        (transient #{}) tuples)))
+
+(defn difference
+  "Returns r1 - r2. Assumes r1 and r2 have same attrs."
+  [r1 r2]
+  (let [^List t1 (:tuples r1)
+        ^List t2 (:tuples r2)]
+    (if (empty? t2)
+      r1
+      (assoc r1 :tuples (let [s2         (into #{} (map vec) t2)
+                              new-tuples (FastList.)]
+                          (dotimes [i (.size t1)]
+                            (let [tuple (.get t1 i)]
+                              (when-not (contains? s2 (vec tuple))
+                                (.add new-tuples tuple))))
+                          new-tuples)))))

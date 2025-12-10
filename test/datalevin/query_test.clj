@@ -12,8 +12,7 @@
    [datalevin.query :as sut]
    [datalevin.constants :as c]
    [datalevin.interpret :as i]
-   [datalevin.util :as u]
-   [datalevin.db :as db])
+   [datalevin.util :as u])
   (:import
    [java.util UUID]))
 

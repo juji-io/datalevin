@@ -13,42 +13,27 @@
    [clojure.string :as str]
    [datalevin.util :as u :refer [cond+ raise]]))
 
-(defn single
-  [coll]
-  (assert (nil? (next coll)) "Expected single element")
-  (first coll))
+(def ^{:dynamic true
+       :doc     "List of symbols in current pattern that might potentiall be resolved to refs"}
+  *lookup-attrs* nil)
+
+(def ^{:dynamic true
+       :doc     "Default pattern source. Lookup refs, patterns, rules will be resolved with it"}
+  *implicit-source* nil)
 
 (defn intersect-keys
   [attrs1 attrs2]
   (u/intersection (set (keys attrs1)) (set (keys attrs2))))
 
-(defn looks-like?
-  [pattern form]
-  (cond
-    (= '_ pattern)    true
-    (= '[*] pattern)  (sequential? form)
-    (symbol? pattern) (= form pattern)
-
-    (sequential? pattern)
-    (if (= (last pattern) '*)
-      (and (sequential? form)
-           (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
-                   (map vector (butlast pattern) form)))
-      (and (sequential? form)
-           (= (count form) (count pattern))
-           (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
-                   (map vector pattern form))))
-    :else ;; (predicate? pattern)
-    (pattern form)))
-
 (defn source? [sym] (and (symbol? sym) (= \$ (first (name sym)))))
 
 (defn free-var? [sym] (and (symbol? sym) (= \? (first (name sym)))))
 
-(defn placeholder? [sym]
-  (and (symbol? sym) (str/starts-with? (name sym) "?placeholder")))
-
-(defn lookup-ref? [form] (looks-like? [keyword? '_] form))
+;; (defn lookup-ref? [form] (looks-like? [keyword? '_] form))
+(defn lookup-ref? [x]
+  (and (vector? x)
+       (= 2 (count x))
+       (keyword? (first x))))
 
 (def rule-head #{'_ 'or 'or-join 'and 'not 'not-join})
 
@@ -76,5 +61,3 @@
            {:error :query/where :form clause})
 
     :else true))
-
-(defn collect-vars [clause] (set (u/walk-collect clause free-var?)))

@@ -13,12 +13,12 @@
   (:require
    [clojure.core :as c]
    [datalevin.db :as db]
-   [datalevin.storage :as st]
    [datalevin.remote :as r]
    [datalevin.util :as u]
    [datalevin.interface :refer [db-name]]
    [taoensso.nippy :as nippy]
-   [clojure.set :as set])
+   [clojure.set :as set]
+   [datalevin.query-util :as qu])
   (:import
    [datalevin.db DB]
    [datalevin.interface IStore]
@@ -133,10 +133,7 @@
 (defn- db->attr-types [db]
   (mem-rschema->attr-types (db/-rschema db)))
 
-(defn- lookup-ref? [x]
-  (and (vector? x)
-       (= 2 (count x))
-       (keyword? (first x))))
+
 
 (defn lookup-stage-then-entity
   ([e k] (lookup-stage-then-entity e k nil))
@@ -158,7 +155,7 @@
         (fn [[k [meta v]]]
           (let [{:keys [op]} meta]
             (if (or (ref-many-attrs k) (ref-many-rattrs k))
-              (let [v (if (lookup-ref? v)
+              (let [v (if (qu/lookup-ref? v)
                         [v]
                         (u/ensure-vec v))]
                 (case op
