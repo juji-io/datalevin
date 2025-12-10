@@ -248,6 +248,32 @@
         (d/close-db db)
         (u/delete-files dir)))))
 
+(deftest auto-temporal-optimization-test
+  (let [dir (u/tmp-dir (str "auto-temporal-test-" (UUID/randomUUID)))
+        db  (d/empty-db dir nil {:kv-opts {:flags [:nolock]}})]
+    (try
+      ;; Generates a sequence from 0 to limit
+      ;; Should AUTO-DETECT temporal pattern and prune history
+      (binding [sut/*auto-optimize-temporal* true]
+        (let [limit 10000
+              rules '[[(chain ?limit ?n)
+                       [(ground 0) ?n]
+                       [(>= ?limit 0)]]
+                      [(chain ?limit ?n)
+                       (chain ?limit ?prev)
+                       [(< ?prev ?limit)]
+                       [(inc ?prev) ?n]]]
+              res   (d/q '[:find ?n
+                           :in $ % ?limit
+                           :where (chain ?limit ?n)]
+                         db rules limit)]
+          ;; Should behave like temporal elimination
+          (is (= 1 (count res)))
+          (is (= #{[limit]} res))))
+      (finally
+        (d/close-db db)
+        (u/delete-files dir)))))
+
 ;; TODO Need to extend the Datalog syntax to allow aggregation function in
 ;; the rule head
 #_(deftest single-linear-regression-test
