@@ -203,21 +203,22 @@
   (let [dir (u/tmp-dir (str "memory-test-" (UUID/randomUUID)))
         db  (d/empty-db dir nil {:kv-opts {:flags [:nolock]}})]
     (try
-      ;; Generates a sequence from 0 to limit
-      (let [limit 2000
-            rules '[[(chain ?limit ?n)
-                     [(ground 0) ?n]
-                     [(>= ?limit 0)]]
-                    [(chain ?limit ?n)
-                     (chain ?limit ?prev)
-                     [(< ?prev ?limit)]
-                     [(inc ?prev) ?n]]]
-            res   (d/q '[:find ?n
-                         :in $ % ?limit
-                         :where (chain ?limit ?n)]
-                       db rules limit)]
-        (is (= (inc limit) (count res)))
-        (is (contains? res [limit])))
+      (binding [sut/*auto-optimize-temporal* false]
+        ;; Generates a sequence from 0 to limit
+        (let [limit 2000
+              rules '[[(chain ?limit ?n)
+                       [(ground 0) ?n]
+                       [(>= ?limit 0)]]
+                      [(chain ?limit ?n)
+                       (chain ?limit ?prev)
+                       [(< ?prev ?limit)]
+                       [(inc ?prev) ?n]]]
+              res   (d/q '[:find ?n
+                           :in $ % ?limit
+                           :where (chain ?limit ?n)]
+                         db rules limit)]
+          (is (= (inc limit) (count res)))
+          (is (contains? res [limit]))))
       (finally
         (d/close-db db)
         (u/delete-files dir)))))
@@ -254,22 +255,21 @@
     (try
       ;; Generates a sequence from 0 to limit
       ;; Should AUTO-DETECT temporal pattern and prune history
-      (binding [sut/*auto-optimize-temporal* true]
-        (let [limit 10000
-              rules '[[(chain ?limit ?n)
-                       [(ground 0) ?n]
-                       [(>= ?limit 0)]]
-                      [(chain ?limit ?n)
-                       (chain ?limit ?prev)
-                       [(< ?prev ?limit)]
-                       [(inc ?prev) ?n]]]
-              res   (d/q '[:find ?n
-                           :in $ % ?limit
-                           :where (chain ?limit ?n)]
-                         db rules limit)]
-          ;; Should behave like temporal elimination
-          (is (= 1 (count res)))
-          (is (= #{[limit]} res))))
+      (let [limit 10000
+            rules '[[(chain ?limit ?n)
+                     [(ground 0) ?n]
+                     [(>= ?limit 0)]]
+                    [(chain ?limit ?n)
+                     (chain ?limit ?prev)
+                     [(< ?prev ?limit)]
+                     [(inc ?prev) ?n]]]
+            res   (d/q '[:find ?n
+                         :in $ % ?limit
+                         :where (chain ?limit ?n)]
+                       db rules limit)]
+        ;; Should behave like temporal elimination
+        (is (= 1 (count res)))
+        (is (= #{[limit]} res)))
       (finally
         (d/close-db db)
         (u/delete-files dir)))))

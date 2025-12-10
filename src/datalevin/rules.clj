@@ -305,7 +305,7 @@
         head-vec))))
 
 (def ^:dynamic *temporal-elimination* false)
-(def ^:dynamic *auto-optimize-temporal* false)
+(def ^:dynamic *auto-optimize-temporal* true)
 
 (defn- recursive-branch? [branch scc context]
   (let [clauses (rest branch)]
