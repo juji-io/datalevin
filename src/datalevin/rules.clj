@@ -314,17 +314,74 @@
             idx))
         head-vec))))
 
+(defn- context-bound-vars
+  [context]
+  (into #{} (mapcat #(keys (:attrs %))) (:rels context)))
+
+(defn- bound-arg-indices
+  "Indices of args that are already bound (via outer context or constants)."
+  [args context]
+  (let [bound (context-bound-vars context)]
+    (set
+      (keep-indexed (fn [idx arg]
+                      (cond
+                        (not (qu/free-var? arg)) idx
+                        (contains? bound arg) idx
+                        :else nil))
+                    args))))
+
 (def ^:dynamic *temporal-elimination* false)
 (def ^:dynamic *auto-optimize-temporal* true)
 
 (defn- recursive-branch? [branch scc context]
   (let [clauses (rest branch)]
     (boolean
-      (some (fn [clause]
+            (some (fn [clause]
               (when (sequential? clause)
                 (let [head (if (qu/source? (first clause)) (second clause) (first clause))]
                   (contains? scc head))))
             clauses))))
+
+(defn- vector-binds-var?
+  "True if a binding clause produces the given var as an output."
+  [v clause]
+  (and (vector? clause)
+       (some #(and (symbol? %) (= v %))
+             (remove sequential? (rest clause)))))
+
+(defn- stable-head-idxs
+  "Conservative check for head vars that stay unchanged through recursion.
+   Only used for single-rule strata to safely push bound arguments (magic-ish seeds)."
+  [rname branches stratum-set]
+  (if (not= 1 (count stratum-set))
+    #{}
+    (let [head-vars (rest (first (first branches)))]
+      (set
+        (keep-indexed
+          (fn [idx hv]
+            (when (every?
+                    (fn [branch]
+                      (let [clauses (rest branch)
+                            rec-calls (filter
+                                        (fn [clause]
+                                          (when (sequential? clause)
+                                            (let [head (if (qu/source? (first clause))
+                                                         (second clause)
+                                                         (first clause))]
+                                              (contains? stratum-set head))))
+                                        clauses)]
+                        (and
+                          (not-any? #(vector-binds-var? hv %) clauses)
+                          (every?
+                            (fn [clause]
+                              (let [args (if (qu/source? (first clause))
+                                           (nnext clause)
+                                           (rest clause))]
+                                (= hv (nth args idx))))
+                            rec-calls))))
+                    branches)
+              idx))
+          head-vars)))))
 
 (defn- variable-dependency [clauses head-vars]
   (reduce
@@ -503,7 +560,8 @@
                            (contains? (get deps rule-name) rule-name))]
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
-          (let [temporal-cache (:temporal-idx-cache (meta deps))
+          (let [stratum-set    (set stratum)
+                temporal-cache (:temporal-idx-cache (meta deps))
                 ;; 1. Rename rules in stratum to avoid collision & freshen vars
                 renamed-rules-map
                 (reduce
@@ -524,6 +582,12 @@
                 entry-renamed-head     (rest (first (first entry-renamed-branches)))
 
                 required-indices (required-seeds entry-renamed-branches entry-renamed-head context)
+                bound-indices    (bound-arg-indices args context)
+
+                ;; When recursion preserves certain head vars unchanged, we can
+                ;; safely seed on those bound args (lightweight magic-set style).
+                stable-indices   (stable-head-idxs rule-name entry-renamed-branches stratum-set)
+                magic-indices    (set/intersection bound-indices stable-indices)
 
                 ;; 3. Build Seed Relations (only for required vars or constants)
                 constant-indices (into #{} (keep-indexed (fn [idx arg]
@@ -535,7 +599,7 @@
                 ;; introduce new head values), so only seed on required vars
                 ;; when recursion is involved.
                 seed-indices (sort (seq (if recursive?
-                                          required-indices
+                                          (set/union required-indices magic-indices)
                                           (set/union required-indices constant-indices))))
 
                 ;; warm start: only when a single outer relation already covers all head vars
@@ -572,7 +636,6 @@
                                      :rules-deps deps) ;; :rules updated below
 
                 ;; Split branches into base (non-recursive) and recursive
-                stratum-set (set stratum)
                 base-branches-map
                 (reduce (fn [m rname]
                           (let [branches (get renamed-rules-map rname)
