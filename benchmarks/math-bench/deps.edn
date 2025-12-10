@@ -17,9 +17,19 @@
          org.eclipse.collections/eclipse-collections   {:mvn/version "13.0.0"}
          }
 
- :aliases {:dev {
-                 :extra-paths ["target/classes"]
-                 :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                               "-Dclojure.compiler.direct-linking=true"
-                               ]}}}
+ :aliases {:dev  {
+                  :extra-paths ["target/classes"]
+                  :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "--enable-native-access=ALL-UNNAMED"
+                                "-Dclojure.compiler.direct-linking=true"]}
+           :test {:extra-paths ["test"]
+                  :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "--enable-native-access=ALL-UNNAMED"
+                                "-Dclojure.compiler.direct-linking=true"]
+                  :extra-deps  {io.github.cognitect-labs/test-runner
+                                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                  :main-opts   ["-m" "cognitect.test-runner"]
+                  :exec-fn     cognitect.test-runner.api/test}
+           }}

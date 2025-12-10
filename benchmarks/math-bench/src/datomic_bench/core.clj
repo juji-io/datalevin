@@ -120,3 +120,46 @@
         (print "---" "\t")
         (flush))))
   (println))
+
+(comment
+  (d/q '[:find [?n ...]
+         :in $ %
+         :where
+         [?d :person/name "David Scott Warren"]
+         (adv ?x ?d)
+         (adv ?y ?x)
+         [?y :person/name ?n]]
+       db core/rule-q1)
+  ;; => ["Hao Wang" "Dana Stewart Scott"]
+
+  (d/q '[:find (count ?n)
+         :in $ %
+         :where
+         (adv ?x ?y)
+         (univ ?x ?u)
+         (univ ?y ?u)
+         [?y :person/name ?n]]
+       db core/rule-q2)
+  ;; => [[34073]]
+
+  (d/q '[:find (count ?n)
+         :in $ %
+         :where
+         (adv ?x ?y)
+         (area ?x ?a1)
+         (area ?y ?a2)
+         [(!= ?a1 ?a2)]
+         [?y :person/name ?n]]
+       db core/rule-q3)
+  ;; => [[29317]]
+
+  (d/q '[:find (count ?n)
+         :in $ %
+         :where
+         [?x :person/name "David Scott Warren"]
+         (anc ?y ?x)
+         [?y :person/name ?n]]
+       db core/rule-q4)
+;; => [[135]]
+
+  )
