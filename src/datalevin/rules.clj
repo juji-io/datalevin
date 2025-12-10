@@ -144,13 +144,8 @@
       (let [[[_ & args] & clauses] branch
             body-res-context       (reduce resolve-fn context clauses)
             body-rel               (reduce j/hash-join (:rels body-res-context))
-
-            filtered-rel
-            (if (some (complement qu/free-var?) args)
-              (let [projected (project-rule-result body-rel args)]
-                projected)
-              (project-rule-result body-rel args))]
-        (r/sum-rel rel filtered-rel)))
+            projected-rel          (project-rule-result body-rel args)]
+        (r/sum-rel rel projected-rel)))
     (empty-rel-for-rule rule-name (:rules context))
     rule-branches))
 
@@ -168,7 +163,8 @@
                       :when   (not (qu/free-var? arg))]
                   (if-let [idx (get attrs v)]
                     (= (tg tuple idx) arg)
-                    (throw (ex-info "Missing var in rule-rel attrs (filter)" {:var v :attrs attrs :head rule-head-vars})))))))
+                    (raise "Missing var in rule-rel attrs (filter)"
+                           {:var v :attrs attrs :head rule-head-vars}))))))
           (:tuples rule-rel))
 
         ;; 2. Enforce repeated vars equality
@@ -184,7 +180,8 @@
                                     (let [v (nth rule-head-vars idx)]
                                       (if-let [i (get attrs v)]
                                         (tg tuple i)
-                                        (throw (ex-info "Missing var in rule-rel attrs (equality)" {:var v :attrs attrs :head rule-head-vars})))))
+                                        (raise "Missing var in rule-rel attrs (equality)"
+                                               {:var v :attrs attrs :head rule-head-vars}))))
                                   (map first idxs))]
                     (apply = vals)))
                 var-indices)))
@@ -205,7 +202,8 @@
                           rule-var (nth rule-head-vars idx)]
                       (if-let [i (get attrs rule-var)]
                         (tg tuple i)
-                        (throw (ex-info "Missing var in rule-rel attrs (project)" {:var rule-var :attrs attrs :head rule-head-vars})))))
+                        (raise "Missing var in rule-rel attrs (project)"
+                               {:var rule-var :attrs attrs :head rule-head-vars}))))
                   unique-call-vars))))
           consistent-tuples)]
     (r/relation! new-attrs (u/map-fl identity new-tuples))))
@@ -306,9 +304,9 @@
         head-vars  (rest (first (first (get rules rule-name))))]
     (if cached-rel
       (map-rule-result cached-rel head-vars args)
-      (let [sccs    (stratify rules)
-            stratum (first (filter #(contains? (set %) rule-name) sccs))
-            deps    (dependency-graph rules)
+      (let [sccs       (stratify rules)
+            stratum    (first (filter #(contains? (set %) rule-name) sccs))
+            deps       (dependency-graph rules)
             recursive? (or (< 1 (count stratum))
                            (contains? (get deps rule-name) rule-name))]
         (if-not stratum
@@ -335,6 +333,16 @@
                                (filter #(or (contains? required-indices %)
                                             (not (qu/free-var? (nth args %))))
                                        (range (count args))))
+
+                ;; warm start: only when a single outer relation already covers all head vars
+                warm-start
+                (when (and recursive?
+                           (every? qu/free-var? args))
+                  (when-let [rel (some #(when (every? (set entry-renamed-head)
+                                                      (keys (:attrs %)))
+                                          %)
+                                       (:rels context))]
+                    (project-rule-result rel entry-renamed-head)))
 
                 seed-rels
                 (reduce
@@ -365,6 +373,12 @@
                                      (select-keys (:rule-rels context) stratum)
                                      stratum)
 
+                start-totals (if warm-start
+                               (update start-totals rule-name
+                                       (fn [rel]
+                                         (r/sum-rel rel warm-start)))
+                               start-totals)
+
                 final-totals
                 (loop [totals    start-totals
                        iteration 0]
@@ -372,10 +386,6 @@
                                             :rules full-renamed-rules
                                             :rels seed-rels
                                             :rule-rels (merge (:rule-rels context) totals))
-                        _            (when *assert*
-                                       (println "iter" iteration "rule" rule-name
-                                                "cur" (some-> (get totals rule-name)
-                                                              :tuples count)))
                         new-totals
                         (reduce
                           (fn [acc rname]
@@ -392,11 +402,6 @@
                             (let [old-rel (get totals rname (empty-rel-for-rule rname full-renamed-rules))
                                   new-rel (get new-totals rname)
                                   diff    (r/difference new-rel old-rel)]
-                              (when *assert*
-                                (println "delta" iteration rname
-                                         "old" (count (:tuples old-rel))
-                                         "new" (count (:tuples new-rel))
-                                         "diff" (count (:tuples diff))))
                               (if (not-empty (:tuples diff))
                                 (assoc acc rname diff)
                                 acc)))
@@ -406,5 +411,5 @@
                       totals
                       (recur new-totals (inc iteration)))))]
 
-            (let [rule-rel  (get final-totals rule-name)]
+            (let [rule-rel (get final-totals rule-name)]
               (map-rule-result rule-rel entry-renamed-head args))))))))

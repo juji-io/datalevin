@@ -12,8 +12,10 @@
 - [KV] Default `:max-readers` is now 1024.
 - [Datalog] Removed VAE index. This may reduce DB size by 30% and cut write time
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
-  DB). VAE was only used in entity retraction and current replacement is less
-  than 10% slower.
+  DB). VAE was only used in entity retraction and the current replacement is
+  less than 10% slower.
+  [Datalog] New rule engine implementing a bottom-up SNE approach.
+  [#170](https://github.com/juji-io/datalevin/issues/170)
 - [Platform] Native dependencies are mostly statically compiled and bundled in the
   release jars (with exception of libc, as glibc is much faster than musl).
 - [Platform] Drop support for Intel macOS.
@@ -42,6 +44,7 @@
   enabled. Turning on the option does not have immediate effect, as `re-index`
   is needed to re-encode the data. In addition, DB needs to have enough data (>
   64K entries) to train the compressor.
+  [#14](https://github.com/juji-io/datalevin/issues/14)
 - [KV] DB wide option `:val-compress :zstd`, which compresses values with
   Zstd compression. Same as above, effective after `re-index` and with
   enough data to train.

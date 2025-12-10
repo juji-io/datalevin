@@ -47,7 +47,7 @@
                           :db/valueType :db.type/symbol}
                    :link {:db/cardinality :db.cardinality/many
                           :db/valueType   :db.type/ref}}
-                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
                 (d/db-with [{:db/id -1 :node 'a :link -2}
                             {:db/id -2 :node 'b :link -3}
                             {:db/id -3 :node 'c :link [-3 -4]}
@@ -98,7 +98,7 @@
                    :person/name       {:db/valueType :db.type/string}
                    :person/advised    {:db/valueType   :db.type/ref
                                        :db/cardinality :db.cardinality/many}}
-                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
                 (d/db-with
                   [{:db/id       -1
                     :person/name "David Scott Warren"}
