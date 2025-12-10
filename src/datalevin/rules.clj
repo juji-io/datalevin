@@ -19,7 +19,8 @@
    [datalevin.util :as u :refer [cond+ raise conjv concatv index-of]]
    [datalevin.relation :as r])
   (:import
-   [org.eclipse.collections.impl.list.mutable FastList]))
+   [org.eclipse.collections.impl.list.mutable FastList]
+   [java.util List]))
 
 (defn parse-rules
   [rules]
@@ -293,9 +294,20 @@
     (set
       (keep-indexed
         (fn [idx var]
-          (when (every? #(branch-requires? % var context) branches)
+          (when (some #(branch-requires? % var context) branches)
             idx))
         head-vec))))
+
+(def ^:dynamic *temporal-elimination* false)
+
+(defn- recursive-branch? [branch scc context]
+  (let [clauses (rest branch)]
+    (boolean
+      (some (fn [clause]
+              (when (sequential? clause)
+                (let [head (if (qu/source? (first clause)) (second clause) (first clause))]
+                  (contains? scc head))))
+            clauses))))
 
 (defn solve-stratified
   [context rule-name args resolve-clause-fn]
@@ -324,15 +336,19 @@
                 entry-renamed-branches (get renamed-rules-map rule-name)
                 entry-renamed-head     (rest (first (first entry-renamed-branches)))
 
-                required-indices (required-seeds entry-renamed-branches entry-renamed-head context)
+                required-indices (set (required-seeds entry-renamed-branches entry-renamed-head context))
+                constant-indices (set (keep-indexed (fn [idx arg]
+                                                      (when-not (qu/free-var? arg) idx))
+                                                    args))
 
-                ;; 3. Build Seed Relations (required seeds; constants only when non-recursive)
-                seed-indices (if recursive?
-                               (filter #(contains? required-indices %)
-                                       (range (count args)))
-                               (filter #(or (contains? required-indices %)
-                                            (not (qu/free-var? (nth args %))))
-                                       (range (count args))))
+                ;; 3. Build Seed Relations
+                ;; Always seed constants and vars that must be bound to start evaluation.
+                ;; For non-recursive strata with no requirements, seed all args to warm start.
+                initial-seed-indices (let [seeds (set/union required-indices constant-indices)]
+                                       (cond
+                                         (seq seeds) seeds
+                                         (not recursive?) (set (range (count args)))
+                                         :else nil))
 
                 ;; warm start: only when a single outer relation already covers all head vars
                 warm-start
@@ -342,7 +358,45 @@
                                                       (keys (:attrs %)))
                                           %)
                                        (:rels context))]
-                    (project-rule-result rel entry-renamed-head)))
+                   (project-rule-result rel entry-renamed-head)))
+
+                ;; Split branches into base (non-recursive) and recursive
+                stratum-set (set stratum)
+                base-branches-map
+                (reduce (fn [m rname]
+                          (let [branches (get renamed-rules-map rname)
+                                base     (filterv #(not (recursive-branch? % stratum-set context)) branches)]
+                            (if (seq base) (assoc m rname base) m)))
+                        {} stratum)
+
+                rec-branches-map
+                (reduce (fn [m rname]
+                          (let [branches (get renamed-rules-map rname)
+                                rec      (filterv #(recursive-branch? % stratum-set context) branches)]
+                            (if (seq rec) (assoc m rname rec) m)))
+                        {} stratum)
+
+                ;; Do not constrain seed positions that are replaced by
+                ;; different vars in recursive calls; those need to expand as
+                ;; recursion introduces new values.
+                seed-indices
+                (let [variant-indices
+                      (when recursive?
+                        (set
+                          (keep
+                            identity
+                            (for [branch (mapcat val rec-branches-map)
+                                  clause (rest branch)
+                                  :when (sequential? clause)
+                                  :let [head (if (qu/source? (first clause))
+                                               (second clause)
+                                               (first clause))]
+                                  :when (and (symbol? head) (contains? stratum-set head))
+                                  [idx arg] (map-indexed vector (rest clause))
+                                  :let [hv (nth entry-renamed-head idx)]]
+                              (when (not= arg hv) idx)))))]
+                  (when initial-seed-indices
+                    (set/difference initial-seed-indices (or variant-indices #{}))))
 
                 seed-rels
                 (reduce
@@ -355,8 +409,17 @@
                           (if (seq outer-rels)
                             (into rels
                                   (map (fn [rel]
-                                         (let [idx (get (:attrs rel) arg)]
-                                           (assoc rel :attrs {hv idx}))) ;; View: Rename attr
+                                         (let [idx     (get (:attrs rel) arg)
+                                               ^List ts (:tuples rel)
+                                               seen    (java.util.HashSet.)
+                                               fl      (FastList.)]
+                                           (dotimes [i (.size ts)]
+                                             (let [tuple (.get ts i)
+                                                   tg    (u/tuple-get tuple)
+                                                   v     (tg tuple idx)]
+                                               (when (.add seen v)
+                                                 (.add fl (object-array [v])))))
+                                           (r/relation! {hv 0} fl)))
                                        outer-rels))
                             rels))
                         ;; Bind to Constant
@@ -366,50 +429,83 @@
 
                 clean-context (select-keys context [:sources :rule-rels]) ;; :rules updated below
 
-                start-totals (reduce (fn [m r]
-                                       (if (contains? m r)
-                                         m
-                                         (assoc m r (empty-rel-for-rule r full-renamed-rules))))
-                                     (select-keys (:rule-rels context) stratum)
-                                     stratum)
+                ;; 4. Evaluate Base Cases
+                start-totals
+                (reduce
+                  (fn [acc rname]
+                    (let [branches (get base-branches-map rname)
+                          rel      (if branches
+                                     (eval-rule-body (assoc clean-context
+                                                            :rules full-renamed-rules
+                                                            :rels seed-rels)
+                                                     rname branches resolve-clause-fn)
+                                     (empty-rel-for-rule rname full-renamed-rules))]
+                      (assoc acc rname rel)))
+                  {} stratum)
 
                 start-totals (if warm-start
                                (update start-totals rule-name
                                        (fn [rel]
-                                         (r/sum-rel rel warm-start)))
+                                        (r/sum-rel rel warm-start)))
                                start-totals)
 
                 final-totals
+                #_(do (when (= 'follow rule-name)
+                        (println "follow start" (map (comp count :tuples val) start-totals)))
+                      (loop ...))
                 (loop [totals    start-totals
+                       deltas    start-totals
                        iteration 0]
-                  (let [iter-context (assoc clean-context
-                                            :rules full-renamed-rules
-                                            :rels seed-rels
-                                            :rule-rels (merge (:rule-rels context) totals))
-                        new-totals
-                        (reduce
-                          (fn [acc rname]
-                            (let [branches (get full-renamed-rules rname)
-                                  rel      (eval-rule-body iter-context rname
-                                                           branches
-                                                           resolve-clause-fn)]
-                              (assoc acc rname rel)))
-                          totals stratum)
+                  #_(when (= 'follow rule-name)
+                      (println "iter" iteration
+                               "totals" (map (comp count :tuples val) totals)
+                               "deltas" (map (comp count :tuples val) deltas)))
+                  (if (or (every? #(empty? (:tuples %)) (vals deltas))
+                          (> iteration 1000000))
+                    totals
+                    (let [iter-context (assoc clean-context
+                                              :rules full-renamed-rules
+                                              :rels seed-rels
+                                              :rule-rels (merge (:rule-rels context) totals))
+                          candidates
+                          (reduce
+                            (fn [acc rname]
+                              (let [branches (get rec-branches-map rname)
+                                    rel      (if branches
+                                               (eval-rule-body iter-context rname
+                                                               branches
+                                                               resolve-clause-fn)
+                                               (empty-rel-for-rule rname full-renamed-rules))]
+                                (assoc acc rname rel)))
+                            {} stratum)
 
-                        deltas
-                        (reduce
-                          (fn [acc rname]
-                            (let [old-rel (get totals rname (empty-rel-for-rule rname full-renamed-rules))
-                                  new-rel (get new-totals rname)
-                                  diff    (r/difference new-rel old-rel)]
-                              (if (not-empty (:tuples diff))
-                                (assoc acc rname diff)
-                                acc)))
-                          {} stratum)]
+                          new-deltas
+                          (reduce
+                            (fn [acc rname]
+                              (let [cand-rel (get candidates rname)
+                                    old-rel  (if *temporal-elimination*
+                                               (get deltas rname)
+                                               (get totals rname (empty-rel-for-rule rname full-renamed-rules)))
+                                    diff     (r/difference cand-rel old-rel)]
+                                (if (not-empty (:tuples diff))
+                                  (assoc acc rname diff)
+                                  acc)))
+                            {} stratum)
 
-                    (if (empty? deltas)
-                      totals
-                      (recur new-totals (inc iteration)))))]
+                          new-totals
+                          (if *temporal-elimination*
+                            (if (some #(not-empty (:tuples %)) (vals new-deltas))
+                              new-deltas
+                              totals)
+                            (reduce
+                              (fn [acc rname]
+                                (let [diff (get new-deltas rname)]
+                                  (if diff
+                                    (update acc rname r/sum-rel diff)
+                                    acc)))
+                              totals stratum))]
+
+                      (recur new-totals new-deltas (inc iteration)))))]
 
             (let [rule-rel (get final-totals rule-name)]
               (map-rule-result rule-rel entry-renamed-head args))))))))

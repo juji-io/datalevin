@@ -527,7 +527,7 @@
       (println "Done loading data to db"))))
 
 ;; assume data is already loaded into db
-(def conn (d/get-conn "db"))
+(def conn (d/get-conn "../../../db"))
 
 ;; queries that beat postgres are labeled 'good plan'
 

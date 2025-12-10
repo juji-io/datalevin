@@ -10,14 +10,15 @@
 (defn to-fixed [n places]
   (format (str "%." places "f") (double n)))
 
-(defn round [^long n]
+(defn round [^double n]
   (cond
     (> n 1)     (to-fixed n 1)
     (> n 0.1)   (to-fixed n 2)
-    (> n 0.001) (to-fixed n 2)
+    (> n 0.01)  (to-fixed n 3)
+    (> n 0.001) (to-fixed n 4)
     :else       n))
 
-(defn percentile [xs ^long n]
+(defn percentile [xs ^double n]
   (->
     (sort xs)
     (nth (min (dec (count xs))
