@@ -136,11 +136,11 @@ The table below list the query latency results in milliseconds.
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
 | Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
-| Datalevin latest | 341.8 | 1324.9 | 1146.3 | 834.4 |
+| Datalevin latest | 80.2 | 986.8 | 814.6 | 204.3 |
 
 Notice that Q4 is particularly challenging. It is a recursive rule that
 computes progressively larger transitive closures. Datomic took 41 seconds to
-finish, whereas Datalevin took less than 1 second (more than 50X faster).
+finish, whereas Datalevin took about 200 milliseconds (more than 200X faster).
 Datascript ran out of memory for this one.
 
 For reference, as described in the book chapter [1], the best results after

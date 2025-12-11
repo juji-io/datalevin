@@ -2,6 +2,7 @@
   (:require
    [math-bench.core :as core]
    [datalevin.core :as d]
+   [datalevin.query :as q]
    [jsonista.core :as json])
   (:import
    [java.util UUID]))
@@ -59,7 +60,7 @@
          [?y :person/name ?n]]
        db core/rule-q1))
 
-(defn q1 [] (core/bench-once (run-q1 (d/db q1-conn))))
+(defn q1 [] (core/bench (run-q1 (d/db q1-conn))))
 
 (defn run-q2 [db]
   (d/q '[:find [?n ...]
@@ -71,7 +72,7 @@
          [?y :person/name ?n]]
        db core/rule-q2))
 
-(defn q2 [] (core/bench-once (run-q2 (d/db q2-conn))))
+(defn q2 [] (core/bench (run-q2 (d/db q2-conn))))
 
 (defn run-q3 [db]
   (d/q '[:find [?n ...]
@@ -84,7 +85,7 @@
          [?y :person/name ?n]]
        db core/rule-q3))
 
-(defn q3 [] (core/bench-once (run-q3 (d/db q3-conn))))
+(defn q3 [] (core/bench (run-q3 (d/db q3-conn))))
 
 (defn run-q4 [db]
   (d/q '[:find [?n ...]
@@ -95,12 +96,12 @@
          [?y :person/name ?n]]
        db core/rule-q4))
 
-(defn q4 [] (core/bench-once (run-q4 (d/db q4-conn))))
+(defn q4 [] (core/bench (run-q4 (d/db q4-conn))))
 
 (defn ^:export -main [& names]
   (doseq [n names]
     (if-some [benchmark (ns-resolve 'datalevin-bench.core (symbol n))]
-      (let [perf (benchmark)]
+      (let [perf (binding [q/*cache?* false] (benchmark))]
         (print (core/round perf) "\t")
         (flush))
       (do

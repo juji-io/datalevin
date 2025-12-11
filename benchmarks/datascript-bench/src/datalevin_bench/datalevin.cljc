@@ -8,10 +8,6 @@
    [java.util UUID]))
 
 
-#?(:cljs
-   (enable-console-print!))
-
-
 (def schema
   {:follows   {:db/valueType   :db.type/ref
                :db/cardinality :db.cardinality/many }
@@ -329,16 +325,15 @@
     (d/close-db db)
     res))
 
-#?(:clj
-   (defn ^:export -main [& names]
-     (doseq [n names]
-       (if-some [benchmark (ns-resolve 'datalevin-bench.datalevin (symbol n))]
-         (let [perf (if q/*cache?*
-                      (binding [q/*cache?* false] (benchmark))
-                      (benchmark))]
-           (print (core/round perf) "\t")
-           (flush))
-         (do
-           (print "---" "\t")
-           (flush))))
-     (println)))
+(defn ^:export -main [& names]
+  (doseq [n names]
+    (if-some [benchmark (ns-resolve 'datalevin-bench.datalevin (symbol n))]
+      (let [perf (if q/*cache?*
+                   (binding [q/*cache?* false] (benchmark))
+                   (benchmark))]
+        (print (core/round perf) "\t")
+        (flush))
+      (do
+        (print "---" "\t")
+        (flush))))
+  (println))
