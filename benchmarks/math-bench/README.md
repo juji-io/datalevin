@@ -58,7 +58,7 @@ Four queries are proposed in the benchmark, based on the following rules:
 > Who are the grand-advisors of David Scott Warren?
 
 ```Clojure
-(d/q '[:find [?n ...]
+    (d/q '[:find [?n ...]
            :in $ %
            :where
            [?d :person/name "David Scott Warren"]
@@ -73,7 +73,7 @@ Four queries are proposed in the benchmark, based on the following rules:
 > Which candidates got their degrees from the same university as their advisor?
 
 ```Clojure
-(d/q '[:find [?n ...]
+    (d/q '[:find [?n ...]
            :in $ %
            :where
            (adv ?x ?y)
@@ -88,7 +88,7 @@ Four queries are proposed in the benchmark, based on the following rules:
 > Which candidates worked in a different area than at least one of their advisors?
 
 ```Clojure
-(d/q '[:find [?n ...]
+    (d/q '[:find [?n ...]
            :in $ %
            :where
            (adv ?x ?y)
@@ -105,7 +105,7 @@ Four queries are proposed in the benchmark, based on the following rules:
 
 
 ```Clojure
-(d/q '[:find [?n ...]
+    (d/q '[:find [?n ...]
            :in $ %
            :where
            [?x :person/name "David Scott Warren"]
@@ -116,29 +116,32 @@ Four queries are proposed in the benchmark, based on the following rules:
 
 ## Run benchmarks
 
+You will need both lein and clj build tools. lein is for building the project
+and running tests. clj is for running this benchmark.
+
 ```
+lein test
 gzip -d data.json.gz
 ./bench.clj
 ```
 
 ## Results
 
-Tests were conducted on Ubuntu 22.04 with Intel Core i7 3.6GHz and 64GB RAM,
-using OpenJDK 17.0.10, Clojure 1.11.2.
+Tests were conducted o Macbook Pro M3 2023 with 36GB RAM,
+using OpenJDK version "21.0.9" 2025-10-21 and Clojure 1.12.3.
 
 The table below list the query latency results in milliseconds.
 
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
-| Datomic 1.0.7057   | 3153 | 2926 | 2297 | 112016 |
-| Datascript 1.6.5  | 302 | 1784 | 1546 | Out of Memory |
-| Datalevin 0.9.5  | 186 | 1503 | 1246 | Out of Memory |
-| Datalevin latest | TBD | TBD | TBD | TBD |
+| Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
+| Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
+| Datalevin latest | 341.8 | 1324.9 | 1146.3 | 834.4 |
 
-Notice that Q4 is particularly challenging. It is a recursive query that
-computes progressively larger transitive closures. Datomic took close to 2
-minutes to finish. Datascript and Datalevin 0.9.5, sharing the same
-implementation, both ran out of memory.
+Notice that Q4 is particularly challenging. It is a recursive rule that
+computes progressively larger transitive closures. Datomic took 41 seconds to
+finish, whereas Datalevin took less than 1 second (more than 50X faster).
+Datascript ran out of memory for this one.
 
 For reference, as described in the book chapter [1], the best results after
 manually tweaking queries and adding indices for XSB and LogicBlox, using a

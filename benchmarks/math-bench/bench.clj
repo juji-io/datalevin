@@ -107,7 +107,7 @@
            "-Sdeps"
            (str "{"
                 " :paths [\"src\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.5" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.7.8" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.core"
            benchmarks)
@@ -117,7 +117,7 @@
            "-Sdeps"
            (str "{"
                 " :paths [\"src\"]"
-                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7075" version) "\"}}"
+                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7469" version) "\"}}"
                 "}")
            "-M" "-m" "datomic-bench.core"
            benchmarks)
@@ -137,7 +137,7 @@
   [
    ;; ["latest" "datomic"]
    ;; ["latest" "datascript"]
-   ;; ["0.9.5" "datalevin"]
+   ;; ["0.9.27" "datalevin"]
    ["latest" "datalevin"]])
 
 

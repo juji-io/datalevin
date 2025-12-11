@@ -148,17 +148,7 @@
                      (:tuples body-rel))))
     body-rel))
 
-(defn- eval-rule-body
-  [context rule-name rule-branches resolve-fn]
-  (reduce
-    (fn [rel branch]
-      (let [[[_ & args] & clauses] branch
-            body-res-context       (reduce resolve-fn context clauses)
-            body-rel               (reduce j/hash-join (:rels body-res-context))
-            projected-rel          (project-rule-result body-rel args)]
-        (r/sum-rel rel projected-rel)))
-    (empty-rel-for-rule rule-name (:rules context))
-    rule-branches))
+
 
 (defn- map-rule-result
   [rule-rel rule-head-vars call-args]
@@ -285,6 +275,58 @@
     :else
     #{}))
 
+(defn- clause-free-vars
+  [clause]
+  (set (filter qu/free-var? (flatten clause))))
+
+(defn- context-bound-vars
+  [context]
+  (into #{} (mapcat #(keys (:attrs %))) (:rels context)))
+
+(defn- reorder-clauses
+  [clauses context]
+  (let [bound (volatile! (context-bound-vars context))]
+    (loop [remaining clauses
+           ordered   []]
+      (if (empty? remaining)
+        ordered
+        (let [candidates-indices
+              (keep-indexed
+                (fn [idx clause]
+                  (when (set/subset? (clause-required-vars clause context) @bound)
+                    idx))
+                remaining)
+
+              candidates-indices
+              (if (seq candidates-indices)
+                candidates-indices
+                (range (count remaining)))
+
+              best-idx
+              (apply max-key
+                     (fn [idx]
+                       (count (set/intersection (clause-free-vars (nth remaining idx)) @bound)))
+                     candidates-indices)
+
+              best-clause (nth remaining best-idx)]
+
+          (vswap! bound set/union (clause-bound-vars best-clause context))
+          (recur (concat (take best-idx remaining) (drop (inc best-idx) remaining))
+                 (conj ordered best-clause)))))))
+
+(defn- eval-rule-body
+  [context rule-name rule-branches resolve-fn]
+  (reduce
+    (fn [rel branch]
+      (let [[[_ & args] & clauses] branch
+            ordered-clauses        (reorder-clauses clauses context)
+            body-res-context       (reduce resolve-fn context ordered-clauses)
+            body-rel               (reduce j/hash-join (:rels body-res-context))
+            projected-rel          (project-rule-result body-rel args)]
+        (r/sum-rel rel projected-rel)))
+    (empty-rel-for-rule rule-name (:rules context))
+    rule-branches))
+
 (defn- branch-requires?
   [branch var context]
   (let [clauses (rest branch)]
@@ -313,12 +355,22 @@
           (when (some #(branch-requires? % var context) branches)
             idx))
         head-vec))))
-
-(defn- context-bound-vars
-  [context]
-  (into #{} (mapcat #(keys (:attrs %))) (:rels context)))
-
-(defn- bound-arg-indices
+        
+        (defn- unique-seeds
+          [rel idx]
+          (let [tuples (:tuples rel)]
+            (if (empty? tuples)
+              (FastList.)
+              (let [seen (java.util.HashSet.)
+                    res (FastList.)
+                    getter (u/tuple-get (first tuples))]
+                (doseq [tuple tuples
+                        :let [val (getter tuple idx)]]
+                  (when (.add seen val)
+                    (.add res (object-array [val]))))
+                res))))
+        
+        (defn- bound-arg-indices
   "Indices of args that are already bound (via outer context or constants)."
   [args context]
   (let [bound (context-bound-vars context)]
@@ -600,7 +652,7 @@
                 ;; when recursion is involved.
                 seed-indices (sort (seq (if recursive?
                                           (set/union required-indices magic-indices)
-                                          (set/union required-indices constant-indices))))
+                                          (set/union required-indices constant-indices bound-indices))))
 
                 ;; warm start: only when a single outer relation already covers all head vars
                 warm-start
@@ -624,7 +676,7 @@
                             (into rels
                                   (map (fn [rel]
                                          (let [idx (get (:attrs rel) arg)]
-                                           (assoc rel :attrs {hv idx}))) ;; View: Rename attr
+                                           (r/relation! {hv 0} (unique-seeds rel idx)))) ;; View: Rename attr
                                        outer-rels))
                             rels))
                         ;; Bind to Constant

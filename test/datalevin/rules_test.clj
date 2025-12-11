@@ -199,9 +199,52 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest magic-set-test
+  (let [dir   (u/tmp-dir (str "magic-set-test-" (UUID/randomUUID)))
+        conn  (d/get-conn
+                dir {:node {:db/unique :db.unique/identity}
+                     :to   {:db/cardinality :db.cardinality/many}}
+                {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        txs   [{:db/id 1 :node 1 :to [2 3]}
+               {:db/id 2 :node 2 :to [4]}
+               {:db/id 3 :node 3 :to [5]}
+               {:db/id 4 :node 4 :to [6]}
+               {:db/id 5 :node 5 :to []}
+               {:db/id 6 :node 6 :to []}
+               {:db/id 10 :node 10 :to [11]}
+               {:db/id 11 :node 11 :to [12]}
+               {:db/id 12 :node 12 :to []}]
+        rules '[[(path ?x ?y)
+                 [?e :node ?x]
+                 [?e :to ?z]
+                 [?z :node ?y]]
+                [(path ?x ?y)
+                 [?e :node ?x]
+                 [?e :to ?z]
+                 [?z :node ?z_val]
+                 (path ?z_val ?y)]]]
+    (d/transact! conn txs)
+    (is (= #{2 3 4 5 6}
+           (set (d/q '[:find [?y ...]
+                       :in $ % ?x
+                       :where (path ?x ?y)]
+                     (d/db conn) rules 1))))
+
+    ;; Verify it works for 10
+    (is (= #{11 12}
+           (set (d/q '[:find [?y ...]
+                       :in $ % ?x
+                       :where (path ?x ?y)]
+                     (d/db conn) rules 10))))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest sequence-generation-memory-test
   (let [dir (u/tmp-dir (str "memory-test-" (UUID/randomUUID)))
-        db  (d/empty-db dir nil {:kv-opts {:flags [:nolock]}})]
+        db  (d/empty-db dir nil
+                        {:kv-opts
+                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
     (try
       (binding [sut/*auto-optimize-temporal* false]
         ;; Generates a sequence from 0 to limit
@@ -225,7 +268,9 @@
 
 (deftest temporal-elimination-test
   (let [dir (u/tmp-dir (str "temporal-test-" (UUID/randomUUID)))
-        db  (d/empty-db dir nil {:kv-opts {:flags [:nolock]}})]
+        db  (d/empty-db dir nil
+                        {:kv-opts
+                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
     (try
       ;; Generates a sequence from 0 to limit, but discards history
       (binding [sut/*temporal-elimination* true]
@@ -251,7 +296,9 @@
 
 (deftest auto-temporal-optimization-test
   (let [dir (u/tmp-dir (str "auto-temporal-test-" (UUID/randomUUID)))
-        db  (d/empty-db dir nil {:kv-opts {:flags [:nolock]}})]
+        db  (d/empty-db dir nil
+                        {:kv-opts
+                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
     (try
       ;; Generates a sequence from 0 to limit
       ;; Should AUTO-DETECT temporal pattern and prune history
