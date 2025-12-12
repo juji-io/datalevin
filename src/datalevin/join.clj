@@ -107,7 +107,7 @@
         tuples2      (:tuples rel2)
         attrs1       (:attrs rel1)
         attrs2       (:attrs rel2)
-        common-attrs (vec (qu/intersect-keys attrs1 attrs2))
+        common-attrs (vec (sort (qu/intersect-keys attrs1 attrs2)))
         keep-attrs1  (attr-keys attrs1)
         keep-attrs2  (diff-keys keep-attrs1 (attr-keys attrs2))
         keep-idxs1   (to-array (sort (vals attrs1)))
@@ -116,7 +116,10 @@
         key-fn2      (tuple-key-fn attrs2 common-attrs)
         attrs        (zipmap (concatv keep-attrs1 keep-attrs2) (range))]
     (if (< (count tuples1) (count tuples2))
-      (let [^UnifiedMap hash (hash-tuples key-fn1 tuples1)]
+      (let [^UnifiedMap hash (or (get @(:idxs rel1) common-attrs)
+                                 (let [h (hash-tuples key-fn1 tuples1)]
+                                   (vswap! (:idxs rel1) assoc common-attrs h)
+                                   h))]
         (r/relation! attrs
                      (reduce
                        (fn outer [acc tuple2]
@@ -132,7 +135,10 @@
                              acc)))
                        (FastList.)
                        tuples2)))
-      (let [^UnifiedMap hash (hash-tuples key-fn2 tuples2)]
+      (let [^UnifiedMap hash (or (get @(:idxs rel2) common-attrs)
+                                 (let [h (hash-tuples key-fn2 tuples2)]
+                                   (vswap! (:idxs rel2) assoc common-attrs h)
+                                   h))]
         (r/relation! attrs
                      (reduce
                        (fn outer [acc tuple1]
@@ -154,9 +160,12 @@
   (let [{attrs-a :attrs, tuples-a :tuples} a
         {attrs-b :attrs, tuples-b :tuples} b
 
-        attrs    (vec (qu/intersect-keys attrs-a attrs-b))
+        attrs    (vec (sort (qu/intersect-keys attrs-a attrs-b)))
         key-fn-b (tuple-key-fn attrs-b attrs)
-        hash     (hash-tuples key-fn-b tuples-b)
+        hash     (or (get @(:idxs b) attrs)
+                     (let [h (hash-tuples key-fn-b tuples-b)]
+                       (vswap! (:idxs b) assoc attrs h)
+                       h))
         key-fn-a (tuple-key-fn attrs-a attrs)]
     (assoc a :tuples
            (filterv #(nil? (.get ^UnifiedMap hash (key-fn-a %))) tuples-a))))

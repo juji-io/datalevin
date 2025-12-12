@@ -143,17 +143,12 @@ computes progressively larger transitive closures. Datomic took 41 seconds to
 finish, whereas Datalevin took about 200 milliseconds (more than 200X faster).
 Datascript ran out of memory for this one.
 
-For reference, as described in the book chapter [1], the best results after
-manually tweaking queries and adding indices for XSB and LogicBlox, using a
-smaller data set (202505 dissertations, 198962 people, and 211107 advising
-facts), but on a slower machine (Intel Core i5 2.8 GHz with 8GB RAM) are the
-following:
+## Remark
 
-| System    | Q1 | Q2 | Q3 | Q4
-| -------- | ------- | -------- | -------- | -------- |
-| XSB  | 238 | 511 | 325 | 181 |
-| LogicBlox | 944 | 2140 | 1740 | 1140 |
-
+The advantage of Datalevin rule engine is mainly due to the bottom-up SNE
+algorithm that leverages seeding tuples from outer scope. This can be clearly
+seen from Q1 and Q4, which have bound values that significantly shrink the
+space of rule application.
 
 ## References
 

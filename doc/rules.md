@@ -30,19 +30,21 @@ own.
 
 The new rule engine uses a bottom-up Datalog evaluation strategy.
 
-### Semi-Naive Evaluation
+### Semi-naive evaluation (SNE)
 
-Our basic rule evaluation approach is Semi-Naive Evaluation [1] [2]. The engine
-generate tuples from the rule sets until a fix-point is reached, i.e. when no
-new tuples are produced.
+The rule engine employs semi-naive evaluation [1] [2]. The engine generates
+tuples from the rule sets until a fix-point is reached, i.e. when no new tuples
+are produced. The evaluation is stratified, where rules run in their strongly
+connected components (stratum).
 
-### Seeded tuples
+### Seeding tuples (new)
 
 Compared with a standalone SNE engine, Datalevin rule engine is part of the
-query engine, so it does not work off a blank slate, but instead enjoys a warm
-start of a set of already produced tuples from outer query clauses. These seed
-tuples are often produced more efficiently than SNE, as they benefit from
-indices and the cost based query optimizer.
+query engine, so it does not work off a blank slate, but base the work on a warm
+start of a set of already produced tuples from outer query clauses. These
+seeding tuples are often produced more efficiently than SNE, as they benefit
+from indices and the cost based query optimizer. These seeds effectively act as
+filters to prevent the generation of unnecessary tuples during SNE.
 
 ### Pull-out of non-recursive rule clauses (new)
 
@@ -61,9 +63,9 @@ To handle recursion with freely mixed aggregation and negation, we mainly follow
 the framework proposed in Temporel [3], which is based on a concept of
 T-stratification, where a time index is identified and associated with each
 stratum. The time index ensures that aggregation/negation happens in one
-stratum. It also enables optimizations such as temporal elimination, where
-only the results of the last iteration of recursion is needed, so that the
-recursive process can be optimized to avoid storing intermediate results.
+stratum. It also enables optimizations such as temporal elimination, where only
+the results of the last iteration of recursion is needed, so that the recursive
+process can be optimized to avoid storing intermediate results.
 
 ## Datalog Extensions
 

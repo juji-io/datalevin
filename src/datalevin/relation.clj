@@ -24,16 +24,20 @@
 ;; tuples is a list of objects:
 ;;    [ objects ... ]
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
-(defrecord Relation [attrs tuples])
+(defrecord Relation [attrs tuples idxs set])
 
 (defmethod print-method Relation [^Relation r, ^Writer w]
   (binding [*out* w]
     (let [{:keys [attrs tuples]} r]
       (pp/pprint {:attrs attrs :tuples (mapv vec tuples)}))))
 
-(defn relation! [attrs tuples]
-  (timeout/assert-time-left)
-  (Relation. attrs tuples))
+(defn relation!
+  ([attrs tuples]
+   (timeout/assert-time-left)
+   (Relation. attrs tuples (volatile! {}) (volatile! nil)))
+  ([attrs tuples {:keys [idxs set]}]
+   (timeout/assert-time-left)
+   (Relation. attrs tuples (or idxs (volatile! {})) (or set (volatile! nil)))))
 
 ;; Relation algebra
 
@@ -96,10 +100,22 @@
 
      (cond
        (= attrs-a attrs-b)
-       (relation! attrs-a (if (sequential? tuples-a)
-                            (into tuples-a tuples-b)
-                            (do (.addAll ^List tuples-a tuples-b)
-                                tuples-a)))
+       (cond
+         (empty? tuples-b) a
+         (empty? tuples-a) b
+         :else
+         (let [idxs (:idxs a)
+               setv (:set a)]
+           (when idxs (vreset! idxs {}))
+           (when setv
+             (if-let [s @setv]
+               (vreset! setv (into s (map vec tuples-b)))
+               (vreset! setv nil)))
+           (Relation. attrs-a (if (sequential? tuples-a)
+                                (into tuples-a tuples-b)
+                                (do (.addAll ^List tuples-a tuples-b)
+                                    tuples-a))
+                      idxs setv)))
 
        (empty? tuples-a) b
        (empty? tuples-b) a
@@ -190,10 +206,16 @@
         ^List t2 (:tuples r2)]
     (if (empty? t2)
       r1
-      (assoc r1 :tuples (let [s2         (into #{} (map vec) t2)
-                              new-tuples (FastList.)]
-                          (dotimes [i (.size t1)]
-                            (let [tuple (.get t1 i)]
-                              (when-not (contains? s2 (vec tuple))
-                                (.add new-tuples tuple))))
-                          new-tuples)))))
+        (let [s2 (or @(:set r2)
+                     (let [s (into #{} (map vec) t2)]
+                       (vreset! (:set r2) s)
+                       s))
+            new-tuples (FastList.)]
+        (dotimes [i (.size t1)]
+          (let [tuple (.get t1 i)]
+            (when-not (contains? s2 (vec tuple))
+              (.add new-tuples tuple))))
+        (-> r1
+            (assoc :tuples new-tuples)
+            (update :idxs (fn [idxs] (when idxs (vreset! idxs {}) idxs)))
+            (update :set (fn [setv] (when setv (vreset! setv nil) setv))))))))

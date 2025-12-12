@@ -24,7 +24,7 @@
     ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException
-    StandardCopyOption StandardOpenOption Path]
+    StandardCopyOption StandardOpenOption]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
 
 ;; for when we need to use datalevin specific print method
