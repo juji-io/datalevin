@@ -18,32 +18,31 @@ gradually introduced to this logic view of Datalog, a win in ergonomics.
 
 The previous implementation of rule clause evaluation algorithm inherited from
 Datascript uses a top-down evaluation strategy, which can be less efficient than
-a bottom-up strategy [4]. More importantly, this implementation cannot take
-advantage of our cost based query optimizer, so its performance is far from
-competitive. To address this deficiency, we developed a new rules evaluation
-engine using the latest research advances in bottom-up Datalog evaluation
-strategy, with some innovation of our own.
+a bottom-up strategy [4]. For example, it is prone to run out of memory due to
+explosion of tuples from recursive rules. More importantly, this top-down method
+cannot take advantage of our cost based query optimizer. To address this
+deficiency, we developed a new rules evaluation engine using the latest research
+advances in bottom-up Datalog evaluation strategy, with some innovation of our
+own.
 
-In addition, we extended the rule syntax to support more powerful applications,
-e.g. to implement algorithm for machine learning, statistics, graph analytics,
-and so on, enabling in-database data analytics. Examples of such analytics
-include gradient descent (hence all types of regressions, SVM, etc.), K-means,
-page-rank, and so on.
-
-## Extensions
-
-The primary extension to the rule syntax is to allow aggregation functions, eg.
-`sum`, `count`, etc. to appear in the rule head. This extension allows free
-mixing of aggregations in recursions, thus increases the expressiveness of
-Datalevin rule language significantly.
-
-A special rule argument `:datalevin/last-iter` is introduced to indicate that
-only the results of the last iteration of recursion is needed, so that the
-recursive process can be optimized to avoid storing intermediate results.
 
 ## Rule Evaluation
 
-To support the extended rule syntax, a new rule evaluation strategy is implemented.
+The new rule engine uses a bottom-up Datalog evaluation strategy.
+
+### Semi-Naive Evaluation
+
+Our basic rule evaluation approach is Semi-Naive Evaluation [1] [2]. The engine
+generate tuples from the rule sets until a fix-point is reached, i.e. when no
+new tuples are produced.
+
+### Seeded tuples
+
+Compared with a standalone SNE engine, Datalevin rule engine is part of the
+query engine, so it does not work off a blank slate, but instead enjoys a warm
+start of a set of already produced tuples from outer query clauses. These seed
+tuples are often produced more efficiently than SNE, as they benefit from
+indices and the cost based query optimizer.
 
 ### Pull-out of non-recursive rule clauses (new)
 
@@ -51,18 +50,33 @@ As an innovation, we identify the clauses that are not involved in recursions,
 pull them out and add them to the regular query clauses to allow the cost-based
 query optimizer to work on them. That is to say, the rule engine mainly works on
 the rules that involved in recursions. This optimization not just simplifies the
-rules, but also reduces the number of datoms the rule engine has to process.
-This enjoys the benefits of the rule rewrite algorithms such as magic sets,
-while avoiding potential slow-down due to increased number of rules brought by
-the rewrite.
+rules, but also reduces the number of tuples the rule engine has to generate.
+This approach enjoys the benefits of the rule rewrite algorithms such as magic
+sets, while avoiding potential slow-down due to the explosion of magic rules
+brought by the rewrite.
 
-### Recursive rule evaluation
+### Temporel Elimination
 
 To handle recursion with freely mixed aggregation and negation, we mainly follow
 the framework proposed in Temporel [3], which is based on a concept of
 T-stratification, where a time index is identified and associated with each
 stratum. The time index ensures that aggregation/negation happens in one
-stratum. This generalizes the semi-naive Datalog evaluation strategy [1] [2].
+stratum. It also enables optimizations such as temporal elimination, where
+only the results of the last iteration of recursion is needed, so that the
+recursive process can be optimized to avoid storing intermediate results.
+
+## Datalog Extensions
+
+We extended the rule syntax to support more powerful applications,
+e.g. to implement algorithm for machine learning, statistics, graph analytics,
+and so on, enabling in-database data analytics. Examples of such analytics
+include gradient descent (hence all types of regressions, SVM, etc.), K-means,
+page-rank, and so on.
+
+The primary extension to the rule syntax is to allow aggregation functions, eg.
+`sum`, `count`, etc. to appear in the rule head. This extension allows free
+mixing of aggregations in recursions, thus increases the expressiveness of
+Datalevin rule language significantly.
 
 ## References
 
