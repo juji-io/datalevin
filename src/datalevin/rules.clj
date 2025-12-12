@@ -17,7 +17,8 @@
    [datalevin.query-util :as qu]
    [datalevin.join :as j]
    [datalevin.util :as u :refer [raise]]
-   [datalevin.relation :as r])
+   [datalevin.relation :as r]
+   [datalevin.interface :as i])
   (:import
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List HashSet]))
@@ -310,6 +311,37 @@
   [context]
   (into #{} (mapcat #(keys (:attrs %))) (:rels context)))
 
+(defn- clause-attr [clause]
+  (if (vector? clause)
+    (if (qu/source? (first clause))
+      (nth clause 2 nil)
+      (nth clause 1 nil))
+    nil))
+
+(defn- clause-source [clause context]
+  (let [src-sym (if (and (vector? clause) (qu/source? (first clause)))
+                  (first clause)
+                  '$)]
+    (get-in context [:sources src-sym])))
+
+(defn- estimate-clause-size [clause context]
+  (cond
+    (vector? clause)
+    (let [attr (clause-attr clause)
+          db   (clause-source clause context)]
+      (if (and attr (keyword? attr) db)
+        (try
+          (or (i/a-size (.-store db) attr) Long/MAX_VALUE)
+          (catch Exception _ Long/MAX_VALUE))
+        Long/MAX_VALUE))
+
+    (sequential? clause)
+    (if (rule-call? context clause)
+      Long/MAX_VALUE
+      0)
+
+    :else Long/MAX_VALUE))
+
 (defn- reorder-clauses
   [clauses context]
   (let [bound (volatile! (context-bound-vars context))]
@@ -331,11 +363,13 @@
                 (range (count remaining)))
 
               ^long best-idx
-              (apply max-key
-                     (fn [idx]
-                       (count (set/intersection
-                                (clause-free-vars (nth remaining idx)) @bound)))
-                     candidates-indices)
+              (first (sort-by
+                       (fn [idx]
+                         (let [clause (nth remaining idx)]
+                           [(- (count (set/intersection
+                                        (clause-free-vars clause) @bound)))
+                            (estimate-clause-size clause context)]))
+                       candidates-indices))
 
               best-clause (nth remaining best-idx)]
 

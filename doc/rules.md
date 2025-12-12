@@ -32,10 +32,10 @@ The new rule engine uses a bottom-up Datalog evaluation strategy.
 
 ### Semi-naive evaluation (SNE)
 
-The rule engine employs semi-naive evaluation [1] [2]. The engine generates
-tuples from the rule sets until a fix-point is reached, i.e. when no new tuples
-are produced. The evaluation is stratified, where rules run in their strongly
-connected components (stratum).
+The rule engine employs the well known semi-naive evaluation strategy [1] [2].
+The engine generates tuples from the rule sets until a fix-point is reached,
+i.e. when no new tuples are produced. The evaluation is stratified, where rules
+run in their strongly connected components (stratum).
 
 ### Seeding tuples (new)
 
@@ -56,6 +56,14 @@ rules, but also reduces the number of tuples the rule engine has to generate.
 This approach enjoys the benefits of the rule rewrite algorithms such as magic
 sets, while avoiding potential slow-down due to the explosion of magic rules
 brought by the rewrite.
+
+### Rule clause order optimization
+
+Similar to query optimization, we also optimize the join order of rule clauses.
+The rule clauses are reordered based on the following criteria: the number of
+bounded variables (which benefit from seeding) and the clause cardinality
+(size). More bounded variables and smaller clauses are evaluated first, so that
+tuple generation is more constrained.
 
 ### Temporel Elimination
 
