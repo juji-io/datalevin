@@ -436,9 +436,12 @@
 
 (defn map-fl
   [f coll]
-  (reduce (fn [^FastList acc e] (.add acc (f e)) acc)
-          (FastList.)
-          coll))
+  (let [res (FastList.)]
+    (doseq [e coll] (.add res (f e)))
+    res)
+  #_(reduce (fn [^FastList acc e] (.add acc (f e)) acc)
+            (FastList.)
+            coll))
 
 (defn long-inc ^long [^long x] (unchecked-inc x))
 (defn long-dec ^long [^long x] (unchecked-dec x))

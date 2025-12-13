@@ -307,15 +307,32 @@
 
 (defn lookup-pattern-db
   [context db pattern]
+  #_(let [search-pattern (->> pattern
+                              (substitute-constants context)
+                              (resolve-pattern-lookup-refs db)
+                              (mapv #(if (or (qu/free-var? %) (= % '_)) nil %)))
+          datoms         (db/-search db search-pattern)
+          attr->prop     (into {}
+                               (filter (fn [[s _]] (qu/free-var? s)))
+                               (map vector pattern [:e :a :v]))]
+      (println "fidxs" attr->prop "search-pattern" search-pattern "pattern" pattern)
+      (r/relation! attr->prop datoms))
   (let [search-pattern (->> pattern
                             (substitute-constants context)
                             (resolve-pattern-lookup-refs db)
-                            (mapv #(if (or (= % '_) (qu/free-var? %)) nil %)))
-        datoms         (db/-search db search-pattern)
-        attr->prop     (into {}
-                             (filter (fn [[s _]] (qu/free-var? s)))
-                             (map vector pattern ["e" "a" "v"]))]
-    (r/relation! attr->prop datoms)))
+                            (mapv #(if (or (qu/free-var? %) (= % '_)) nil %)))
+        ;; _              (println "lookup" search-pattern)
+        tuples         (db/-search-tuples db search-pattern)
+        fidxs          (let [idxs (volatile! {})
+                             i    (volatile! 0)]
+                         (mapv (fn [p sp]
+                                 (when (nil? sp)
+                                   (vswap! idxs assoc p @i)
+                                   (vswap! i u/long-inc)))
+                               pattern search-pattern)
+                         @idxs)]
+    ;; (println "fidxs" fidxs "search-pattern" search-pattern "pattern" pattern)
+    (r/relation! fidxs tuples)))
 
 (defn matches-pattern?
   [pattern tuple]

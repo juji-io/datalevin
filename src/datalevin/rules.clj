@@ -139,45 +139,25 @@
 
 ;; SNE
 
-(defn- ensure-rule-cache
-  [rule-caches rule-name]
-  (when rule-caches
-    (if-let [cache (get @rule-caches rule-name)]
-      cache
-      (let [c {:idxs (volatile! {}) :set (volatile! nil)}]
-        (vswap! rule-caches assoc rule-name c)
-        c))))
-
-(defn- rule-rel
-  [rule-caches rule-name attrs tuples changed?]
-  (if-let [cache (ensure-rule-cache rule-caches rule-name)]
-    (let [{:keys [idxs set]} cache]
-      (when changed?
-        (vreset! idxs {})
-        (vreset! set nil))
-      (r/relation! attrs tuples cache))
-    (r/relation! attrs tuples)))
-
 (defn- empty-rel-for-rule
   "Create an empty relation with attributes matching the rule head args"
-  [rule-name rules rule-caches]
+  [rule-name rules]
   (let [head-vars (rest (ffirst (get rules rule-name)))
         attrs     (zipmap head-vars (range))]
-    (rule-rel rule-caches rule-name attrs (FastList.) true)))
+    (r/relation! attrs (FastList.))))
 
 (defn- project-rule-result
   "Project body-rel to head-vars"
-  [rule-name body-rel head-vars rule-caches]
+  [body-rel head-vars]
   (if (seq head-vars)
     (let [final-attrs (zipmap head-vars (range))
           idxs        (mapv (:attrs body-rel) head-vars)
           tuples      (:tuples body-rel)
           tg          (u/tuple-get (first tuples))]
-      (rule-rel rule-caches rule-name final-attrs
-                (u/map-fl
-                  (fn [t] (object-array (map #(tg t %) idxs)))
-                  tuples)
-                true))
+      (r/relation! final-attrs
+                   (u/map-fl
+                     (fn [t] (object-array (map #(tg t %) idxs)))
+                     tuples)))
     body-rel))
 
 (defn- map-rule-result
@@ -324,23 +304,23 @@
                   '$)]
     (get-in context [:sources src-sym])))
 
-(defn- estimate-clause-size [clause context]
-  (cond
-    (vector? clause)
-    (let [attr (clause-attr clause)
-          db   (clause-source clause context)]
-      (if (and attr (keyword? attr) db)
-        (try
-          (or (i/a-size (.-store db) attr) Long/MAX_VALUE)
-          (catch Exception _ Long/MAX_VALUE))
-        Long/MAX_VALUE))
+;; (defn- estimate-clause-size [clause context]
+;;   (cond
+;;     (vector? clause)
+;;     (let [attr (clause-attr clause)
+;;           db   (clause-source clause context)]
+;;       (if (and attr (keyword? attr) db)
+;;         (try
+;;           (or (i/a-size (.-store db) attr) Long/MAX_VALUE)
+;;           (catch Exception _ Long/MAX_VALUE))
+;;         Long/MAX_VALUE))
 
-    (sequential? clause)
-    (if (rule-call? context clause)
-      Long/MAX_VALUE
-      0)
+;;     (sequential? clause)
+;;     (if (rule-call? context clause)
+;;       Long/MAX_VALUE
+;;       0)
 
-    :else Long/MAX_VALUE))
+;;     :else Long/MAX_VALUE))
 
 (defn- reorder-clauses
   [clauses context]
@@ -366,9 +346,11 @@
               (first (sort-by
                        (fn [idx]
                          (let [clause (nth remaining idx)]
-                           [(- (count (set/intersection
-                                        (clause-free-vars clause) @bound)))
-                            (estimate-clause-size clause context)]))
+                           (- (count (set/intersection
+                                       (clause-free-vars clause) @bound)))
+                           #_[(- (count (set/intersection
+                                          (clause-free-vars clause) @bound)))
+                              (estimate-clause-size clause context)]))
                        candidates-indices))
 
               best-clause (nth remaining best-idx)]
@@ -380,18 +362,16 @@
 
 (defn- eval-rule-body
   [context rule-name rule-branches resolve-fn]
-  (let [rule-caches (:rule-caches context)]
-    (reduce
-      (fn [rel branch]
-        (let [[[_ & args] & clauses] branch
-              ordered-clauses        (reorder-clauses clauses context)
-              body-res-context       (reduce resolve-fn context ordered-clauses)
-              body-rel               (reduce j/hash-join (:rels body-res-context))
-              projected-rel          (project-rule-result rule-name body-rel args
-                                                          rule-caches)]
-          (r/sum-rel rel projected-rel)))
-      (empty-rel-for-rule rule-name (:rules context) rule-caches)
-      rule-branches)))
+  (reduce
+    (fn [rel branch]
+      (let [[[_ & args] & clauses] branch
+            ordered-clauses        (reorder-clauses clauses context)
+            body-res-context       (reduce resolve-fn context ordered-clauses)
+            body-rel               (reduce j/hash-join (:rels body-res-context))
+            projected-rel          (project-rule-result body-rel args)]
+        (r/sum-rel rel projected-rel)))
+    (empty-rel-for-rule rule-name (:rules context))
+    rule-branches))
 
 (defn- branch-requires?
   [branch var context]
@@ -670,7 +650,6 @@
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
           (let [stratum-set    (set stratum)
-                rule-caches    (or (:rule-caches context) (volatile! {}))
                 temporal-cache (:temporal-idx-cache (meta deps))
                 ;; 1. Rename rules in stratum to avoid collision & freshen vars
                 renamed-rules-map
@@ -731,10 +710,9 @@
                                                       (keys (:attrs %)))
                                           %)
                                        (:rels context))]
-                    (project-rule-result rule-name rel entry-renamed-head
-                                         rule-caches)))
+                    (project-rule-result rel entry-renamed-head)))
 
-                seed-cache (volatile! {})
+                ;; seed-cache (volatile! {})
                 seed-rels
                 (reduce
                   (fn [rels idx]
@@ -748,17 +726,11 @@
                             (into rels
                                   (map
                                     (fn [rel]
-                                      (let [idx    ((:attrs rel) arg)
-                                            key    [rel arg]
-                                            cached (@seed-cache key)
-                                            seeds  (or cached
-                                                       (let [s (unique-seeds
-                                                                 rel idx)]
-                                                         (vswap! seed-cache
-                                                                 assoc key s)
-                                                         s))]
+                                      (let [idx ((:attrs rel) arg)]
                                         ;; View: Rename attr
-                                        (r/relation! {hv 0} seeds))))
+                                        (r/relation!
+                                          {hv 0}
+                                          (unique-seeds rel idx)))))
                                   outer-rels)
                             rels))
                         ;; Bind to Constant
@@ -770,8 +742,7 @@
 
                 clean-context
                 (assoc (select-keys context [:sources :rule-rels :rules-deps])
-                       :rules-deps deps
-                       :rule-caches rule-caches) ;; :rules updated below
+                       :rules-deps deps) ;; :rules updated below
 
                 ;; Split branches into base (non-recursive) and recursive
                 base-branches-map
@@ -816,8 +787,8 @@
                   {} stratum)
 
                 empty-stratum-rels
-                (zipmap stratum (map #(empty-rel-for-rule % full-renamed-rules
-                                                          rule-caches)
+                (zipmap stratum (map #(empty-rel-for-rule
+                                        % full-renamed-rules)
                                      stratum))
 
                 ;; 4. Evaluate Base Cases
@@ -831,9 +802,9 @@
                                               :rules full-renamed-rules
                                               :rels seed-rels)
                                        rname branches resolve-clause-fn)
-                                     (empty-rel-for-rule rname
-                                                         full-renamed-rules
-                                                         rule-caches))]
+                                     (empty-rel-for-rule
+                                       rname
+                                       full-renamed-rules))]
                       (assoc acc rname rel)))
                   {} stratum)
 
@@ -883,8 +854,7 @@
                                       (deltas rname)
                                       (get totals rname
                                            (empty-rel-for-rule
-                                             rname full-renamed-rules
-                                             rule-caches)))
+                                             rname full-renamed-rules)))
                                     diff     (r/difference cand-rel old-rel)]
                                 (if (not-empty (:tuples diff))
                                   (assoc acc rname diff)

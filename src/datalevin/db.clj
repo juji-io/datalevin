@@ -21,6 +21,7 @@
    [datalevin.storage :as s]
    [datalevin.bits :as b]
    [datalevin.remote :as r]
+   [datalevin.relation :as rel]
    [datalevin.inline :refer [update assoc]]
    [datalevin.interface :as i
     :refer [last-modified dir opts schema rschema ave-tuples ave-tuples-list
@@ -48,6 +49,7 @@
 
 (defprotocol ISearch
   (-search [db pattern])
+  (-search-tuples [db pattern])
   (-count [db pattern] [data pattern cap])
   (-first [db pattern]))
 
@@ -142,15 +144,6 @@
        (let [res# ~body]
          (.put ^LRUCache cache# ~pattern res#)
          res#))))
-
-(defn vpred
-  [v]
-  (cond
-    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
-    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
-    (keyword? v) (fn [x] (.equals ^Object v x))
-    (nil? v)     (fn [x] (nil? x))
-    :else        (fn [x] (= v x))))
 
 (defrecord-updatable DB [^IStore store
                          ^long max-eid
@@ -252,7 +245,7 @@
           [(fetch store (datom e a v)) ; e a v
            (slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (slice-filter store :eav
-                         (fn [^Datom d] (when ((vpred v) (.-v d)) d))
+                         (fn [^Datom d] (when ((s/vpred v) (.-v d)) d))
                          (datom e nil nil)
                          (datom e nil nil))  ; e _ v
            (e-datoms store e) ; e _ _
@@ -261,10 +254,27 @@
                  (ave-tuples-list
                    store a [[[:closed c/v0] [:closed c/vmax]]] nil true)) ; _ a _
            (slice-filter store :eav
-                         (fn [^Datom d] (when ((vpred v) (.-v d)) d))
+                         (fn [^Datom d] (when ((s/vpred v) (.-v d)) d))
                          (datom e0 nil nil)
                          (datom emax nil nil)) ; _ _ v
            (slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
+
+  (-search-tuples
+    [db pattern]
+    (let [[e a v _] pattern]
+      (wrap-cache
+          store [:search-tuples e a v]
+        (case-tree
+          [e a (some? v)]
+          [(when (populated? store :eav (d/datom e a v) (d/datom e a v))
+             (rel/single-tuples (object-array [e a v]))) ; e a v
+           (s/ea-tuples store e a) ; e a _
+           (s/ev-tuples store e v)  ; e _ v
+           (s/e-tuples store e) ; e _ _
+           (s/av-tuples store a v) ; _ a v
+           (s/a-tuples store a) ; _ a _
+           (s/v-tuples store v) ; _ _ v
+           (s/all-tuples store)])))) ; _ _ _
 
   (-first
     [db pattern]
@@ -277,7 +287,7 @@
            (ea-first-datom store e a) ; e a _
            (head-filter store :eav
                         (fn [^Datom d]
-                          (when ((vpred v) (.-v d)) d))
+                          (when ((s/vpred v) (.-v d)) d))
                         (datom e nil nil)
                         (datom e nil nil))  ; e _ v
            (e-first-datom store e) ; e _ _
@@ -285,7 +295,7 @@
            (head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
            (head-filter store :eav
                         (fn [^Datom d]
-                          (when ((vpred v) (.-v d)) d))
+                          (when ((s/vpred v) (.-v d)) d))
                         (datom e0 nil nil)
                         (datom emax nil nil)) ; _ _ v
            (head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
@@ -303,7 +313,7 @@
           [(size store :eav (datom e a v) (datom e a v) cap) ; e a v
            (size store :eav (datom e a c/v0) (datom e a c/vmax) cap) ; e a _
            (size-filter store :eav
-                        (fn [^Datom d] ((vpred v) (.-v d)))
+                        (fn [^Datom d] ((s/vpred v) (.-v d)))
                         (datom e nil nil) (datom e nil nil) cap)  ; e _ v
            (e-size store e) ; e _ _
            (av-size store a v) ; _ a v

@@ -11,20 +11,28 @@
   "Functions for relational algebra"
   (:require
    [clojure.pprint :as pp]
-   [datalevin.parser :as dp]
    [datalevin.util :as u :refer [raise tuple-get tuple-add]]
    [datalevin.timeout :as timeout])
   (:import
-   [java.util List]
+   [java.util List Arrays HashSet]
    [java.io Writer]
    [org.eclipse.collections.impl.list.mutable FastList]))
+
+(deftype ArrayWrapper [^objects a ^int h]
+  Object
+  (hashCode [_] h)
+  (equals [_ that]
+    (and (instance? ArrayWrapper that)
+         (Arrays/equals a ^objects (.-a ^ArrayWrapper that)))))
+
+(defn wrap-array [^objects a] (ArrayWrapper. a (Arrays/hashCode a)))
 
 ;; attrs:
 ;;    {?e 0, ?v 1} or {?e2 "a", ?age "v"}
 ;; tuples is a list of objects:
 ;;    [ objects ... ]
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
-(defrecord Relation [attrs tuples idxs set])
+(defrecord Relation [attrs tuples])
 
 (defmethod print-method Relation [^Relation r, ^Writer w]
   (binding [*out* w]
@@ -32,12 +40,9 @@
       (pp/pprint {:attrs attrs :tuples (mapv vec tuples)}))))
 
 (defn relation!
-  ([attrs tuples]
-   (timeout/assert-time-left)
-   (Relation. attrs tuples (volatile! {}) (volatile! nil)))
-  ([attrs tuples {:keys [idxs set]}]
-   (timeout/assert-time-left)
-   (Relation. attrs tuples (or idxs (volatile! {})) (or set (volatile! nil)))))
+  [attrs tuples]
+  (timeout/assert-time-left)
+  (Relation. attrs tuples))
 
 ;; Relation algebra
 
@@ -77,7 +82,7 @@
   [attrs-a tuples-a attrs-b tuples-b]
   (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
                           [idx-b (attrs-a sym)]))
-        tlen       (->> (vals attrs-a) ^long (reduce max) u/long-inc)]
+        tlen       (->> (vals attrs-a) ^long (apply max) u/long-inc)]
     (if (seq tuples-b)
       (let [tg (tuple-get (first tuples-b))
             ta (tuple-add tuples-a)]
@@ -100,22 +105,14 @@
 
      (cond
        (= attrs-a attrs-b)
-       (cond
-         (empty? tuples-b) a
-         (empty? tuples-a) b
-         :else
-         (let [idxs (:idxs a)
-               setv (:set a)]
-           (when idxs (vreset! idxs {}))
-           (when setv
-             (if-let [s @setv]
-               (vreset! setv (into s (map vec tuples-b)))
-               (vreset! setv nil)))
-           (Relation. attrs-a (if (sequential? tuples-a)
-                                (into tuples-a tuples-b)
-                                (do (.addAll ^List tuples-a tuples-b)
-                                    tuples-a))
-                      idxs setv)))
+       (relation! attrs-a (if (sequential? tuples-a)
+                            (into tuples-a tuples-b)
+                            ;; don't mutate, as they may be cached
+                            (doto (FastList.)
+                              (.addAll tuples-a)
+                              (.addAll tuples-b))
+                            #_(do (.addAll ^List tuples-a tuples-b)
+                                  tuples-a)))
 
        (empty? tuples-a) b
        (empty? tuples-b) a
@@ -136,6 +133,33 @@
                        attrs-a tuples-a)
              (sum-rel b)))))))
 
+(defn sum-dedupe-rel
+  [a b]
+  (assoc a :tuples
+         (let [tuples-a (:tuples a)
+               tuples-b (:tuples b)
+               la       (.size tuples-a)
+               lb       (.size tuples-b)
+               res
+               (if (< la lb)
+                 (let [tuples-a-set (HashSet.)]
+                   (dotimes [i la]
+                     (.add tuples-a-set (wrap-array (.get tuples-a i))))
+                   (dotimes [i lb]
+                     (let [tb (.get tuples-b i)]
+                       (when-not (.contains tuples-a-set (wrap-array tb))
+                         (.add tuples-a tb))))
+                   tuples-a)
+                 (let [tuples-b-set (HashSet.)]
+                   (dotimes [i lb]
+                     (.add tuples-b-set (wrap-array (.get tuples-b i))))
+                   (dotimes [i la]
+                     (let [ta (.get tuples-a i)]
+                       (when-not (.contains tuples-b-set (wrap-array ta))
+                         (.add tuples-b ta))))
+                   tuples-b))]
+           res)))
+
 (defn prod-tuples
   ([] (doto (FastList.) (.add (object-array []))))
   ([tuples] tuples)
@@ -152,52 +176,28 @@
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))
   ([rel1] rel1)
   ([rel1 rel2]
-   (let [attrs1  (keys (:attrs rel1))
-         attrs2  (keys (:attrs rel2))
-         tuples1 ^List (:tuples rel1)
-         tuples2 ^List (:tuples rel2)
-         idxs1   (to-array (->Eduction (map (:attrs rel1)) attrs1))
-         idxs2   (to-array (->Eduction (map (:attrs rel2)) attrs2))]
+   (let [attrs1 (keys (:attrs rel1))
+         attrs2 (keys (:attrs rel2))
+         idxs1  (to-array (->Eduction (map (:attrs rel1)) attrs1))
+         idxs2  (to-array (->Eduction (map (:attrs rel2)) attrs2))]
      (relation!
        (zipmap (u/concatv attrs1 attrs2) (range))
-       (reduce
-         (fn [acc t1]
-           (reduce (fn [^FastList acc t2]
-                     (.add acc (join-tuples t1 idxs1 t2 idxs2))
-                     acc)
-                   acc tuples2))
-         (FastList. (* (.size tuples1) (.size tuples2)))
-         tuples1)))))
+       (let [tuples1 ^List (:tuples rel1)
+             tuples2 ^List (:tuples rel2)
+             l1      (.size tuples1)
+             l2      (.size tuples2)
+             acc     (FastList. (* l1 l2))]
+         (dotimes [i l1]
+           (dotimes [j l2]
+             (.add acc (join-tuples (.get tuples1 i) idxs1
+                                    (.get tuples2 j) idxs2))))
+         acc)))))
 
-(defn vertical-tuples
-  [coll]
-  (doto (FastList. (count coll))
-    (.addAll (mapv #(object-array [%]) coll))))
-
-#_(defn horizontal-tuples
-    [coll]
-    (doto (FastList.) (.add (object-array coll))))
+(defn vertical-tuples [coll] (u/map-fl #(object-array [%]) coll))
 
 (defn single-tuples [tuple] (doto (FastList.) (.add tuple)))
 
 (defn many-tuples [values] (transduce (map vertical-tuples) prod-tuples values))
-
-#_(defn filter-rel
-    [{:keys [attrs ^List tuples]} v pred]
-    (let [new-tuples (FastList.)
-          idx        (attrs v)]
-      (dotimes [i (.size tuples)]
-        (let [tuple ^objects (.get tuples i)]
-          (when (pred (aget tuple idx))
-            (.add new-tuples tuple))))
-      (relation! attrs new-tuples)))
-
-#_(defn projection
-    [tuples index]
-    (persistent!
-      (reduce
-        (fn [s ^objects t] (conj! s (aget t index)))
-        (transient #{}) tuples)))
 
 (defn difference
   "Returns r1 - r2. Assumes r1 and r2 have same attrs."
@@ -206,16 +206,25 @@
         ^List t2 (:tuples r2)]
     (if (empty? t2)
       r1
-        (let [s2 (or @(:set r2)
-                     (let [s (into #{} (map vec) t2)]
-                       (vreset! (:set r2) s)
-                       s))
-            new-tuples (FastList.)]
-        (dotimes [i (.size t1)]
-          (let [tuple (.get t1 i)]
-            (when-not (contains? s2 (vec tuple))
-              (.add new-tuples tuple))))
-        (-> r1
-            (assoc :tuples new-tuples)
-            (update :idxs (fn [idxs] (when idxs (vreset! idxs {}) idxs)))
-            (update :set (fn [setv] (when setv (vreset! setv nil) setv))))))))
+      (assoc r1 :tuples (let [s2         (HashSet.)
+                              new-tuples (FastList.)]
+                          (dotimes [i (.size t2)]
+                            (.add s2 (wrap-array (.get t2 i))))
+                          (dotimes [i (.size t1)]
+                            (let [tuple (.get t1 i)]
+                              (when-not (.contains s2 (wrap-array tuple))
+                                (.add new-tuples tuple))))
+                          new-tuples)))))
+
+(defn dedupe-rel
+  [rel]
+  (assoc rel :tuples (let [tuples ^List (:tuples rel)
+                           tset   (HashSet.)
+                           new    (FastList.)]
+                       (dotimes [i (.size tuples)]
+                         (let [t  (.get tuples i)
+                               tw (wrap-array t)]
+                           (when-not (.contains tset tw)
+                             (.add new t)
+                             (.add tset tw))))
+                       new)))

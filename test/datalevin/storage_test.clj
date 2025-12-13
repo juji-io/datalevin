@@ -610,6 +610,64 @@
     (if/close store)
     (u/delete-files dir)))
 
+(deftest search-tuples-test
+  (let [d0    (d/datom 0 :a "0a0")
+        d1    (d/datom 0 :a "0a1")
+        d2    (d/datom 0 :a "0a2")
+        d3    (d/datom 0 :b 7)
+        d4    (d/datom 8 :a "8a")
+        d5    (d/datom 8 :b 11)
+        d6    (d/datom 10 :a "10a")
+        d7    (d/datom 10 :b 4)
+        d8    (d/datom 10 :b 15)
+        d9    (d/datom 10 :b 20)
+        d10   (d/datom 15 :a "15a")
+        d11   (d/datom 15 :b 1)
+        d12   (d/datom 20 :b 2)
+        d13   (d/datom 20 :b 4)
+        d14   (d/datom 20 :b 7)
+        dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
+        store (sut/open dir
+                        {:a {:db/valueType   :db.type/string
+                             :db/cardinality :db.cardinality/many}
+                         :b {:db/cardinality :db.cardinality/many
+                             :db/valueType   :db.type/long}}
+                        {:kv-opts
+                         {:flags (conj c/default-env-flags :nosync)}})]
+    (if/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
+    (is (= (map vec (sut/all-tuples store))
+           [[0 :a "0a0"]
+            [0 :a "0a1"]
+            [0 :a "0a2"]
+            [0 :b 7]
+            [8 :a "8a"]
+            [8 :b 11]
+            [10 :a "10a"]
+            [10 :b 4]
+            [10 :b 15]
+            [10 :b 20]
+            [15 :a "15a"]
+            [15 :b 1]
+            [20 :b 2]
+            [20 :b 4]
+            [20 :b 7]]))
+    (is (= (map vec (sut/ea-tuples store 8 :b)) [[11]]))
+    (is (= (map vec (sut/ea-tuples store 10 :b)) [[4] [15] [20]]))
+    (is (= (map vec (sut/ev-tuples store 0 7)) [[:b]]))
+    (is (= (map vec (sut/ev-tuples store 15 "15a")) [[:a]]))
+    (is (= (map vec (sut/e-tuples store 8)) [[:a "8a"] [:b 11]]))
+    (is (= (map vec (sut/e-tuples store 20)) [[:b 2] [:b 4] [:b 7]]))
+    (is (= (map vec (sut/av-tuples store :b 7)) [[0] [20]]))
+    (is (= (map vec (sut/av-tuples store :a "0a1")) [[0]]))
+    (is (= (set (map vec (sut/a-tuples store :b)))
+           (set [[0 7] [8 11] [10 4] [10 15] [10 20]
+                 [15 1] [20 2] [20 4] [20 7]])))
+    (is (= (map vec (sut/v-tuples store "0a1")) [[0 :a]]))
+    (is (= (map vec (sut/v-tuples store 7)) [[0 :b] [20 :b]]))
+
+    (if/close store)
+    (u/delete-files dir)))
+
 (deftest sampling-test
   (let [dir     (u/tmp-dir (str "sampling-test-" (UUID/randomUUID)))
         store   (sut/open dir

@@ -220,6 +220,8 @@
       (.-v r)
       (d/datom-v (gt->datom lmdb g)))))
 
+(defn- retrieved->attr [attrs ^Retrieved r] (attrs (.-a r)))
+
 (defn- ave-kv->retrieved
   [lmdb ^Retrieved r ^long e]
   (Retrieved. e (.-a r) (retrieved->v lmdb r) (.-g r)))
@@ -612,8 +614,7 @@
                 lv (index->v :eav schema datom false)
                 hv (index->v :eav schema datom true)]
             (list-range lmdb (index->dbi :eav)
-                        [:closed lk hk] (index->ktype :eav)
-                        [:closed lv hv] :avg))))
+                        [:closed lk hk] :id [:closed lv hv] :avg))))
 
   (populated? [_ index low-datom high-datom]
     (let [lk (index->k index schema low-datom false)
@@ -1302,6 +1303,121 @@
       (when (identical? vt :db.type/vec)
         (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                      (if gt [:r gt] [:d [e aid v]])])))))
+
+(defn vpred
+  [v]
+  (cond
+    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
+    (integer? v) (fn [x] (if (integer? x) (= (long v) (long x)) false))
+    (keyword? v) (fn [x] (.equals ^Object v x))
+    (nil? v)     (fn [x] (nil? x))
+    :else        (fn [x] (= v x))))
+
+(defn ea-tuples
+  [^Store store e a]
+  (let [lmdb       (.-lmdb store)
+        schema     (schema store)
+        low-datom  (d/datom e a c/v0)
+        high-datom (d/datom e a c/vmax)
+        coll       (list-range
+                     lmdb c/eav
+                     [:closed (index->k :eav schema low-datom false)
+                      (index->k :eav schema high-datom true)] :id
+                     [:closed (index->v :eav schema low-datom false)
+                      (index->v :eav schema high-datom true)] :avg)
+        res        (FastList.)]
+    (doseq [[_ r] coll]
+      (.add res (object-array [(retrieved->v lmdb r)])))
+    res))
+
+(defn ev-tuples
+  [^Store store e v]
+  (let [lmdb       (.-lmdb store)
+        attrs      (attrs store)
+        low-datom  (d/datom e nil nil)
+        high-datom low-datom
+        pred       (fn [kv]
+                     (let [^ByteBuffer vb (lmdb/v kv)
+                           ^Retrieved r   (b/read-buffer vb :avg)
+                           rv             (retrieved->v lmdb r)]
+                       (when ((vpred rv) v) (attrs (.-a r)))))
+        coll       (list-range-keep
+                     lmdb (index->dbi :eav) pred
+                     [:closed (index->k :eav schema low-datom false)
+                      (index->k :eav schema high-datom true)] :id
+                     [:closed (index->v :eav schema low-datom false)
+                      (index->v :eav schema high-datom true)] :avg)
+        res        (FastList.)]
+    (doseq [attr coll] (.add res (object-array [attr])))
+    res))
+
+(defn e-tuples
+  [^Store store e]
+  (let [lmdb  (.-lmdb store)
+        attrs (attrs store)
+        coll  (get-list lmdb c/eav e :id :avg)
+        res   (FastList.)]
+    (doseq [^Retrieved r coll]
+      (.add res (object-array [(attrs (.-a r)) (retrieved->v lmdb r)])))
+    res))
+
+(defn av-tuples
+  [^Store store a v]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        coll   (get-list
+                 lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false)
+                 :avg :id)
+        res    (FastList.)]
+    (doseq [e coll] (.add res (object-array [e])))
+    res))
+
+(defn a-tuples
+  [^Store store a]
+  (.ave-tuples-list store a [[[:closed c/v0] [:closed c/vmax]]] nil true))
+
+(defn v-tuples
+  [^Store store v]
+  (let [lmdb       (.-lmdb store)
+        attrs      (attrs store)
+        low-datom  (d/datom c/e0 nil nil)
+        high-datom (d/datom c/emax nil nil)
+        pred       (fn [kv]
+                     (let [^ByteBuffer kb (lmdb/k kv)
+                           e              (b/read-buffer kb :id)
+                           ^ByteBuffer vb (lmdb/v kv)
+                           ^Retrieved r   (b/read-buffer vb :avg)
+                           rv             (retrieved->v lmdb r)]
+                       (when ((vpred rv) v) [e (attrs (.-a r))])))
+        coll       (list-range-keep
+                     lmdb (index->dbi :eav) pred
+                     [:closed (index->k :eav schema low-datom false)
+                      (index->k :eav schema high-datom true)] :id
+                     [:closed (index->v :eav schema low-datom false)
+                      (index->v :eav schema high-datom true)] :avg)
+        res        (FastList.)]
+    (doseq [[e attr] coll] (.add res (object-array [e attr])))
+    res))
+
+(defn all-tuples
+  [^Store store]
+  (let [lmdb       (.-lmdb store)
+        schema     (schema store)
+        attrs      (attrs store)
+        low-datom  (d/datom c/e0 nil nil)
+        high-datom (d/datom c/emax nil nil)
+        coll       (list-range
+                     lmdb c/eav
+                     [:closed (index->k :eav schema low-datom false)
+                      (index->k :eav schema high-datom true)] :id
+                     [:closed (index->v :eav schema low-datom false)
+                      (index->v :eav schema high-datom true)] :avg)
+        res        (FastList.)]
+    (doseq [[e r] coll]
+      (.add res (object-array [e
+                               (retrieved->attr attrs r)
+                               (retrieved->v lmdb r)])))
+    res))
 
 (defn- transact-opts
   [lmdb opts]
