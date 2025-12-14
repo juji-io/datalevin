@@ -152,12 +152,14 @@
   (if (seq head-vars)
     (let [final-attrs (zipmap head-vars (range))
           idxs        (mapv (:attrs body-rel) head-vars)
-          tuples      (:tuples body-rel)
-          tg          (u/tuple-get (first tuples))]
-      (r/relation! final-attrs
-                   (u/map-fl
-                     (fn [t] (object-array (map #(tg t %) idxs)))
-                     tuples)))
+          tuples      ^List (:tuples body-rel)]
+      (r/relation!
+        final-attrs
+        (let [res (FastList.)]
+          (dotimes [i (.size tuples)]
+            (.add res (object-array
+                        (map #(aget ^objects (.get tuples i) %) idxs))))
+          res)))
     body-rel))
 
 (defn- map-rule-result
@@ -199,31 +201,30 @@
         new-attrs        (zipmap unique-call-vars (range))]
     (r/relation!
       new-attrs
-      (let [tuples (:tuples rule-rel)
-            tg     (u/tuple-get (first tuples))]
+      (let [tuples (:tuples rule-rel)]
         (reduce
-          (fn [^List acc tuple]
+          (fn [^List acc ^objects tuple]
             (if (and (loop [[c & more] const-checks]
                        (if c
                          (let [[idx arg] c]
-                           (if (= (tg tuple idx) arg)
+                           (if (= (aget tuple idx) arg)
                              (recur more)
                              false))
                          true))
                      (loop [[idxs & more] equality-idxs]
                        (if idxs
-                         (let [v0 (tg tuple (nth idxs 0))]
+                         (let [v0 (aget tuple (nth idxs 0))]
                            (if (loop [rest-idxs (rest idxs)]
                                  (cond
                                    (empty? rest-idxs) true
-                                   (= v0 (tg tuple (first rest-idxs)))
+                                   (= v0 (aget tuple (first rest-idxs)))
                                    (recur (rest rest-idxs))
                                    :else              false))
                              (recur more)
                              false))
                          true)))
               (do
-                (.add acc (object-array (map #(tg tuple %) projection-idxs)))
+                (.add acc (object-array (map #(aget tuple %) projection-idxs)))
                 acc)
               acc))
           (FastList.) tuples)))))
@@ -408,11 +409,10 @@
   (let [tuples (:tuples rel)]
     (if (empty? tuples)
       (FastList.)
-      (let [seen   (HashSet.)
-            res    (FastList.)
-            getter (u/tuple-get (first tuples))]
-        (doseq [tuple tuples
-                :let  [v (getter tuple idx)]]
+      (let [seen (HashSet.)
+            res  (FastList.)]
+        (doseq [^objects tuple tuples
+                :let           [v (aget tuple idx)]]
           (when (.add seen v)
             (.add res (object-array [v]))))
         res))))

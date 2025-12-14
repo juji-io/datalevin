@@ -261,15 +261,6 @@
 
 (defn array? [^Object x] (some-> x .getClass .isArray))
 
-(defn typed-aget [a i] (aget ^objects a ^Long i))
-
-(defn tuple-get [tuple] (if (array? tuple) typed-aget get))
-
-(defn tuple-add [acc]
-  (if (sequential? acc)
-    #(conj %1 %2)
-    #(do (.add ^List %1 %2) %1)))
-
 (defmacro defrecord-updatable [name fields & impls]
   (apply make-record-updatable-clj  name fields impls))
 

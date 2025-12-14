@@ -23,7 +23,7 @@
    [datalevin.rules :as rules]
    [datalevin.storage :as s]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [cond+ raise conjv concatv tuple-get map+]]
+   [datalevin.util :as u :refer [cond+ raise conjv concatv map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.pipe :as p]
@@ -307,21 +307,10 @@
 
 (defn lookup-pattern-db
   [context db pattern]
-  #_(let [search-pattern (->> pattern
-                              (substitute-constants context)
-                              (resolve-pattern-lookup-refs db)
-                              (mapv #(if (or (qu/free-var? %) (= % '_)) nil %)))
-          datoms         (db/-search db search-pattern)
-          attr->prop     (into {}
-                               (filter (fn [[s _]] (qu/free-var? s)))
-                               (map vector pattern [:e :a :v]))]
-      (println "fidxs" attr->prop "search-pattern" search-pattern "pattern" pattern)
-      (r/relation! attr->prop datoms))
   (let [search-pattern (->> pattern
                             (substitute-constants context)
                             (resolve-pattern-lookup-refs db)
                             (mapv #(if (or (qu/free-var? %) (= % '_)) nil %)))
-        ;; _              (println "lookup" search-pattern)
         tuples         (db/-search-tuples db search-pattern)
         fidxs          (let [idxs (volatile! {})
                              i    (volatile! 0)]
@@ -331,7 +320,6 @@
                                    (vswap! i u/long-inc)))
                                pattern search-pattern)
                          @idxs)]
-    ;; (println "fidxs" fidxs "search-pattern" search-pattern "pattern" pattern)
     (r/relation! fidxs tuples)))
 
 (defn matches-pattern?
@@ -381,9 +369,8 @@
 (defn- context-resolve-val
   [context sym]
   (when-some [rel (rel-with-attr context sym)]
-    (when-some [tuple (first (:tuples rel))]
-      (let [tg (tuple-get tuple)]
-        (tg tuple ((:attrs rel) sym))))))
+    (when-some [^objects tuple (.get ^List (:tuples rel) 0)]
+      (aget tuple ((:attrs rel) sym)))))
 
 (defn- rel-contains-attrs? [rel attrs] (some #(contains? (:attrs rel) %) attrs))
 
@@ -476,13 +463,12 @@
           (list? arg)   (aset tuples-args i
                               (-call-fn context rel (first arg) (rest arg)))
           :else         (aset static-args i arg))))
-    (fn [tuple]
-      (let [tg (tuple-get tuple)]
-        (dotimes [i len]
-          (when-some [tuple-arg (aget tuples-args i)]
-            (aset static-args i (if (fn? tuple-arg)
-                                  (tuple-arg tuple)
-                                  (tg tuple tuple-arg))))))
+    (fn [^objects tuple]
+      (dotimes [i len]
+        (when-some [tuple-arg (aget tuples-args i)]
+          (aset static-args i (if (fn? tuple-arg)
+                                (tuple-arg tuple)
+                                (aget tuple tuple-arg)))))
       (call static-args))))
 
 (defn filter-by-pred
@@ -492,7 +478,7 @@
         [context production] (rel-prod-by-attrs context attrs)
 
         new-rel (let [tuple-pred (-call-fn context production f args)]
-                  (update production :tuples #(filter tuple-pred %)))]
+                  (update production :tuples #(r/select-tuples tuple-pred %)))]
     (update context :rels conj new-rel)))
 
 (defn bind-by-fn
@@ -706,7 +692,7 @@
     (assoc context :rels
            [(r/relation!
               (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
-              [])])
+              (FastList.))])
     (if (qu/rule? context clause)
       (if (qu/source? (first clause))
         (binding [qu/*implicit-source* (get (:sources context) (first clause))]
@@ -1991,6 +1977,11 @@
         grouped    (group-by group-fn resultset)]
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
+
+(defn- typed-aget [a i] (aget ^objects a ^Long i))
+
+(defn- tuple-get [tuple]
+  (if (u/array? tuple) typed-aget get))
 
 (defn tuples->return-map
   [return-map tuples]

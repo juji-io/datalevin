@@ -15,40 +15,25 @@
    [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [concatv]])
   (:import
-   [java.util List]
-   [clojure.lang ILookup]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [java.util List HashMap]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 ;; hash join
 
-(defn- int-tuple-get
-  [tuple idx]
-  (if (u/array? tuple)
-    (aget ^objects tuple idx)
-    (nth tuple idx)))
-
 (defn- resolve-eid
   [eid]
   (cond
-    (number? eid)     eid ;; quick path to avoid fn call
+    (number? eid)     eid
     (sequential? eid) (db/entid qu/*implicit-source* eid)
-    (u/array? eid)    (db/entid qu/*implicit-source* eid)
     :else             eid))
 
 (defn getter-fn
   [attrs attr]
   (let [idx (attrs attr)]
     (if (contains? qu/*lookup-attrs* attr)
-      (if (integer? idx)
-        (fn contained-int-getter-fn [tuple]
-          (resolve-eid (int-tuple-get tuple idx)))
-        ;; If the index is not an int?, the target can never be an array
-        (fn contained-getter-fn [tuple]
-          (resolve-eid (.valAt ^ILookup tuple idx))))
-      (if (integer? idx)
-        (fn int-getter [tuple] (int-tuple-get tuple idx))
-        (fn getter [tuple] (.valAt ^ILookup tuple idx))))))
+      (fn contained-int-getter-fn [^objects tuple]
+        (resolve-eid (aget tuple idx)))
+      (fn int-getter [^objects tuple] (aget tuple idx)))))
 
 (defn tuple-key-fn
   [attrs common-attrs]
@@ -70,23 +55,16 @@
                       (recur (unchecked-inc i)))
                     (r/wrap-array arr)))))))))))
 
-(defn -group-by
-  [f init coll]
-  (let [^UnifiedMap ret (UnifiedMap.)]
-    (doseq [x    coll
-            :let [k (f x)]]
-      (.put ret k (conj (.getIfAbsentPut ret k init) x)))
-    ret))
-
 (defn hash-tuples
-  [key-fn tuples]
-  ;; (let [^UnifiedMap ret (UnifiedMap.)]
-  ;;   (doseq [x    tuples
-  ;;           :let [k (key-fn x)
-  ;;                 l ^FastList (.getIfAbsentPut ret k (FastList.))]]
-  ;;     (.add l x))
-  ;;   ret)
-  (-group-by key-fn '() tuples))
+  [key-fn ^List tuples]
+  (let [^HashMap res (HashMap.)]
+    (when tuples
+      (dotimes [i (.size tuples)]
+        (let [x (.get tuples i)
+              k (key-fn x)]
+          (.putIfAbsent res k (FastList.))
+          (.add ^List (.get res k) x))))
+    res))
 
 (defn- attr-keys
   "attrs are map, preserve order by val"
@@ -118,51 +96,31 @@
         key-fn1      (tuple-key-fn attrs1 common-attrs)
         key-fn2      (tuple-key-fn attrs2 common-attrs)
         attrs        (zipmap (concatv keep-attrs1 keep-attrs2) (range))]
-    (if (< (count tuples1) (count tuples2))
-      (let [^UnifiedMap hash (hash-tuples key-fn1 tuples1)]
+    (if (or (nil? tuples1) (nil? tuples2))
+      (r/relation! attrs (FastList.))
+      (if (< (.size tuples1) (.size tuples2))
         (r/relation!
           attrs
-          #_(let [acc (FastList.)]
-              (dotimes [i (.size tuples2)]
-                (let [tuple2 (.get tuples2 i)]
-                  (when-some [^List tuples1 (.get hash (key-fn2 tuple2))]
-                    (dotimes [j (.size tuples1)]
-                      (.add acc (r/join-tuples (.get tuples1 j) keep-idxs1
-                                               tuple2 keep-idxs2))))))
-              acc)
-          (reduce
-            (fn outer [acc tuple2]
-              (if-some [tuples1 (.get hash (key-fn2 tuple2))]
-                (reduce
-                  (fn inner [^List acc tuple1]
-                    (.add acc
-                          (r/join-tuples tuple1 keep-idxs1 tuple2 keep-idxs2))
-                    acc)
-                  acc tuples1)
-                acc))
-            (FastList.) tuples2)))
-      (let [^UnifiedMap hash (hash-tuples key-fn2 tuples2)]
+          (let [acc           (FastList.)
+                ^HashMap hash (hash-tuples key-fn1 tuples1)]
+            (dotimes [i (.size tuples2)]
+              (let [^objects tuple2 (.get tuples2 i)]
+                (when-some [^List tuples1 (.get hash (key-fn2 tuple2))]
+                  (dotimes [j (.size tuples1)]
+                    (.add acc (r/join-tuples (.get tuples1 j) keep-idxs1
+                                             tuple2 keep-idxs2))))))
+            acc))
         (r/relation!
           attrs
-          #_(let [acc (FastList.)]
-              (dotimes [i (.size tuples1)]
-                (let [tuple1 (.get tuples1 i)]
-                  (when-some [^List tuples2 (.get hash (key-fn1 tuple1))]
-                    (dotimes [j (.size tuples2)]
-                      (.add acc (r/join-tuples tuple1 keep-idxs1
-                                               (.get tuples2 j) keep-idxs2))))))
-              acc)
-          (reduce
-            (fn outer [acc tuple1]
-              (if-some [tuples2 (.get hash (key-fn1 tuple1))]
-                (reduce
-                  (fn inner [^List acc tuple2]
-                    (.add acc
-                          (r/join-tuples tuple1 keep-idxs1 tuple2 keep-idxs2))
-                    acc)
-                  acc tuples2)
-                acc))
-            (FastList.) tuples1))))))
+          (let [acc           (FastList.)
+                ^HashMap hash (hash-tuples key-fn2 tuples2)]
+            (dotimes [i (.size tuples1)]
+              (let [^objects tuple1 (.get tuples1 i)]
+                (when-some [^List tuples2 (.get hash (key-fn1 tuple1))]
+                  (dotimes [j (.size tuples2)]
+                    (.add acc (r/join-tuples tuple1 keep-idxs1
+                                             (.get tuples2 j) keep-idxs2))))))
+            acc))))))
 
 (defn subtract-rel
   [a b]
@@ -171,7 +129,7 @@
 
         attrs    (vec (qu/intersect-keys attrs-a attrs-b))
         key-fn-b (tuple-key-fn attrs-b attrs)
-        hash     ^UnifiedMap (hash-tuples key-fn-b tuples-b)
+        hash     ^HashMap (hash-tuples key-fn-b tuples-b)
         key-fn-a (tuple-key-fn attrs-a attrs)]
     (assoc a :tuples (let [res (FastList.)]
                        (dotimes [i (.size ^List tuples-a)]
