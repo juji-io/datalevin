@@ -41,19 +41,13 @@
     (if (== n 1)
       (getter-fn attrs (first common-attrs))
       (let [^objects getters-arr (into-array Object common-attrs)]
-        (loop [i 0]
-          (if (< i n)
-            (do
-              (aset getters-arr i (getter-fn attrs (aget getters-arr i)))
-              (recur (unchecked-inc i)))
-            (fn [tuple]
-              (let [^objects arr (make-array Object n)]
-                (loop [i 0]
-                  (if (< i n)
-                    (do
-                      (aset arr i ((aget getters-arr i) tuple))
-                      (recur (unchecked-inc i)))
-                    (r/wrap-array arr)))))))))))
+        (dotimes [i n]
+          (aset getters-arr i (getter-fn attrs (aget getters-arr i))))
+        (fn [tuple]
+          (let [^objects arr (make-array Object n)]
+            (dotimes [i n]
+              (aset arr i ((aget getters-arr i) tuple)))
+            (r/wrap-array arr)))))))
 
 (defn hash-tuples
   [key-fn ^List tuples]
