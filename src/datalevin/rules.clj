@@ -73,7 +73,7 @@
             {} v->node)))
 
 (defn tarjans-scc
-  "returns SCCs in reverse topological order (bottom-up)"
+  "returns SCCs in reverse topological order"
   [graph]
   (let [nodes (init-nodes graph)
         cur   (volatile! 0)
@@ -106,6 +106,7 @@
               (vswap! sccs conj @scc))))]
     (doseq [node (keys nodes)]
       (when (nil? (index node)) (connect node)))
+    ;; (println "sccs" @sccs)
     @sccs))
 
 (defn dependency-graph
@@ -297,7 +298,7 @@
     (and (sequential? clause)
          (not (vector? clause))
          (not (rule-call? context clause)))
-    (set (filter qu/free-var? clause))
+    (set (filter qu/free-var? (flatten clause)))
 
     ;; function binding clause: [ (f ?in ...) ?out ...]
     (and (vector? clause)

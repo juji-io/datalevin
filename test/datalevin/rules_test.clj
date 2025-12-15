@@ -310,16 +310,174 @@
                      (chain ?limit ?prev)
                      [(< ?prev ?limit)]
                      [(inc ?prev) ?n]]]
-            res   (d/q '[:find ?n
-                         :in $ % ?limit
-                         :where (chain ?limit ?n)]
-                       db rules limit)]
+              res   (d/q '[:find ?n
+                           :in $ % ?limit
+                           :where (chain ?limit ?n)]
+                         db rules limit)]
         ;; Should behave like temporal elimination
         (is (= 1 (count res)))
         (is (= #{[limit]} res)))
       (finally
         (d/close-db db)
         (u/delete-files dir)))))
+
+(deftest mutually-recursive-rules-test
+  (let [dir (u/tmp-dir (str "mutual-recursion-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:id {:db/unique :db.unique/identity}
+                              :edge1 {:db/valueType :db.type/long}
+                              :edge2 {:db/valueType :db.type/long}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (d/transact! conn [{:db/id 1 :id 1 :edge1 2}
+                       {:db/id 2 :id 2 :edge2 3}
+                       {:db/id 3 :id 3 :edge1 4}
+                       {:db/id 4 :id 4 :edge2 5}
+                       {:db/id 5 :id 5}])
+    (let [rules '[[(foo ?id ?y)
+                   [?e :id ?id]
+                   [?e :edge1 ?y]]
+                  [(foo ?id ?y)
+                   [?e :id ?id]
+                   [?e :edge1 ?z]
+                   (bar ?z ?y)]
+                  [(bar ?id ?y)
+                   [?e :id ?id]
+                   [?e :edge2 ?y]]
+                  [(bar ?id ?y)
+                   [?e :id ?id]
+                   [?e :edge2 ?z]
+                   (foo ?z ?y)]]]
+      (is (= #{2 3 4 5}
+             (set (d/q '[:find [?y ...]
+                         :in $ % ?x
+                         :where (foo ?x ?y)]
+                       (d/db conn) rules 1))))
+      (is (= #{}
+             (set (d/q '[:find [?y ...]
+                         :in $ % ?x
+                         :where (bar ?x ?y)]
+                       (d/db conn) rules 1))))
+      (is (= #{3 4 5}
+             (set (d/q '[:find [?y ...]
+                         :in $ % ?x
+                         :where (bar ?x ?y)]
+                       (d/db conn) rules 2)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest diamond-graph-path-test
+  (let [dir          (u/tmp-dir (str "diamond-path-test-" (UUID/randomUUID)))
+        conn         (d/get-conn dir {:node {:db/unique :db.unique/identity}
+                                      :from {:db/valueType :db.type/ref}
+                                      :to   {:db/valueType :db.type/ref}}
+                                 {:kv-opts
+                                  {:flags (conj c/default-env-flags :nosync :nolock)}})
+        temp-a       -1
+        temp-b       -2
+        temp-c       -3
+        temp-d       -4
+        temp-edge-ab -5
+        temp-edge-ac -6
+        temp-edge-bd -7
+        temp-edge-cd -8]
+    (d/transact! conn [{:db/id temp-a :node 'a}
+                       {:db/id temp-b :node 'b}
+                       {:db/id temp-c :node 'c}
+                       {:db/id temp-d :node 'd}
+                       {:db/id temp-edge-ab :from temp-a :to temp-b}
+                       {:db/id temp-edge-ac :from temp-a :to temp-c}
+                       {:db/id temp-edge-bd :from temp-b :to temp-d}
+                       {:db/id temp-edge-cd :from temp-c :to temp-d}])
+    (let [rules '[[(path ?from ?to)
+                   [?e :from ?from]
+                   [?e :to ?to]]
+                  [(path ?from ?to)
+                   [?e :from ?from]
+                   [?e :to ?mid]
+                   (path ?mid ?to)]]]
+      (is (= #{(vec ['a 'd])}
+             (set (d/q '[:find ?from-node ?to-node
+                         :in $ % ?start-node-sym ?end-node-sym
+                         :where
+                         [?start-eid :node ?start-node-sym]
+                         [?end-eid :node ?end-node-sym]
+                         (path ?start-eid ?end-eid)
+                         [?start-eid :node ?from-node]
+                         [?end-eid :node ?to-node]]
+                       (d/db conn) rules 'a 'd))))
+      (is (= #{(vec ['a 'b])
+               (vec ['a 'c])
+               (vec ['b 'd])
+               (vec ['c 'd])
+               (vec ['a 'd])}
+             (set (d/q '[:find ?from-node ?to-node
+                         :in $ %
+                         :where
+                         (path ?from-eid ?to-eid)
+                         [?from-eid :node ?from-node]
+                         [?to-eid :node ?to-node]]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest multiple-derivations-test
+  (let [dir (u/tmp-dir (str "multiple-derivations-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:foo/from {:db/valueType :db.type/long}
+                              :foo/to {:db/valueType :db.type/long}
+                              :bar/from {:db/valueType :db.type/long}
+                              :bar/to {:db/valueType :db.type/long}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (d/transact! conn [{:db/id -1 :foo/from 1 :foo/to 2}
+                       {:db/id -2 :bar/from 1 :bar/to 2}])
+    (let [rules '[[(derived ?x ?y)
+                   [?e :foo/from ?x]
+                   [?e :foo/to ?y]]
+                  [(derived ?x ?y)
+                   [?e :bar/from ?x]
+                   [?e :bar/to ?y]]]]
+      (is (= #{[1 2]}
+             (set (d/q '[:find ?x ?y
+                         :in $ %
+                         :where (derived ?x ?y)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest stratified-negation-test
+  (let [dir (u/tmp-dir (str "stratified-negation-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
+                              :edge {:db/valueType :db.type/ref}
+                              :bad {:db/unique :db.unique/identity}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (d/transact! conn [{:db/id -1 :node 1 :edge -2} ;; 1 -> 2
+                       {:db/id -2 :node 2 :edge -3} ;; 2 -> 3
+                       {:db/id -3 :node 3}
+                       {:db/id -4 :node 4 :edge -5} ;; 4 -> 5
+                       {:db/id -5 :node 5}
+                       {:db/id -6 :node 6}
+                       {:db/id -7 :bad 3}]) ;; 3 is initially bad
+
+    (let [rules '[[(bad ?x)
+                   [?e :node ?x]
+                   [?e :edge ?y]
+                   [?y :node ?y_val]
+                   (bad ?y_val)]
+                  [(bad ?x)
+                   [?e :bad ?x]]
+                  [(good ?x)
+                   [?e :node ?x]
+                   (not (bad ?x))]]]
+      (is (= #{1 2 3}
+             (set (d/q '[:find [?x ...]
+                         :in $ %
+                         :where (bad ?x)]
+                       (d/db conn) rules))))
+      (is (= #{4 5 6}
+             (set (d/q '[:find [?x ...]
+                         :in $ %
+                         :where (good ?x)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
 
 ;; TODO Need to extend the Datalog syntax to allow aggregation function in
 ;; the rule head
