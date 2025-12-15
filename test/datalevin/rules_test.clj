@@ -420,12 +420,13 @@
     (u/delete-files dir)))
 
 (deftest multiple-derivations-test
-  (let [dir (u/tmp-dir (str "multiple-derivations-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "multiple-derivations-test-" (UUID/randomUUID)))
         conn (d/get-conn dir {:foo/from {:db/valueType :db.type/long}
-                              :foo/to {:db/valueType :db.type/long}
+                              :foo/to   {:db/valueType :db.type/long}
                               :bar/from {:db/valueType :db.type/long}
-                              :bar/to {:db/valueType :db.type/long}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                              :bar/to   {:db/valueType :db.type/long}}
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :foo/from 1 :foo/to 2}
                        {:db/id -2 :bar/from 1 :bar/to 2}])
     (let [rules '[[(derived ?x ?y)
@@ -443,11 +444,12 @@
     (u/delete-files dir)))
 
 (deftest stratified-negation-test
-  (let [dir (u/tmp-dir (str "stratified-negation-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "stratified-negation-test-" (UUID/randomUUID)))
         conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
                               :edge {:db/valueType :db.type/ref}
-                              :bad {:db/unique :db.unique/identity}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                              :bad  {:db/unique :db.unique/identity}}
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :node 1 :edge -2} ;; 1 -> 2
                        {:db/id -2 :node 2 :edge -3} ;; 2 -> 3
                        {:db/id -3 :node 3}
@@ -476,6 +478,26 @@
                          :in $ %
                          :where (good ?x)]
                        (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest unsafe-negation-rejection-test
+  (let [dir (u/tmp-dir (str "unsafe-negation-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:q {:db/valueType :db.type/long}} ;; Schema for :q
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (d/transact! conn [{:db/id -1 :q 1} ;; q(1) is a fact
+                       {:db/id -2 :q 2}]) ;; q(2) is a fact
+
+    (let [rules '[[(p ?x)
+                   (not (q ?x))]
+                  [(q ?x)
+                   [?e :q ?x]]]]
+      ;; Expect an exception when trying to query p(x) due to unsafe negation
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Insufficient bindings: none of #\{\?x.*\} is bound"
+                            (d/q '[:find ?x
+                                   :in $ %
+                                   :where (p ?x)]
+                                 (d/db conn) rules))))
     (d/close conn)
     (u/delete-files dir)))
 
