@@ -44,7 +44,7 @@
         (dotimes [i n]
           (aset getters-arr i (getter-fn attrs (aget getters-arr i))))
         (fn [tuple]
-          (let [^objects arr (make-array Object n)]
+          (let [^objects arr (object-array n)]
             (dotimes [i n]
               (aset arr i ((aget getters-arr i) tuple)))
             (r/wrap-array arr)))))))
@@ -82,7 +82,7 @@
         tuples2      ^List (:tuples rel2)
         attrs1       (:attrs rel1)
         attrs2       (:attrs rel2)
-        common-attrs (vec (qu/intersect-keys attrs1 attrs2))
+        common-attrs (qu/intersect-keys attrs1 attrs2)
         keep-attrs1  (attr-keys attrs1)
         keep-attrs2  (diff-keys keep-attrs1 (attr-keys attrs2))
         keep-idxs1   (to-array (sort (vals attrs1)))
@@ -121,7 +121,7 @@
   (let [{attrs-a :attrs, tuples-a :tuples} a
         {attrs-b :attrs, tuples-b :tuples} b
 
-        attrs    (vec (qu/intersect-keys attrs-a attrs-b))
+        attrs    (qu/intersect-keys attrs-a attrs-b)
         key-fn-b (tuple-key-fn attrs-b attrs)
         hash     ^HashMap (hash-tuples key-fn-b tuples-b)
         key-fn-a (tuple-key-fn attrs-a attrs)]

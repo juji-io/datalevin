@@ -12,6 +12,7 @@
   (:refer-clojure :exclude [distinct?])
   (:require
    [clojure.set :as set]
+   [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [raise conjv]]))
 
 ;; utils
@@ -127,8 +128,7 @@
     (Placeholder.)))
 
 (defn parse-variable [form]
-  (when (and (symbol? form)
-             (= (first (name form)) \?))
+  (when (qu/free-var? form)
     (Variable. form)))
 
 (defn parse-var-required [form]
@@ -137,8 +137,7 @@
              {:error :parser/rule-var, :form form})))
 
 (defn parse-src-var [form]
-  (when (and (symbol? form)
-             (= (first (name form)) \$))
+  (when (qu/source? form)
     (SrcVar. form)))
 
 (defn parse-rules-var [form]
@@ -146,8 +145,7 @@
     (RulesVar.)))
 
 (defn parse-constant [form]
-  (when-not (and (symbol? form)
-                 (= (first (name form)) \?))
+  (when-not (qu/free-var? form)
     (Constant. form)))
 
 (defn parse-plain-symbol [form]
@@ -403,8 +401,8 @@
 (deftrecord ReturnMap [type symbols])
 
 (defn parse-return-map [type form]
-  (when (and (not (empty? form))
-          (every? symbol? form))
+  (when (and (seq form)
+             (every? symbol? form))
     (case type
       :keys (ReturnMap. type (mapv keyword form))
       :syms (ReturnMap. type (vec form))
@@ -472,7 +470,7 @@
 (defn parse-pattern [form]
   (when-let [[source* next-form] (take-source form)]
     (when-let [pattern* (parse-seq parse-pattern-el next-form)]
-      (if-not (empty? pattern*)
+      (if (seq pattern*)
         (with-source (Pattern. source* pattern*) form)
         (raise "Pattern could not be empty"
                {:error :parser/where, :form form})))))
@@ -610,47 +608,18 @@
             (raise "Cannot parse 'or-join' clause, expected [ src-var? 'or-join' [variable+] clause+ ]"
                    {:error :parser/where, :form form})))))))
 
-
-#_(defn reorder-nots [parent-vars clauses]
-  (loop [acc     []
-         clauses clauses
-         vars    (set parent-vars)
-         pending []]
-    (if-let [sufficient (not-empty (filter #(set/subset? (set (:vars %)) vars) pending))]
-      (recur (into acc sufficient)
-             clauses
-             vars
-             (remove (set sufficient) pending))
-      (if-let [clause (first clauses)]
-        (if (instance? Not clause)
-          (recur acc (next clauses) vars (conj pending clause))
-          (recur (conj acc clause)
-                 (next clauses)
-                 (into vars (collect-vars clause))
-                 pending))
-        (if (empty? pending)
-          acc
-          (let [not     (first pending)
-                missing (->> (set/difference (set (:vars not)) vars)
-                             (into #{} (map :symbol)))]
-            (throw (ex-info (str "Insufficient bindings: " missing " are not bound in clause " (source not))
-                            {:error :parser/where
-                             :form  (source not)
-                             :vars  missing}))))))))
-
-
 (defn parse-clause [form]
   (or
-      (parse-not       form)
-      (parse-not-join  form)
-      (parse-or        form)
-      (parse-or-join   form)
-      (parse-pred      form)
-      (parse-fn        form)
-      (parse-rule-expr form)
-      (parse-pattern   form)
-      (raise "Cannot parse clause, expected (data-pattern | pred-expr | fn-expr | rule-expr | not-clause | not-join-clause | or-clause | or-join-clause)"
-             {:error :parser/where, :form form} )))
+    (parse-not       form)
+    (parse-not-join  form)
+    (parse-or        form)
+    (parse-or-join   form)
+    (parse-pred      form)
+    (parse-fn        form)
+    (parse-rule-expr form)
+    (parse-pattern   form)
+    (raise "Cannot parse clause, expected (data-pattern | pred-expr | fn-expr | rule-expr | not-clause | not-join-clause | or-clause | or-join-clause)"
+           {:error :parser/where, :form form} )))
 
 (defn parse-clauses [clauses]
   (parse-seq parse-clause clauses))
@@ -731,7 +700,7 @@
           source)))))
 
 (defn default-in [qwhere]
-  (if (not (empty? (collect explicit-input qwhere)))
+  (if (seq (collect explicit-input qwhere))
     '[$]
     []))
 
@@ -743,10 +712,10 @@
         unknown    (set/difference (set/union find-vars with-vars)
                                    (set/union where-vars in-vars))
         shared     (set/intersection find-vars with-vars)]
-    (when-not (empty? unknown)
+    (when (seq unknown)
       (raise "Query for unknown vars: " (mapv :symbol unknown)
              {:error :parser/query, :vars unknown, :form form}))
-    (when-not (empty? shared)
+    (when (seq shared)
       (raise ":find and :with should not use same variables: " (mapv :symbol shared)
              {:error :parser/query, :vars shared, :form form})))
 
@@ -800,13 +769,13 @@
   (let [in-sources    (collect #(instance? SrcVar %) (:qin q) #{})
         where-sources (collect #(instance? SrcVar %) (:qwhere q) #{})
         unknown       (set/difference where-sources in-sources)]
-    (when-not (empty? unknown)
+    (when (seq unknown)
       (raise "Where uses unknown source vars: " (mapv :symbol unknown)
              {:error :parser/query, :vars unknown, :form form})))
 
   (let [rule-exprs (collect #(instance? RuleExpr %) (:qwhere q))
         rules-vars (collect #(instance? RulesVar %) (:qin q))]
-    (when (and (not (empty? rule-exprs))
+    (when (and (seq rule-exprs)
                (empty? rules-vars))
       (raise "Missing rules var '%' in :in"
              {:error :parser/query, :form form}))))
@@ -866,9 +835,8 @@
 
 (defn- qwhere-qualified-fns [qwhere]
   (into #{}
-        (comp
-         (map #(-> % :fn :symbol))
-         (filter qualified-symbol?))
+        (comp (map #(-> % :fn :symbol))
+           (filter qualified-symbol?))
         qwhere))
 
 (defn parse-query [q]

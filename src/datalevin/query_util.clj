@@ -10,7 +10,6 @@
 (ns ^:no-doc datalevin.query-util
   "Some utility functions for Datalog query processing"
   (:require
-   [clojure.string :as str]
    [datalevin.util :as u :refer [cond+ raise]]))
 
 (def ^{:dynamic true
