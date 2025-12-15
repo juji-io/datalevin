@@ -524,10 +524,12 @@
               (show "cast-info")
               )]
       (d/close-db db)
-      (println "Done loading data to db"))))
+      (println "Done loading data to db")
+      (shutdown-agents)
+      (System/exit 0))))
 
 ;; assume data is already loaded into db
-(def conn (d/get-conn "../../../db"))
+(def conn (d/get-conn "db"))
 
 ;; queries that beat postgres are labeled 'good plan'
 
@@ -3278,20 +3280,20 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [0.6 0.7]
-          ;; v [4.5 5.0]
-          f [0.8 0.9]]
+  (doseq [p [1.0 1.5]
+          v [7.0 8.0]
+          f [2.5 3.0]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
-          (binding [c/magic-size-pred p
-                    ;; c/magic-cost-var  v
-                    c/magic-size-fidx f
-                    q/*cache?*        false]
+          (binding [c/magic-cost-init-scan-e   p
+                    c/magic-cost-merge-scan-v  v
+                    c/magic-cost-val-eq-scan-e f
+                    q/*cache?*                 false]
             (let [start (System/currentTimeMillis)]
               (d/q query (d/db conn))
               (println q "took" (- (System/currentTimeMillis) start))))))
-      (println "p" p "f" f "->"
+      (println "p" p "v" v "f"  f "->"
                (format
                  "%.2f"
                  (double (/ (- (System/currentTimeMillis) start) 1000))))))

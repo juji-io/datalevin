@@ -641,13 +641,14 @@
 
   (e-size [_ e] (list-count lmdb c/eav e :id))
 
-  (a-size [_ a]
+  (a-size [this a]
     (if (:db/aid (schema a))
-      (key-range-list-count
-        lmdb c/ave
-        [:closed
-         (datom->indexable schema (d/datom c/e0 a nil) false)
-         (datom->indexable schema (d/datom c/emax a nil) true)] :avg)
+      (when-not (.closed? this)
+        (key-range-list-count
+          lmdb c/ave
+          [:closed
+           (datom->indexable schema (d/datom c/e0 a nil) false)
+           (datom->indexable schema (d/datom c/emax a nil) true)] :avg))
       0))
 
   (e-sample [this a]
@@ -658,7 +659,7 @@
                                        [aid c/init-exec-size-threshold]]
                                       :int-int :id))]
             (r/vertical-tuples (sequence (map peek) res)))
-          (e-sample* this a aid (.a-size this a)))))
+          (e-sample* this a aid))))
 
   (start-sampling [this]
     (when (:background-sampling? opts)
@@ -1114,10 +1115,13 @@
       :g (add-vec index [:g (nth d 0)] (peek d))
       :r (remove-vec index [:g d]))))
 
-(defn- e-sample*
-  [^Store store a aid as]
-  (let [lmdb (.-lmdb store)
-        ts   (FastList.)]
+(defn e-sample*
+  [^Store store a aid]
+  (let [lmdb   (.-lmdb store)
+        counts ^ConcurrentHashMap (.-counts store)
+        as     (a-size store a)
+        ts     (FastList.)]
+    (.put counts aid as)
     (binding [c/sample-time-budget    Long/MAX_VALUE
               c/sample-iteration-step Long/MAX_VALUE]
       (.sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
@@ -1132,21 +1136,19 @@
 (defn- analyze*
   [^Store store attr]
   (when-let [aid (:db/aid ((schema store) attr))]
-    (e-sample* store attr aid (.a-size store attr))))
+    (e-sample* store attr aid)))
 
 (defn sampling
   "sample a random changed attribute at a time"
   [^Store store]
-  (let [counts ^ConcurrentHashMap (.-counts store)
-        aid    (aget (.toArray (.keySet counts)) (rand-int (.size counts)))
-        attr   ((attrs store) aid)]
-    (when attr
-      (let [acount ^long (.get counts aid)]
-        (when (and (not (closed? store))
-                   (< (* ^long (a-size store attr) ^double c/sample-change-ratio)
-                      acount))
-          (analyze* store attr)
-          (.put counts aid 0))))))
+  (let [n          (count (attrs store))
+        [aid attr] (nth (seq (attrs store)) (rand-int n))
+        counts     ^ConcurrentHashMap (.-counts store)
+        acount     ^long (.getOrDefault counts aid 0)]
+    (when-let [^long new-acount (a-size store attr)]
+      (when (< (* acount ^double c/sample-change-ratio)
+               (Math/abs (- new-acount acount)))
+        (e-sample* store attr aid)))))
 
 (deftype SamplingWork [^Store store exe]
   IAsyncWork
@@ -1230,7 +1232,6 @@
    ^HashMap giants]
   (let [schema (schema store)
         opts   (opts store)
-        counts ^ConcurrentHashMap (.-counts store)
         attr   (.-a d)
         _      (or (not (opts :closed-schema?))
                    (schema attr)
@@ -1244,9 +1245,7 @@
         aid    (props :db/aid)
         max-gt (max-gt store)
         i      (b/indexable e aid v vt max-gt)
-        giant? (b/giant? i)
-        old-c  ^long (.getOrDefault counts aid 0)]
-    (.put counts aid (unchecked-inc old-c))
+        giant? (b/giant? i)]
     (.add txs (lmdb/kv-tx :put c/ave i e :avg :id))
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
     (when giant?
@@ -1267,7 +1266,6 @@
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
    ^HashMap giants]
   (let [schema (schema store)
-        counts ^ConcurrentHashMap (.-counts store)
         e      (.-e d)
         attr   (.-a d)
         v      (.-v d)
@@ -1288,9 +1286,7 @@
                                 (Indexable. e aid v (.-f i) (.-b i) c/gmax)]
                                :avg)
                              0)]
-                       (.-g r))))
-        old-c  ^long (.getOrDefault counts aid 0)]
-    (.put counts aid (unchecked-inc old-c))
+                       (.-g r))))]
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))

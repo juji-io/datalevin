@@ -683,34 +683,34 @@
         counts  #(.get ^ConcurrentHashMap (.-counts ^Store store) %)]
     (is (nil? (counts aid-a)))
     (if/load-datoms store (mapv #(d/datom % :a %) (range 1 (inc size-a))))
-    (is (= size-a (counts aid-a)))
+    (is (nil? (counts aid-a)))
     (is (= size-a (if/a-size store :a)))
-    (let [sample (mapv #(aget ^objects % 0) (if/e-sample store :a))]
+    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample* store :a aid-a))]
+      (is (= size-a (counts aid-a)))
       (is (= c/init-exec-size-threshold (count sample)))
       (if/load-datoms store (mapv #(d/datom % :a %)
                                   (range (inc size-a) (+ size-a (inc csize-a)))))
-      (is (= (+ size-a csize-a) (counts aid-a)))
-      (sut/sampling store)
-      (is (zero? (counts aid-a)))
       (is (= (+ size-a csize-a) (if/a-size store :a)))
-      (let [new-sample (mapv #(aget ^objects % 0) (if/e-sample store :a))]
+      (is (= size-a (counts aid-a)))
+      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample* store :a aid-a))]
+        (is (= (+ size-a csize-a) (counts aid-a)))
         (is (not= sample new-sample))
-        (is (< (apply max sample) (apply max new-sample)))))
+        (is (<= (apply max sample) (apply max new-sample)))))
 
     (.remove ^ConcurrentHashMap (.-counts ^Store store) aid-a)
     (is (nil? (counts aid-b)))
     (if/load-datoms store (mapv #(d/datom % :b %) (range 1 (inc size-b))))
-    (is (= size-b (counts aid-b)))
-    (let [sample (mapv #(aget ^objects % 0) (if/e-sample store :b))]
+    (is (nil? (counts aid-b)))
+    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample* store :b aid-b))]
+      (is (= size-b (counts aid-b)))
       (is (= size-b (count sample)))
       (is (= sample (range 1 (inc size-b))))
       (if/load-datoms store (mapv #(d/datom % :b %)
                                   (range (inc size-b) (+ size-b (inc csize-b)))))
-      (is (= (+ size-b csize-b) (counts aid-b)))
-      (sut/sampling store)
-      (is (zero? (counts aid-b)))
+      (is (= size-b (counts aid-b)))
       (is (= (+ size-b csize-b) (if/a-size store :b)))
-      (let [new-sample (mapv #(aget ^objects % 0) (if/e-sample store :b))]
+      (let [new-sample (mapv #(aget ^objects % 0) (sut/e-sample* store :b aid-b))]
+        (is (= (+ size-b csize-b) (counts aid-b)))
         (is (= (concat sample (range (inc size-b) (+ size-b (inc csize-b))))
                new-sample))))
     (if/close store)

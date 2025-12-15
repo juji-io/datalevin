@@ -155,7 +155,6 @@
       (doseq [[version vm] versions]
         (print (str version "-" vm) "\t")
         (flush)
-        (run-benchmarks version vm benchmarks)))))
-
-(shutdown-agents)
-;; (System/exit 0)
+        (run-benchmarks version vm benchmarks))
+      (shutdown-agents)
+      (System/exit 0))))

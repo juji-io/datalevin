@@ -23,7 +23,7 @@
    [datalevin.relation Relation]
    [datalevin.db DB]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util List HashSet Comparator]))
+   [java.util List HashSet]))
 
 (defn parse-rules
   [rules]

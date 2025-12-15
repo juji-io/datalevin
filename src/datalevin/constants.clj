@@ -436,7 +436,7 @@
 
 (def ^{:dynamic true
        :doc     "Size reduction a predicate induces during scan"}
-  magic-size-pred 0.6)
+  magic-size-pred 0.7)
 
 (def ^{:dynamic true
        :doc     "Size reduction a filter induces during scan"}
