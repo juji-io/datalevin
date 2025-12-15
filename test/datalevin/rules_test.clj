@@ -502,12 +502,11 @@
     (u/delete-files dir)))
 
 (deftest stratified-negation-safe-test
-  (let [dir (u/tmp-dir (str "stratified-negation-safe-test-" (UUID/randomUUID)))
-        conn (d/get-conn dir {:id {:db/unique :db.unique/identity}
-                              :value {:db/valueType :db.type/long}
+  (let [dir  (u/tmp-dir (str "stratified-negation-safe-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:id        {:db/unique :db.unique/identity}
+                              :value     {:db/valueType :db.type/long}
                               :seen-flag {:db/valueType :db.type/boolean}}
                          {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
-    ;; Data: some values for domain, some marked as seen
     (d/transact! conn [{:db/id -1 :id 1 :value 10}
                        {:db/id -2 :id 2 :value 20 :seen-flag true}
                        {:db/id -3 :id 3 :value 30}
@@ -515,14 +514,13 @@
                        {:db/id -5 :id 5 :value 50}])
 
     (let [rules '[[(domain ?x)
-                   [?e :id ?x]] ;; domain(x) are all ids
+                   [?e :id ?x]]
                   [(seen ?x)
                    [?e :id ?x]
-                   [?e :seen-flag true]] ;; seen(x) are ids with seen-flag true
+                   [?e :seen-flag true]]
                   [(missing ?x)
                    (domain ?x)
                    (not (seen ?x))]]]
-      ;; Expected missing: 1, 3, 5
       (is (= #{1 3 5}
              (set (d/q '[:find [?x ...]
                          :in $ %
@@ -532,32 +530,142 @@
     (u/delete-files dir)))
 
 (deftest double-negation-test
-  (let [dir (u/tmp-dir (str "double-negation-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "double-negation-test-" (UUID/randomUUID)))
         conn (d/get-conn dir {:entity-id {:db/unique :db.unique/identity}
-                              :has-q {:db/valueType :db.type/boolean}}
+                              :has-q     {:db/valueType :db.type/boolean}}
                          {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
-    ;; Data: some entities, some with has-q true
     (d/transact! conn [{:db/id -1 :entity-id 1 :has-q true}
                        {:db/id -2 :entity-id 2 :has-q false}
                        {:db/id -3 :entity-id 3 :has-q true}
                        {:db/id -4 :entity-id 4 :has-q false}])
 
-    (let [rules '[[(base-q ?x)
-                   [?e :entity-id ?x]
-                   [?e :has-q true]] ;; base-q(x) means entity x has q
-                  [(p ?x)
-                   [?e :entity-id ?x]
-                   (not (not (base-q ?x)))]]
-          ;; A direct query for base-q to compare
+    (let [rules      '[[(base-q ?x)
+                        [?e :entity-id ?x]
+                        [?e :has-q true]]
+                       [(p ?x)
+                        [?e :entity-id ?x]
+                        (not (not (base-q ?x)))]]
           expected-q (set (d/q '[:find [?x ...]
                                  :in $ %
                                  :where (base-q ?x)]
-                                (d/db conn) rules))]
-      ;; The result of p(x) should be the same as base-q(x)
+                               (d/db conn) rules))]
       (is (= expected-q
              (set (d/q '[:find [?x ...]
                          :in $ %
                          :where (p ?x)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest join-not-equal-test
+  (let [dir  (u/tmp-dir (str "join-not-equal-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:node-val {:db/unique :db.unique/identity}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (d/transact! conn [{:db/id -1 :node-val 1}
+                       {:db/id -2 :node-val 2}
+                       {:db/id -3 :node-val 3}])
+
+    (let [rules '[[(node ?x)
+                   [?e :node-val ?x]]
+                  [(pair ?x ?y)
+                   (node ?x)
+                   (node ?y)
+                   [(not= ?x ?y)]]]]
+      ;; Expected pairs: all combinations where x != y
+      (is (= #{[1 2] [1 3] [2 1] [2 3] [3 1] [3 2]}
+             (set (d/q '[:find ?x ?y
+                         :in $ %
+                         :where (pair ?x ?y)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest aggregation-with-recursion-test
+  (let [dir  (u/tmp-dir (str "aggregation-recursion-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
+                              :edge {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    ;; Graph: 1->2->3->4, and 1->5
+    (d/transact! conn [{:db/id -1 :node 1 :edge -2}
+                       {:db/id -2 :node 2 :edge -3}
+                       {:db/id -3 :node 3 :edge -4}
+                       {:db/id -4 :node 4}
+                       {:db/id -5 :node 5}])
+    ;; Add edge 1->5 separately
+    (d/transact! conn [{:db/id [:node 1] :edge [:node 5]}])
+
+    (let [rules '[[(path ?x ?y)
+                   [?e :node ?x]
+                   [?e :edge ?z]
+                   [?z :node ?y]]
+                  [(path ?x ?y)
+                   [?e :node ?x]
+                   [?e :edge ?z]
+                   [?z :node ?z_val]
+                   (path ?z_val ?y)]]]
+      ;; Reachable from 1: 2, 3, 4, 5. Total 4.
+      (is (= [[4]]
+             (d/q '[:find (count ?y)
+                    :in $ % ?start
+                    :where (path ?start ?y)]
+                  (d/db conn) rules 1))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest star-join-test
+  (let [dir (u/tmp-dir (str "star-join-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:hub {:db/unique :db.unique/identity}
+                              :spoke {:db/valueType :db.type/ref
+                                      :db/cardinality :db.cardinality/many}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    ;; Data: Hub 'h' connected to spokes 's1', 's2', 's3'
+    (d/transact! conn [{:db/id -1 :hub 'h :spoke -2}
+                       {:db/id -2 :hub 's1}
+                       {:db/id -3 :hub 'h :spoke -4}
+                       {:db/id -4 :hub 's2}
+                       {:db/id -5 :hub 'h :spoke -6}
+                       {:db/id -6 :hub 's3}])
+
+    (let [rules '[[(connected ?hub ?spoke)
+                   [?e :hub ?hub]
+                   [?e :spoke ?s]
+                   [?s :hub ?spoke]]]]
+      (is (= #{['h 's1] ['h 's2] ['h 's3]}
+             (set (d/q '[:find ?h ?s
+                         :in $ %
+                         :where (connected ?h ?s)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest chain-join-test
+  (let [dir (u/tmp-dir (str "chain-join-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:val {:db/unique :db.unique/identity}
+                              :next {:db/valueType :db.type/ref}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    ;; Data: a -> b -> c -> d
+    (d/transact! conn [{:db/id -1 :val 'a :next -2}
+                       {:db/id -2 :val 'b :next -3}
+                       {:db/id -3 :val 'c :next -4}
+                       {:db/id -4 :val 'd}])
+
+    (let [rules '[[(r1 ?x ?y)
+                   [?e :val ?x]
+                   [?e :next ?n]
+                   [?n :val ?y]]
+                  [(r2 ?x ?y)
+                   (r1 ?x ?y)]
+                  [(r3 ?x ?y)
+                   (r1 ?x ?y)]
+                  [(chain ?a ?d)
+                   (r1 ?a ?b)
+                   (r2 ?b ?c)
+                   (r3 ?c ?d)]]]
+      (is (= #{['a 'd]}
+             (set (d/q '[:find ?start ?end
+                         :in $ %
+                         :where (chain ?start ?end)]
                        (d/db conn) rules)))))
     (d/close conn)
     (u/delete-files dir)))
