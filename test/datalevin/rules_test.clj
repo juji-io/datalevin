@@ -501,6 +501,67 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest stratified-negation-safe-test
+  (let [dir (u/tmp-dir (str "stratified-negation-safe-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:id {:db/unique :db.unique/identity}
+                              :value {:db/valueType :db.type/long}
+                              :seen-flag {:db/valueType :db.type/boolean}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    ;; Data: some values for domain, some marked as seen
+    (d/transact! conn [{:db/id -1 :id 1 :value 10}
+                       {:db/id -2 :id 2 :value 20 :seen-flag true}
+                       {:db/id -3 :id 3 :value 30}
+                       {:db/id -4 :id 4 :value 40 :seen-flag true}
+                       {:db/id -5 :id 5 :value 50}])
+
+    (let [rules '[[(domain ?x)
+                   [?e :id ?x]] ;; domain(x) are all ids
+                  [(seen ?x)
+                   [?e :id ?x]
+                   [?e :seen-flag true]] ;; seen(x) are ids with seen-flag true
+                  [(missing ?x)
+                   (domain ?x)
+                   (not (seen ?x))]]]
+      ;; Expected missing: 1, 3, 5
+      (is (= #{1 3 5}
+             (set (d/q '[:find [?x ...]
+                         :in $ %
+                         :where (missing ?x)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest double-negation-test
+  (let [dir (u/tmp-dir (str "double-negation-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:entity-id {:db/unique :db.unique/identity}
+                              :has-q {:db/valueType :db.type/boolean}}
+                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    ;; Data: some entities, some with has-q true
+    (d/transact! conn [{:db/id -1 :entity-id 1 :has-q true}
+                       {:db/id -2 :entity-id 2 :has-q false}
+                       {:db/id -3 :entity-id 3 :has-q true}
+                       {:db/id -4 :entity-id 4 :has-q false}])
+
+    (let [rules '[[(base-q ?x)
+                   [?e :entity-id ?x]
+                   [?e :has-q true]] ;; base-q(x) means entity x has q
+                  [(p ?x)
+                   [?e :entity-id ?x]
+                   (not (not (base-q ?x)))]]
+          ;; A direct query for base-q to compare
+          expected-q (set (d/q '[:find [?x ...]
+                                 :in $ %
+                                 :where (base-q ?x)]
+                                (d/db conn) rules))]
+      ;; The result of p(x) should be the same as base-q(x)
+      (is (= expected-q
+             (set (d/q '[:find [?x ...]
+                         :in $ %
+                         :where (p ?x)]
+                       (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
 ;; TODO Need to extend the Datalog syntax to allow aggregation function in
 ;; the rule head
 #_(deftest single-linear-regression-test
