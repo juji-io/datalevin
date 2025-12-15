@@ -69,8 +69,8 @@
   [graph]
   (let [vs      (keys graph)
         v->node (zipmap vs (map #(Node. % nil nil false) vs))]
-    (reduce (fn [m [v node]] (assoc m node (map v->node (graph v))))
-            {} v->node)))
+    (reduce-kv (fn [m v node] (assoc m node (map v->node (graph v))))
+               {} v->node)))
 
 (defn tarjans-scc
   "returns SCCs in reverse topological order"
@@ -106,7 +106,6 @@
               (vswap! sccs conj @scc))))]
     (doseq [node (keys nodes)]
       (when (nil? (index node)) (connect node)))
-    ;; (println "sccs" @sccs)
     @sccs))
 
 (defn dependency-graph

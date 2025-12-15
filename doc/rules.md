@@ -1,4 +1,4 @@
-# Datalevin Rules Engine (WIP)
+# Datalevin Rules Engine
 
 Datalevin has an innovative rule engine that has more expressive powerful than
 normal Datalog, and implements an efficient rules evaluation strategy that
@@ -25,10 +25,10 @@ deficiency, we developed a new rules evaluation engine using the latest research
 advances in bottom-up Datalog evaluation strategy, with some innovation of our
 own.
 
+## Rule Evaluation Algorithm
 
-## Rule Evaluation
-
-The new rule engine uses a bottom-up Datalog evaluation strategy.
+The new rule engine uses a bottom-up Datalog evaluation strategy. It handles
+recursive rules more efficiently.
 
 ### Semi-naive evaluation (SNE)
 
@@ -75,7 +75,7 @@ stratum. It also enables optimizations such as temporal elimination, where only
 the results of the last iteration of recursion is needed, so that the recursive
 process can be optimized to avoid storing intermediate results.
 
-## Datalog Extensions
+## Datalog Extensions (WIP)
 
 We extended the rule syntax to support more powerful applications,
 e.g. to implement algorithm for machine learning, statistics, graph analytics,

@@ -506,7 +506,8 @@
         conn (d/get-conn dir {:id        {:db/unique :db.unique/identity}
                               :value     {:db/valueType :db.type/long}
                               :seen-flag {:db/valueType :db.type/boolean}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :id 1 :value 10}
                        {:db/id -2 :id 2 :value 20 :seen-flag true}
                        {:db/id -3 :id 3 :value 30}
@@ -533,7 +534,8 @@
   (let [dir  (u/tmp-dir (str "double-negation-test-" (UUID/randomUUID)))
         conn (d/get-conn dir {:entity-id {:db/unique :db.unique/identity}
                               :has-q     {:db/valueType :db.type/boolean}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :entity-id 1 :has-q true}
                        {:db/id -2 :entity-id 2 :has-q false}
                        {:db/id -3 :entity-id 3 :has-q true}
@@ -560,7 +562,8 @@
 (deftest join-not-equal-test
   (let [dir  (u/tmp-dir (str "join-not-equal-test-" (UUID/randomUUID)))
         conn (d/get-conn dir {:node-val {:db/unique :db.unique/identity}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :node-val 1}
                        {:db/id -2 :node-val 2}
                        {:db/id -3 :node-val 3}])
@@ -585,7 +588,8 @@
         conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
                               :edge {:db/valueType   :db.type/ref
                                      :db/cardinality :db.cardinality/many}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     ;; Graph: 1->2->3->4, and 1->5
     (d/transact! conn [{:db/id -1 :node 1 :edge -2}
                        {:db/id -2 :node 2 :edge -3}
@@ -614,12 +618,12 @@
     (u/delete-files dir)))
 
 (deftest star-join-test
-  (let [dir (u/tmp-dir (str "star-join-test-" (UUID/randomUUID)))
-        conn (d/get-conn dir {:hub {:db/unique :db.unique/identity}
-                              :spoke {:db/valueType :db.type/ref
+  (let [dir  (u/tmp-dir (str "star-join-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:hub   {:db/unique :db.unique/identity}
+                              :spoke {:db/valueType   :db.type/ref
                                       :db/cardinality :db.cardinality/many}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
-    ;; Data: Hub 'h' connected to spokes 's1', 's2', 's3'
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id -1 :hub 'h :spoke -2}
                        {:db/id -2 :hub 's1}
                        {:db/id -3 :hub 'h :spoke -4}
@@ -640,10 +644,11 @@
     (u/delete-files dir)))
 
 (deftest chain-join-test
-  (let [dir (u/tmp-dir (str "chain-join-test-" (UUID/randomUUID)))
-        conn (d/get-conn dir {:val {:db/unique :db.unique/identity}
+  (let [dir  (u/tmp-dir (str "chain-join-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:val  {:db/unique :db.unique/identity}
                               :next {:db/valueType :db.type/ref}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     ;; Data: a -> b -> c -> d
     (d/transact! conn [{:db/id -1 :val 'a :next -2}
                        {:db/id -2 :val 'b :next -3}
@@ -667,6 +672,190 @@
                          :in $ %
                          :where (chain ?start ?end)]
                        (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest complex-graph-rules-test
+  (let [dir    (u/tmp-dir (str "complex-graph-rules-test-" (UUID/randomUUID)))
+        schema {:node/id            {:db/unique :db.unique/identity}
+                :node/edge          {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}
+                :node/blocked-to    {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}
+                :node/admin?        {:db/valueType :db.type/boolean}
+                :node/suspicious?   {:db/valueType :db.type/boolean}
+                :node/service-ports {:db/valueType   :db.type/long
+                                     :db/cardinality :db.cardinality/many}
+                :user/id            {:db/unique :db.unique/identity}
+                :user/owns          {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}
+                :user/reported?     {:db/valueType :db.type/boolean}}
+        conn   (d/get-conn dir schema
+                           {:kv-opts {:flags (conj c/default-env-flags
+                                                   :nosync :nolock)}})]
+
+    (d/transact! conn [;; Nodes
+                       {:db/id           -1
+                        :node/id         "a"
+                        :node/edge       [-2 -3]
+                        :node/blocked-to [-5]
+                        :node/admin?     true}
+                       {:db/id              -2
+                        :node/id            "b"
+                        :node/edge          [-4]
+                        :node/service-ports [80 443]}
+                       {:db/id     -3
+                        :node/id   "c"
+                        :node/edge [-4]}
+                       {:db/id              -4
+                        :node/id            "d"
+                        :node/edge          [-5]
+                        :node/service-ports [80]}
+                       {:db/id              -5
+                        :node/id            "e"
+                        :node/edge          [-2 -6]
+                        :node/blocked-to    [-6]
+                        :node/service-ports [22]}
+                       {:db/id              -6
+                        :node/id            "f"
+                        :node/edge          [-6]
+                        :node/suspicious?   true
+                        :node/service-ports [22]}
+                       {:db/id -7 :node/id "g"}
+
+                       ;; Users
+                       {:db/id     -10
+                        :user/id   "u1"
+                        :user/owns [-1]}
+                       {:db/id          -11
+                        :user/id        "u2"
+                        :user/owns      [-6]
+                        :user/reported? true}
+                       {:db/id   -12
+                        :user/id "u3"}])
+
+    (let [rules '[;; Base
+                  [(edge ?x ?y)
+                   [?e :node/id ?x]
+                   [?e :node/edge ?t]
+                   [?t :node/id ?y]]
+                  [(blocked ?x ?y)
+                   [?e :node/id ?x]
+                   [?e :node/blocked-to ?t]
+                   [?t :node/id ?y]]
+                  [(admin ?x)
+                   [?e :node/id ?x]
+                   [?e :node/admin? true]]
+                  [(suspicious ?x)
+                   [?e :node/id ?x]
+                   [?e :node/suspicious? true]]
+                  [(service ?x ?port)
+                   [?e :node/id ?x]
+                   [?e :node/service-ports ?port]]
+                  [(user ?u)
+                   [?e :user/id ?u]]
+                  [(owns ?u ?n)
+                   [?e :user/id ?u]
+                   [?e :user/owns ?t]
+                   [?t :node/id ?n]]
+                  [(reported ?u)
+                   [?e :user/id ?u]
+                   [?e :user/reported? true]]
+
+                  ;; 1) & 2) Reachability with recursion and duplicate rule
+                  [(reach ?x ?y) (edge ?x ?y)]
+                  [(reach ?x ?y) (edge ?x ?z) (reach ?z ?y)]
+                  [(reach ?x ?y) (edge ?x ?z) (edge ?z ?y)] ;; Dedupe check
+
+                  ;; 3) Same SCC
+                  [(same_scc ?x ?y) (reach ?x ?y) (reach ?y ?x)]
+
+                  ;; 4) Policy-filtered reachability (Stratified Negation)
+                  [(allowed_edge ?x ?y) (edge ?x ?y) (not (blocked ?x ?y))]
+                  [(allowed_reach ?x ?y) (allowed_edge ?x ?y)]
+                  [(allowed_reach ?x ?y) (allowed_edge ?x ?z) (allowed_reach ?z ?y)]
+
+                  ;; 5) At Risk
+                  [(at_risk ?x) (allowed_reach ?x ?y) (suspicious ?y)]
+                  [(at_risk ?x) (same_scc ?x ?y) (suspicious ?y)]
+
+                  ;; 6) Alerting
+                  [(needs_alert ?u) (user ?u) (owns ?u ?n) (at_risk ?n)
+                   (not (reported ?u))]
+
+                  ;; 7) Mutual Web Pair (Join + Inequality)
+                  [(mutual_web_pair ?x ?y)
+                   (service ?x 80) (service ?y 80)
+                   (same_scc ?x ?y)
+                   [(!= ?x ?y)]]
+
+                  ;; 8) Privilege Exception
+                  [(admin_user ?u) (owns ?u ?n) (admin ?n)]
+                  [(final_alert ?u) (needs_alert ?u) (not (admin_user ?u))]]]
+
+      ;; Reachability - Check diamond a->d
+      (is (contains? (set (d/q '[:find [?y ...]
+                                 :in $ %
+                                 :where (reach "a" ?y)]
+                               (d/db conn) rules))
+                     "d"))
+
+      ;; Reachability - Check cycle b->e
+      (is (contains? (set (d/q '[:find [?y ...]
+                                 :in $ %
+                                 :where (reach "b" ?y)]
+                               (d/db conn) rules))
+                     "e"))
+
+      ;; SCC - {b, d, e}
+      (is (= #{["b" "d"] ["b" "e"] ["b" "b"]}
+             (set (d/q '[:find ?x ?y
+                         :in $ %
+                         :where
+                         (same_scc ?x ?y)
+                         [(= ?x "b")]
+                         (or [(= ?y "b")] [(= ?y "d")] [(= ?y "e")])]
+                       (d/db conn) rules))))
+
+      ;; Allowed Reach - a->f should be blocked via e->f
+      (is (empty? (d/q '[:find [?y ...]
+                         :in $ %
+                         :where
+                         (allowed_reach "a" ?y)
+                         [(= ?y "f")]]
+                       (d/db conn) rules)))
+
+      ;; Allowed Reach - a->e should be allowed (a->b->d->e),
+      ;; even though blocked(a,e) exists (no edge a->e)
+      (is (contains? (set (d/q '[:find [?y ...]
+                                 :in $ %
+                                 :where (allowed_reach "a" ?y)]
+                               (d/db conn) rules))
+                     "e"))
+
+      ;; Mutual Web Pair
+      (is (= #{["b" "d"] ["d" "b"]}
+             (set (d/q '[:find ?x ?y
+                         :in $ %
+                         :where (mutual_web_pair ?x ?y)]
+                       (d/db conn) rules))))
+
+      ;; At Risk / Alerting
+      ;; f is suspicious.
+      ;; same_scc(f, f) is true (f->f). So at_risk(f) is true.
+      ;; owns(u2, f). reported(u2) is true. needs_alert(u2) should be false.
+      (is (empty? (d/q '[:find [?u ...]
+                         :in $ %
+                         :where (needs_alert ?u)]
+                       (d/db conn) rules)))
+
+      ;; Check at_risk population
+      (is (= #{"f"}
+             (set (d/q '[:find [?x ...]
+                         :in $ %
+                         :where (at_risk ?x)]
+                       (d/db conn) rules)))))
+
     (d/close conn)
     (u/delete-files dir)))
 

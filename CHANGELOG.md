@@ -14,8 +14,9 @@
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
   DB). VAE was only used in entity retraction and the current replacement is
   less than 10% slower.
-  [Datalog] New rule engine implementing a bottom-up SNE approach.
-  [#170](https://github.com/juji-io/datalevin/issues/170)
+  [Datalog] New rule engine. Implemented a bottom-up SNE approach that solves
+  OOM problem with old engine
+  [#170](https://github.com/juji-io/datalevin/issues/170).
 - [Platform] Native dependencies are mostly statically compiled and bundled in the
   release jars (with exception of libc, as glibc is much faster than musl).
 - [Platform] Drop support for Intel macOS.
