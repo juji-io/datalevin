@@ -17,7 +17,7 @@
    [datalevin.db :as db]
    [datalevin.query-util :as qu]
    [datalevin.join :as j]
-   [datalevin.util :as u :refer [raise concatv]]
+   [datalevin.util :as u :refer [raise concatv cond+]]
    [datalevin.relation :as r])
   (:import
    [datalevin.relation Relation]
@@ -37,7 +37,7 @@
     (second clause)
     (first clause)))
 
-(defn- rule-body
+(defn- rule-args
   [clause]
   (if (qu/source? (first clause))
     (nnext clause)
@@ -133,7 +133,7 @@
     (with-meta graph {:sccs               (delay (tarjans-scc graph))
                       :temporal-idx-cache (volatile! {})})))
 
-(defn- dependency-sccs
+(defn dependency-sccs
   [deps]
   (if-let [sccs (:sccs (meta deps))]
     (if (delay? sccs) @sccs sccs)
@@ -274,7 +274,7 @@
         (if (qu/free-var? x)
           (if-let [n (@mapping x)]
             n
-            (let [n (gensym (str (name x) "__"))]
+            (let [n (gensym (name x))]
               (vswap! mapping assoc x n)
               n))
           x))
@@ -297,12 +297,12 @@
     (and (sequential? clause)
          (not (vector? clause))
          (not (rule-call? context clause)))
-    (set (filter qu/free-var? (flatten clause)))
+    (into #{} (filter qu/free-var?) (flatten clause))
 
     ;; function binding clause: [ (f ?in ...) ?out ...]
     (and (vector? clause)
          (sequential? (first clause)))
-    (set (filter qu/free-var? (rest (first clause))))
+    (into #{} (filter qu/free-var?) (rest (first clause)))
 
     :else #{}))
 
@@ -313,17 +313,17 @@
     (and (sequential? clause)
          (not (vector? clause)))
     (if (rule-call? context clause)
-      (set (filter qu/free-var? (rest clause)))
-      (set (filter qu/free-var? clause)))
+      (into #{} (filter qu/free-var?) (rest clause))
+      (into #{} (filter qu/free-var?) clause))
 
     (vector? clause)
-    (set (filter qu/free-var? (flatten clause)))
+    (into #{} (filter qu/free-var?) (flatten clause))
 
     :else #{}))
 
 (defn- clause-free-vars
   [clause]
-  (set (filterv qu/free-var? (flatten clause))))
+  (into #{} (filter qu/free-var?) (flatten clause)))
 
 (defn- context-bound-vars
   [context]
@@ -498,7 +498,7 @@
                             (and
                               (not-any? #(vector-binds-var? hv %) clauses)
                               (every? (fn [clause]
-                                        (let [args (rule-body clause)]
+                                        (let [args (rule-args clause)]
                                           (= hv (nth args idx))))
                                       ;; recursive calls
                                       (filterv
@@ -621,14 +621,15 @@
 
 (defn- check-positive-cycles
   [graph nodes]
-  (let [zero-graph (reduce-kv
-                     (fn [m k edges]
-                       (let [zeros (filterv #(zero? ^long (:weight %)) edges)]
-                         (if (seq zeros)
-                           (assoc m k (mapv :target zeros))
-                           m)))
-                     {} graph)
-        zero-graph (merge (zipmap nodes (repeat [])) zero-graph)]
+  (let [zero-graph
+        (merge (zipmap nodes (repeat []))
+               (reduce-kv
+                 (fn [m k edges]
+                   (let [zeros (filterv #(zero? ^long (:weight %)) edges)]
+                     (if (seq zeros)
+                       (assoc m k (mapv :target zeros))
+                       m)))
+                 {} graph))]
     (every? (fn [comp]
               (let [size (count comp)]
                 (cond
@@ -663,10 +664,14 @@
          (when cache (vswap! cache assoc scc res))
          res)))))
 
-(defn- rel-not-empty [^Relation rel] (< 0 (.size ^List (:tuples rel))))
+(defn recursive-stratum?
+  [stratum deps rule-name]
+  (or (< 1 (count stratum))
+      ((deps rule-name) rule-name)))
 
 (defn solve-stratified
   [context rule-name args resolve-clause-fn]
+  ;; (println "rule solve" rule-name)
   (let [rules      (:rules context)
         deps       (or (:rules-deps context) (dependency-graph rules))
         cached-rel (get-in context [:rule-rels rule-name])
@@ -675,8 +680,7 @@
       (map-rule-result cached-rel head-vars args)
       (let [sccs       (dependency-sccs deps)
             stratum    (some #(when (% rule-name) %) sccs)
-            recursive? (or (< 1 (count stratum))
-                           ((deps rule-name) rule-name))]
+            recursive? (recursive-stratum? stratum deps rule-name)]
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
           (let [stratum-set    (set stratum)
@@ -839,11 +843,11 @@
                                start-totals)
 
                 final-totals
-                (loop [totals          start-totals
-                       deltas          start-totals
-                       deltas-present? (some rel-not-empty (vals start-totals))
-                       iter            0]
-                  (if (not deltas-present?)
+                (loop [totals      start-totals
+                       deltas      start-totals
+                       has-deltas? (some r/rel-not-empty (vals start-totals))
+                       iter        0]
+                  (if (not has-deltas?)
                     totals
                     (let [iter-context
                           (assoc clean-context
@@ -859,7 +863,7 @@
                                     dep-delta?
                                     (some (fn [dep]
                                             (let [rel (deltas dep)]
-                                              (and rel (rel-not-empty rel))))
+                                              (and rel (r/rel-not-empty rel))))
                                           deps)]
                                 (assoc acc rname
                                        (if (and branches dep-delta?)
@@ -880,14 +884,14 @@
                                            (empty-rel-for-rule
                                              rname full-renamed-rules)))
                                     diff     (r/difference cand-rel old-rel)]
-                                (if (rel-not-empty diff)
+                                (if (r/rel-not-empty diff)
                                   (assoc acc rname diff)
                                   acc)))
                             {} stratum)
 
                           new-totals
                           (if temporal-elim?
-                            (if (some rel-not-empty (vals new-deltas))
+                            (if (some r/rel-not-empty (vals new-deltas))
                               new-deltas
                               totals)
                             (reduce
@@ -903,3 +907,142 @@
 
             (map-rule-result (final-totals rule-name)
                              entry-renamed-head args)))))))
+
+;; (defn- ensure-source
+;;   [src clause]
+;;   (if (or (nil? src) (qu/source? (first clause)))
+;;     clause
+;;     (if (vector? clause)
+;;       (into [src] clause)
+;;       (cons src clause))))
+
+;; (defn normalize-pattern-clause
+;;   [clause]
+;;   (if (qu/source? (first clause))
+;;     clause
+;;     (into ['$] clause)))
+
+(defn- recursive?
+  [deps rule-name]
+  (let [sccs    (dependency-sccs deps)
+        scc-map (into {} (mapcat (fn [scc] (map #(vector % scc) scc))) sccs)]
+    (recursive-stratum? (scc-map rule-name) deps rule-name)))
+
+(defn- remove-rules
+  [rules to-remove]
+  rules)
+
+(defn- remove-ins
+  [qin to-remove]
+  qin)
+
+(defn- expand-clauses
+  "expand rules in clauses if they are non-recursive"
+  [context to-rm rules deps clauses]
+  (into
+    []
+    (mapcat
+      (fn [clause]
+        (cond+
+          :let [head (rule-head clause)
+                args (rule-args clause)]
+
+          ;; Non-recursive rule call
+          (and (rule-call? context clause) (not (recursive? deps head)))
+          (let [branches (rules head)
+                expanded
+                (mapv
+                  (fn [branch]
+                    (let [[head-clause & body-clauses] branch
+
+                          head-vars  (rest head-clause)
+                          mapping    (zipmap head-vars args)
+                          body-vars  (into
+                                       #{}
+                                       (mapcat #(u/walk-collect % qu/free-var?))
+                                       body-clauses)
+                          local-vars (set/difference body-vars (set head-vars))
+                          local-map  (zipmap local-vars
+                                             (map #(gensym (name %))
+                                                  local-vars))
+                          full-map   (merge mapping local-map)
+                          new-body   (walk/postwalk-replace
+                                       full-map body-clauses)]
+                      (expand-clauses context to-rm rules deps new-body)))
+                  branches)]
+            (if (= 1 (count expanded))
+              (first expanded)
+              (let [join-vars (filterv qu/free-var? args)]
+                [(apply list 'or-join join-vars
+                        (map (fn [ex]
+                               (if (and (seq ex) (nil? (next ex)))
+                                 (first ex)
+                                 (cons 'and ex)))
+                             expanded))])))
+
+          ;; (or ...)
+          (and (sequential? head) (= 'or (first head)))
+          (let [[_ & branches] head]
+            [(cons
+               'or
+               (map (fn [branch]
+                      (let [expanded
+                            (expand-clauses context to-rm rules deps [branch])]
+                        (if (and (seq expanded) (nil? (next expanded)))
+                          (first expanded)
+                          (cons 'and expanded))))
+                    branches))])
+
+          ;; (and ...)
+          (and (sequential? head) (= 'and (first head)))
+          (let [[_ & sub-clauses] head]
+            [(cons 'and (expand-clauses context to-rm rules deps sub-clauses))])
+
+          ;; (not ...)
+          (and (sequential? head) (= 'not (first head)))
+          (let [[_ & sub-clauses] head]
+            [(cons 'not (expand-clauses context to-rm rules deps sub-clauses))])
+
+          ;; (not-join ...)
+          (and (sequential? head) (= 'not-join (first head)))
+          (let [[_ vars & sub-clauses] head]
+            [(apply list 'not-join vars
+                    (expand-clauses context to-rm rules deps sub-clauses))])
+
+          ;; (or-join ...)
+          (and (sequential? head) (= 'or-join (first head)))
+          (let [[_ vars & branches] head]
+            [(apply
+               list 'or-join vars
+               (map
+                 (fn [branch]
+                   (let [expanded
+                         (expand-clauses context to-rm rules deps [branch])]
+                     (if (and (seq expanded) (nil? (next expanded)))
+                       (first expanded)
+                       (cons 'and expanded))))
+                 branches))])
+
+          :else [clause])))
+    clauses))
+
+(defn rewrite
+  [{:keys [rules rules-deps] :as context}]
+  (if (empty? rules)
+    context
+    (let [to-remove (volatile! #{})
+          new-where (expand-clauses
+                      context to-remove rules rules-deps
+                      (get-in context [:parsed-q :qorig-where]))
+          new-rules (remove-rules rules to-remove)
+          new-ins   (remove-ins (get-in context [:parsed-q :qin])
+                                to-remove)
+          c
+          (-> context
+              (assoc :rules new-rules
+                     :rules-deps (dependency-graph new-rules))
+              (assoc-in [:parsed-q :qorig-where] new-where)
+              (assoc-in [:parsed-q :qwhere] (dp/parse-where new-where))
+              (assoc-in [:parsed-q :qin] new-ins))]
+      (println "rewritten" (get-in c [:parsed-q :qorig-where]))
+      c)))

@@ -159,7 +159,7 @@
                                               [?e :age ?a])]
                                  test-db)))
 
-      (is (thrown-msg? "Insufficient bindings: #{?e} not bound in (or-join [[?e]] [?e :name \"Ivan\"])"
+      (is (thrown-msg? "Insufficient bindings: [?e] not bound in (or-join [[?e]] [?e :name \"Ivan\"])"
                        (d/q '[:find ?e
                               :where (or-join [[?e]]
                                               [?e :name "Ivan"])]
@@ -253,7 +253,7 @@
                                             [?e :age ?a])]
                                test-db)))
 
-    (is (thrown-msg? "Insufficient bindings: #{?e} not bound in (or-join [[?e]] [?e :name \"Ivan\"])"
+    (is (thrown-msg? "Insufficient bindings: [?e] not bound in (or-join [[?e]] [?e :name \"Ivan\"])"
                      (d/q '[:find ?e
                             :where (or-join [[?e]]
                                             [?e :name "Ivan"])]

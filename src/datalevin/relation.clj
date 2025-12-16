@@ -232,3 +232,13 @@
         (when (pred t)
           (.add res t))))
     res))
+
+(defn rel-not-empty
+  [rel]
+  (let [tuples (:tuples rel)]
+    (and tuples (< 0 (.size ^List tuples)))))
+
+(defn rel-empty
+  [rel]
+  (let [tuples (:tuples rel)]
+    (or (nil? tuples) (zero? (.size ^List tuples)))))

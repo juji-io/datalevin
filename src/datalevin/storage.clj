@@ -338,8 +338,10 @@
   [lmdb iter na ^Collection out ^objects tuple eid-idx
    ^LongObjectHashMap seen ^ints aids ^objects preds ^objects fidxs
    ^booleans skips]
-  (let [te ^long (aget tuple eid-idx)]
-    (if-let [ts (.get seen te)]
+  (let [te        ^long (aget tuple eid-idx)
+        has-fidx? (some identity fidxs)
+        ts        (when-not has-fidx? (.get seen te))]
+    (if ts
       (if (identical? ts :skip)
         (.add out tuple)
         (.add out (r/join-tuples tuple ts)))
@@ -361,18 +363,20 @@
                 (recur (lmdb/has-next-val iter) ai)))
             (when (== ^long ai ^long na)
               (if (.isEmpty vs)
-                (do (.put seen te :skip)
+                (do (when-not has-fidx? (.put seen te :skip))
                     (.add out tuple))
                 (let [vst (.toArray vs)]
-                  (.put seen te vst)
+                  (when-not has-fidx? (.put seen te vst))
                   (.add out (r/join-tuples tuple vst)))))))))))
 
 (defn- eav-scan-v-multi*
   [lmdb iter na ^Collection out ^objects tuple eid-idx
    ^LongObjectHashMap seen ^ints aids ^objects preds ^objects fidxs
    ^booleans skips ^ints gstarts ^ints gcounts]
-  (let [te ^long (aget tuple eid-idx)]
-    (if-let [ts (.get seen te)]
+  (let [te        ^long (aget tuple eid-idx)
+        has-fidx? (some identity fidxs)
+        ts        (when-not has-fidx? (.get seen te))]
+    (if ts
       (.addAll out (r/prod-tuples (r/single-tuples tuple) ts))
       (let [vs (object-array na)
             fa (aget aids 0)
@@ -413,7 +417,7 @@
                                      (comp (map (fn [v s] (when-not s v)))
                                         (remove nil?))
                                      vs skips))]
-            (.put seen te vst)
+            (when-not has-fidx? (.put seen te vst))
             (.addAll out (r/prod-tuples (r/single-tuples tuple)
                                         vst))))))))
 
