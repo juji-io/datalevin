@@ -276,8 +276,8 @@
 (deftest sequence-generation-memory-test
   (let [dir (u/tmp-dir (str "memory-test-" (UUID/randomUUID)))
         db  (d/empty-db dir nil
-                        {:kv-opts
-                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                        {:kv-opts {:flags (conj c/default-env-flags
+                                                :nosync :nolock)}})]
     (try
       (binding [sut/*auto-optimize-temporal* false]
         ;; Generates a sequence from 0 to limit
@@ -302,8 +302,8 @@
 (deftest temporal-elimination-test
   (let [dir (u/tmp-dir (str "temporal-test-" (UUID/randomUUID)))
         db  (d/empty-db dir nil
-                        {:kv-opts
-                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                        {:kv-opts {:flags (conj c/default-env-flags
+                                                :nosync :nolock)}})]
     (try
       ;; Generates a sequence from 0 to limit, but discards history
       (binding [sut/*temporal-elimination* true]
@@ -330,8 +330,8 @@
 (deftest auto-temporal-optimization-test
   (let [dir (u/tmp-dir (str "auto-temporal-test-" (UUID/randomUUID)))
         db  (d/empty-db dir nil
-                        {:kv-opts
-                         {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                        {:kv-opts {:flags (conj c/default-env-flags
+                                                :nosync :nolock)}})]
     (try
       ;; Generates a sequence from 0 to limit
       ;; Should AUTO-DETECT temporal pattern and prune history
@@ -343,10 +343,10 @@
                      (chain ?limit ?prev)
                      [(< ?prev ?limit)]
                      [(inc ?prev) ?n]]]
-              res   (d/q '[:find ?n
-                           :in $ % ?limit
-                           :where (chain ?limit ?n)]
-                         db rules limit)]
+            res   (d/q '[:find ?n
+                         :in $ % ?limit
+                         :where (chain ?limit ?n)]
+                       db rules limit)]
         ;; Should behave like temporal elimination
         (is (= 1 (count res)))
         (is (= #{[limit]} res)))
@@ -355,11 +355,12 @@
         (u/delete-files dir)))))
 
 (deftest mutually-recursive-rules-test
-  (let [dir (u/tmp-dir (str "mutual-recursion-test-" (UUID/randomUUID)))
-        conn (d/get-conn dir {:id {:db/unique :db.unique/identity}
+  (let [dir  (u/tmp-dir (str "mutual-recursion-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:id    {:db/unique :db.unique/identity}
                               :edge1 {:db/valueType :db.type/long}
                               :edge2 {:db/valueType :db.type/long}}
-                         {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
     (d/transact! conn [{:db/id 1 :id 1 :edge1 2}
                        {:db/id 2 :id 2 :edge2 3}
                        {:db/id 3 :id 3 :edge1 4}
@@ -402,8 +403,8 @@
         conn         (d/get-conn dir {:node {:db/unique :db.unique/identity}
                                       :from {:db/valueType :db.type/ref}
                                       :to   {:db/valueType :db.type/ref}}
-                                 {:kv-opts
-                                  {:flags (conj c/default-env-flags :nosync :nolock)}})
+                                 {:kv-opts {:flags (conj c/default-env-flags
+                                                         :nosync :nolock)}})
         temp-a       -1
         temp-b       -2
         temp-c       -3
@@ -514,26 +515,31 @@
     (d/close conn)
     (u/delete-files dir)))
 
-;; TODO need to use a recursive rule to surface this exception
-#_(deftest unsafe-negation-rejection-test
-    (let [dir  (u/tmp-dir (str "unsafe-negation-test-" (UUID/randomUUID)))
-          conn (d/get-conn dir {:q {:db/valueType :db.type/long}} ;; Schema for :q
-                           {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
-      (d/transact! conn [{:db/id -1 :q 1} ;; q(1) is a fact
-                         {:db/id -2 :q 2}]) ;; q(2) is a fact
+(deftest unsafe-negation-rejection-test
+  (let [dir  (u/tmp-dir (str "unsafe-negation-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:q {:db/valueType :db.type/long}}
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
+    (d/transact! conn [{:db/id -1 :q 1} ;; q(1) is a fact
+                       {:db/id -2 :q 2}]) ;; q(2) is a fact
 
-      (let [rules '[[(p ?x)
-                     (not (q ?x))]
-                    [(q ?x)
-                     [?e :q ?x]]]]
-        ;; Expect an exception when trying to query p(x) due to unsafe negation
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Insufficient bindings: none of #\{\?x.*\} is bound"
-                              (d/q '[:find ?x
-                                     :in $ %
-                                     :where (p ?x)]
-                                   (d/db conn) rules))))
-      (d/close conn)
-      (u/delete-files dir)))
+    (let [rules '[[(p ?x)
+                   (not (q ?x))]
+                  [(p ?x)
+                   (q ?x)
+                   (p ?x)]
+                  [(q ?x)
+                   [?e :q ?x]]]]
+      ;; Expect an exception when trying to query p(x) due to unsafe negation
+      (is (thrown-with-msg?
+            clojure.lang.ExceptionInfo
+            #"Insufficient bindings: none of #\{\?x.*\} is bound"
+            (d/q '[:find ?x
+                   :in $ %
+                   :where (p ?x)]
+                 (d/db conn) rules))))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest stratified-negation-safe-test
   (let [dir  (u/tmp-dir (str "stratified-negation-safe-test-" (UUID/randomUUID)))
@@ -974,11 +980,12 @@
                               :mother {:db/valueType :db.type/ref}}
                          {:kv-opts {:flags (conj c/default-env-flags
                                                  :nosync :nolock)}})]
-    (d/transact! conn [{:db/id -1 :name "Dad"}
-                       {:db/id -2 :name "Mom"}
-                       {:db/id -3 :name "Child1" :father -1 :mother -2} ; Has both
-                       {:db/id -4 :name "Child2" :father -1}            ; Only father
-                       {:db/id -5 :name "Child3" :mother -2}])          ; Only mother
+    (d/transact!
+      conn [{:db/id -1 :name "Dad"}
+            {:db/id -2 :name "Mom"}
+            {:db/id -3 :name "Child1" :father -1 :mother -2}
+            {:db/id -4 :name "Child2" :father -1}
+            {:db/id -5 :name "Child3" :mother -2}])
     (let [rules '[[(child ?c-name)
                    (and [?c :father ?f]
                         [?c :mother ?m]

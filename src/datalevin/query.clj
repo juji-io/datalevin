@@ -37,7 +37,8 @@
     :refer [av-size]])
   (:import
    [java.util Arrays List Collection Comparator]
-   [java.util.concurrent ConcurrentHashMap]
+   [java.util.concurrent ConcurrentHashMap ExecutorService Executors Future
+    Callable]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.remote DatalogStore]
    [datalevin.db DB]
@@ -560,11 +561,11 @@
     (if (= (last pattern) '*)
       (and (sequential? form)
            (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
-                   (map vector (butlast pattern) form)))
+                   (mapv vector (butlast pattern) form)))
       (and (sequential? form)
            (= (count form) (count pattern))
            (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
-                   (map vector pattern form))))
+                   (mapv vector pattern form))))
     :else ;; (predicate? pattern)
     (pattern form)))
 
@@ -1802,9 +1803,23 @@
                        (-execute-pipe step db src tuples)
                        (-execute-pipe step db src (aget pipes i))))))
         finish #(when (not= % n-1) (p/finish (aget pipes %)))]
-    (dorun ((if (writing? db) map map+)
-            (fn [step i] (work step i) (finish i))
-            steps (range)))
+    (if (writing? db)
+      (dotimes [i n]
+        (let [step (nth steps i)]
+          (try
+            (work step i)
+            (finally (finish i)))))
+      (let [pool  (Executors/newCachedThreadPool)
+            tasks (mapv (fn [step i]
+                          ^Callable #(try
+                                       (work step i)
+                                       (finally (finish i))))
+                        steps (range))]
+        (try
+          (doseq [^Future f (.invokeAll ^ExecutorService pool tasks)]
+            (.get f))
+          (finally
+            (.shutdown pool)))))
     (p/remove-end-scan tuples)
     (save-intermediates context steps pipes tuples)
     (r/relation! attrs tuples)))
@@ -1833,14 +1848,14 @@
               (execute-steps context (sources src)
                              (mapcat :steps (first components)))))
     (reduce
-      (fn [c r] (update c :rels collapse-rels r))
-      context (->> plan
-                   (mapcat (fn [[src components]]
-                             (let [db (sources src)]
-                               (for [plans components]
-                                 [db (mapcat :steps plans)]))))
-                   (map+ #(apply execute-steps context %))
-                   (sort-by #(count (:tuples %)))))))
+        (fn [c r] (update c :rels collapse-rels r))
+        context (->> plan
+                     (mapcat (fn [[src components]]
+                               (let [db (sources src)]
+                                 (for [plans components]
+                                   [db (mapcat :steps plans)]))))
+                     (map+ #(apply execute-steps context %))
+                     (sort-by #(count (:tuples %)))))))
 
 (defn- plan-explain
   []
@@ -2158,7 +2173,7 @@
                         (volatile! {}) true nil)
               (resolve-ins inputs)
               (resolve-redudants)
-              ;; (rules/rewrite)
+              (rules/rewrite)
               (-q true)
               (collect all-vars))
           result
@@ -2229,7 +2244,7 @@
                       false nil)
             (resolve-ins inputs)
             (resolve-redudants)
-            ;; (rules/rewrite)
+            (rules/rewrite)
             (-q false)
             (result-explain))))))
 

@@ -43,6 +43,16 @@
     (nnext clause)
     (rest clause)))
 
+(defn- source [clause] (let [src (first clause)] (when (qu/source? src) src)))
+
+(defn- ensure-src
+  [src clause]
+  (if (nil? src)
+    clause
+    (if (vector? clause)
+      (into [src] clause)
+      (cons src clause))))
+
 ;; stratification
 
 (defprotocol INode
@@ -908,19 +918,7 @@
             (map-rule-result (final-totals rule-name)
                              entry-renamed-head args)))))))
 
-;; (defn- ensure-source
-;;   [src clause]
-;;   (if (or (nil? src) (qu/source? (first clause)))
-;;     clause
-;;     (if (vector? clause)
-;;       (into [src] clause)
-;;       (cons src clause))))
-
-;; (defn normalize-pattern-clause
-;;   [clause]
-;;   (if (qu/source? (first clause))
-;;     clause
-;;     (into ['$] clause)))
+;; rewrite
 
 (defn- recursive?
   [deps rule-name]
@@ -936,6 +934,41 @@
   [qin to-remove]
   qin)
 
+(declare expand-clauses)
+
+(defn- expand-rule
+  [context to-rm rules deps src head args]
+  (let [branches (rules head)
+        expanded
+        (mapv
+          (fn [branch]
+            (let [[head-clause & body-clauses] branch
+
+                  head-vars  (rest head-clause)
+                  mapping    (zipmap head-vars args)
+                  body-vars  (into
+                               #{}
+                               (mapcat #(u/walk-collect % qu/free-var?))
+                               body-clauses)
+                  local-vars (set/difference body-vars (set head-vars))
+                  local-map  (zipmap local-vars
+                                     (mapv #(gensym (name %)) local-vars))
+                  full-map   (merge mapping local-map)
+                  new-body   (mapv #(ensure-src src %)
+                                   (walk/postwalk-replace
+                                     full-map body-clauses))]
+              (expand-clauses context to-rm rules deps new-body)))
+          branches)]
+    (if (= 1 (count expanded))
+      (first expanded)
+      (let [join-vars (filterv qu/free-var? args)]
+        [(apply list 'or-join join-vars
+                (mapv (fn [ex]
+                        (if (and (seq ex) (nil? (next ex)))
+                          (first ex)
+                          (cons 'and ex)))
+                      expanded))]))))
+
 (defn- expand-clauses
   "expand rules in clauses if they are non-recursive"
   [context to-rm rules deps clauses]
@@ -944,99 +977,87 @@
     (mapcat
       (fn [clause]
         (cond+
-          :let [head (rule-head clause)
+          :let [src  (source clause)
+                head (rule-head clause)
                 args (rule-args clause)]
 
           ;; Non-recursive rule call
           (and (rule-call? context clause) (not (recursive? deps head)))
-          (let [branches (rules head)
-                expanded
-                (mapv
-                  (fn [branch]
-                    (let [[head-clause & body-clauses] branch
-
-                          head-vars  (rest head-clause)
-                          mapping    (zipmap head-vars args)
-                          body-vars  (into
-                                       #{}
-                                       (mapcat #(u/walk-collect % qu/free-var?))
-                                       body-clauses)
-                          local-vars (set/difference body-vars (set head-vars))
-                          local-map  (zipmap local-vars
-                                             (map #(gensym (name %))
-                                                  local-vars))
-                          full-map   (merge mapping local-map)
-                          new-body   (walk/postwalk-replace
-                                       full-map body-clauses)]
-                      (expand-clauses context to-rm rules deps new-body)))
-                  branches)]
-            (if (= 1 (count expanded))
-              (first expanded)
-              (let [join-vars (filterv qu/free-var? args)]
-                [(apply list 'or-join join-vars
-                        (map (fn [ex]
-                               (if (and (seq ex) (nil? (next ex)))
-                                 (first ex)
-                                 (cons 'and ex)))
-                             expanded))])))
+          (do (vswap! to-rm conj head)
+              (expand-rule context to-rm rules deps src head args))
 
           ;; (or ...)
           (and (sequential? head) (= 'or (first head)))
           (let [[_ & branches] head]
-            [(cons
-               'or
-               (map (fn [branch]
-                      (let [expanded
-                            (expand-clauses context to-rm rules deps [branch])]
-                        (if (and (seq expanded) (nil? (next expanded)))
-                          (first expanded)
-                          (cons 'and expanded))))
-                    branches))])
+            [(ensure-src
+               src
+               (cons
+                 'or
+                 (mapv
+                   (fn [branch]
+                     (let [expanded
+                           (expand-clauses context to-rm rules deps [branch])]
+                       (if (and (seq expanded) (nil? (next expanded)))
+                         (first expanded)
+                         (cons 'and expanded))))
+                   branches)))])
 
           ;; (and ...)
           (and (sequential? head) (= 'and (first head)))
           (let [[_ & sub-clauses] head]
-            [(cons 'and (expand-clauses context to-rm rules deps sub-clauses))])
+            [(ensure-src
+               src
+               (cons 'and
+                     (expand-clauses context to-rm rules deps sub-clauses)))])
 
           ;; (not ...)
           (and (sequential? head) (= 'not (first head)))
           (let [[_ & sub-clauses] head]
-            [(cons 'not (expand-clauses context to-rm rules deps sub-clauses))])
+            [(ensure-src
+               src
+               (cons 'not
+                     (expand-clauses context to-rm rules deps sub-clauses)))])
 
           ;; (not-join ...)
           (and (sequential? head) (= 'not-join (first head)))
           (let [[_ vars & sub-clauses] head]
-            [(apply list 'not-join vars
-                    (expand-clauses context to-rm rules deps sub-clauses))])
+            [(ensure-src
+               src
+               (apply list 'not-join vars
+                      (expand-clauses context to-rm rules deps sub-clauses)))])
 
           ;; (or-join ...)
           (and (sequential? head) (= 'or-join (first head)))
           (let [[_ vars & branches] head]
-            [(apply
-               list 'or-join vars
-               (map
-                 (fn [branch]
-                   (let [expanded
-                         (expand-clauses context to-rm rules deps [branch])]
-                     (if (and (seq expanded) (nil? (next expanded)))
-                       (first expanded)
-                       (cons 'and expanded))))
-                 branches))])
+            [(ensure-src
+               src
+               (apply
+                 list 'or-join vars
+                 (mapv
+                   (fn [branch]
+                     (let [expanded
+                           (expand-clauses context to-rm rules deps [branch])]
+                       (if (and (seq expanded) (nil? (next expanded)))
+                         (first expanded)
+                         (cons 'and expanded))))
+                   branches)))])
 
           :else [clause])))
     clauses))
 
 (defn rewrite
+  "optimization that pulls out non-recursive rules"
   [{:keys [rules rules-deps] :as context}]
   (if (empty? rules)
     context
     (let [to-remove (volatile! #{})
-          new-where (expand-clauses
-                      context to-remove rules rules-deps
-                      (get-in context [:parsed-q :qorig-where]))
+          old-where (get-in context [:parsed-q :qorig-where])
+          new-where (expand-clauses context to-remove rules rules-deps old-where)
           new-rules (remove-rules rules to-remove)
           new-ins   (remove-ins (get-in context [:parsed-q :qin])
                                 to-remove)
+
+          ;; _ (println old-where "rewrite" @to-remove "->" new-where)
           c
           (-> context
               (assoc :rules new-rules
@@ -1044,5 +1065,4 @@
               (assoc-in [:parsed-q :qorig-where] new-where)
               (assoc-in [:parsed-q :qwhere] (dp/parse-where new-where))
               (assoc-in [:parsed-q :qin] new-ins))]
-      (println "rewritten" (get-in c [:parsed-q :qorig-where]))
       c)))

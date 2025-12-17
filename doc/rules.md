@@ -77,7 +77,7 @@ process can be optimized to avoid storing intermediate results.
 
 ## Datalog Extensions (WIP)
 
-We extended the rule syntax to support more powerful applications,
+We extend the rule syntax to support more powerful applications,
 e.g. to implement algorithm for machine learning, statistics, graph analytics,
 and so on, enabling in-database data analytics. Examples of such analytics
 include gradient descent (hence all types of regressions, SVM, etc.), K-means,

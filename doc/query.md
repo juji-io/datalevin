@@ -1,7 +1,8 @@
 # Datalevin Query Engine
 
 Datalevin has an innovative query engine that handles complex Datalog queries on
-large data sets with ease.
+large data sets with ease. It is a sophisticated, multi-stage compiler and
+optimizer.
 
 ## Motivation
 
@@ -217,6 +218,17 @@ steps are in flight at the same time. A tuple generated from one step becomes in
 of next step. Each step is processed by a dedicated thread (putting multiple
 threads on a single step was tried and abandoned due to worse performance).
 
+### Multiple stage clause resolution
+
+As mentioned, the cost based optimizer works on clauses that directly access
+data indices, i.e. triple patterns as well as single variable predicates.
+Datalevin also supports complex clauses, such as `and`, `or`, `or-join`, `not`,
+`not-join`, multi-variable predicates, function bindings, as well as rules.
+These more complex clauses are deferred until the indices access clauses have
+produced intermediate result. Heuristics and variable dependencies are
+considered to reorder these complex clauses to optimize performance. Rules are
+executed last, see [rules](rules.md) for details of the rule engine.
+
 ## Limitation
 
 Currently, the query optimizer handles normal where clauses only: triple
@@ -246,11 +258,12 @@ stresses the optimizer. We ported these queries to Datalog and compared with
 PostgreSQL
 [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/JOB-bench).
 
-Datalevin's planning time is normally one order of magnitudes longer than
-that of PostgreSQL. This is expected, as our planner is written in idiomatic
-Clojure, and our planning algorithm is more complex. However, the
-execution time of Datalevin are more consistent and better on average, due to
-better plans produced, resulting in Datalevin's smaller total query time.
+Datalevin's planning time is normally longer than that of PostgreSQL. This is
+expected, as our planner is written in idiomatic Clojure, and our planning
+algorithm is more complex. However, query planning time is just a rounding
+error compared with query execution time on these large data sets. The execution
+time of Datalevin are more consistent and better on average, due to much better
+plans produced, resulting in Datalevin's much smaller total query time.
 
 ## Remark
 
