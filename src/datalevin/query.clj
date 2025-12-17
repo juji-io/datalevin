@@ -1570,10 +1570,14 @@
         (estimate-scan-v-size e-size steps)))))
 
 (defn- estimate-link-cost
-  [{:keys [fidx]} size]
+  [{:keys [type fidx]} size]
   (estimate-round (* ^long size
                      ^double c/magic-cost-val-eq-scan-e
-                     (double (if fidx c/magic-cost-fidx 1.0)))))
+                     (double (if fidx c/magic-cost-fidx 1.0))
+                     (case type
+                       :ref    c/magic-cost-link_ref
+                       :_ref   c/magic-cost-link_rev_ref
+                       :val-eq c/magic-cost-link_val-eq))))
 
 (defn- estimate-e-plan-cost
   [prev-size cur-steps]

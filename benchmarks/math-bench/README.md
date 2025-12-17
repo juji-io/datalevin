@@ -136,19 +136,19 @@ The table below list the query latency results in milliseconds.
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
 | Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
-| Datalevin latest | 80.2 | 986.8 | 814.6 | 204.3 |
+| Datalevin latest | 13.9 | 324.0 | 269.8 | 161.8 |
 
 Notice that Q4 is particularly challenging. It is a recursive rule that
 computes progressively larger transitive closures. Datomic took 41 seconds to
-finish, whereas Datalevin took about 200 milliseconds (more than 200X faster).
-Datascript ran out of memory for this one.
+finish, whereas Datalevin took less than 200 milliseconds (more than 200X
+faster). Datascript ran out of memory for this one.
 
 ## Remark
 
-The advantage of Datalevin rule engine is mainly due to the bottom-up SNE
-algorithm that leverages seeding tuples from outer scope. This can be clearly
-seen from Q1 and Q4, which have bound values that significantly shrink the
-space of rule application.
+The advantages of Datalevin rule engine are due to: 1. rule rewrites that
+turn non-recursive rules into pattern clauses (Q1, Q2, and Q3); and 2. bottom-up
+SNE algorithm that leverages seeding tuples from outer scope to speed up
+recursive rules (Q4).
 
 ## References
 

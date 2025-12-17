@@ -281,9 +281,10 @@ which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux ser
 </p>
 
 In all benchmarked queries, Datalevin is the fastest among the three tested
-systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
-Datomic do not. Datalevin also has a caching layer for index access. See
-[here](benchmarks/datascript-bench) for a detailed analysis of the results.
+systems, as Datalevin has a [cost based query optimizer](doc/query.md) while
+Datascript and Datomic do not. Datalevin also has a caching layer for index
+access. See [here](benchmarks/datascript-bench) for a detailed analysis of the
+results.
 
 We also compared Datalevin and PostgreSQL in handling complex queries, using
 [Join Order Benchmark](benchmarks/JOB-bench). On a
@@ -312,11 +313,19 @@ Datalevin's default transaction function is over 5X faster than SQLite's
 default; while Datlevin's asynchronous transaction mode is over 20X faster than
 SQLite's WAL mode.
 
-On the other hand, when transacting ever larger number of entities (rows) at a
-time, SQLite gains on Datalevin and eventually surpasses it. For bulk loading
-data, it is recommended to use `init-db` and `fill-db` functions, instead of
-doing transactions in Datalevin. See [transaction](doc/transact.md) for more
-discussions.
+Datalevin also has an advanced [rule engine](doc/rules.md). It is much faster than
+Datomic and Datascript that implement the same rule language. [This
+benchmark](benchmark/math-bench) shows the running time in milliseconds of
+applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
+
+| System    | Q1 | Q2 | Q3 | Q4
+| -------- | ------- | -------- | -------- | -------- |
+| Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
+| Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
+| Datalevin latest | 13.9 | 324.0 | 269.8 | 161.8 |
+
+For recursive rules like Q4, Datalevin can be orders of magnitude faster,
+while Datomic and Datascript struggle.
 
 ## :earth_americas: Roadmap
 
