@@ -315,7 +315,7 @@ SQLite's WAL mode.
 
 Datalevin also has an advanced [rule engine](doc/rules.md). It is much faster than
 Datomic and Datascript that implement the same rule language. [This
-benchmark](benchmark/math-bench) shows the running time in milliseconds of
+benchmark](benchmarks/math-bench) shows the running time in milliseconds of
 applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
 
 | System    | Q1 | Q2 | Q3 | Q4
@@ -362,6 +362,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2025 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2026 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
