@@ -192,8 +192,11 @@
       :else      (db/-val-eq-scan-e db src sink index attr)))
 
   (-explain [_ _]
-    (str "Merge " var " by "
-         (if (identical? type :_ref) "reverse reference" "equal values")
+    (str "Obtain " var " by "
+         (cond
+           (identical? type :_ref)   "reverse reference"
+           (identical? type :val-eq) "equal values"
+           :else                     "reference")
          " of " attr ".")))
 
 (defrecord Node [links mpath mcount bound free])
@@ -1184,7 +1187,11 @@
           c))
       context (:qwhere parsed-q))))
 
-(defn- estimate-round [x] (long (Math/ceil x)))
+(defn- estimate-round [x]
+  (let [v (Math/ceil (double x))]
+    (if (>= v (double Long/MAX_VALUE))
+      Long/MAX_VALUE
+      (long v))))
 
 (defn- attr-var [{:keys [var]}] (or var '_))
 
@@ -1360,13 +1367,7 @@
     (fn [^long c [_ m]] (if (m k) (inc c) c))
     0 attrs-v))
 
-(defn- default-merge-ratio
-  [{:keys [attrs-v]}]
-  (let [npred (n-items attrs-v :pred)
-        nfidx (n-items attrs-v :fidx)]
-    (cond-> 1.0
-      (< 0 ^long npred) (* (Math/pow c/magic-size-pred npred))
-      (< 0 ^long nfidx) (* (Math/pow c/magic-size-fidx nfidx)))))
+(def magic-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
 
 (defn- estimate-scan-v-size
   [^long e-size steps]
@@ -1382,11 +1383,11 @@
                       result (let [s (.size ^List result)]
                                (if (< 0 s)
                                  (/ s (.size ^List res1))
-                                 (default-merge-ratio mstep)))
+                                 magic-ratio))
                       sample (let [s (.size ^List sample)]
                                (if (< 0 s)
                                  (/ s (.size ^List sp1))
-                                 (default-merge-ratio mstep))))))))))
+                                 magic-ratio)))))))))
 
 (defn- factor
   [magic ^long n]
@@ -1534,8 +1535,6 @@
         (rd/map #(av-size store attr (aget ^objects % index))
                 (p/remove-end-scan tuples))))))
 
-(def magic-ratio (double (/ 1 (inc ^long c/init-exec-size-threshold))))
-
 (defn- estimate-link-size
   [db link-e {:keys [attr attrs tgt]} ^ConcurrentHashMap ratios
    prev-size last-step index]
@@ -1564,61 +1563,54 @@
   [db link-e link ratios prev-size last-step index new-base-plan]
   (let [steps (:steps new-base-plan)]
     (if (identical? :ref (:type link))
-      (estimate-scan-v-size prev-size steps)
+      [nil (estimate-scan-v-size prev-size steps)]
       (let [e-size (estimate-link-size db link-e link ratios prev-size
                                        last-step index)]
-        (estimate-scan-v-size e-size steps)))))
+        [e-size (estimate-scan-v-size e-size steps)]))))
 
 (defn- estimate-link-cost
-  [{:keys [type fidx]} size]
-  (estimate-round (* ^long size
+  [{:keys [fidx]} prev-size]
+  (estimate-round (* ^double (double prev-size)
                      ^double c/magic-cost-val-eq-scan-e
-                     (double (if fidx c/magic-cost-fidx 1.0))
-                     (case type
-                       :ref    c/magic-cost-link_ref
-                       :_ref   c/magic-cost-link_rev_ref
-                       :val-eq c/magic-cost-link_val-eq))))
+                     ^double (double (if fidx c/magic-cost-fidx 1.0)))))
 
 (defn- estimate-e-plan-cost
-  [prev-size cur-steps]
+  [prev-size e-size cur-steps]
   (let [step1 (first cur-steps)]
     (if (= 1 (count cur-steps))
       (if (identical? (-type step1) :merge)
         (estimate-scan-v-cost step1 prev-size)
         (estimate-link-cost step1 prev-size))
       (+ ^long (estimate-link-cost step1 prev-size)
-         ^long (estimate-scan-v-cost (peek cur-steps) prev-size)))))
+         ^long (estimate-scan-v-cost (peek cur-steps) e-size)))))
 
-(defn- e-plan
-  [db {:keys [steps cost size]} index link new-key new-base-plan result-size]
-  (let [new-steps (:steps new-base-plan)
-        last-step (peek steps)
+(defn- binary-plan*
+  [db base-plans ratios {:keys [steps cost size]} last-step link-e new-e link
+   new-key]
+  (let [index                (index-by-link (:cols last-step) link-e link)
+        new-base             (base-plans [new-e])
+        [e-size result-size] (estimate-join-size db link-e link ratios size
+                                                 last-step index new-base)
+        new-steps            (:steps new-base)
+        last-step            (peek steps)
         cur-steps
         (case (:type link)
           :ref    [(merge-scan-step db last-step index new-key new-steps)]
           :_ref   (rev-ref-plan db last-step index link new-key new-steps)
           :val-eq (val-eq-plan db last-step index link new-key new-steps))]
     (Plan. cur-steps
-           (+ ^long cost ^long (estimate-e-plan-cost size cur-steps))
+           (+ ^long cost ^long (estimate-e-plan-cost size e-size cur-steps))
            result-size)))
-
-(defn- binary-plan*
-  [db base-plans ratios prev-plan last-step link-e new-e link new-key]
-  (let [index    (index-by-link (:cols last-step) link-e link)
-        new-base (base-plans [new-e])
-        size     (estimate-join-size db link-e link ratios (:size prev-plan)
-                                     last-step index new-base)]
-    (e-plan db prev-plan index link new-key new-base size)))
 
 (defn- binary-plan
   [db nodes base-plans ratios prev-plan link-e new-e new-key]
-  (apply min-key :cost
+  (apply u/min-key-comp (juxt :cost :size)
          (into []
                (comp
                  (filter #(= new-e (:tgt %)))
-                 (map #(binary-plan*
-                         db base-plans ratios prev-plan
-                         (peek (:steps prev-plan)) link-e new-e % new-key)))
+                 (map #(binary-plan* db base-plans ratios prev-plan
+                                     (peek (:steps prev-plan)) link-e new-e %
+                                     new-key)))
                (get-in nodes [link-e :links]))))
 
 (defn- plans
@@ -1634,10 +1626,13 @@
                      (if (and (prev-key-set link-e) (not (prev-key-set new-e)))
                        (let [new-key  (conj prev-key new-e)
                              cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
-                             {:keys [cost] :as new-plan}
+                             cur-size (or (:size (t new-key)) Long/MAX_VALUE)
+                             {:keys [cost size] :as new-plan}
                              (binary-plan db nodes base-plans ratios prev-plan
                                           link-e new-e new-key)]
-                         (if (< ^long cost ^long cur-cost)
+                         (if (or (< ^long cost ^long cur-cost)
+                                 (and (= ^long cost ^long cur-cost)
+                                      (< ^long size ^long cur-size)))
                            (assoc! t new-key new-plan)
                            t))
                        t))
@@ -1685,7 +1680,7 @@
                 tables (FastList. n)
                 ratios (ConcurrentHashMap.)
                 n-1    (dec n)
-                pn     ^long (u/n-permutations n 2)]
+                pn     ^long (u/n-permutations n 3)]
             (.add tables base-plans)
             (dotimes [i n-1]
               (let [plans (plans db nodes pairs base-plans (.get tables i)
@@ -1792,6 +1787,8 @@
         (assoc m v i)))
     {} cols))
 
+(def pipe-thread-pool (Executors/newCachedThreadPool))
+
 (defn- pipelining
   [context db attrs steps n]
   (let [n-1    (dec ^long n)
@@ -1813,17 +1810,13 @@
           (try
             (work step i)
             (finally (finish i)))))
-      (let [pool  (Executors/newCachedThreadPool)
-            tasks (mapv (fn [step i]
+      (let [tasks (mapv (fn [step i]
                           ^Callable #(try
                                        (work step i)
                                        (finally (finish i))))
                         steps (range))]
-        (try
-          (doseq [^Future f (.invokeAll ^ExecutorService pool tasks)]
-            (.get f))
-          (finally
-            (.shutdown pool)))))
+        (doseq [^Future f (.invokeAll ^ExecutorService pipe-thread-pool tasks)]
+          (.get f))))
     (p/remove-end-scan tuples)
     (save-intermediates context steps pipes tuples)
     (r/relation! attrs tuples)))

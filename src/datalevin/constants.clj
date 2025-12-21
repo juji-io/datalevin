@@ -435,24 +435,16 @@
 ;; datalog query engine
 
 (def ^{:dynamic true
-       :doc     "Size reduction a predicate induces during scan"}
-  magic-size-pred 0.7)
-
-(def ^{:dynamic true
-       :doc     "Size reduction a filter induces during scan"}
-  magic-size-fidx 0.8)
-
-(def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred 3.0)
+  magic-cost-pred 1.6)
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding a variable during scan"}
-  magic-cost-var 5.5)
+  magic-cost-var 5.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx 1.6)
+  magic-cost-fidx 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with scanning e based on a"}
@@ -460,23 +452,11 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 7.0)
+  magic-cost-merge-scan-v 2.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
-  magic-cost-val-eq-scan-e 2.5)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :ref type link"}
-  magic-cost-link_ref 1.0)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :_ref type link"}
-  magic-cost-link_rev_ref 1.5)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :val-eq type link"}
-  magic-cost-link_val-eq 3.0)
+  magic-cost-val-eq-scan-e 2.4)
 
 (def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,

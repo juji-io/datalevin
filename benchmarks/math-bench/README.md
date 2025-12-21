@@ -143,13 +143,6 @@ computes progressively larger transitive closures. Datomic took 41 seconds to
 finish, whereas Datalevin took less than 200 milliseconds (more than 200X
 faster). Datascript ran out of memory for this one.
 
-## Remark
-
-The advantages of Datalevin rule engine are due to: 1. rule rewrites that
-turn non-recursive rules into pattern clauses (Q1, Q2, and Q3); and 2. bottom-up
-SNE algorithm that leverages seeding tuples from outer scope to speed up
-recursive rules (Q4).
-
 ## References
 
 [1] D. Maier, et al. "Datalog: concepts, history, and outlook." In

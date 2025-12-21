@@ -22,7 +22,7 @@
 
 (def ^:dynamic *pipe-capacity*
   "Maximum queue size for a tuple pipe; producers block when full."
-  8192)
+  20971520)
 
 (defn- enqueue!
   [^LinkedBlockingQueue queue o]

@@ -423,16 +423,31 @@
                 [(transient #{}) (FastList.)]
                 coll)))
 
+(defn min-key-comp
+  "similar to min-key, but use compare instead of <, so (k x) is not limited
+  to a number"
+  ([k x] x)
+  ([k x y] (if (< (compare (k x) (k y)) 0) x y))
+  ([k x y & more]
+   (let [kx     (k x)
+         ky     (k y)
+         [v kv] (if (< (compare kx ky) 0) [x kx] [y ky])]
+     (loop [v v kv kv more more]
+       (if more
+         (let [w  (first more)
+               kw (k w)]
+           (if (<= (compare kw kv) 0)
+             (recur w kw (next more))
+             (recur v kv (next more))))
+         v)))))
+
 (defn list-add [^FastList lst item] (.add lst item) lst)
 
 (defn map-fl
   [f coll]
   (let [res (FastList.)]
     (doseq [e coll] (.add res (f e)))
-    res)
-  #_(reduce (fn [^FastList acc e] (.add acc (f e)) acc)
-            (FastList.)
-            coll))
+    res))
 
 (defn long-inc ^long [^long x] (unchecked-inc x))
 (defn long-dec ^long [^long x] (unchecked-dec x))

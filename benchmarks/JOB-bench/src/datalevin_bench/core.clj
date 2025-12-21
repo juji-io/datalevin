@@ -3280,9 +3280,9 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [3.0]
+  (doseq [p [1.6]
           v [5.5]
-          f [1.6]]
+          f [1.2]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
@@ -3301,30 +3301,16 @@
 
 (comment
 
-  (time (d/analyze (d/db conn)))
-
-  (d/explain {:run? true} q-10c (d/db conn))
-
+  (:plan (d/explain {:run? false} q-23a (d/db conn)))
+;; => {$ [(#datalevin.query.Plan{:steps ["Initialize [?cct1] by :comp-cast-type/kind = complete+verified."], :cost 1, :size 1} #datalevin.query.Plan{:steps ["Obtain ?cc by reverse reference of :complete-cast/status." "Merge [?t] by scanning [:complete-cast/movie :complete-cast/status]."], :cost 24595, :size 24593} #datalevin.query.Plan{:steps ["Merge [?t.production-year ?t.title ?kt] by scanning [:title/production-year :title/title :title/kind]."], :cost 98374, :size 24593} #datalevin.query.Plan{:steps ["Obtain ?mc by reverse reference of :movie-companies/movie." "Merge [?cn ?ct] by scanning [:movie-companies/movie :movie-companies/company :movie-companies/company-type]."], :cost 158529, :size 17781} #datalevin.query.Plan{:steps ["Obtain ?mi by reverse reference of :movie-info/movie." "Merge [?mi.note ?mi.info ?it1] by scanning [:movie-info/note :movie-info/info :movie-info/info-type :movie-info/movie]."], :cost 613830, :size 72920} #datalevin.query.Plan{:steps ["Obtain ?mk by equal values of :movie-keyword/movie." "Merge [?k] by scanning [:movie-keyword/movie :movie-keyword/keyword]."], :cost 686823, :size 73} #datalevin.query.Plan{:steps ["Filter by predicates on [:company-name/country-code]."], :cost 686896, :size 73} #datalevin.query.Plan{:steps ["Filter by predicates on [:info-type/info]."], :cost 686969, :size 73} #datalevin.query.Plan{:steps ["Merge [?kt.kind] by scanning [:kind-type/kind]."], :cost 687042, :size 73})]}
 
 
-  (def store (.-store (d/db conn)))
 
-  (require '[datalevin.storage :as st])
-  (time (st/size store :ave (d/datom c/e0 :cast-info/movie c/v0) (d/datom c/emax :cast-info/movie c/vmax)))
-  (time (st/size store :ave (d/datom c/e0 :person-info/person c/v0) (d/datom c/emax :person-info/person c/vmax)))
-  (time (st/size store :ave (d/datom c/e0 :title/title c/v0) (d/datom c/emax :title/title c/vmax)))
+  (:plan (d/explain {:run? false} q-15c (d/db conn)))
 
-  (time (st/a-size store :cast-info/movie))
-  (time (st/a-size store :person-info/person))
-  (time (st/a-size store :title/title))
-  ;; => 2528312
+  (require '[datalevin.db :as db])
 
-  (time (st/cardinality store :cast-info/person-role))
-  ;; => 3140339
-  (time (st/cardinality store :person-info/person))
-  ;; => 550720
-  (time (st/cardinality store :title/title))
-  ;; => 1483632
-
+  (db/-count (d/db conn) [nil :aka-title/movie nil])
+  ;; => 361472
 
   )
