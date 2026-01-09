@@ -3280,7 +3280,7 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [1.6]
+  (doseq [p [3.5]
           v [5.5]
           f [1.2]]
     (let [start (System/currentTimeMillis)]
@@ -3301,16 +3301,32 @@
 
 (comment
 
-  (:plan (d/explain {:run? false} q-23a (d/db conn)))
-;; => {$ [(#datalevin.query.Plan{:steps ["Initialize [?cct1] by :comp-cast-type/kind = complete+verified."], :cost 1, :size 1} #datalevin.query.Plan{:steps ["Obtain ?cc by reverse reference of :complete-cast/status." "Merge [?t] by scanning [:complete-cast/movie :complete-cast/status]."], :cost 24595, :size 24593} #datalevin.query.Plan{:steps ["Merge [?t.production-year ?t.title ?kt] by scanning [:title/production-year :title/title :title/kind]."], :cost 98374, :size 24593} #datalevin.query.Plan{:steps ["Obtain ?mc by reverse reference of :movie-companies/movie." "Merge [?cn ?ct] by scanning [:movie-companies/movie :movie-companies/company :movie-companies/company-type]."], :cost 158529, :size 17781} #datalevin.query.Plan{:steps ["Obtain ?mi by reverse reference of :movie-info/movie." "Merge [?mi.note ?mi.info ?it1] by scanning [:movie-info/note :movie-info/info :movie-info/info-type :movie-info/movie]."], :cost 613830, :size 72920} #datalevin.query.Plan{:steps ["Obtain ?mk by equal values of :movie-keyword/movie." "Merge [?k] by scanning [:movie-keyword/movie :movie-keyword/keyword]."], :cost 686823, :size 73} #datalevin.query.Plan{:steps ["Filter by predicates on [:company-name/country-code]."], :cost 686896, :size 73} #datalevin.query.Plan{:steps ["Filter by predicates on [:info-type/info]."], :cost 686969, :size 73} #datalevin.query.Plan{:steps ["Merge [?kt.kind] by scanning [:kind-type/kind]."], :cost 687042, :size 73})]}
+  (:plan (d/explain {:run? true} q-10c (d/db conn)))
 
+  (:plan (d/explain {:run? true} q-13d (d/db conn)))
 
+  (:plan (d/explain {:run? true} q-15a (d/db conn)))
 
-  (:plan (d/explain {:run? false} q-15c (d/db conn)))
+  (:plan (d/explain {:run? true} q-15c (d/db conn)))
 
-  (require '[datalevin.db :as db])
+  (:plan (d/explain {:run? true} q-15d (d/db conn)))
 
-  (db/-count (d/db conn) [nil :aka-title/movie nil])
-  ;; => 361472
+  (:plan (d/explain {:run? true} q-16b (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-18c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-19d (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-23a (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-23c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-25c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-29c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-5c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-6f (d/db conn)))
 
   )

@@ -5,18 +5,20 @@
 ### Changed
 - [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
   additional features of counted DB
-  [#337](https://github.com/juji-io/datalevin/issues/337), prefix compression
-  and dupsort iterator optimizations.
+  [#337](https://github.com/juji-io/datalevin/issues/337), prefix compression,
+  dupsort iterator optimizations and other improvements.
 - [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [KV] Default `:max-readers` is now 1024.
+  [Datalog] Rewritten rule engine. Implemented a bottom-up SNE approach that solves
+  OOM problem with the old engine
+  [#170](https://github.com/juji-io/datalevin/issues/170), and can be orders of
+  magnitude faster than Datomic in recursive rule resolution,
+  [benchmark](benchmarks/math-bench).
 - [Datalog] Removed VAE index. This may reduce DB size by 30% and cut write time
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
   DB). VAE was only used in entity retraction and the current replacement is
   less than 10% slower.
-  [Datalog] New rule engine. Implemented a bottom-up SNE approach that solves
-  OOM problem with old engine
-  [#170](https://github.com/juji-io/datalevin/issues/170).
 - [Platform] Native dependencies are mostly statically compiled and bundled in the
   release jars (with exception of libc, as glibc is much faster than musl).
 - [Platform] Drop support for Intel macOS.

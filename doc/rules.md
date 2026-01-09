@@ -1,9 +1,7 @@
 # Datalevin Rules Engine
 
-Datalevin has an innovative rule engine that has more expressive powerful than
-normal Datalog, and implements an efficient rules evaluation strategy that
-leverage the cost based query optimizer. It also includes a novel provenance
-based mechanism for incremental maintenance.
+Datalevin has an innovative rule engine that implements an efficient rules
+evaluation strategy that leverage the cost based query optimizer.
 
 ## Motivation
 
@@ -30,12 +28,13 @@ own.
 The new rule engine uses a bottom-up Datalog evaluation strategy. It handles
 recursive rules more efficiently.
 
-### Semi-naive evaluation (SNE)
+### Semi-naive evaluation
 
-The rule engine employs the well known semi-naive evaluation strategy [1] [2].
-The engine generates tuples from the rule sets until a fix-point is reached,
-i.e. when no new tuples are produced. The evaluation is stratified, where rules
-run in their strongly connected components (stratum).
+The rule engine employs the well known semi-naive evaluation (SNE) strategy [1]
+[2]. The engine generates tuples from the rule sets until a fix-point is
+reached, i.e. when no new tuples are produced. The evaluation is stratified,
+where rules run in their strongly connected components (stratum) in the correct
+topological sort order.
 
 ### Seeding tuples (new)
 
@@ -50,30 +49,27 @@ filters to prevent the generation of unnecessary tuples during SNE.
 
 As an innovation, we identify the clauses that are not involved in recursions,
 pull them out and add them to the regular query clauses to allow the cost-based
-query optimizer to work on them. That is to say, the rule engine mainly works on
-the rules that involved in recursions. This optimization not just simplifies the
-rules, but also reduces the number of tuples the rule engine has to generate.
-This approach enjoys the benefits of the rule rewrite algorithms such as magic
-sets, while avoiding potential slow-down due to the explosion of magic rules
-brought by the rewrite.
+query optimizer to work on them. That is to say, SNE only works on the rules
+that involved in recursions.
 
-### Rule clause order optimization
-
-Similar to query optimization, we also optimize the join order of rule clauses.
-The rule clauses are reordered based on the following criteria: the number of
-bounded variables (which benefit from seeding) and the clause cardinality
-(size). More bounded variables and smaller clauses are evaluated first, so that
-tuple generation is more constrained.
+This optimization not just simplifies the rules, but also reduces the number
+of tuples SNE has to generate. This approach enjoys the same benefits of the
+well known magic sets rule rewrite algorithm [1] [2], while avoiding potential
+slow-down due to the explosion of magic rules brought by the rewrite.
 
 ### Temporel Elimination
 
-To handle recursion with freely mixed aggregation and negation, we mainly follow
-the framework proposed in Temporel [3], which is based on a concept of
-T-stratification, where a time index is identified and associated with each
-stratum. The time index ensures that aggregation/negation happens in one
-stratum. It also enables optimizations such as temporal elimination, where only
-the results of the last iteration of recursion is needed, so that the recursive
+For certain applicable recursive rules that meet the criteria of
+T-stratification [3], we implements temporal elimination, an optimization that
+saves only the results of the last iteration of recursion, so that the recursive
 process can be optimized to avoid storing intermediate results.
+
+## Benchmark
+
+A benchmark comparing this rule engine with that of Datomic and Datascript can
+be found [here](../benchmarks/math-bench). The short summary is that this rule
+engine is significantly faster. For recursive rules in particular, the speedup
+can be several orders of magnitude.
 
 ## Datalog Extensions (WIP)
 
@@ -97,7 +93,7 @@ Processing. Foundations and Trends in Databases, vol. 5, no. 2, pp. 105–195, 2
 Declarative Logic Programming: Theory, Systems, and Applications. 2018. 3-100.
 
 [3] Shaikhha, Amir, et al. "Optimizing Nested Recursive Queries." Proceedings of
-the ACM on Management of Data, 2(1). 2024: 1-27.
+ACM SIGMOD, 2(1). 2024: 1-27.
 
 [4] Ullman, J. D. "Bottom-up beats top-down for datalog." Proceedings of the
 eighth ACM SIGACT-SIGMOD-SIGART symposium on Principles of Database

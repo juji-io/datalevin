@@ -127,19 +127,19 @@ gzip -d data.json.gz
 
 ## Results
 
-Tests were conducted o Macbook Pro M3 2023 with 36GB RAM,
+Tests were conducted on a Macbook Pro M3 2023 with 36GB RAM,
 using OpenJDK version "21.0.9" 2025-10-21 and Clojure 1.12.3.
 
-The table below list the query latency results in milliseconds.
+The table below lists the query latency results in milliseconds.
 
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
 | Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
-| Datalevin latest | 13.9 | 324.0 | 269.8 | 161.8 |
+| Datalevin latest | 14.5 | 315.7 | 237.1 | 132.8 |
 
-Notice that Q4 is particularly challenging. It is a recursive rule that
-computes progressively larger transitive closures. Datomic took 41 seconds to
+Notice that Q4 is particularly challenging. It has a recursive rule that
+computes exponentially larger transitive closures. Datomic took 41 seconds to
 finish, whereas Datalevin took less than 200 milliseconds (more than 200X
 faster). Datascript ran out of memory for this one.
 

@@ -1,3 +1,8 @@
+dtlv
+dtlv-test0
+dtlv-test1
+test-jar/test-jar
+benchmarks/JOB-bench/db/data.mdb
 .classpath
 .dir-locals.el
 .project
