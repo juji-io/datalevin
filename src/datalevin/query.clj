@@ -1698,7 +1698,7 @@
                 tables (FastList. n)
                 ratios (ConcurrentHashMap.)
                 n-1    (dec n)
-                pn     ^long (u/n-permutations n 3)]
+                pn     ^long (u/n-permutations n 2)]
             (.add tables base-plans)
             (dotimes [i n-1]
               (let [plans (plans db nodes pairs base-plans (.get tables i)
