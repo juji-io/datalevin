@@ -322,7 +322,7 @@ applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
 | Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
-| Datalevin latest | 13.9 | 324.0 | 269.8 | 161.8 |
+| Datalevin latest | 14.5 | 315.7 | 237.1 | 132.8 |
 
 For recursive rules like Q4, Datalevin can be orders of magnitude faster,
 while Datomic and Datascript struggle.
@@ -341,15 +341,14 @@ adjust the priorities based on feedback.
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
-  vector database;~~ switch to counted and prefix compressed KV storage;
-  data compression; auto upgrade migration; new rule engine.
-* 0.12.0 Extended rule syntax to handle analytical workload; incremental view
-  maintenance; TTL.
-* 1.0.0  Extensible de/serialization for arbitrary data; JSON API and library/client for popular languages.
-* 1.1.0 Transaction log storage and access API; read-only replicas for server.
-* 1.2.0 Automatic document indexing.
-* 2.0.0 Distributed mode.
-
+  vector database;~~ counted and prefix compressed KV storage; data compression;
+  auto upgrade migration; new rule engine.
+* 1.0.0 JSON API and library/client for popular languages.
+* 1.1.0 TTL; extensible storage/query for arbitrary data.
+* 1.2.0 WAL mode; transaction log access API; read-only replicas; high
+  availability.
+* 1.3.0 Extended rule syntax to handle complex analytical workload.
+* 1.4.0 Incremental view maintenance.
 
 ## :arrows_clockwise: Contact
 
@@ -362,6 +361,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2026 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2026 [Huahai Yang](https://huahaiy.github.io/).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

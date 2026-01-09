@@ -8,30 +8,23 @@
 ;; You must not remove this notice, or any other, from this software.
 ;;
 (ns ^:no-doc datalevin.pipe
-  "Tuple pipes"
+  "Tuple pipes for query execution"
   (:refer-clojure :exclude [update assoc])
   (:require
+   [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
    [java.util List Collection]
    [java.util.concurrent LinkedBlockingQueue TimeUnit]))
 
-(def ^:dynamic *pipe-take-timeout-ms*
-  "Max millis to wait for a pipe element before failing; nil to wait forever."
-  300000)
-
-(def ^:dynamic *pipe-capacity*
-  "Maximum queue size for a tuple pipe; producers block when full."
-  8192)
-
-(defn- enqueue!
+(defn- enqueue
   [^LinkedBlockingQueue queue o]
   (try
     (.put queue o)
     true
     (catch InterruptedException e
       (.interrupt (Thread/currentThread))
-      (u/raise "Interrupted while enqueuing to pipe" {:object o}))))
+      (u/raise "Interrupted while enqueuing to pipe" e {:object o}))))
 
 (defprotocol ITuplePipe
   (pipe? [this] "test if implements this protocol")
@@ -49,37 +42,37 @@
 (deftype TuplePipe [^LinkedBlockingQueue queue]
   ITuplePipe
   (pipe? [_] true)
-  (finish [_] (enqueue! queue :datalevin/end-scan))
+  (finish [_] (enqueue queue :datalevin/end-scan))
   (produce [_]
-    (let [o (if *pipe-take-timeout-ms*
-              (.poll queue ^long *pipe-take-timeout-ms*
+    (let [o (if c/*query-pipe-timeout*
+              (.poll queue ^long c/*query-pipe-timeout*
                      TimeUnit/MILLISECONDS)
               (.take queue))]
       (when (nil? o)
         (u/raise "Pipe take timed out waiting for producer"
-                 {:timeout-ms *pipe-take-timeout-ms*}))
+                 {:timeout c/*query-pipe-timeout*}))
       (when-not (identical? :datalevin/end-scan o) o)))
   (drain-to [_ sink] (.drainTo queue sink))
   (reset [_] (.clear queue))
   (total [_] total)
 
   Collection
-  (add [_ o] (enqueue! queue o))
-  (addAll [_ o] (doseq [e o] (enqueue! queue e)) true))
+  (add [_ o] (enqueue queue o))
+  (addAll [_ o] (doseq [e o] (enqueue queue e)) true))
 
 (deftype CountedTuplePipe [^LinkedBlockingQueue queue
                            ^:unsynchronized-mutable total]
   ITuplePipe
   (pipe? [_] true)
-  (finish [_] (enqueue! queue :datalevin/end-scan))
+  (finish [_] (enqueue queue :datalevin/end-scan))
   (produce [_]
-    (let [o (if *pipe-take-timeout-ms*
-              (.poll queue ^long *pipe-take-timeout-ms*
+    (let [o (if c/*query-pipe-timeout*
+              (.poll queue ^long c/*query-pipe-timeout*
                      TimeUnit/MILLISECONDS)
               (.take queue))]
       (when (nil? o)
         (u/raise "Pipe take timed out waiting for producer"
-                 {:timeout-ms *pipe-take-timeout-ms*}))
+                 {:timeout c/*query-pipe-timeout*}))
       (when-not (identical? :datalevin/end-scan o)
         (set! total (u/long-inc total))
         o)))
@@ -88,16 +81,16 @@
   (total [_] total)
 
   Collection
-  (add [_ o] (enqueue! queue o))
-  (addAll [_ o] (doseq [e o] (enqueue! queue e)) true))
+  (add [_ o] (enqueue queue o))
+  (addAll [_ o] (doseq [e o] (enqueue queue e)) true))
 
 (defn tuple-pipe
   []
-  (->TuplePipe (LinkedBlockingQueue. ^long *pipe-capacity*)))
+  (->TuplePipe (LinkedBlockingQueue. ^long c/*query-pipe-capacity*)))
 
 (defn counted-tuple-pipe
   []
-  (->CountedTuplePipe (LinkedBlockingQueue. ^long *pipe-capacity*) 0))
+  (->CountedTuplePipe (LinkedBlockingQueue. ^long c/*query-pipe-capacity*) 0))
 
 (defn remove-end-scan
   [tuples]

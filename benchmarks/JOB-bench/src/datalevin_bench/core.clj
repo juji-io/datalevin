@@ -3280,7 +3280,7 @@
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [3.0]
+  (doseq [p [3.5]
           v [5.5]
           f [1.6]]
     (let [start (System/currentTimeMillis)]
@@ -3301,30 +3301,32 @@
 
 (comment
 
-  (time (d/analyze (d/db conn)))
+  (:plan (d/explain {:run? true} q-10c (d/db conn)))
 
-  (d/explain {:run? true} q-10c (d/db conn))
+  (:plan (d/explain {:run? true} q-13d (d/db conn)))
 
+  (:plan (d/explain {:run? true} q-15a (d/db conn)))
 
+  (:plan (d/explain {:run? false} q-15c (d/db conn)))
 
-  (def store (.-store (d/db conn)))
+  (:plan (d/explain {:run? true} q-15d (d/db conn)))
 
-  (require '[datalevin.storage :as st])
-  (time (st/size store :ave (d/datom c/e0 :cast-info/movie c/v0) (d/datom c/emax :cast-info/movie c/vmax)))
-  (time (st/size store :ave (d/datom c/e0 :person-info/person c/v0) (d/datom c/emax :person-info/person c/vmax)))
-  (time (st/size store :ave (d/datom c/e0 :title/title c/v0) (d/datom c/emax :title/title c/vmax)))
+  (:plan (d/explain {:run? true} q-16b (d/db conn)))
 
-  (time (st/a-size store :cast-info/movie))
-  (time (st/a-size store :person-info/person))
-  (time (st/a-size store :title/title))
-  ;; => 2528312
+  (:plan (d/explain {:run? true} q-18c (d/db conn)))
 
-  (time (st/cardinality store :cast-info/person-role))
-  ;; => 3140339
-  (time (st/cardinality store :person-info/person))
-  ;; => 550720
-  (time (st/cardinality store :title/title))
-  ;; => 1483632
+  (:plan (d/explain {:run? true} q-19d (d/db conn)))
 
+  (:plan (d/explain {:run? true} q-23a (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-23c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-25c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-29c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-5c (d/db conn)))
+
+  (:plan (d/explain {:run? true} q-6f (d/db conn)))
 
   )

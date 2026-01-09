@@ -526,6 +526,22 @@
            (remove nil?))
         coll))
 
+(defn min-key-comp
+  "Similar to min-key, but use compare, so it is not limited to numbers"
+  ([k x] x)
+  ([k x y] (if (< (compare (k x) (k y)) 0) x y))
+  ([k x y & more]
+   (let [kx     (k x) ky (k y)
+         [v kv] (if (< (compare kx ky) 0) [x kx] [y ky])]
+     (loop [v v kv kv more more]
+       (if more
+         (let [w  (first more)
+               kw (k w)]
+           (if (<= (compare kw kv) 0)
+             (recur w kw (next more))
+             (recur v kv (next more))))
+         v)))))
+
 (defn intersection
   [^IEditableCollection s1 ^IPersistentSet s2]
   (if (< (count s2) (count s1))

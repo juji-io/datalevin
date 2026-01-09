@@ -435,16 +435,21 @@
 ;; datalog query engine
 
 (def ^{:dynamic true
-       :doc     "Size reduction a predicate induces during scan"}
-  magic-size-pred 0.7)
+       :doc     "Size below which the initial plan will execute during planning,
+above which, the same number of items will be sampled instead"}
+  init-exec-size-threshold 1000)
 
 (def ^{:dynamic true
-       :doc     "Size reduction a filter induces during scan"}
-  magic-size-fidx 0.8)
+       :doc     "Default ratio for merge scan size change estimate"}
+  magic-scan-ratio (double (/ 1 ^long init-exec-size-threshold)))
+
+(def ^{:dynamic true
+       :doc     "Default ratio for link size change estimate"}
+  magic-link-ratio 1.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
-  magic-cost-pred 3.0)
+  magic-cost-pred 3.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with adding a variable during scan"}
@@ -460,28 +465,11 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 7.0)
+  magic-cost-merge-scan-v 7.5)
 
 (def ^{:dynamic true
        :doc     "Cost associated with val-eq-scan join"}
   magic-cost-val-eq-scan-e 2.5)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :ref type link"}
-  magic-cost-link_ref 1.0)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :_ref type link"}
-  magic-cost-link_rev_ref 1.5)
-
-(def ^{:dynamic true
-       :doc     "Cost associated with :val-eq type link"}
-  magic-cost-link_val-eq 3.0)
-
-(def ^{:dynamic true
-       :doc     "Size below which the initial plan will execute during planning,
-above which, the same number of items will be sampled instead"}
-  init-exec-size-threshold 1000)
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}
@@ -506,6 +494,14 @@ above which, the same number of items will be sampled instead"}
 (def ^{:dynamic true
        :doc     "The time measure is taken every this step of iterations when counting."}
   range-count-iteration-step 1000)
+
+(def ^{:dynamic true
+       :doc     "Max milliseconds to wait for a tuple before failing. nil to wait forever."}
+  *query-pipe-timeout* 3000000)
+
+(def ^{:dynamic true
+       :doc     "Maximum queue size for a tuple pipe. Producers block when full, providing back-pressure."}
+  *query-pipe-capacity* 10000000)
 
 ;; search engine
 

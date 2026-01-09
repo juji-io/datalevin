@@ -194,6 +194,17 @@ these samples. Later joins use these selectivity ratios to estimate result
 sizes. We have found sampling more than 2-way joins (e.g. [6]) to be less
 effective, so we sample base and 2-way join selectivity only.
 
+### Recency based link choice (new)
+
+During planning, when multiple links are possible to reach the same next node in
+the graph, we choose the link whose source node is most recently resolved. The
+reason is the following: as the query execution progresses, the data
+distribution shifts significantly. The source node with more recent resolution
+represents the data distribution more accurately, while the distribution of
+older nodes may be very different from current distribution. To do that, the
+optimizer tracks recency of each step and prefers the most recent linkage, and
+only use cost as a tie breaker.
+
 ### Dynamic plan search policy (new)
 
 The plan search space initially include all possible join orders as our joins

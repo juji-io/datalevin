@@ -35,7 +35,7 @@
         (if ignore-key?
           (b/read-buffer bb v-type)
           [(b/expected-return k k-type) (b/read-buffer bb v-type)]))
-      (catch Exception e
+      (catch Throwable e
         (raise "Fail to get-value: " e
                {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
       (finally
@@ -55,7 +55,7 @@
             ~'cur (l/get-cursor ~'dbi ~'rtx)]
         (try
           ~call
-          (catch Exception ~'e
+          (catch Throwable ~'e
             ~error)
           (finally
             (if (l/read-only? ~'rtx)

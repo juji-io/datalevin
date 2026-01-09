@@ -339,7 +339,7 @@
    ^LongObjectHashMap seen ^ints aids ^objects preds ^objects fidxs
    ^booleans skips]
   (let [te        ^long (aget tuple eid-idx)
-        has-fidx? (some identity fidxs)
+        has-fidx? (< 0 (alength fidxs))
         ts        (when-not has-fidx? (.get seen te))]
     (if ts
       (if (identical? ts :skip)
@@ -374,7 +374,7 @@
    ^LongObjectHashMap seen ^ints aids ^objects preds ^objects fidxs
    ^booleans skips ^ints gstarts ^ints gcounts]
   (let [te        ^long (aget tuple eid-idx)
-        has-fidx? (some identity fidxs)
+        has-fidx? (< 0 (alength fidxs))
         ts        (when-not has-fidx? (.get seen te))]
     (if ts
       (.addAll out (r/prod-tuples (r/single-tuples tuple) ts))
@@ -907,7 +907,7 @@
 
   (eav-scan-v
     [_ in out eid-idx attrs-v]
-    (when (seq attrs-v)
+    (if (seq attrs-v)
       (let [attr->aid #(:db/aid (schema %))
             get-aid   (comp attr->aid first)
             attrs-v   (sort-by get-aid attrs-v)
@@ -925,11 +925,18 @@
                       (lmdb/val-iterator
                         (lmdb/iterate-list-val-full dbi rtx cur))]
             (if (single-attrs? schema attrs-v)
-              (loop [tuple (p/produce in)]
+              (loop [tuple (p/produce in)
+                     i     0]
                 (when tuple
-                  (eav-scan-v-single* lmdb iter na out tuple eid-idx
-                                      seen aids preds fidxs skips)
-                  (recur (p/produce in))))
+                  (let [eid   (aget ^objects tuple ^int eid-idx)
+                        start (System/nanoTime)]
+                    (eav-scan-v-single* lmdb iter na out tuple eid-idx
+                                        seen aids preds fidxs skips)
+                    (let [elapsed (/ (- (System/nanoTime) start) 1e9)]
+                      (when (> elapsed 5.0)
+                        (.println System/err
+                                  (str "SLOW tuple #" i " eid=" eid " took " elapsed "s")))))
+                  (recur (p/produce in) (inc i))))
               (let [gcounts (group-counts aids)
                     gstarts ^ints (group-starts gcounts)
                     gcounts (int-array gcounts)]
@@ -940,7 +947,12 @@
                                        gcounts)
                     (recur (p/produce in)))))))
           (u/raise "Fail to eav-scan-v: " e
-                   {:eid-idx eid-idx :attrs-v attrs-v})))))
+                   {:eid-idx eid-idx :attrs-v attrs-v})))
+      (do
+        (println "empty attrs-v")
+        (loop []
+          (when (p/produce in)
+            (recur))))))
 
   (eav-scan-v-list [_ in eid-idx attrs-v]
     (when (seq attrs-v)
@@ -980,7 +992,7 @@
         out)))
 
   (val-eq-scan-e [_ in out v-idx attr]
-    (when attr
+    (if attr
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
               aid      (props :db/aid)
@@ -995,7 +1007,12 @@
                   (let [v (aget tuple v-idx)]
                     (val-eq-scan-e* iter out tuple seen aid v vt)
                     (recur (p/produce in))))))
-            (u/raise "Fail to val-eq-scan-e: " e {:v-idx v-idx :attr attr}))))))
+            (u/raise "Fail to val-eq-scan-e: " e {:v-idx v-idx :attr attr}))))
+      (do
+        (println "no attr")
+        (loop []
+          (when (p/produce in)
+            (recur))))))
 
   (val-eq-scan-e-list [_ in v-idx attr]
     (when attr
@@ -1017,7 +1034,7 @@
           out))))
 
   (val-eq-scan-e [_ in out v-idx attr bound]
-    (when attr
+    (if attr
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
               aid      (props :db/aid)
@@ -1032,7 +1049,12 @@
                     (val-eq-scan-e-bound* iter out tuple aid v vt bound)
                     (recur (p/produce in))))))
             (u/raise "Fail to val-eq-scan-e-bound: " e
-                     {:v-idx v-idx :attr attr}))))))
+                     {:v-idx v-idx :attr attr}))))
+      (do
+        (println "no attr")
+        (loop []
+          (when (p/produce in)
+            (recur))))))
 
   (val-eq-scan-e-list [_ in v-idx attr bound]
     (when attr
@@ -1055,7 +1077,7 @@
           out))))
 
   (val-eq-filter-e [_ in out v-idx attr f-idx]
-    (when attr
+    (if attr
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
               dbi-name c/ave
@@ -1071,7 +1093,12 @@
                     (val-eq-filter-e* iter out tuple aid v vt old-e)
                     (recur (p/produce in))))))
             (u/raise "Fail to val-eq-filter-e: " e
-                     {:v-idx v-idx :attr attr}))))))
+                     {:v-idx v-idx :attr attr}))))
+      (do
+        (println "no attr")
+        (loop []
+          (when (p/produce in)
+            (recur))))))
 
   (val-eq-filter-e-list [_ in v-idx attr f-idx]
     (when attr
