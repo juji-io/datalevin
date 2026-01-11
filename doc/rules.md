@@ -1,7 +1,7 @@
 # Datalevin Rules Engine
 
 Datalevin has an innovative rule engine that implements an efficient rules
-evaluation strategy that leverage the cost based query optimizer.
+evaluation strategy that leverages the cost based query optimizer.
 
 ## Motivation
 
@@ -64,12 +64,14 @@ T-stratification [3], we implements temporal elimination, an optimization that
 saves only the results of the last iteration of recursion, so that the recursive
 process can be optimized to avoid storing intermediate results.
 
-## Benchmark
+## Benchmarks
+
+### Math Genealogy
 
 A benchmark comparing this rule engine with that of Datomic and Datascript can
 be found [here](../benchmarks/math-bench). The short summary is that this rule
 engine is significantly faster. For recursive rules in particular, the speedup
-can be several orders of magnitude.
+can be orders of magnitude.
 
 ## Datalog Extensions (WIP)
 

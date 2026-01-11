@@ -345,10 +345,9 @@ adjust the priorities based on feedback.
   auto upgrade migration; new rule engine.
 * 1.0.0 JSON API and library/client for popular languages.
 * 1.1.0 TTL; extensible storage/query for arbitrary data.
-* 1.2.0 WAL mode; transaction log access API; read-only replicas; high
-  availability.
-* 1.3.0 Extended rule syntax to handle complex analytical workload.
-* 1.4.0 Incremental view maintenance.
+* 2.0.0 Transaction log access API; read-only replicas; high availability.
+* 2.1.0 Extended rule syntax to handle complex analytical workload.
+* 3.0.0 Incremental view maintenance.
 
 ## :arrows_clockwise: Contact
 
