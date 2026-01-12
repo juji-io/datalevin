@@ -13,6 +13,7 @@
    [clojure.set :as set]
    [clojure.edn :as edn]
    [clojure.walk :as walk]
+   [clojure.string :as str]
    [datalevin.parser :as dp]
    [datalevin.db :as db]
    [datalevin.query-util :as qu]
@@ -460,6 +461,10 @@
         res)
       (FastList.))))
 
+(defn- rename-rel-attrs
+  [rel head-vars]
+  (assoc rel :attrs (zipmap head-vars (range))))
+
 (defn- bound-arg-indices
   "Indices of args that are already bound (via outer context or constants)."
   [args context]
@@ -474,6 +479,317 @@
 
 (def ^:dynamic *temporal-elimination* false)
 (def ^:dynamic *auto-optimize-temporal* true)
+(def ^:dynamic *magic-rewrite?* true)
+
+(def ^:private magic-special-heads #{'or 'or-join 'and 'not 'not-join})
+
+(defn- magic-head?
+  [sym]
+  (str/starts-with? (name sym) "magic__"))
+
+(defn- flatten-head-vars
+  [head-clause]
+  (let [args (rest head-clause)]
+    (if (and (seq args) (vector? (first args)))
+      (vec (concat (first args) (rest args)))
+      (vec args))))
+
+(defn- bound-arg?
+  [arg bound-vars]
+  (and (not= arg '_)
+       (or (not (qu/free-var? arg))
+           (contains? bound-vars arg))))
+
+(defn- binding-pattern
+  [args bound-vars]
+  (mapv (fn [arg] (if (bound-arg? arg bound-vars) :b :f)) args))
+
+(defn- bound-indices
+  [pattern]
+  (keep-indexed (fn [idx p] (when (= p :b) idx)) pattern))
+
+(defn- pattern-suffix
+  [pattern]
+  (apply str (mapv #(if (= % :b) "b" "f") pattern)))
+
+(defn- adorned-name
+  [rule-name pattern]
+  (symbol (str (name rule-name) "__" (pattern-suffix pattern))))
+
+(defn- magic-name
+  [adorned-rule]
+  (symbol (str "magic__" (name adorned-rule))))
+
+(defn- replace-rule-head
+  [clause new-head]
+  (if (qu/source? (first clause))
+    (list* (first clause) new-head (nnext clause))
+    (list* new-head (rest clause))))
+
+(defn- predicate-clause?
+  [clause]
+  (and (vector? clause)
+       (sequential? (first clause))
+       (= 1 (count clause))))
+
+(defn- fn-binding-clause?
+  [clause]
+  (and (vector? clause)
+       (sequential? (first clause))
+       (< 1 (count clause))))
+
+(defn- complex-clause?
+  [clause]
+  (and (sequential? clause)
+       (let [head (if (qu/source? (first clause))
+                    (second clause)
+                    (first clause))]
+         (contains? magic-special-heads head))))
+
+(defn- clause-output-vars
+  [clause context]
+  (cond
+    (rule-call? context clause)
+    (into #{} (filter qu/free-var?) (rule-args clause))
+
+    (fn-binding-clause? clause)
+    (into #{} (filter qu/free-var?) (rest clause))
+
+    (predicate-clause? clause)
+    #{}
+
+    (vector? clause)
+    (into #{} (filter qu/free-var?) clause)
+
+    :else #{}))
+
+(defn- values-for-var
+  [context v]
+  (let [values (HashSet.)]
+    (doseq [rel (:rels context)
+            :let [idx ((:attrs rel) v)]
+            :when (some? idx)]
+      (let [tuples ^List (:tuples rel)]
+        (dotimes [i (.size tuples)]
+          (.add values (aget ^objects (.get tuples i) ^long idx)))))
+    (vec values)))
+
+(defn- magic-seed-rel
+  [context head-vars bound-args]
+  (let [values (mapv (fn [arg]
+                       (if (qu/free-var? arg)
+                         (values-for-var context arg)
+                         [arg]))
+                     bound-args)
+        attrs  (zipmap head-vars (range))]
+    (if (or (empty? head-vars) (some empty? values))
+      (r/relation! attrs (FastList.))
+      (r/relation! attrs (r/many-tuples values)))))
+
+(defn- magic-bind-clauses
+  [head-vars bound-args]
+  (mapv (fn [hv arg]
+          [(list 'identity arg) hv])
+        head-vars bound-args))
+
+(defn- simple-branches?
+  [branches]
+  (every?
+    (fn [branch]
+      (every? (complement complex-clause?) (rest branch)))
+    branches))
+
+(defn- positive-recursive?
+  [rules stratum]
+  (let [stratum-set (set stratum)]
+    (and
+      (every?
+        (fn [rname]
+          (every?
+            (fn [branch]
+              (every?
+                (fn [clause]
+                  (not (and (sequential? clause)
+                            (let [head (if (qu/source? (first clause))
+                                         (second clause)
+                                         (first clause))]
+                              (#{'not 'not-join} head)))))
+                (rest branch)))
+            (rules rname)))
+        stratum-set)
+      (every? (comp simple-branches? rules) stratum-set))))
+
+(defn- magic-effective?
+  "Check if magic set rewrite would be effective for the given rule and bound
+   pattern. Magic is ineffective when bound head vars don't appear in any
+   non-recursive body clause of a recursive branch - they can't filter
+   intermediate results, causing cross-product scans."
+  [rules rule-name bound-idxs stratum-set]
+  (let [branches  (rules rule-name)
+        head-vars (vec (rest (ffirst branches)))]
+    (every?
+      (fn [branch]
+        (let [body-clauses (rest branch)
+              ;; Check if this branch has any recursive calls
+              has-recursive? (some (fn [clause]
+                                     (and (sequential? clause)
+                                          (stratum-set (rule-head clause))))
+                                   body-clauses)]
+          (if has-recursive?
+            ;; For recursive branches, bound vars must appear in non-recursive
+            ;; clauses to effectively filter intermediate results
+            (let [non-rec-clauses (remove (fn [clause]
+                                            (and (sequential? clause)
+                                                 (stratum-set (rule-head clause))))
+                                          body-clauses)
+                  non-rec-vars    (into #{} (mapcat clause-free-vars)
+                                        non-rec-clauses)
+                  bound-vars      (into #{} (map head-vars) bound-idxs)]
+              ;; At least one bound var must appear in non-recursive clauses
+              (seq (set/intersection bound-vars non-rec-vars)))
+            ;; Non-recursive branches are always OK
+            true)))
+      branches)))
+
+(declare stable-head-idxs)
+
+(defn- magic-rewrite-program
+  [rules goal-name goal-pattern stratum-set]
+  (let [rules-context {:rules rules}
+        seen          (volatile! #{})
+        queue         (volatile! [[goal-name goal-pattern]])
+        adorned-rules (volatile! {})
+        magic-rules   (volatile! {})
+        magic-heads   (volatile! {})
+        ;; Precompute stable indices for rules in the stratum to avoid
+        ;; over-adornment of recursive calls
+        stable-cache  (reduce (fn [m rname]
+                                (let [branches (rules rname)]
+                                  (assoc m rname
+                                         (if branches
+                                           (stable-head-idxs branches stratum-set)
+                                           #{}))))
+                              {} stratum-set)]
+    (letfn [(ensure-magic-heads
+              [magic-name n]
+              (if-let [vars (@magic-heads magic-name)]
+                vars
+                (let [vars (mapv (fn [_] (gensym "?magic")) (range n))]
+                  (vswap! magic-heads assoc magic-name vars)
+                  vars)))
+
+            (add-magic-branch
+              [magic-name branch]
+              (vswap! magic-rules
+                      (fn [m]
+                        (update m magic-name (fnil conj []) branch))))]
+      (loop []
+        (if-let [[rule-name pattern] (first @queue)]
+          (do
+            (vswap! queue subvec 1)
+            (when-not (contains? @seen [rule-name pattern])
+              (vswap! seen conj [rule-name pattern])
+              (let [adorned-rule (adorned-name rule-name pattern)
+                    magic-rule   (magic-name adorned-rule)
+                    branches     (get rules rule-name)
+                    head-clause  (ffirst branches)
+                    head-vars    (flatten-head-vars head-clause)
+                    b-idxs       (vec (bound-indices pattern))
+                    bound-vars   (into #{} (map head-vars) b-idxs)
+                    magic-call   (when (seq b-idxs)
+                                   (list* magic-rule (map head-vars b-idxs)))]
+                (when (seq b-idxs)
+                  (ensure-magic-heads magic-rule (count b-idxs)))
+                (doseq [branch branches]
+                  (let [head     (first branch)
+                        body     (rest branch)
+                        new-head (replace-rule-head head adorned-rule)]
+                    (loop [clauses      body
+                           prefix       (cond-> [] magic-call (conj magic-call))
+                           magic-prefix (cond-> [] magic-call (conj magic-call))
+                           bound        bound-vars
+                           out          []]
+                      (if (empty? clauses)
+                        (vswap! adorned-rules
+                                (fn [m]
+                                  (update m adorned-rule (fnil conj [])
+                                          (into [new-head] (concat
+                                                            (when magic-call
+                                                              [magic-call])
+                                                            out)))))
+                        (let [clause (first clauses)]
+                          (if (rule-call? rules-context clause)
+                            (let [args         (rule-args clause)
+                                  call-head    (rule-head clause)
+                                  raw-pattern  (binding-pattern args bound)
+                                  ;; For recursive calls within stratum, filter
+                                  ;; pattern to stable indices only to avoid
+                                  ;; over-adornment that causes seed explosion.
+                                  ;; Only filter when stable indices exist; if empty,
+                                  ;; keep original pattern to allow magic propagation.
+                                  call-pattern (let [stable (stable-cache call-head)]
+                                                 (if (seq stable)
+                                                   (vec (map-indexed
+                                                          (fn [idx p]
+                                                            (if (and (= p :b)
+                                                                     (not (contains?
+                                                                            stable idx)))
+                                                              :f
+                                                              p))
+                                                          raw-pattern))
+                                                   raw-pattern))
+                                  call-bound?  (some #{:b} call-pattern)
+                                  call-name    (if call-bound?
+                                                 (adorned-name call-head
+                                                               call-pattern)
+                                                 call-head)
+                                  replaced     (replace-rule-head clause
+                                                                  call-name)]
+                              (when call-bound?
+                                (let [call-magic-name (magic-name call-name)
+                                      call-b-idxs     (vec (bound-indices
+                                                            call-pattern))
+                                      bound-args      (mapv #(nth args %) call-b-idxs)
+                                      magic-vars      (ensure-magic-heads
+                                                        call-magic-name
+                                                        (count call-b-idxs))
+                                      bind-clauses    (magic-bind-clauses
+                                                        magic-vars bound-args)
+                                      magic-body      (concat magic-prefix
+                                                             bind-clauses)]
+                                  (add-magic-branch
+                                    call-magic-name
+                                    (into [(list* call-magic-name magic-vars)]
+                                          magic-body))
+                                  (vswap! queue conj [(rule-head clause)
+                                                      call-pattern])))
+                              (recur (rest clauses)
+                                     (conj prefix replaced)
+                                     (conj magic-prefix clause)
+                                     (into bound (clause-output-vars
+                                                   clause rules-context))
+                                     (conj out replaced)))
+                            (recur (rest clauses)
+                                   (conj prefix clause)
+                                   (conj magic-prefix clause)
+                                   (into bound (clause-output-vars
+                                                 clause rules-context))
+                                   (conj out clause)))))))))
+            )
+            (recur))
+          (let [final-magic-rules
+                (reduce-kv
+                  (fn [m magic-name magic-vars]
+                    (if (contains? m magic-name)
+                      m
+                      (assoc m magic-name
+                             [[(list* magic-name magic-vars)
+                               [(list '= 0 1)]]])))
+                  @magic-rules
+                  @magic-heads)]
+            {:rules       (merge rules @adorned-rules final-magic-rules)
+             :magic-heads @magic-heads
+             :goal        (adorned-name goal-name goal-pattern)}))))))
 
 (defn- recursive-branch?
   [branch scc]
@@ -483,6 +799,23 @@
         (when (sequential? clause)
           (scc (rule-head clause))))
       clauses)))
+
+(defn- rule-call-heads
+  [form rules-context]
+  (into #{}
+        (keep (fn [node]
+                (when (rule-call? rules-context node)
+                  (rule-head node))))
+        (tree-seq sequential? seq form)))
+
+(defn- external-rule-heads
+  [branches rules-context stratum-set]
+  (into #{}
+        (comp
+          (mapcat rest)
+          (mapcat #(rule-call-heads % rules-context))
+          (remove stratum-set))
+        branches))
 
 (defn- vector-binds-var?
   "True if a binding clause produces the given var as an output."
@@ -576,11 +909,15 @@
                     (fn [rname]
                       (extract-attr-dependencies rname (rules rname)
                                                  (set scc)))
-                    scc)]
+                    scc)
+        nodes     (into #{}
+                        (mapcat (fn [[src tgt _]] [src tgt]))
+                        all-edges)]
     (reduce
       (fn [g [src tgt weight]]
         (update g src (fnil conj []) {:target tgt :weight weight}))
-      {} all-edges)))
+      (zipmap nodes (repeat []))
+      all-edges)))
 
 (defn- find-temporal-candidates
   [ag]
@@ -679,9 +1016,10 @@
   (or (< 1 (count stratum))
       ((deps rule-name) rule-name)))
 
-(defn solve-stratified
+(declare recursive?)
+
+(defn- solve-stratified*
   [context rule-name args resolve-clause-fn]
-  ;; (println "rule solve" rule-name)
   (let [rules      (:rules context)
         deps       (or (:rules-deps context) (dependency-graph rules))
         cached-rel (get-in context [:rule-rels rule-name])
@@ -690,7 +1028,7 @@
       (map-rule-result cached-rel head-vars args)
       (let [sccs       (dependency-sccs deps)
             stratum    (some #(when (% rule-name) %) sccs)
-            recursive? (recursive-stratum? stratum deps rule-name)]
+            stratum-recursive? (recursive-stratum? stratum deps rule-name)]
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
           (let [stratum-set    (set stratum)
@@ -703,13 +1041,48 @@
                   {} stratum)
 
                 full-renamed-rules (merge rules renamed-rules-map)
+                rules-context     (assoc context :rules full-renamed-rules)
+                stratum-branches  (mapcat identity (vals renamed-rules-map))
+                external-heads    (external-rule-heads stratum-branches
+                                                       rules-context
+                                                       stratum-set)
+                precompute?       (and stratum-recursive?
+                                       (get context :precompute-rule-rels? true)
+                                       (seq external-heads))
+                precompute-context
+                (when precompute?
+                  (-> context
+                      (assoc :rules full-renamed-rules
+                             :rules-deps deps
+                             :rels []
+                             :precompute-rule-rels? false)
+                      (dissoc :magic-seeds)))
+                precomputed-rels
+                (when precompute?
+                  (reduce
+                    (fn [m rname]
+                      (let [branches (full-renamed-rules rname)]
+                        (cond
+                          (nil? branches) m
+                          (contains? (:rule-rels context) rname) m
+                          (recursive? deps rname) m
+                          :else
+                          (let [head-vars (rest (ffirst branches))]
+                            (assoc m rname
+                                   (solve-stratified* precompute-context
+                                                      rname
+                                                      head-vars
+                                                      resolve-clause-fn))))))
+                    {} external-heads))
+                base-rule-rels (merge (:rule-rels context) precomputed-rels)
 
                 ;; Detection of Temporal Elimination
-                temporal-idx   (when recursive?
+                temporal-idx   (when stratum-recursive?
                                  (temporal-index stratum renamed-rules-map
                                                  temporal-cache))
                 temporal-elim? (or *temporal-elimination*
-                                   (and *auto-optimize-temporal* temporal-idx))
+                                    (and *auto-optimize-temporal*
+                                         temporal-idx))
 
                 ;; 2. Determine Required Seeds
                 entry-renamed-branches (renamed-rules-map rule-name)
@@ -741,7 +1114,7 @@
                 ;; when recursion is involved. Constants are also safe if the
                 ;; corresponding head var is stable through recursion.
                 seed-indices (sort
-                               (if recursive?
+                               (if stratum-recursive?
                                  (set/union required-indices magic-indices
                                             stable-const-indices)
                                  (set/union required-indices constant-indices
@@ -750,7 +1123,7 @@
                 ;; warm start: only when a single outer relation already covers
                 ;; all head vars
                 warm-start
-                (when (and recursive? (every? qu/free-var? args))
+                (when (and stratum-recursive? (every? qu/free-var? args))
                   (when-let [rel (some #(when (every? (set entry-renamed-head)
                                                       (keys (:attrs %)))
                                           %)
@@ -784,8 +1157,11 @@
                   [] seed-indices)
 
                 clean-context
-                (assoc (select-keys context [:sources :rule-rels :rules-deps])
-                       :rules-deps deps)
+                (assoc (select-keys context
+                                    [:sources :rule-rels :rules-deps
+                                     :magic-seeds])
+                       :rules-deps deps
+                       :rule-rels base-rule-rels)
 
                 ;; Split branches into base (non-recursive) and recursive
                 base-branches-map
@@ -852,6 +1228,21 @@
                                        #(r/sum-rel warm-start %))
                                start-totals)
 
+                start-totals (if-let [magic-seeds (:magic-seeds context)]
+                               (reduce
+                                 (fn [acc [rname seed-rel]]
+                                   (if (and seed-rel (stratum-set rname))
+                                     (let [head-vars (rest (ffirst
+                                                             (full-renamed-rules
+                                                               rname)))
+                                           seed-rel  (rename-rel-attrs
+                                                       seed-rel head-vars)]
+                                       (update acc rname r/sum-rel seed-rel))
+                                     acc))
+                                 start-totals
+                                 magic-seeds)
+                               start-totals)
+
                 final-totals
                 (loop [totals      start-totals
                        deltas      start-totals
@@ -863,7 +1254,9 @@
                           (assoc clean-context
                                  :rules full-renamed-rules
                                  :rels seed-rels
-                                 :rule-rels (merge (:rule-rels context) deltas))
+                                 :rule-rels (merge base-rule-rels
+                                                   empty-stratum-rels
+                                                   deltas))
 
                           candidates
                           (reduce
@@ -917,6 +1310,63 @@
 
             (map-rule-result (final-totals rule-name)
                              entry-renamed-head args)))))))
+
+(defn solve-stratified
+  [context rule-name args resolve-clause-fn]
+  (let [rules       (:rules context)
+        deps        (or (:rules-deps context) (dependency-graph rules))
+        sccs        (dependency-sccs deps)
+        stratum     (some #(when (% rule-name) %) sccs)
+        recursive?  (when stratum (recursive-stratum? stratum deps rule-name))
+        bound-vars  (context-bound-vars context)
+        base-pattern (binding-pattern args bound-vars)
+        base-bound?  (some #{:b} base-pattern)
+        stratum-set  (when stratum (set stratum))
+        branches     (when stratum (rules rule-name))
+        head-vars    (when branches (rest (ffirst branches)))
+        required-idxs (if (and recursive? branches)
+                        (required-seeds branches head-vars context)
+                        #{})
+        stable-idxs  (if (and recursive? branches)
+                       (stable-head-idxs branches stratum-set)
+                       #{})
+        bound-idxs   (set (bound-indices base-pattern))
+        magic-idxs   (set/intersection bound-idxs stable-idxs)
+        seedable-idxs (set/union required-idxs magic-idxs)
+        ;; Avoid over-adornment for recursive rules when extra bound args
+        ;; would explode magic seeds; only keep seedable bound indices.
+        magic-pattern (if (and recursive? base-bound? (seq stable-idxs))
+                        (mapv (fn [idx p]
+                                (if (and (= p :b)
+                                         (contains? seedable-idxs idx))
+                                  :b
+                                  :f))
+                              (range (count base-pattern))
+                              base-pattern)
+                        base-pattern)
+        has-bound?  (some #{:b} magic-pattern)]
+    (if (and *magic-rewrite?*
+             has-bound?
+             recursive?
+             (positive-recursive? rules stratum)
+             (not (magic-head? rule-name))
+             (magic-effective? rules rule-name
+                               (bound-indices magic-pattern) stratum-set))
+      (let [{:keys [rules magic-heads goal]}
+            (magic-rewrite-program rules rule-name magic-pattern stratum-set)
+            magic-goal   (magic-name goal)
+            b-idxs       (vec (bound-indices magic-pattern))
+            bound-args   (mapv #(nth args %) b-idxs)
+            head-vars    (get magic-heads magic-goal)
+            seed-rel     (magic-seed-rel context head-vars bound-args)
+            magic-context (-> context
+                              (assoc :rules rules
+                                     :rules-deps (dependency-graph rules)
+                                     :magic-seeds {magic-goal seed-rel}))]
+        (binding [*magic-rewrite?* false]
+          (solve-stratified* magic-context goal args resolve-clause-fn)))
+      (binding [*magic-rewrite?* false]
+        (solve-stratified* context rule-name args resolve-clause-fn)))))
 
 ;; rewrite
 

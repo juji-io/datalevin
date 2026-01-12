@@ -323,8 +323,8 @@
     (doto ^List tuples
       (.sort (reify Comparator
                (compare [_ a b]
-                 (- ^long (aget ^objects a eid-idx)
-                    ^long (aget ^objects b eid-idx))))))))
+                 (Long/compare ^long (aget ^objects a eid-idx)
+                               ^long (aget ^objects b eid-idx))))))))
 
 (defn- group-counts
   [aids]

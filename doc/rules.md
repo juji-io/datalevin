@@ -36,6 +36,12 @@ reached, i.e. when no new tuples are produced. The evaluation is stratified,
 where rules run in their strongly connected components (stratum) in the correct
 topological sort order.
 
+### Magic set rewrite
+
+We implements the well known magic sets rule rewrite algorithm [1] [2] that add
+magic rules to leverage bound variables to avoid generating unnecessary
+intermediate results in SNE. The rewrite is enabled only when it is effective.
+
 ### Seeding tuples (new)
 
 Compared with a standalone SNE engine, Datalevin rule engine is part of the
@@ -50,14 +56,9 @@ filters to prevent the generation of unnecessary tuples during SNE.
 As an innovation, we identify the clauses that are not involved in recursions,
 pull them out and add them to the regular query clauses to allow the cost-based
 query optimizer to work on them. That is to say, SNE only works on the rules
-that involved in recursions.
+that involved in recursions. This reduces the amount of work SNE has to do.
 
-This optimization not just simplifies the rules, but also reduces the number
-of tuples SNE has to generate. This approach enjoys the same benefits of the
-well known magic sets rule rewrite algorithm [1] [2], while avoiding potential
-slow-down due to the explosion of magic rules brought by the rewrite.
-
-### Temporel Elimination
+### Temporal elimination
 
 For certain applicable recursive rules that meet the criteria of
 T-stratification [3], we implements temporal elimination, an optimization that

@@ -273,6 +273,33 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest magic-set-unstable-bound-test
+  (let [dir   (u/tmp-dir (str "magic-set-unstable-" (UUID/randomUUID)))
+        conn  (d/get-conn
+                dir {:node   {:db/unique :db.unique/identity}
+                     :parent {:db/valueType :db.type/long}
+                     :root   {:db/valueType :db.type/boolean}}
+                {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        txs   [{:db/id 1 :node 1 :root true}
+               {:db/id 2 :node 2 :parent 1}
+               {:db/id 3 :node 3 :parent 2}]
+        rules '[[(root ?m ?r)
+                 [?e :node ?m]
+                 [?e :root true]
+                 [(identity ?m) ?r]]
+                [(root ?m ?r)
+                 [?e :node ?m]
+                 [?e :parent ?p]
+                 (root ?p ?r)]]]
+    (d/transact! conn txs)
+    (is (= #{1}
+           (set (d/q '[:find [?r ...]
+                       :in $ % ?m
+                       :where (root ?m ?r)]
+                     (d/db conn) rules 3))))
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest sequence-generation-memory-test
   (let [dir (u/tmp-dir (str "memory-test-" (UUID/randomUUID)))
         db  (d/empty-db dir nil
