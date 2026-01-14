@@ -45,7 +45,7 @@
    [datalevin.relation Relation]
    [datalevin.storage Store]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
-    FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
+    FindColl FindRel FindScalar FindTuple Or PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -310,8 +310,6 @@
               (.add res (aget ^objects (.get tuples i) idx)))
             res))))))
 
-(def ^:const ^:private ^long multi-lookup-threshold 5000)
-
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
     (let [[e a v] pattern
@@ -343,21 +341,23 @@
             nil))
         entity-values))
 
+(def ^:const ^:private ^long multi-lookup-threshold 100000)
+
 (defn- lookup-pattern-multi-entity
   "Perform multiple point lookups for bound entity values.
    More efficient than full table scan when entity is bound to multiple values.
    Returns tuples in format matching what full scan would return."
   [db pattern entity-pairs v-is-var?]
   (let [[_ a v] pattern
-        a'  (if (keyword? a) a nil)
-        v'  (if (or (qu/free-var? v) (= v '_)) nil v)
-        acc (FastList.)]
+        a'      (if (keyword? a) a nil)
+        v'      (if (or (qu/free-var? v) (= v '_)) nil v)
+        acc     (FastList.)]
     (doseq [[e eid] entity-pairs]
       (let [tuples (db/-search-tuples db [eid a' v'])]
         (when tuples
           ;; ea-tuples returns [v], but we need [e v] to match full scan format
           (let [^List ts tuples
-                n       (.size ts)]
+                n        (.size ts)]
             (if v-is-var?
               ;; Pattern is [?e a ?v] or [?e a _], need to prepend e to each [v]
               (dotimes [i n]
@@ -372,17 +372,57 @@
                 (.add acc (object-array [e]))))))))
     acc))
 
+(defn- lookup-pattern-multi-value
+  "Perform multiple AV lookups for bound value variable.
+   More efficient than full table scan when value is bound to multiple values.
+   Returns tuples in format [e v] or [e] depending on pattern."
+  [db pattern value-set e-is-var?]
+  (let [[e a _] pattern
+        ref-attr? (and (keyword? a) (db/ref? db a))
+        acc (FastList.)]
+    (doseq [v value-set]
+      (when-some [v' (if (and ref-attr?
+                              (or (qu/lookup-ref? v) (keyword? v)))
+                       (db/entid db v)
+                       v)]
+        (let [tuples (db/-search-tuples db [nil a v'])]
+          (when tuples
+            (let [^List ts tuples
+                  n       (.size ts)]
+              (if e-is-var?
+                ;; Pattern is [?e a ?v], need both e and v
+                (dotimes [i n]
+                  (let [^objects t (.get ts i)
+                        result     (object-array 2)]
+                    (aset result 0 (aget t 0))  ;; entity from av-tuples
+                    (aset result 1 v)
+                    (.add acc result)))
+                ;; Pattern is [_ a ?v], only need v (but shouldn't happen)
+                (dotimes [i n]
+                  (.add acc (object-array [v])))))))))
+    acc))
+
 (defn lookup-pattern-db
   [context db pattern]
-  (let [[e a v] pattern
+  (let [[e a v]           pattern
         ;; Check if entity is bound to multiple values
-        entity-values (when (and (qu/free-var? e)
-                                 (keyword? a))  ;; Only optimize when attr is known
-                        (bound-values context e))
-        use-multi?    (and entity-values
-                           (<= (.size ^java.util.HashSet entity-values)
-                               multi-lookup-threshold))]
-    (if use-multi?
+        entity-values     (when (and (qu/free-var? e)
+                                     (keyword? a))  ;; Only optimize when attr is known
+                            (bound-values context e))
+        use-entity-multi? (and entity-values
+                               (<= (.size ^java.util.HashSet entity-values)
+                                   multi-lookup-threshold))
+        ;; Check if value is bound to multiple values (and entity is NOT bound)
+        value-values      (when (and (not use-entity-multi?)
+                                     (qu/free-var? e)
+                                     (qu/free-var? v)
+                                     (keyword? a))
+                            (bound-values context v))
+        use-value-multi?  (and value-values
+                               (<= (.size ^java.util.HashSet value-values)
+                                   multi-lookup-threshold))]
+    (cond
+      use-entity-multi?
       ;; Multi-entity lookup path
       (let [resolved-pattern (resolve-pattern-lookup-refs db pattern)
             entity-pairs     (resolve-entity-pairs db entity-values)
@@ -398,6 +438,17 @@
         (r/relation! attrs
                      (lookup-pattern-multi-entity db resolved-pattern
                                                   entity-pairs v-is-var?)))
+
+      use-value-multi?
+      ;; Multi-value lookup path (e.g., [?k :knows/person1 ?start] with ?start bound)
+      (let [e-is-var? (and (qu/free-var? e) (not= e '_))
+            attrs     (if e-is-var?
+                        {e 0, v 1}
+                        {v 0})]
+        (r/relation! attrs
+                     (lookup-pattern-multi-value db pattern value-values e-is-var?)))
+
+      :else
       ;; Original single-lookup path
       (let [search-pattern (->> pattern
                                 (substitute-constants context)
@@ -878,93 +929,154 @@
       (nnext clause)
       (rest clause))))
 
+(defn- or-join-clause?
+  "Check if clause is an or-join (parsed Or record or raw form)"
+  [clause]
+  (or (instance? Or clause)
+      (and (sequential? clause)
+           (not (vector? clause))
+           (= 'or-join (first clause)))))
+
+(defn- get-or-join-vars
+  "Extract binding variables from an or-join clause (parsed or raw)"
+  [clause]
+  (cond
+    ;; Parsed Or record - extract from rule-vars field
+    (instance? Or clause)
+    (let [rule-vars (:rule-vars clause)]
+      (when rule-vars
+        (into []
+              (comp (map :symbol) (filter qu/free-var?))
+              (concat (:required rule-vars) (:free rule-vars)))))
+
+    ;; Raw or-join form
+    (or-join-clause? clause)
+    (let [[_ vars & _] clause]
+      (if (vector? (first vars))
+        ;; [[req-vars] other-vars] form
+        (into (vec (first vars)) (rest vars))
+        ;; [vars] form
+        (vec vars)))))
+
 (defn- find-rule-derived-vars
-  "Find entity variables that should be derived from rules rather than scanned.
+  "Find entity variables that should be derived from rules/or-join rather than scanned.
    A variable is rule-derived if:
-   1. It appears in a rule call alongside an already-bound variable
+   1. It appears in a rule call or or-join alongside an already-bound variable
    2. The patterns using it as entity have no value constraints
-   This detects cases where a rule connects a bound var to an unbound var."
+   This detects cases where a rule/or-join connects a bound var to an unbound var."
   [clauses rules input-bound-vars]
-  (when (seq rules)
-    (let [;; Get all pattern clauses
-          patterns (filter #(instance? Pattern %) clauses)
-          ;; Entity variables that have value constraints (bound patterns)
-          ;; Either a Constant value OR a variable bound by input
-          constrained-entities
-          (into #{}
-                (comp
-                  (filter (fn [p]
-                            (let [pat (:pattern p)]
-                              (and (>= (count pat) 3)
-                                   (let [v (nth pat 2)]
-                                     (or (instance? Constant v)
-                                         (and (instance? Variable v)
-                                              (input-bound-vars (:symbol v)))))))))
-                  (map #(get-in % [:pattern 0 :symbol]))
-                  (filter qu/free-var?))
-                patterns)
-          ;; Variables connected via :ref patterns (e.g. [?msg :hasCreator ?p])
-          ref-connected
-          (reduce
-            (fn [m p]
-              (let [pat (:pattern p)
-                    e-var (get-in pat [0 :symbol])
-                    v-var (when (>= (count pat) 3)
-                            (let [v (nth pat 2)]
-                              (when (instance? Variable v) (:symbol v))))]
-                (if (and (qu/free-var? e-var) (qu/free-var? v-var))
-                  (-> m
-                      (update e-var (fnil conj #{}) v-var)
-                      (update v-var (fnil conj #{}) e-var))
-                  m)))
-            {} patterns)
-          ;; Find all vars reachable from constrained entities
-          reachable (loop [frontier constrained-entities
-                          visited #{}]
-                      (if (empty? frontier)
-                        visited
-                        (let [next-frontier (into #{}
-                                                  (comp
-                                                    (mapcat ref-connected)
-                                                    (remove visited))
-                                                  frontier)]
-                          (recur next-frontier (into visited frontier)))))
-          ;; Entity vars that are NOT reachable from constrained entities
-          all-entity-vars (into #{}
-                                (comp
-                                  (map #(get-in % [:pattern 0 :symbol]))
-                                  (filter qu/free-var?))
-                                patterns)
-          unreachable-entities (set/difference all-entity-vars reachable)
-          ;; Check which unreachable entities appear in rules with reachable vars
-          directly-rule-derived
-          (reduce
-            (fn [derived clause]
-              (if (or (parsed-rule-expr? clause) (rule-clause? rules clause))
-                (let [args (get-rule-args clause)
-                      rule-vars (filterv qu/free-var? args)
-                      has-reachable? (some reachable rule-vars)
-                      unreachable-in-rule (filter unreachable-entities rule-vars)]
-                  (if (and has-reachable? (seq unreachable-in-rule))
-                    (into derived unreachable-in-rule)
-                    derived))
-                derived))
-            #{} clauses)
-          ;; Also include entities that are ONLY reachable through rule-derived vars
-          ;; These are unreachable entities connected to rule-derived vars
-          indirectly-derived
-          (loop [frontier directly-rule-derived
-                 derived directly-rule-derived]
-            (if (empty? frontier)
-              derived
-              (let [;; Find unreachable entities connected to frontier
-                    newly-derived (into #{}
-                                        (comp
-                                          (mapcat ref-connected)
-                                          (filter unreachable-entities)
-                                          (remove derived))
-                                        frontier)]
-                (recur newly-derived (into derived newly-derived)))))]
+  (let [;; Get all pattern clauses
+        patterns (filter #(instance? Pattern %) clauses)
+        ;; Entity variables that have value constraints (bound patterns)
+        ;; Either a Constant value OR a variable bound by input
+        constrained-entities
+        (into #{}
+              (comp
+                (filter (fn [p]
+                          (let [pat (:pattern p)]
+                            (and (>= (count pat) 3)
+                                 (let [v (nth pat 2)]
+                                   (or (instance? Constant v)
+                                       (and (instance? Variable v)
+                                            (input-bound-vars (:symbol v)))))))))
+                (map #(get-in % [:pattern 0 :symbol]))
+                (filter qu/free-var?))
+              patterns)
+        ;; Variables connected via :ref patterns (e.g. [?msg :hasCreator ?p])
+        ref-connected
+        (reduce
+          (fn [m p]
+            (let [pat (:pattern p)
+                  e-var (get-in pat [0 :symbol])
+                  v-var (when (>= (count pat) 3)
+                          (let [v (nth pat 2)]
+                            (when (instance? Variable v) (:symbol v))))]
+              (if (and (qu/free-var? e-var) (qu/free-var? v-var))
+                (-> m
+                    (update e-var (fnil conj #{}) v-var)
+                    (update v-var (fnil conj #{}) e-var))
+                m)))
+          {} patterns)
+        ;; Find all vars reachable from constrained entities
+        reachable (loop [frontier constrained-entities
+                        visited #{}]
+                    (if (empty? frontier)
+                      visited
+                      (let [next-frontier (into #{}
+                                                (comp
+                                                  (mapcat ref-connected)
+                                                  (remove visited))
+                                                frontier)]
+                        (recur next-frontier (into visited frontier)))))
+        ;; All vars that appear in patterns (both entity and value positions)
+        all-pattern-vars (into #{}
+                               (comp
+                                 (mapcat (fn [p]
+                                           (let [pat (:pattern p)
+                                                 e-var (get-in pat [0 :symbol])
+                                                 v-var (when (>= (count pat) 3)
+                                                         (let [v (nth pat 2)]
+                                                           (when (instance? Variable v)
+                                                             (:symbol v))))]
+                                             (cond-> []
+                                               (qu/free-var? e-var) (conj e-var)
+                                               (qu/free-var? v-var) (conj v-var)))))
+                                 (filter qu/free-var?))
+                               patterns)
+        ;; Entity vars that are NOT reachable from constrained entities
+        all-entity-vars (into #{}
+                              (comp
+                                (map #(get-in % [:pattern 0 :symbol]))
+                                (filter qu/free-var?))
+                              patterns)
+        unreachable-entities (set/difference all-entity-vars reachable)
+        ;; All pattern vars NOT reachable from constrained entities
+        unreachable-vars (set/difference all-pattern-vars reachable)
+        ;; Check which unreachable entities appear in rules with reachable vars
+        directly-rule-derived
+        (reduce
+          (fn [derived clause]
+            (if (or (parsed-rule-expr? clause) (rule-clause? rules clause))
+              (let [args (get-rule-args clause)
+                    rule-vars (filterv qu/free-var? args)
+                    has-reachable? (some reachable rule-vars)
+                    unreachable-in-rule (filter unreachable-entities rule-vars)]
+                (if (and has-reachable? (seq unreachable-in-rule))
+                  (into derived unreachable-in-rule)
+                  derived))
+              derived))
+          #{} clauses)
+        ;; Also check or-join clauses - they can bind vars like rules
+        ;; Check against all unreachable vars, not just entities
+        or-join-derived
+        (reduce
+          (fn [derived clause]
+            (if (or-join-clause? clause)
+              (let [or-vars (get-or-join-vars clause)
+                    has-reachable? (some reachable or-vars)
+                    ;; Find vars that are unreachable and in or-join
+                    unreachable-in-or (filter unreachable-vars or-vars)]
+                (if (and has-reachable? (seq unreachable-in-or))
+                  (into derived unreachable-in-or)
+                  derived))
+              derived))
+          directly-rule-derived clauses)
+        ;; Also include entities that are ONLY reachable through rule-derived vars
+        ;; These are unreachable entities connected to rule-derived vars
+        indirectly-derived
+        (loop [frontier or-join-derived
+               derived or-join-derived]
+          (if (empty? frontier)
+            derived
+            (let [;; Find unreachable entities connected to frontier
+                  newly-derived (into #{}
+                                      (comp
+                                        (mapcat ref-connected)
+                                        (filter unreachable-entities)
+                                        (remove derived))
+                                      frontier)]
+              (recur newly-derived (into derived newly-derived)))))]
+    (when (seq indirectly-derived)
       indirectly-derived)))
 
 (defn- depends-on-rule-output?

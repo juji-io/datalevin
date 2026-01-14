@@ -304,6 +304,32 @@
   "Vars that must be bound before evaluating a clause."
   [clause context]
   (cond
+    ;; or-join: only the binding vector vars that appear in input positions
+    ;; are required, not all internal vars
+    (and (sequential? clause)
+         (not (vector? clause))
+         (let [head (first clause)]
+           (= 'or-join head)))
+    (let [[_ binding-vars & _branches] clause]
+      ;; For or-join, we need the first binding var(s) that will be used
+      ;; to filter/seed the branches. Analyze which vars appear in E position
+      ;; (required) vs V position (produced) in the branches.
+      (into #{}
+            (filter (fn [v]
+                      (and (qu/free-var? v)
+                           ;; Check if this var appears in E position in any branch
+                           (some (fn [branch]
+                                   (let [clauses (if (and (seq? branch)
+                                                          (= 'and (first branch)))
+                                                   (rest branch)
+                                                   [branch])]
+                                     (some (fn [c]
+                                             (and (vector? c)
+                                                  (= v (first c))))
+                                           clauses)))
+                                 _branches)))
+            binding-vars)))
+
     ;; predicate style list, but not a rule call
     (and (sequential? clause)
          (not (vector? clause))
@@ -321,6 +347,13 @@
   "Vars that become bound after a clause is evaluated."
   [clause context]
   (cond
+    ;; or-join: only the binding vector vars become bound, not internal vars
+    (and (sequential? clause)
+         (not (vector? clause))
+         (= 'or-join (first clause)))
+    (let [[_ binding-vars & _] clause]
+      (into #{} (filter qu/free-var?) binding-vars))
+
     (and (sequential? clause)
          (not (vector? clause)))
     (if (rule-call? context clause)
@@ -334,7 +367,13 @@
 
 (defn- clause-free-vars
   [clause]
-  (into #{} (filter qu/free-var?) (flatten clause)))
+  (if (and (sequential? clause)
+           (not (vector? clause))
+           (= 'or-join (first clause)))
+    ;; For or-join, only consider binding vector vars for reordering purposes
+    (let [[_ binding-vars & _] clause]
+      (into #{} (filter qu/free-var?) binding-vars))
+    (into #{} (filter qu/free-var?) (flatten clause))))
 
 (defn- context-bound-vars
   [context]
@@ -479,6 +518,7 @@
 
 (def ^:dynamic *temporal-elimination* false)
 (def ^:dynamic *auto-optimize-temporal* true)
+(def ^:dynamic *keep-temporal-intermediates* false)
 (def ^:dynamic *magic-rewrite?* true)
 
 (def ^:private magic-special-heads #{'or 'or-join 'and 'not 'not-join})
@@ -1046,9 +1086,17 @@
                 external-heads    (external-rule-heads stratum-branches
                                                        rules-context
                                                        stratum-set)
+                ;; Check if any args are bound (either constants or vars with values)
+                ;; If so, skip precomputation - filtering will be more efficient
+                has-bound-args?   (some (fn [arg]
+                                          (or (not (qu/free-var? arg))
+                                              (some #(contains? (:attrs %) arg)
+                                                    (:rels context))))
+                                        args)
                 precompute?       (and stratum-recursive?
                                        (get context :precompute-rule-rels? true)
-                                       (seq external-heads))
+                                       (seq external-heads)
+                                       (not has-bound-args?))
                 precompute-context
                 (when precompute?
                   (-> context
@@ -1293,7 +1341,8 @@
                             {} stratum)
 
                           new-totals
-                          (if temporal-elim?
+                          (if (and temporal-elim?
+                                   (not *keep-temporal-intermediates*))
                             (if (some r/rel-not-empty (vals new-deltas))
                               new-deltas
                               totals)
