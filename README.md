@@ -322,7 +322,7 @@ applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7469   | 1275.1 | 1296.7 | 967.2 | 41192.9 |
 | Datascript 1.7.8  | 109.7 | 707.2 | 584.7 | Out of Memory |
-| Datalevin latest | 14.5 | 315.7 | 237.1 | 132.8 |
+| Datalevin latest | 14.4 | 330.9 | 269.6 | 2.9 |
 
 For recursive rules like Q4, Datalevin can be orders of magnitude faster,
 while Datomic and Datascript struggle.

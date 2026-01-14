@@ -135,10 +135,10 @@
 
 (def default-versions
   [
-   ;; ["latest" "datomic"]
-   ;; ["latest" "datascript"]
-   ;; ["0.9.27" "datalevin"]
-   ["latest" "datalevin"]])
+   ["latest" "datalevin"]
+   ["latest" "datomic"]
+   ["latest" "datascript"]
+   ])
 
 
 (binding [sh/*sh-env* (merge {} (System/getenv) {})
