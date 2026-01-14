@@ -86,4 +86,30 @@
       (is (= (dp/find-vars find)
              '[?name ?x ?y])))))
 
+(deftest test-parse-having
+  (testing "Single having predicate"
+    (is (= (dp/parse-having '[[(pos? (sum ?x))]])
+           [(dp/->HavingPred (dp/->PlainSymbol 'pos?)
+                             [(dp/->Aggregate (dp/->PlainSymbol 'sum)
+                                              [(dp/->Variable '?x)])])])))
+
+  (testing "Having with comparison and constant"
+    (is (= (dp/parse-having '[[(> (sum ?x) 10)]])
+           [(dp/->HavingPred (dp/->PlainSymbol '>)
+                             [(dp/->Aggregate (dp/->PlainSymbol 'sum)
+                                              [(dp/->Variable '?x)])
+                              (dp/->Constant 10)])])))
+
+  (testing "Multiple having predicates"
+    (is (= (count (dp/parse-having '[[(pos? (sum ?x))] [(pos? (sum ?y))]]))
+           2)))
+
+  (testing "Having in full query"
+    (let [q (dp/parse-query '[:find ?name (sum ?x)
+                              :having [(pos? (sum ?x))]
+                              :in [[?name ?x]]
+                              :where])]
+      (is (= (count (:qhaving q)) 1))
+      (is (instance? datalevin.parser.HavingPred (first (:qhaving q)))))))
+
 #_(t/test-ns 'datalevin.test.find-parser)

@@ -452,6 +452,37 @@
            {:error :parser/with, :form form})))
 
 
+;; having = [ [(pred-fn aggregate-or-find-expr+)]+ ]
+;; Predicates over aggregates, evaluated after grouping
+
+(deftrecord HavingPred [fn args])
+
+(defn- parse-having-arg
+  "Parse an argument in a having predicate - can be aggregate, find-expr, or constant."
+  [form]
+  (or (parse-find-expr form)
+      (parse-aggregate form)
+      (parse-constant form)))
+
+(defn- parse-having-pred
+  "Parse a single having predicate like [(pos? (sum ?x))]."
+  [form]
+  (when (and (sequential? form)
+             (= (count form) 1)
+             (sequential? (first form)))
+    (let [[fn-sym & args] (first form)
+          fn*   (parse-plain-symbol fn-sym)
+          args* (parse-seq parse-having-arg args)]
+      (when (and fn* args*)
+        (HavingPred. fn* args*)))))
+
+(defn parse-having
+  "Parse the :having clause containing predicates over aggregates."
+  [form]
+  (when form
+    (parse-seq parse-having-pred form)))
+
+
 ;; in = [ (src-var | rules-var | plain-symbol | binding)+ ]
 
 (defn- parse-in-binding [form]
@@ -714,8 +745,8 @@
 
 ;; q* prefix because of https://dev.clojure.org/jira/browse/CLJS-2237
 (deftrecord Query
-  [qfind qorig-find qwith qreturn-map qin qwhere qorig-where qtimeout
-   qorder qlimit qoffset])
+  [qfind qorig-find qwith qreturn-map qin qwhere qorig-where qhaving
+   qtimeout qorder qlimit qoffset])
 
 (defn query->map [query]
   (loop [parsed {}, key nil, qs query]
@@ -905,6 +936,7 @@
                                  (or (:in qm) (default-in qwhere)))
                   :qwhere      qwhere
                   :qorig-where where
+                  :qhaving     (parse-having (:having qm))
                   :qtimeout    (parse-timeout (:timeout qm))
                   :qorder      (parse-order (:order-by qm))
                   :qoffset     (parse-offset (:offset qm))

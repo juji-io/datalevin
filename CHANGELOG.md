@@ -45,6 +45,11 @@
 - [Datalog] `:order-by` now accepts column indices (0-based) in addition to
   variable names, e.g. `:order-by [2 :desc 1 :asc]`, useful for sorting by
   aggregation results in `:find`.
+- [Datalog] `:find` now allows arithmetic expression over aggregations, e.g. `(+
+  sum(?x) sum(?y))`.
+- [Datalog] Added `:having` clauses, similar to SQL `HAVING`. This allows
+  conditions to be applied to results of aggregations, e.g. `:having [(pos? (sum
+  ?x))] [(< (sum ?y) 100)]`.
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions

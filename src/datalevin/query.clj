@@ -2395,6 +2395,66 @@
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
+(defn- find-aggregate-idx
+  "Find the index of an aggregate in find-elements by matching structure."
+  [aggregate find-elements]
+  (let [agg-var (-> aggregate :args last :symbol)]
+    (loop [elems find-elements
+           idx   0]
+      (when (seq elems)
+        (let [elem (first elems)]
+          (cond
+            ;; Direct aggregate match
+            (and (dp/aggregate? elem)
+                 (= (-> elem :fn :symbol) (-> aggregate :fn :symbol))
+                 (= (-> elem :args last :symbol) agg-var))
+            idx
+
+            ;; Skip to next element
+            :else
+            (recur (rest elems) (inc idx))))))))
+
+(defn- eval-having-arg
+  "Evaluate a having predicate argument against an aggregated result tuple."
+  [arg find-elements result-tuple]
+  (cond
+    (dp/aggregate? arg)
+    (let [idx (find-aggregate-idx arg find-elements)]
+      (when idx (nth result-tuple idx)))
+
+    (dp/find-expr? arg)
+    ;; For find-expr in having, we'd need to find the matching column
+    ;; For now, just look for a matching find-expr in find-elements
+    (let [idx (u/index-of #(and (dp/find-expr? %)
+                                (= (:fn %) (:fn arg)))
+                          find-elements)]
+      (when idx (nth result-tuple idx)))
+
+    (instance? Constant arg)
+    (:value arg)
+
+    :else
+    arg))
+
+(defn- eval-having-pred
+  "Evaluate a single having predicate on an aggregated result tuple."
+  [pred find-elements result-tuple]
+  (let [pred-fn (get built-ins/query-fns (-> pred :fn :symbol))
+        args    (mapv #(eval-having-arg % find-elements result-tuple)
+                      (:args pred))]
+    (when (and pred-fn (every? some? args))
+      (apply pred-fn args))))
+
+(defn apply-having
+  "Filter aggregated results by having predicates."
+  [having find-elements results]
+  (if (seq having)
+    (filter (fn [result-tuple]
+              (every? #(eval-having-pred % find-elements result-tuple)
+                      having))
+            results)
+    results))
+
 (defn- typed-aget [a i] (aget ^objects a ^Long i))
 
 (defn- tuple-get [tuple]
@@ -2579,6 +2639,7 @@
           find-elements (dp/find-elements find)
           result-arity  (count find-elements)
           with          (:qwith parsed-q)
+          having        (:qhaving parsed-q)
           find-vars     (dp/find-vars find)
           all-vars      (concatv find-vars (map :symbol with))
 
@@ -2598,6 +2659,9 @@
 
             (some #(or (dp/aggregate? %) (dp/find-expr? %)) find-elements)
             (aggregate find-elements context)
+
+            (seq having)
+            (apply-having having find-elements)
 
             (some dp/pull? find-elements) (pull find-elements context)
 

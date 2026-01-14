@@ -172,3 +172,53 @@
                          :in [[?name ?x ?y]]]
                        data))
              #{["Alice" 1] ["Bob" 2]})))))
+
+(deftest test-having
+  (let [data [["Alice" 10 20]
+              ["Alice" 5 15]
+              ["Bob" 30 40]
+              ["Charlie" 0 5]
+              ["Charlie" 0 10]]]
+
+    (testing "Filter with pos?"
+      (is (= (set (d/q '[:find ?name (sum ?x) (sum ?y)
+                         :having [(pos? (sum ?x))]
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15 35] ["Bob" 30 40]})))
+
+    (testing "Filter with > comparison"
+      (is (= (set (d/q '[:find ?name (sum ?x)
+                         :having [(> (sum ?x) 20)]
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Bob" 30]})))
+
+    (testing "Multiple having predicates (AND semantics)"
+      (is (= (set (d/q '[:find ?name (sum ?x) (sum ?y)
+                         :having [(pos? (sum ?x))]
+                                 [(< (sum ?y) 40)]
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15 35]})))
+
+    (testing "Having with find expression"
+      (is (= (set (d/q '[:find ?name (sum ?x) (sum ?y) (+ (sum ?x) (sum ?y))
+                         :having [(pos? (sum ?x))]
+                                 [(pos? (sum ?y))]
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15 35 50] ["Bob" 30 40 70]})))
+
+    (testing "Having with >= comparison"
+      (is (= (set (d/q '[:find ?name (sum ?x)
+                         :having [(>= (sum ?x) 15)]
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15] ["Bob" 30]})))
+
+    (testing "No having clause returns all groups"
+      (is (= (count (d/q '[:find ?name (sum ?x)
+                           :in [[?name ?x ?y]]]
+                         data))
+             3)))))
