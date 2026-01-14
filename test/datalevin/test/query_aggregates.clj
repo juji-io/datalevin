@@ -119,3 +119,56 @@
                                         monsters))]
     (is (= 3 (query-fn)))
     (is (= 3 (inter-query-fn)))))
+
+(deftest test-find-expr
+  (let [data [["Alice" 10 20]
+              ["Alice" 5 15]
+              ["Bob" 30 40]]]
+
+    (testing "Basic addition of two aggregates"
+      (is (= (set (d/q '[:find ?name (+ (sum ?x) (sum ?y))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 50] ["Bob" 70]})))
+
+    (testing "IC3-style: standalone aggregates and expression"
+      (is (= (set (d/q '[:find ?name (sum ?x) (sum ?y) (+ (sum ?x) (sum ?y))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15 35 50] ["Bob" 30 40 70]})))
+
+    (testing "Subtraction"
+      (is (= (set (d/q '[:find ?name (- (sum ?y) (sum ?x))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 20] ["Bob" 10]})))
+
+    (testing "Multiplication with constant"
+      (is (= (set (d/q '[:find ?name (* (sum ?x) 10)
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 150] ["Bob" 300]})))
+
+    (testing "Division (average-like)"
+      (is (= (set (d/q '[:find ?name (/ (sum ?x) (count ?x))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 15/2] ["Bob" 30]})))
+
+    (testing "Nested expression: (* 2 (+ (sum ?x) (sum ?y)))"
+      (is (= (set (d/q '[:find ?name (* 2 (+ (sum ?x) (sum ?y)))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 100] ["Bob" 140]})))
+
+    (testing "Complex nested: (+ (* (sum ?x) 2) (/ (sum ?y) 2))"
+      (is (= (set (d/q '[:find ?name (+ (* (sum ?x) 2) (/ (sum ?y) 2))
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 95/2] ["Bob" 80]})))
+
+    (testing "Modulo operator"
+      (is (= (set (d/q '[:find ?name (mod (sum ?x) 7)
+                         :in [[?name ?x ?y]]]
+                       data))
+             #{["Alice" 1] ["Bob" 2]})))))

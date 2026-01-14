@@ -17,7 +17,7 @@
 
 ;; utils
 
-(declare collect-vars-acc parse-clause parse-clauses parse-binding)
+(declare collect-vars-acc parse-clause parse-clauses parse-binding parse-aggregate)
 
 (defprotocol ITraversable
   (-collect      [_ pred acc])
@@ -281,6 +281,20 @@
 (deftrecord Pull [source variable pattern]
   IFindVars (-find-vars [this] (-find-vars (.-variable this))))
 
+(defn- collect-expr-vars
+  "Collect variables from a FindExpr's arguments recursively."
+  [args]
+  (mapcat (fn [arg]
+            (cond
+              (instance? Aggregate arg) (-find-vars arg)
+              (and (map? arg) (:args arg)) (collect-expr-vars (:args arg))
+              :else []))
+          args))
+
+(deftrecord FindExpr [fn args]
+  ;; FindExpr contributes vars from its inner aggregates
+  IFindVars (-find-vars [this] (collect-expr-vars (.-args this))))
+
 (defprotocol IFindElements
   (find-elements [this]))
 
@@ -305,6 +319,25 @@
 (defn pull? [element]
   (instance? Pull element))
 
+(defn find-expr? [element]
+  (instance? FindExpr element))
+
+(def ^:private find-expr-ops
+  "Supported operators in find expressions"
+  '#{+ - * / mod rem quot})
+
+(defn parse-find-expr [form]
+  (when (and (sequential? form)
+             (>= (count form) 2))
+    (let [[op & args] form]
+      (when (find-expr-ops op)
+        (let [parsed-args (mapv (fn [arg]
+                                  (or (parse-find-expr arg)
+                                      (parse-aggregate arg)
+                                      (parse-constant arg)))
+                                args)]
+          (when (every? some? parsed-args)
+            (FindExpr. (PlainSymbol. op) parsed-args)))))))
 
 (defn parse-aggregate [form]
   (when (and (sequential? form)
@@ -352,6 +385,7 @@
   (or (parse-variable form)
       (parse-pull-expr form)
       (parse-aggregate-custom form)
+      (parse-find-expr form)
       (parse-aggregate form)))
 
 (defn parse-find-rel [form]

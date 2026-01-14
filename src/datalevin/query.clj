@@ -2313,23 +2313,83 @@
   (-context-resolve [var _]
     (.-value var)))
 
+(defn- compute-aggregate
+  "Compute an aggregate over tuples at the given tuple index."
+  [element context tuples tuple-idx]
+  (let [f    (-context-resolve (:fn element) context)
+        args (mapv #(-context-resolve % context)
+                   (butlast (:args element)))
+        vals (map #(nth % tuple-idx) tuples)]
+    (apply f (conj args vals))))
+
+(defn- eval-find-expr
+  "Evaluate a FindExpr by computing its inner aggregates and applying the operator."
+  [expr context tuples var->idx]
+  (let [op   (get built-ins/query-fns (:symbol (:fn expr)))
+        args (mapv (fn [arg]
+                     (cond
+                       (dp/aggregate? arg)
+                       (let [var-sym (-> arg :args last :symbol)
+                             idx     (get var->idx var-sym)]
+                         (compute-aggregate arg context tuples idx))
+
+                       (dp/find-expr? arg)
+                       (eval-find-expr arg context tuples var->idx)
+
+                       :else
+                       (-context-resolve arg context)))
+                   (:args expr))]
+    (apply op args)))
+
+(defn- build-var->idx
+  "Build a mapping from variable symbols to tuple indices."
+  [find-elements]
+  (loop [elements find-elements
+         idx      0
+         result   {}]
+    (if (empty? elements)
+      result
+      (let [elem (first elements)
+            vars (dp/-find-vars elem)]
+        (recur (rest elements)
+               (+ idx (count vars))
+               (into result (map vector vars (range idx (+ idx (count vars))))))))))
+
 (defn -aggregate
   [find-elements context tuples]
-  (mapv (fn [element fixed-value i]
-          (if (dp/aggregate? element)
-            (let [f    (-context-resolve (:fn element) context)
-                  args (mapv #(-context-resolve % context)
-                             (butlast (:args element)))
-                  vals (map #(nth % i) tuples)]
-              (apply f (conj args vals)))
-            fixed-value))
-        find-elements
-        (first tuples)
-        (range)))
+  (let [var->idx    (build-var->idx find-elements)
+        first-tuple (first tuples)]
+    (loop [elements  find-elements
+           tuple-idx 0
+           result    []]
+      (if (empty? elements)
+        result
+        (let [elem     (first elements)
+              num-vars (count (dp/-find-vars elem))]
+          (cond
+            (dp/find-expr? elem)
+            (recur (rest elements)
+                   (+ tuple-idx num-vars)
+                   (conj result (eval-find-expr elem context tuples var->idx)))
+
+            (dp/aggregate? elem)
+            (recur (rest elements)
+                   (inc tuple-idx)
+                   (conj result (compute-aggregate elem context tuples tuple-idx)))
+
+            :else
+            (recur (rest elements)
+                   (inc tuple-idx)
+                   (conj result (nth first-tuple tuple-idx)))))))))
+
+(defn- groupable-elem?
+  "Check if an element should be used for grouping (not an aggregate or find-expr)."
+  [elem]
+  (not (or (dp/aggregate? elem) (dp/find-expr? elem))))
 
 (defn aggregate
   [find-elements context resultset]
-  (let [group-idxs (u/idxs-of (complement dp/aggregate?) find-elements)
+  (let [group-idxs (u/idxs-of groupable-elem? find-elements)
         group-fn   (fn [tuple] (map #(nth tuple %) group-idxs))
         grouped    (group-by group-fn resultset)]
     (for [[_ tuples] grouped]
@@ -2536,7 +2596,7 @@
           (cond->> (:result-set context)
             with (mapv #(subvec % 0 result-arity))
 
-            (some dp/aggregate? find-elements)
+            (some #(or (dp/aggregate? %) (dp/find-expr? %)) find-elements)
             (aggregate find-elements context)
 
             (some dp/pull? find-elements) (pull find-elements context)

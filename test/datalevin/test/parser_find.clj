@@ -42,4 +42,48 @@
                                            (dp/->Constant 1)
                                            (dp/->SrcVar '$x)])))))
 
+(deftest test-parse-find-expr
+  (testing "Basic arithmetic over aggregates"
+    (is (= (dp/parse-find-elem '(+ (sum ?x) (sum ?y)))
+           (dp/->FindExpr (dp/->PlainSymbol '+)
+                          [(dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?x)])
+                           (dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?y)])]))))
+
+  (testing "With constant"
+    (is (= (dp/parse-find-elem '(* (sum ?x) 10))
+           (dp/->FindExpr (dp/->PlainSymbol '*)
+                          [(dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?x)])
+                           (dp/->Constant 10)]))))
+
+  (testing "Nested expression"
+    (is (= (dp/parse-find-elem '(* 2 (+ (sum ?x) (sum ?y))))
+           (dp/->FindExpr (dp/->PlainSymbol '*)
+                          [(dp/->Constant 2)
+                           (dp/->FindExpr (dp/->PlainSymbol '+)
+                                          [(dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?x)])
+                                           (dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?y)])])]))))
+
+  (testing "All supported operators"
+    (is (dp/find-expr? (dp/parse-find-elem '(+ (sum ?x) (sum ?y)))))
+    (is (dp/find-expr? (dp/parse-find-elem '(- (sum ?x) (sum ?y)))))
+    (is (dp/find-expr? (dp/parse-find-elem '(* (sum ?x) (sum ?y)))))
+    (is (dp/find-expr? (dp/parse-find-elem '(/ (sum ?x) (sum ?y)))))
+    (is (dp/find-expr? (dp/parse-find-elem '(mod (sum ?x) 7))))
+    (is (dp/find-expr? (dp/parse-find-elem '(rem (sum ?x) 7))))
+    (is (dp/find-expr? (dp/parse-find-elem '(quot (sum ?x) 7)))))
+
+  (testing "In full find clause"
+    (is (= (dp/parse-find '[?name (sum ?x) (sum ?y) (+ (sum ?x) (sum ?y))])
+           (dp/->FindRel [(dp/->Variable '?name)
+                          (dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?x)])
+                          (dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?y)])
+                          (dp/->FindExpr (dp/->PlainSymbol '+)
+                                         [(dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?x)])
+                                          (dp/->Aggregate (dp/->PlainSymbol 'sum) [(dp/->Variable '?y)])])]))))
+
+  (testing "find-vars extracts vars from FindExpr"
+    (let [find (dp/parse-find '[?name (* 2 (+ (sum ?x) (sum ?y)))])]
+      (is (= (dp/find-vars find)
+             '[?name ?x ?y])))))
+
 #_(t/test-ns 'datalevin.test.find-parser)
