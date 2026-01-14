@@ -472,6 +472,10 @@ above which, the same number of items will be sampled instead"}
   magic-cost-val-eq-scan-e 2.5)
 
 (def ^{:dynamic true
+       :doc     "Cost associated with hash join"}
+  magic-cost-hash-join 1.5)
+
+(def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}
   sample-processing-interval 10)
 

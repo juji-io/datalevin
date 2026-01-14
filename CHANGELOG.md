@@ -10,14 +10,14 @@
 - [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [KV] Default `:max-readers` is now 1024.
-  [Datalog] Rewritten rule engine. Implemented a bottom-up SNE approach that solves
-  OOM problem with the old engine
-  [#170](https://github.com/juji-io/datalevin/issues/170), and can be orders of
-  magnitude faster than Datomic in recursive rule resolution,
+  [Datalog] Rewritten rule engine. Implemented a bottom-up SNE approach with
+  magic set rewrites that solves OOM problem with the old engine
+  [#170](https://github.com/juji-io/datalevin/issues/170), and this can be
+  orders of magnitude faster than Datomic in recursive rule resolution,
   [benchmark](benchmarks/math-bench).
 - [Datalog] Removed VAE index. This may reduce DB size by 30% and cut write time
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
-  DB). VAE was only used in entity retraction and the current replacement is
+  DB). VAE was only used in entity retraction and the replacement solution is
   less than 10% slower.
 - [Platform] Native dependencies are mostly statically compiled and bundled in the
   release jars (with exception of libc, as glibc is much faster than musl).
@@ -29,9 +29,9 @@
   the DB. The migration may take a while, and it needs Internet access to
   download old uberjar. [#276](https://github.com/juji-io/datalevin/issues/276)
 - [KV] Random access and rank lookup functions in O(log n) time for
-  `:counted` DBIs.
-- [KV] Range count functions in O(log n) time for `:counted` DBIs.
-- [KV] Sampling functions in O(log n) time for `:counted` DBIs.
+  `:counted` DBIs (default).
+- [KV] Range count functions in O(log n) time for `:counted` DBIs (default).
+- [KV] Sampling functions in O(log n) time for `:counted` DBIs (default).
   [#325](https://github.com/juji-io/datalevin/issues/325)
 - [KV] DB wide option `:key-compress :hu`, which compresses keys with
   order preserving Hu-Tucker coding. This also applies to DUPSORT values if
@@ -42,6 +42,9 @@
 - [KV] DB wide option `:val-compress :zstd`, which compresses values with
   Zstd compression. Same as above, effective after `re-index` and with
   enough data to train.
+- [Datalog] `:order-by` now accepts column indices (0-based) in addition to
+  variable names, e.g. `:order-by [2 :desc 1 :asc]`, useful for sorting by
+  aggregation results in `:find`.
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions
@@ -52,12 +55,12 @@
   [#322](https://github.com/juji-io/datalevin/issues/322).
 
 ### Improved
-- [Datalog] Smaller DB size due to VAE index removal, prefix compression, and
-  key/value compression.
+- [Datalog] Much smaller DB footprint due to VAE index removal, prefix
+  compression, and key/value compression.
 - [Datalog] Cut query planning time in half due to faster range counting and
   sampling of DLMDB.
-- [Datalog] Reduced query execution time due to more optimized DLMDB iterators.
-  Now 2X faster than PostgreSQL in JOB benchmark.
+- [Datalog] Reduced query execution time due to optimizer improvements and
+  faster DLMDB iterators. Now 2X faster than PostgreSQL in JOB benchmark.
 
 ## 0.9.27 (2025-11-19)
 

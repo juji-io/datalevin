@@ -21,7 +21,6 @@
    [datalevin.util :as u :refer [raise concatv cond+]]
    [datalevin.relation :as r])
   (:import
-   [datalevin.relation Relation]
    [datalevin.db DB]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List HashSet]))
@@ -308,27 +307,25 @@
     ;; are required, not all internal vars
     (and (sequential? clause)
          (not (vector? clause))
-         (let [head (first clause)]
-           (= 'or-join head)))
-    (let [[_ binding-vars & _branches] clause]
+         (= 'or-join (first clause)))
+    (let [[_ binding-vars & branches] clause]
       ;; For or-join, we need the first binding var(s) that will be used
       ;; to filter/seed the branches. Analyze which vars appear in E position
       ;; (required) vs V position (produced) in the branches.
       (into #{}
-            (filter (fn [v]
-                      (and (qu/free-var? v)
-                           ;; Check if this var appears in E position in any branch
-                           (some (fn [branch]
-                                   (let [clauses (if (and (seq? branch)
-                                                          (= 'and (first branch)))
-                                                   (rest branch)
-                                                   [branch])]
-                                     (some (fn [c]
-                                             (and (vector? c)
-                                                  (= v (first c))))
-                                           clauses)))
-                                 _branches)))
-            binding-vars)))
+            (filter
+              (fn [v]
+                (and (qu/free-var? v)
+                     ;; Check if this var appears in E position in any branch
+                     (some (fn [branch]
+                             (let [clauses (if (and (seq? branch)
+                                                    (= 'and (first branch)))
+                                             (rest branch)
+                                             [branch])]
+                               (some (fn [c] (and (vector? c) (= v (first c))))
+                                     clauses)))
+                           branches))))
+            binding-vars))
 
     ;; predicate style list, but not a rule call
     (and (sequential? clause)
@@ -336,9 +333,8 @@
          (not (rule-call? context clause)))
     (into #{} (filter qu/free-var?) (flatten clause))
 
-    ;; function binding clause: [ (f ?in ...) ?out ...]
-    (and (vector? clause)
-         (sequential? (first clause)))
+    ;; function binding clause: [(f ?in ...) ?out]
+    (and (vector? clause) (sequential? (first clause)))
     (into #{} (filter qu/free-var?) (rest (first clause)))
 
     :else #{}))
@@ -521,17 +517,17 @@
 (def ^:dynamic *keep-temporal-intermediates* false)
 (def ^:dynamic *magic-rewrite?* true)
 
+;; magic set rewrite
+
 (def ^:private magic-special-heads #{'or 'or-join 'and 'not 'not-join})
 
-(defn- magic-head?
-  [sym]
-  (str/starts-with? (name sym) "magic__"))
+(defn- magic-head? [sym] (str/starts-with? (name sym) "magic__"))
 
 (defn- flatten-head-vars
   [head-clause]
   (let [args (rest head-clause)]
     (if (and (seq args) (vector? (first args)))
-      (vec (concat (first args) (rest args)))
+      (concatv (first args) (rest args))
       (vec args))))
 
 (defn- bound-arg?
@@ -753,50 +749,54 @@
                         (vswap! adorned-rules
                                 (fn [m]
                                   (update m adorned-rule (fnil conj [])
-                                          (into [new-head] (concat
-                                                            (when magic-call
-                                                              [magic-call])
-                                                            out)))))
+                                          (into [new-head]
+                                                (concat (when magic-call
+                                                          [magic-call])
+                                                        out)))))
                         (let [clause (first clauses)]
                           (if (rule-call? rules-context clause)
-                            (let [args         (rule-args clause)
-                                  call-head    (rule-head clause)
-                                  raw-pattern  (binding-pattern args bound)
+                            (let [args        (rule-args clause)
+                                  call-head   (rule-head clause)
+                                  raw-pattern (binding-pattern args bound)
                                   ;; For recursive calls within stratum, filter
                                   ;; pattern to stable indices only to avoid
                                   ;; over-adornment that causes seed explosion.
-                                  ;; Only filter when stable indices exist; if empty,
-                                  ;; keep original pattern to allow magic propagation.
-                                  call-pattern (let [stable (stable-cache call-head)]
-                                                 (if (seq stable)
-                                                   (vec (map-indexed
-                                                          (fn [idx p]
-                                                            (if (and (= p :b)
-                                                                     (not (contains?
-                                                                            stable idx)))
-                                                              :f
-                                                              p))
-                                                          raw-pattern))
-                                                   raw-pattern))
-                                  call-bound?  (some #{:b} call-pattern)
-                                  call-name    (if call-bound?
-                                                 (adorned-name call-head
-                                                               call-pattern)
-                                                 call-head)
-                                  replaced     (replace-rule-head clause
-                                                                  call-name)]
+                                  ;; Only filter when stable indices exist; if
+                                  ;; empty, keep original pattern to allow magic
+                                  ;; propagation.
+                                  call-pattern
+                                  (let [stable (stable-cache call-head)]
+                                    (if (seq stable)
+                                      (vec
+                                        (map-indexed
+                                          (fn [idx p]
+                                            (if (and (= p :b)
+                                                     (not (contains?
+                                                            stable idx)))
+                                              :f
+                                              p))
+                                          raw-pattern))
+                                      raw-pattern))
+                                  call-bound? (some #{:b} call-pattern)
+                                  call-name   (if call-bound?
+                                                (adorned-name call-head
+                                                              call-pattern)
+                                                call-head)
+                                  replaced    (replace-rule-head clause
+                                                                 call-name)]
                               (when call-bound?
                                 (let [call-magic-name (magic-name call-name)
                                       call-b-idxs     (vec (bound-indices
-                                                            call-pattern))
-                                      bound-args      (mapv #(nth args %) call-b-idxs)
+                                                             call-pattern))
+                                      bound-args      (mapv #(nth args %)
+                                                            call-b-idxs)
                                       magic-vars      (ensure-magic-heads
                                                         call-magic-name
                                                         (count call-b-idxs))
                                       bind-clauses    (magic-bind-clauses
                                                         magic-vars bound-args)
                                       magic-body      (concat magic-prefix
-                                                             bind-clauses)]
+                                                              bind-clauses)]
                                   (add-magic-branch
                                     call-magic-name
                                     (into [(list* call-magic-name magic-vars)]
@@ -814,8 +814,7 @@
                                    (conj magic-prefix clause)
                                    (into bound (clause-output-vars
                                                  clause rules-context))
-                                   (conj out clause)))))))))
-            )
+                                   (conj out clause))))))))))
             (recur))
           (let [final-magic-rules
                 (reduce-kv
@@ -825,8 +824,7 @@
                       (assoc m magic-name
                              [[(list* magic-name magic-vars)
                                [(list '= 0 1)]]])))
-                  @magic-rules
-                  @magic-heads)]
+                  @magic-rules @magic-heads)]
             {:rules       (merge rules @adorned-rules final-magic-rules)
              :magic-heads @magic-heads
              :goal        (adorned-name goal-name goal-pattern)}))))))
@@ -1425,14 +1423,6 @@
         scc-map (into {} (mapcat (fn [scc] (map #(vector % scc) scc))) sccs)]
     (recursive-stratum? (scc-map rule-name) deps rule-name)))
 
-(defn- remove-rules
-  [rules to-remove]
-  rules)
-
-(defn- remove-ins
-  [qin to-remove]
-  qin)
-
 (declare expand-clauses)
 
 (defn- expand-rule
@@ -1551,17 +1541,9 @@
     context
     (let [to-remove (volatile! #{})
           old-where (get-in context [:parsed-q :qorig-where])
-          new-where (expand-clauses context to-remove rules rules-deps old-where)
-          new-rules (remove-rules rules to-remove)
-          new-ins   (remove-ins (get-in context [:parsed-q :qin])
-                                to-remove)
-
-          ;; _ (println old-where "rewrite" @to-remove "->" new-where)
-          c
-          (-> context
-              (assoc :rules new-rules
-                     :rules-deps (dependency-graph new-rules))
-              (assoc-in [:parsed-q :qorig-where] new-where)
-              (assoc-in [:parsed-q :qwhere] (dp/parse-where new-where))
-              (assoc-in [:parsed-q :qin] new-ins))]
-      c)))
+          new-where (expand-clauses
+                      context to-remove rules rules-deps old-where)]
+      (-> context
+          (assoc :rules-deps (dependency-graph rules))
+          (assoc-in [:parsed-q :qorig-where] new-where)
+          (assoc-in [:parsed-q :qwhere] (dp/parse-where new-where))))))

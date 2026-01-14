@@ -720,13 +720,20 @@
              {:error :parser/query, :vars shared, :form form})))
 
   (when-some [order-spec (:qorder q)]
-    (let [find-vars  (set (map :symbol (collect-vars (:qfind q))))
-          order-vars (set (filter symbol? order-spec))]
-      (when (not= (count order-vars) (/ (count order-spec) 2))
+    (let [find-elems  (find-elements (:qfind q))
+          find-vars   (set (map :symbol (collect-vars (:qfind q))))
+          order-vars  (filterv symbol? order-spec)
+          order-idxs  (filterv nat-int? order-spec)
+          num-entries (/ (count order-spec) 2)]
+      (when (not= (+ (count (set order-vars)) (count (set order-idxs)))
+                  num-entries)
         (raise "Repeated :order-by variables"
                {:error :parser/query, :form order-spec}))
-      (when-not (set/subset? order-vars find-vars)
+      (when-not (set/subset? (set order-vars) find-vars)
         (raise "There are :order-by variable that is not in :find spec"
+               {:error :parser/query, :form order-spec}))
+      (when-not (every? #(< ^long % (count find-elems)) order-idxs)
+        (raise ":order-by column index out of bounds"
                {:error :parser/query, :form order-spec}))))
 
   (when-some [return-map (:qreturn-map q)]
@@ -806,12 +813,15 @@
     :else           (raise "Unsupported offset format"
                            {:error :parser/query :form t})))
 
+(defn- var-or-idx? [x]
+  (or (symbol? x) (nat-int? x)))
+
 (defn- parse-order-vec [ob]
   (loop [res [] in? false vs ob]
     (if (seq vs)
       (let [cv (first vs)]
         (cond
-          (symbol? cv)
+          (var-or-idx? cv)
           (if in?
             (recur (-> res (conj :asc) (conj cv)) true (rest vs))
             (recur (conj res cv) true (rest vs)))
@@ -821,17 +831,18 @@
             (raise "Incorrect order-by format" {:error :parser/query :form ob}))
           :else
           (raise "Incorrect order-by format" {:error :parser/query :form ob})))
-      (if (symbol? (peek res))
+      (if (var-or-idx? (peek res))
         (conj res :asc)
         res))))
 
 (defn parse-order [[ob]]
   (cond
-    (symbol? ob) [ob :asc]
-    (vector? ob) (parse-order-vec ob)
-    (nil? ob)    nil
-    :else        (raise "Unsupported order-by format"
-                        {:error :parser/query :form ob})))
+    (symbol? ob)  [ob :asc]
+    (nat-int? ob) [ob :asc]
+    (vector? ob)  (parse-order-vec ob)
+    (nil? ob)     nil
+    :else         (raise "Unsupported order-by format"
+                         {:error :parser/query :form ob})))
 
 (defn- qwhere-qualified-fns [qwhere]
   (into #{}

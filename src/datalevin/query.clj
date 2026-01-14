@@ -2491,7 +2491,10 @@
 (defn- order-comps
   [tg find-vars order]
   (let [pairs (partition-all 2 order)
-        idxs  (mapv (fn [v] (u/index-of #(= v %) find-vars))
+        idxs  (mapv (fn [v]
+                      (if (integer? v)
+                        v
+                        (u/index-of #(= v %) find-vars)))
                     (into [] (map first) pairs))
         comps (reverse (mapv #(order-comp tg %1 %2) idxs
                              (into [] (map second) pairs)))]

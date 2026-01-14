@@ -59,6 +59,15 @@
     '[:find ?e ?b :where [?e :book ?b] :order-by [?e :desc ?b ?e]]
     "Repeated :order-by variables"
 
+    '[:find ?e ?b :where [?e :book ?b] :order-by [0 :desc 0]]
+    "Repeated :order-by variables"
+
+    '[:find ?e :where [?e :book ?b] :order-by [2]]
+    ":order-by column index out of bounds"
+
+    '[:find ?e ?b :where [?e :book ?b] :order-by [5 :desc]]
+    ":order-by column index out of bounds"
+
     '[:find ?e . :where [?e :book ?b] :limit "some"]
     "Unsupported limit format"
 
