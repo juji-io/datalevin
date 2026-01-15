@@ -757,6 +757,7 @@
 
      '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
      (let [[_ [req-vars & vars] & branches] clause
+           req-vars                         (into #{} (filter qu/free-var?) req-vars)
            bound                            (bound-vars context)]
        (check-bound bound req-vars orig-clause)
        (check-free-subset bound vars branches)
@@ -764,7 +765,7 @@
 
      '[or-join [*] *] ;; (or-join [vars] ...)
      (let [[_ vars & branches] clause
-           vars                (set vars)
+           vars                (into #{} (filter qu/free-var?) vars)
            _                   (check-free-subset (bound-vars context) vars
                                                   branches)
            join-context        (limit-context context vars)]
@@ -801,17 +802,19 @@
 
      '[not-join [*] *] ;; (not-join [vars] ...)
      (let [[_ vars & clauses] clause
+           vars               (into #{} (filter qu/free-var?) vars)
            bound              (bound-vars context)
            _                  (check-bound bound vars orig-clause)
            context1           (assoc context :rels
                                      [(reduce j/hash-join (:rels context))])
            join-context       (limit-context context1 vars)
            negation-context   (-> (reduce resolve-clause join-context clauses)
-                                  (limit-context vars))]
+                                  (limit-context vars))
+           neg-rel            (reduce j/hash-join (:rels negation-context))]
        (assoc context1 :rels
               [(j/subtract-rel
                  (single (:rels context1))
-                 (reduce j/hash-join (:rels negation-context)))]))
+                 neg-rel)]))
 
      '[*] ;; pattern
      (let [source   qu/*implicit-source*
