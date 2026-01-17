@@ -485,7 +485,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Minimum input size before considering hash join"}
-  hash-join-min-input-size 1000)
+  hash-join-min-input-size 20000)
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}

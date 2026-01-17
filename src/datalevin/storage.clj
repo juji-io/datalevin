@@ -464,7 +464,7 @@
         (b/read-buffer (.rewind bf) :avg)))))
 
 (declare insert-datom delete-datom fulltext-index vector-index check
-         transact-opts ->SamplingWork e-sample* analyze*)
+         transact-opts ->SamplingWork e-sample* default-ratio* analyze*)
 
 (deftype Store [lmdb
                 search-engines
@@ -665,6 +665,11 @@
             (r/vertical-tuples (sequence (map peek) res)))
           (e-sample* this a aid))))
 
+  (default-ratio [this a]
+    (let [aid ( :db/aid (schema a))]
+      (or (get-value lmdb c/meta [aid :ratio] :data :double)
+          (default-ratio* this a aid))))
+
   (start-sampling [this]
     (when (:background-sampling? opts)
       (when-not @scheduled-sampling
@@ -717,7 +722,7 @@
       :avg cap))
 
   (cardinality [_ a]
-    (if-let [aid (:db/aid (schema a)) ]
+    (if (:db/aid (schema a))
       (key-range-count
         lmdb c/ave
         [:closed
@@ -943,7 +948,7 @@
                    {:eid-idx eid-idx :attrs-v attrs-v})))
       (loop []
         (when (p/produce in)
-            (recur)))))
+          (recur)))))
 
   (eav-scan-v-list [_ in eid-idx attrs-v]
     (when (seq attrs-v)
@@ -1135,7 +1140,7 @@
   [^Store store a aid]
   (let [lmdb   (.-lmdb store)
         counts ^ConcurrentHashMap (.-counts store)
-        as     (a-size store a)
+        as     (.a-size store a)
         ts     (FastList.)]
     (.put counts aid as)
     (binding [c/sample-time-budget    Long/MAX_VALUE
@@ -1149,9 +1154,20 @@
                         ts))
     ts))
 
+(defn default-ratio*
+  [^Store store a aid]
+  (let [card ^long (.cardinality store a)]
+    (if (zero? card)
+      1.0
+      (let [ratio (double (/ ^long (.a-size store a) card))
+            lmdb  (.-lmdb store)]
+        (transact-kv lmdb [[:put c/meta [aid :ratio] ratio :data :double]])
+        ratio))))
+
 (defn- analyze*
   [^Store store attr]
   (when-let [aid (:db/aid ((schema store) attr))]
+    (default-ratio* store attr aid)
     (e-sample* store attr aid)))
 
 (defn sampling
@@ -1164,7 +1180,7 @@
     (when-let [^long new-acount (a-size store attr)]
       (when (< (* acount ^double c/sample-change-ratio)
                (Math/abs (- new-acount acount)))
-        (e-sample* store attr aid)))))
+        (analyze* store attr)))))
 
 (deftype SamplingWork [^Store store exe]
   IAsyncWork

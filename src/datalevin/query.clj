@@ -36,7 +36,7 @@
    [datalevin.interface
     :refer [av-size]])
   (:import
-   [java.util Arrays List Collection Comparator]
+   [java.util Arrays List Collection Comparator HashSet HashMap]
    [java.util.concurrent ConcurrentHashMap ExecutorService Executors Future
     Callable]
    [datalevin.utl LikeFSM LRUCache]
@@ -61,7 +61,7 @@
 
 (declare -collect -resolve-clause resolve-clause execute-steps
          hash-join-execute hash-join-execute-into estimate-hash-join-cost
-         compare-plans get-or-join-vars get-or-join-source)
+         get-or-join-vars get-or-join-source)
 
 ;; Records
 
@@ -888,32 +888,11 @@
         (update context :rels collapse-rels (solve-rule context clause)))
       (-resolve-clause context clause))))
 
-;; Or-join execution for OrJoinStep
-
-(defn- extend-tuple
-  "Extend input tuple with values from result tuple (excluding bound-var which is duplicate)"
-  [^objects in-tuple ^objects result-tuple result-attrs bound-var]
-  (let [in-len    (alength in-tuple)
-        free-vals (into []
-                        (comp
-                          (filter #(not= (key %) bound-var))
-                          (map #(aget result-tuple (val %))))
-                        result-attrs)
-        out       (object-array (+ in-len (count free-vals)))]
-    (System/arraycopy in-tuple 0 out 0 in-len)
-    (dotimes [i (count free-vals)]
-      (aset out (+ in-len i) (nth free-vals i)))
-    out))
-
 (defn- or-join-execute-link
-  "Execute or-join link step on input tuples.
-   1. Execute or-join to derive free-vars
-   2. Do AV lookup using free-var values to find target entities
-   3. Output tuples extended with target entity"
   [db sources rules ^List tuples clause bound-var bound-idx free-vars tgt-attr]
   (if (zero? (.size tuples))
     (FastList.)
-    (let [bound-vals     (let [s (java.util.HashSet.)]
+    (let [bound-vals     (let [s (HashSet.)]
                            (dotimes [i (.size tuples)]
                              (.add s (aget ^objects (.get tuples i) bound-idx)))
                            (vec s))
@@ -929,21 +908,22 @@
                            (resolve-clause or-context clause))
           result-rels    (:rels result-context)]
       (if (seq result-rels)
-        (let [or-result-rel       (if (> (count result-rels) 1)
+        (let [or-result-rel       (if (< 1 (count result-rels))
                                     (reduce j/hash-join result-rels)
                                     (first result-rels))
               or-attrs            (:attrs or-result-rel)
               or-tuples           ^List (:tuples or-result-rel)
               free-var            (first free-vars)
-              free-var-idx        (get or-attrs free-var)
-              bound-var-idx-in-or (get or-attrs bound-var)
-              or-by-bound         (let [m (java.util.HashMap.)]
-                                    (dotimes [i (.size or-tuples)]
-                                      (let [^objects t (.get or-tuples i)
-                                            bv         (aget t bound-var-idx-in-or)]
-                                        (.putIfAbsent m bv (FastList.))
-                                        (.add ^List (.get m bv) t)))
-                                    m)
+              free-var-idx        (or-attrs free-var)
+              bound-var-idx-in-or (or-attrs bound-var)
+              or-by-bound
+              (let [m (HashMap.)]
+                (dotimes [i (.size or-tuples)]
+                  (let [^objects t (.get or-tuples i)
+                        bv         (aget t bound-var-idx-in-or)]
+                    (.putIfAbsent m bv (FastList.))
+                    (.add ^List (.get m bv) t)))
+                m)
               tuple-len           (alength ^objects (.get tuples 0))
               joined              (FastList.)]
           (dotimes [i (.size tuples)]
@@ -1028,33 +1008,26 @@
           (when-let [src (get sources s)] (db/-searchable? src))
           (when-let [src (get sources '$)] (db/-searchable? src)))))))
 
-(defn- parsed-rule-expr?
-  "Check if a parsed clause is a RuleExpr"
-  [clause]
-  (instance? datalevin.parser.RuleExpr clause))
+(defn- parsed-rule-expr? [clause] (instance? datalevin.parser.RuleExpr clause))
 
 (defn- rule-clause?
-  "Check if clause is a rule call (not a special form like or, and, not, etc.)"
+  "Check if clause is a rule call"
   [rules clause]
   (or (parsed-rule-expr? clause)
       (when (and (sequential? clause) (not (vector? clause)))
-        (let [head (if (qu/source? (first clause)) (second clause) (first clause))]
+        (let [head (qu/clause-head clause)]
           (and (symbol? head)
                (not (qu/free-var? head))
-               (not (contains? #{'_ 'or 'or-join 'and 'not 'not-join} head))
+               (not (qu/rule-head head))
                (contains? rules head))))))
 
 (defn- get-rule-args
-  "Extract argument variables from a rule clause (parsed or raw)"
   [clause]
   (if (parsed-rule-expr? clause)
     (mapv #(when (instance? Variable %) (:symbol %)) (:args clause))
-    (if (qu/source? (first clause))
-      (nnext clause)
-      (rest clause))))
+    (qu/clause-args clause)))
 
 (defn- or-join-clause?
-  "Check if clause is an or-join (parsed Or record or raw form)"
   [clause]
   (or (instance? Or clause)
       (and (sequential? clause)
@@ -1062,7 +1035,6 @@
            (= 'or-join (first clause)))))
 
 (defn- get-or-join-vars
-  "Extract binding variables from an or-join clause (parsed or raw)"
   [clause]
   (cond
     (instance? Or clause)
@@ -1079,8 +1051,6 @@
         (vec vars)))))
 
 (defn- get-or-join-branches
-  "Extract branch clauses from an or-join clause (parsed or raw).
-   Returns a sequence of branch clauses."
   [clause]
   (cond
     (instance? Or clause)
@@ -1120,20 +1090,18 @@
     :else nil))
 
 (defn- single-source-or-join?
-  "Check if all branches of an or-join use the same data source.
-   Returns true if all branches reference the same source."
   [sources clause]
-  (let [branches (get-or-join-branches clause)
+  (let [branches       (get-or-join-branches clause)
         branch-sources (keep infer-branch-source branches)]
     (and (seq branch-sources)
-         (= (count branch-sources) (count branches))  ;; all branches have a source
-         (apply = branch-sources)                      ;; all sources are the same
-         (contains? sources (first branch-sources))))) ;; source exists
+         (= (count branch-sources) (count branches))
+         (apply = branch-sources)
+         (contains? sources (first branch-sources)))))
 
 (defn- or-join-branch-valid?
   "Check if an or-join branch is valid for optimization.
    A branch is valid if it contains patterns that can be executed."
-  [sources branch]
+  [branch]
   (cond
     (instance? Pattern branch)
     true
@@ -1169,53 +1137,43 @@
    Returns the clause if optimizable, nil otherwise."
   [sources resolved clause pattern-entity-vars rule-derived-vars]
   (when (or-join-clause? clause)
-    (let [vars (get-or-join-vars clause)
+    (let [vars          (get-or-join-vars clause)
           ;; A variable is considered "will be bound" if it's:
           ;; 1. Already bound by input relations (in resolved), OR
           ;; 2. A pattern entity var (will be bound when patterns execute)
           will-be-bound (set/union resolved pattern-entity-vars)
-          bound-vars (filterv will-be-bound vars)
-          free-vars (filterv (complement will-be-bound) vars)]
-      (when (and (= 1 (count bound-vars))           ;; exactly one bound (D2)
-                 (seq free-vars)                     ;; has unbound output
+          bound-vars    (filterv will-be-bound vars)
+          free-vars     (filterv (complement will-be-bound) vars)]
+      (when (and (= 1 (count bound-vars))
+                 (seq free-vars)
                  (not (contains? (or rule-derived-vars #{})
-                                 (first bound-vars))) ;; D5: not rule-derived
-                 (contains? pattern-entity-vars
-                            (first bound-vars))      ;; bound var is a graph node
-                 (single-source-or-join? sources clause) ;; D3: single source
-                 (every? #(or-join-branch-valid? sources %)
-                         (get-or-join-branches clause))) ;; valid branches
+                                 (first bound-vars)))
+                 (contains? pattern-entity-vars (first bound-vars))
+                 (single-source-or-join? sources clause)
+                 (every? or-join-branch-valid? (get-or-join-branches clause)))
         clause))))
 
 (defn- find-rule-derived-vars
-  "Find entity variables that should be derived from rules/or-join rather than scanned.
-   A variable is rule-derived if:
+  "Find entity variables that should be derived from rules/or-join rather than
+   scanned. A variable is rule-derived if:
    1. It appears in a rule call or or-join alongside an already-bound variable
    2. The patterns using it as entity have no value constraints
-   This detects cases where a rule/or-join connects a bound var to an unbound var.
 
-   Parameters:
-   - clauses: the query where clauses
-   - rules: the rules map
-   - input-bound-vars: variables bound by query input
-   - optimizable-or-joins: set of or-join clauses that will be optimized (excluded from
-     or-join-derived calculation since they become graph links)
-
-   Returns a map with:
-   - :rule-derived - vars derived from rules only (for D5 check in or-join-optimizable?)
-   - :all-derived - vars derived from rules AND non-optimizable or-joins (for pattern deferral)"
+   This detects cases where a rule/or-join connects a bound var to an unbound
+   var. "
   [clauses rules input-bound-vars optimizable-or-joins]
   (let [patterns             (filter #(instance? Pattern %) clauses)
         constrained-entities
         (into #{}
               (comp
-                (filter (fn [p]
-                          (let [pat (:pattern p)]
-                            (and (>= (count pat) 3)
-                                 (let [v (nth pat 2)]
-                                   (or (instance? Constant v)
-                                       (and (instance? Variable v)
-                                            (input-bound-vars (:symbol v)))))))))
+                (filter
+                  (fn [p]
+                    (let [pat (:pattern p)]
+                      (and (>= (count pat) 3)
+                           (let [v (nth pat 2)]
+                             (or (instance? Constant v)
+                                 (and (instance? Variable v)
+                                      (input-bound-vars (:symbol v)))))))))
                 (map #(get-in % [:pattern 0 :symbol]))
                 (filter qu/free-var?))
               patterns)
@@ -1224,7 +1182,7 @@
           (fn [m p]
             (let [pat   (:pattern p)
                   e-var (get-in pat [0 :symbol])
-                  v-var (when (>= (count pat) 3)
+                  v-var (when (<= 3 (count pat))
                           (let [v (nth pat 2)]
                             (when (instance? Variable v) (:symbol v))))]
               (if (and (qu/free-var? e-var) (qu/free-var? v-var))
@@ -1233,30 +1191,32 @@
                     (update v-var (fnil conj #{}) e-var))
                 m)))
           {} patterns)
-        reachable            (loop [frontier constrained-entities
-                                    visited  #{}]
-                               (if (empty? frontier)
-                                 visited
-                                 (let [next-frontier (into #{}
-                                                           (comp
-                                                             (mapcat ref-connected)
-                                                             (remove visited))
-                                                           frontier)]
-                                   (recur next-frontier (into visited frontier)))))
-        all-pattern-vars     (into #{}
-                                   (comp
-                                     (mapcat (fn [p]
-                                               (let [pat   (:pattern p)
-                                                     e-var (get-in pat [0 :symbol])
-                                                     v-var (when (>= (count pat) 3)
-                                                             (let [v (nth pat 2)]
-                                                               (when (instance? Variable v)
-                                                                 (:symbol v))))]
-                                                 (cond-> []
-                                                   (qu/free-var? e-var) (conj e-var)
-                                                   (qu/free-var? v-var) (conj v-var)))))
-                                     (filter qu/free-var?))
-                                   patterns)
+        reachable
+        (loop [frontier constrained-entities
+               visited  #{}]
+          (if (empty? frontier)
+            visited
+            (let [next-frontier (into #{}
+                                      (comp
+                                        (mapcat ref-connected)
+                                        (remove visited))
+                                      frontier)]
+              (recur next-frontier (into visited frontier)))))
+        all-pattern-vars
+        (into #{}
+              (comp
+                (mapcat (fn [p]
+                          (let [pat   (:pattern p)
+                                e-var (get-in pat [0 :symbol])
+                                v-var (when (>= (count pat) 3)
+                                        (let [v (nth pat 2)]
+                                          (when (instance? Variable v)
+                                            (:symbol v))))]
+                            (cond-> []
+                              (qu/free-var? e-var) (conj e-var)
+                              (qu/free-var? v-var) (conj v-var)))))
+                (filter qu/free-var?))
+              patterns)
         all-entity-vars      (into #{}
                                    (comp
                                      (map #(get-in % [:pattern 0 :symbol]))
@@ -1331,15 +1291,15 @@
   "Split clauses into two parts: opt-clauses (to be optimized) and late-clauses.
    Also identifies optimizable or-join clauses for graph integration."
   [{:keys [sources parsed-q rels rules] :as context}]
-  (let [resolved (reduce (fn [rs {:keys [attrs]}]
-                           (set/union rs (set (keys attrs))))
-                         #{} rels)
+  (let [resolved    (reduce (fn [rs {:keys [attrs]}]
+                              (set/union rs (set (keys attrs))))
+                            #{} rels)
         ;; Variables bound by input relations
         input-bound (reduce (fn [s {:keys [attrs]}]
                               (into s (keys attrs)))
                             #{} rels)
-        qwhere   (:qwhere parsed-q)
-        clauses  (:qorig-where parsed-q)
+        qwhere      (:qwhere parsed-q)
+        clauses     (:qorig-where parsed-q)
 
         ;; Collect entity vars from patterns (these will be graph nodes)
         pattern-entity-vars (into #{}
@@ -1349,29 +1309,34 @@
                                     (filter qu/free-var?))
                                   qwhere)
 
-        ;; Find optimizable or-joins (those that can be integrated into the graph)
+        ;; Find optimizable or-joins
         opt-or-joins
-        (filterv #(or-join-optimizable? sources resolved % pattern-entity-vars nil)
+        (filterv #(or-join-optimizable? sources resolved % pattern-entity-vars
+                                        nil)
                  qwhere)
 
         ;; Find variables derived from rules
         ;; Use all-derived which includes both rule-derived and or-join-derived
-        rule-derived (:all-derived (find-rule-derived-vars qwhere rules input-bound opt-or-joins))
+        rule-derived
+        (:all-derived
+         (find-rule-derived-vars qwhere rules input-bound opt-or-joins))
 
-        ;; Build set of optimizable or-join clauses for fast lookup
         opt-or-join-set (set opt-or-joins)
 
-        ;; Pattern indices - same as original logic
-        ptn-idxs (set (u/idxs-of (fn [clause]
-                                   (and (optimizable? sources resolved clause)
-                                        (not (depends-on-rule-output? clause rule-derived))))
-                                 qwhere))
-        ;; Or-join indices
-        or-join-idxs (set (u/idxs-of (fn [clause] (opt-or-join-set clause)) qwhere))]
+        ptn-idxs
+        (set (u/idxs-of
+               (fn [clause]
+                 (and (optimizable? sources resolved clause)
+                      (not (depends-on-rule-output? clause rule-derived))))
+               qwhere))
+
+        or-join-idxs
+        (set (u/idxs-of (fn [clause] (opt-or-join-set clause)) qwhere))]
     (assoc context
            :opt-clauses (u/keep-idxs ptn-idxs clauses)
            :optimizable-or-joins (u/keep-idxs or-join-idxs clauses)
-           :late-clauses (u/remove-idxs (set/union ptn-idxs or-join-idxs) clauses))))
+           :late-clauses (u/remove-idxs (set/union ptn-idxs or-join-idxs)
+                                        clauses))))
 
 (defn- get-v [pattern]
   (when (< 2 (count pattern))
@@ -1437,19 +1402,18 @@
 
 (defn- extract-or-join-info
   "Extract bound/free variable information from an or-join clause.
-   Per D2, we only support single bound var.
-   will-be-bound: vars that are or will be bound (from input rels + pattern entity vars)"
+   Currently, we only support single bound var. "
   [will-be-bound clause]
-  (let [vars (get-or-join-vars clause)
+  (let [vars       (get-or-join-vars clause)
         bound-vars (filterv will-be-bound vars)
-        free-vars (filterv (complement will-be-bound) vars)]
-    ;; Per D2: exactly one bound var required (checked in or-join-optimizable?)
+        free-vars  (filterv (complement will-be-bound) vars)]
     {:bound-var (first bound-vars)
      :free-vars free-vars
-     :clause clause}))
+     :clause    clause}))
 
 (defn- find-nodes-using-vars
-  "Find entity nodes that have patterns using any of the given vars in value position."
+  "Find entity nodes that have patterns using any of the given vars in value
+  position."
   [graph vars]
   (let [var-set (set vars)]
     (into []
@@ -1463,33 +1427,36 @@
 
 (defn- link-or-joins
   "Add or-join links to the graph.
-   Creates links from bound variable node to entity nodes that USE the free variables.
-   Returns {:graph updated-graph :unlinked or-joins-that-couldnt-link}
-   will-be-bound: vars that are or will be bound (from input rels + pattern entity vars)"
+   Creates links from bound variable node to entity nodes that USE the free
+   variables.
+   Returns {:graph updated-graph :unlinked or-joins-that-couldnt-link}"
   [graph will-be-bound or-join-clauses source]
   (reduce
     (fn [{:keys [graph unlinked]} clause]
-      (let [{:keys [bound-var free-vars]} (extract-or-join-info will-be-bound clause)
-            target-entities               (find-nodes-using-vars graph free-vars)]
+      (let [{:keys [bound-var free-vars]}
+            (extract-or-join-info will-be-bound clause)
+            target-entities (find-nodes-using-vars graph free-vars)]
 
         (if (and bound-var (seq target-entities) (contains? graph bound-var))
-          {:graph    (reduce
-                       (fn [g tgt-entity]
-                         (let [tgt-node (get graph tgt-entity)
-                               tgt-attr (some (fn [fv]
-                                                (some (fn [{:keys [attr var]}]
-                                                        (when (= var fv) attr))
-                                                      (:free tgt-node)))
-                                              free-vars)]
-                           (update-in g [bound-var :links] conjv
-                                      (OrJoinLink. :or-join tgt-entity clause bound-var free-vars tgt-attr source))))
-                       graph
-                       target-entities)
+          {:graph
+           (reduce
+             (fn [g tgt-entity]
+               (let [tgt-node (get graph tgt-entity)
+                     tgt-attr (some (fn [fv]
+                                      (some (fn [{:keys [attr var]}]
+                                              (when (= var fv) attr))
+                                            (:free tgt-node)))
+                                    free-vars)]
+                 (update-in g [bound-var :links] conjv
+                            (OrJoinLink.
+                              :or-join tgt-entity clause bound-var free-vars
+                              tgt-attr source))))
+             graph
+             target-entities)
            :unlinked unlinked}
           {:graph    graph
            :unlinked (conj unlinked clause)})))
-    {:graph graph :unlinked []}
-    or-join-clauses))
+    {:graph graph :unlinked []} or-join-clauses))
 
 (defn- resolve-lookup-refs
   [sources [src patterns]]
@@ -1502,13 +1469,11 @@
 (defn- get-src [[f & _]] (if (qu/source? f) f '$))
 
 (defn- get-or-join-source
-  "Determine source for an or-join clause. Returns source symbol or '$ for default."
   [clause]
   (or (infer-branch-source (first (get-or-join-branches clause))) '$))
 
 (defn- init-graph
-  "Build one graph per Datalevin db from pattern clauses.
-   Or-joins are integrated as links in the graph for unified optimization."
+  "Build one graph per Datalevin db from pattern clauses."
   [context]
   (let [opt-clauses          (:opt-clauses context)
         optimizable-or-joins (:optimizable-or-joins context)
@@ -2274,58 +2239,50 @@
       [step (merge-scan-step db step n-index new-key new-steps)])))
 
 (defn- hash-join-plan
-  [_db {:keys [steps cost size]} link-e {:keys [type tgt]} new-key new-base-plan
-   result-size]
-  (let [last-step (peek steps)
-        in        (:out last-step)
-        out       (if (set? in) (set new-key) new-key)
-        lcols     (:cols last-step)
-        lstrata   (:strata last-step)
-        lseen     (:seen-or-joins last-step)
-        tgt-steps (:steps new-base-plan)
-        tgt-cols  (:cols (peek tgt-steps))
+  [_db {:keys [steps cost size]} link-e {:keys [type tgt]} new-key
+   new-base-plan result-size]
+  (let [last-step       (peek steps)
+        in              (:out last-step)
+        out             (if (set? in) (set new-key) new-key)
+        lcols           (:cols last-step)
+        lstrata         (:strata last-step)
+        lseen           (:seen-or-joins last-step)
+        tgt-steps       (:steps new-base-plan)
+        tgt-cols        (:cols (peek tgt-steps))
         [cols new-vars] (merge-join-cols lcols tgt-cols)
-        step      (HashJoinStep. type tgt in out lcols cols
-                                 (conj lstrata new-vars) lseen tgt-steps)
-        base-cost (or (:cost new-base-plan) 0)
-        base-size (or (:size new-base-plan) 0)
-        join-cost (estimate-hash-join-cost size base-size)]
+        step            (HashJoinStep. type tgt in out lcols cols
+                                       (conj lstrata new-vars) lseen tgt-steps)
+        base-cost       (or (:cost new-base-plan) 0)
+        base-size       (or (:size new-base-plan) 0)
+        join-cost       (estimate-hash-join-cost size base-size)]
     (Plan. [step]
            (+ ^long cost ^long base-cost ^long join-cost)
            result-size
            (- ^long (find-index link-e (:strata last-step))))))
 
-(defn- or-join-plan
-  "Create or-join link steps:
-   1. OrJoinStep: does or-join to derive free-vars, then AV lookup to find target entity
-   2. MergeScanStep: scans target entity for its other attributes from base plan
-   Output is tuples with free-vars, target entity, AND target's attributes."
-  [db sources rules last-step index {:keys [clause bound-var free-vars tgt tgt-attr]} new-key new-base]
-  (let [in      (:out last-step)
-        out     (if (set? in) (set new-key) new-key)
-        lcols   (:cols last-step)
-        lstrata (:strata last-step)
-        lseen   (:seen-or-joins last-step)
-        ;; Compute bound-idx: where bound-var is in input tuple
+(defn- or-join-plan*
+  [db sources rules last-step
+   {:keys [clause bound-var free-vars tgt tgt-attr]} new-key new-base]
+  (let [in        (:out last-step)
+        out       (if (set? in) (set new-key) new-key)
+        lcols     (:cols last-step)
+        lstrata   (:strata last-step)
+        lseen     (:seen-or-joins last-step)
         bound-idx (find-index bound-var lcols)
-        ;; Output cols after OrJoinStep: input cols + free-vars + tgt entity
-        or-cols (-> lcols (into free-vars) (conj tgt))
-        ;; Add this clause to seen-or-joins so we don't invoke it again
-        or-seen (conj lseen clause)
-        or-step (OrJoinStep. clause
-                             bound-var
-                             bound-idx
-                             free-vars
-                             tgt
-                             tgt-attr
-                             sources
-                             rules
-                             in out or-cols
-                             (conj lstrata #{tgt})
-                             or-seen)
-        ;; Index of tgt in or-step's output cols (for merge-scan)
-        tgt-idx (dec (count or-cols))]
-    ;; If there's a base plan, add merge-scan step for tgt's other attributes
+        or-cols   (-> lcols (into free-vars) (conj tgt))
+        or-seen   (conj lseen clause)
+        or-step   (OrJoinStep. clause
+                               bound-var
+                               bound-idx
+                               free-vars
+                               tgt
+                               tgt-attr
+                               sources
+                               rules
+                               in out or-cols
+                               (conj lstrata #{tgt})
+                               or-seen)
+        tgt-idx   (dec (count or-cols))]
     (if new-base
       (let [new-steps (:steps new-base)]
         [or-step (merge-scan-step db or-step tgt-idx new-key new-steps)])
@@ -2339,15 +2296,8 @@
       (rd/map #(av-size store attr (aget ^objects % index))
               (p/remove-end-scan tuples)))))
 
-;; TODO compute async during sampling and store
-(defn- avg-av-size
-  [db attr]
-  (let [^long card (db/-cardinality db attr)]
-    (when (pos? card)
-      (/ (double (db/-count db [nil attr nil])) card))))
-
 (defn- link-ratio-key
-  [link-e {:keys [type attr var attrs tgt]}]
+  [link-e {:keys [type attr attrs tgt]}]
   (case type
     :val-eq [type (attrs link-e) (attrs tgt)]
     :_ref   [type attr]
@@ -2367,7 +2317,7 @@
         ^long ssize             (if sample (.size ^List sample) 0)
         ^long rsize             (if result (.size ^List result) 0)]
     (estimate-round
-      (cond+
+      (cond
         (<= ^long c/link-estimate-min-sample ssize)
         (let [^long size (count-init-follows db sample attr index)
               ratio      (max (double (/ size ssize))
@@ -2384,45 +2334,42 @@
         (.containsKey ratios ratio-key)
         (* ^long prev-size ^double (.get ratios ratio-key))
 
-        :let [avg (avg-av-size db attr)]
-
         :else
-        (let [ratio (double avg)]
+        (let [ratio (db/-default-ratio db attr)]
           (.put ratios ratio-key ratio)
-          (* ^long prev-size ratio))))))
+          (* ^long prev-size ^double ratio))))))
 
 (defn- count-or-join-follows
   "Execute or-join on input tuples and count output size."
-  [db sources rules tuples {:keys [clause bound-var free-vars tgt-attr]} bound-idx]
+  [db sources rules tuples {:keys [clause bound-var free-vars tgt-attr]}
+   bound-idx]
   (let [result (or-join-execute-link db sources rules tuples clause bound-var
                                      bound-idx free-vars tgt-attr)]
     (.size ^List result)))
 
 (defn- estimate-or-join-size
-  "Estimate result size after or-join execution.
-   Like other link steps, execute on sample/result to calculate ratio."
   [db sources rules ^ConcurrentHashMap ratios prev-plan link]
-  (let [prev-size  (:size prev-plan)
-        prev-steps (:steps prev-plan)
-        last-step  (peek prev-steps)
-        ;; Compute bound-idx: where bound-var is in input tuple (not target index)
-        bound-idx  (find-index (:bound-var link) (:cols last-step))
-        ratio-key  [:or-join (:bound-var link) (:tgt link)]]
+  (let [prev-size               (:size prev-plan)
+        prev-steps              (:steps prev-plan)
+        last-step               (peek prev-steps)
+        bound-idx               (find-index (:bound-var link) (:cols last-step))
+        ratio-key               [:or-join (:bound-var link) (:tgt link)]
+        {:keys [result sample]} last-step
+        ^long ssize             (if sample (.size ^List sample) 0)
+        ^long rsize             (if result (.size ^List result) 0)]
     (estimate-round
-      (cond+
-        :let [{:keys [result sample]} last-step
-              ^long ssize             (if sample (.size ^List sample) 0)
-              ^long rsize             (if result (.size ^List result) 0)]
-
+      (cond
         (< 0 ssize)
-        (let [^long size (count-or-join-follows db sources rules sample link bound-idx)
+        (let [^long size (count-or-join-follows db sources rules sample link
+                                                bound-idx)
               ratio      (max (double (/ size ssize))
                               ^double c/magic-or-join-ratio)]
           (.put ratios ratio-key ratio)
           (* ^long prev-size ratio))
 
         (< 0 rsize)
-        (let [^long size (count-or-join-follows db sources rules result link bound-idx)
+        (let [^long size (count-or-join-follows db sources rules result link
+                                                bound-idx)
               ratio      (/ size rsize)]
           (.put ratios ratio-key ratio)
           size)
@@ -2434,26 +2381,14 @@
         (do (.put ratios ratio-key c/magic-or-join-ratio)
             (* ^long prev-size ^double c/magic-or-join-ratio))))))
 
-(defn- count-fidx-filters
-  "Count how many of the target entity's merge-scan attributes will be filtered
-   because the variable is already bound in prev-cols."
-  [prev-cols new-base-plan]
-  (let [prev-vars (into #{} (comp (filter symbol?) (mapcat #(if (set? %) % [%]))) prev-cols)
-        steps     (:steps new-base-plan)]
-    (if (< 1 (count steps))
-      ;; Has a merge-scan step - check its variables
-      (let [merge-step (peek steps)
-            merge-vars (:vars merge-step)]
-        (count (filter prev-vars merge-vars)))
-      0)))
-
 (defn- estimate-join-size
   [db sources rules link-e link ratios prev-plan index new-base-plan]
   (let [prev-size (:size prev-plan)
         steps     (:steps new-base-plan)]
     (case (:type link)
       :ref     [nil (estimate-scan-v-size prev-size steps)]
-      :or-join (let [or-size (estimate-or-join-size db sources rules ratios prev-plan link)]
+      :or-join (let [or-size (estimate-or-join-size db sources rules ratios
+                                                    prev-plan link)]
                  ;; or-join doesn't have new-base-plan steps to merge
                  [or-size or-size])
       ;; :_ref and :val-eq
@@ -2472,15 +2407,13 @@
 
 (defn- estimate-e-plan-cost
   [prev-size e-size cur-steps]
-  (let [step1 (first cur-steps)
-        ^long raw
-        (if (= 1 (count cur-steps))
-          (if (identical? (-type step1) :merge)
-            (estimate-scan-v-cost step1 prev-size)
-            (estimate-link-cost prev-size))
-          (+ ^long (estimate-link-cost prev-size)
-             ^long (estimate-scan-v-cost (peek cur-steps) e-size)))]
-    raw))
+  (let [step1 (first cur-steps)]
+    (if (= 1 (count cur-steps))
+      (if (identical? (-type step1) :merge)
+        (estimate-scan-v-cost step1 prev-size)
+        (estimate-link-cost prev-size))
+      (+ ^long (estimate-link-cost prev-size)
+         ^long (estimate-scan-v-cost (peek cur-steps) e-size)))))
 
 (defn- e-plan
   [db {:keys [steps cost size]} index link-e link new-key new-base-plan e-size
@@ -2497,55 +2430,6 @@
            result-size
            (- ^long (find-index link-e (:strata last-step))))))
 
-(defn- binary-plan*
-  [db sources rules base-plans ratios prev-plan link-e new-e link new-key]
-  (let [last-step (peek (:steps prev-plan))
-        index     (index-by-link (:cols last-step) link-e link)
-        link-type (:type link)]
-    (if (= :or-join link-type)
-      ;; Or-join needs base plan for merge-scan step after getting target entity
-      (let [new-base  (base-plans [new-e])
-            or-size   (estimate-or-join-size db sources rules ratios prev-plan link)
-            cur-steps (or-join-plan db sources rules last-step index link new-key
-                                    new-base)
-            ;; Use estimate-e-plan-cost for consistency with other link types
-            or-cost   (estimate-e-plan-cost (:size prev-plan) or-size cur-steps)]
-        (Plan. cur-steps
-               (+ ^long (:cost prev-plan) ^long or-cost)
-               or-size
-               (- ^long (find-index link-e (:strata last-step)))))
-      ;; Regular links use base plans
-      (let [new-base (base-plans [new-e])
-            [e-size result-size]
-            (estimate-join-size db sources rules link-e link ratios prev-plan index new-base)]
-        (if (and (#{:_ref :val-eq} link-type) new-base)
-          (let [link-plan  (e-plan db prev-plan index link-e link new-key new-base
-                                   e-size result-size)
-                input-size ^long (:size prev-plan)]
-            (if (< input-size c/hash-join-min-input-size)
-              link-plan
-              (let [hash-plan (hash-join-plan db prev-plan link-e link new-key
-                                              new-base result-size)]
-                (compare-plans link-plan hash-plan))))
-          (e-plan db prev-plan index link-e link new-key new-base e-size result-size))))))
-
-(defn- binary-plan
-  [db sources rules nodes base-plans ratios prev-plan link-e new-e new-key]
-  (let [last-step      (peek (:steps prev-plan))
-        seen-or-joins  (or (:seen-or-joins last-step) #{})
-        links          (get-in nodes [link-e :links])
-        filtered-links (into []
-                             (comp
-                               (filter #(= new-e (:tgt %)))
-                               (filter #(or (not= :or-join (:type %))
-                                            (not (contains? seen-or-joins (:clause %))))))
-                             links)
-        candidates     (mapv #(binary-plan*
-                                db sources rules base-plans ratios prev-plan link-e new-e % new-key)
-                             filtered-links)]
-    (when (seq candidates)
-      (apply u/min-key-comp (juxt :recency :cost :size) candidates))))
-
 (defn- compare-plans
   "Compare two plans. Prefer lower cost, then lower size as tiebreaker."
   [p1 p2]
@@ -2553,7 +2437,63 @@
         c2 ^long (:cost p2)]
     (if (= c1 c2)
       (if (< ^long (:size p2) ^long (:size p1)) p2 p1)
-      (if (< c2 c1) p2 p1))))
+      (if (< ^long c2 ^long c1) p2 p1))))
+
+(defn- or-join-plan
+  [base-plans new-e db sources rules ratios prev-plan link last-step new-key
+   link-e]
+  (let [new-base  (base-plans [new-e])
+        or-size   (estimate-or-join-size db sources rules ratios prev-plan link)
+        cur-steps (or-join-plan* db sources rules last-step link new-key
+                                 new-base)
+        or-cost   (estimate-e-plan-cost (:size prev-plan) or-size cur-steps)]
+    (Plan. cur-steps
+           (+ ^long (:cost prev-plan) ^long or-cost)
+           or-size
+           (- ^long (find-index link-e (:strata last-step))))))
+
+(defn- binary-plan*
+  [db sources rules base-plans ratios prev-plan link-e new-e link new-key]
+  (let [last-step (peek (:steps prev-plan))
+        index     (index-by-link (:cols last-step) link-e link)
+        link-type (:type link)]
+    (if (identical? :or-join link-type)
+      (or-join-plan base-plans new-e db sources rules ratios prev-plan link
+                    last-step new-key link-e)
+      (let [new-base (base-plans [new-e])
+            [e-size result-size]
+            (estimate-join-size db sources rules link-e link ratios prev-plan
+                                index new-base)]
+        (if (and (#{:_ref :val-eq} link-type) new-base)
+          (let [link-plan (e-plan db prev-plan index link-e link new-key
+                                  new-base e-size result-size)]
+            (if (< ^long (:size prev-plan)
+                   ^long c/hash-join-min-input-size)
+              link-plan
+              (let [hash-plan (hash-join-plan db prev-plan link-e link new-key
+                                              new-base result-size)]
+                (compare-plans link-plan hash-plan))))
+          (e-plan db prev-plan index link-e link new-key new-base e-size
+                  result-size))))))
+
+(defn- binary-plan
+  [db sources rules nodes base-plans ratios prev-plan link-e new-e new-key]
+  (let [last-step     (peek (:steps prev-plan))
+        seen-or-joins (or (:seen-or-joins last-step) #{})
+        links         (get-in nodes [link-e :links])
+        filtered-links
+        (into []
+              (comp
+                (filter #(= new-e (:tgt %)))
+                (filter #(or (not= :or-join (:type %))
+                             (not (contains? seen-or-joins (:clause %))))))
+              links)
+        candidates
+        (mapv #(binary-plan* db sources rules base-plans ratios prev-plan
+                             link-e new-e % new-key)
+              filtered-links)]
+    (when (seq candidates)
+      (apply u/min-key-comp (juxt :recency :cost :size) candidates))))
 
 (defn- plans
   [db sources rules nodes pairs base-plans prev-plans ratios]
@@ -2568,11 +2508,13 @@
                 (if (and (prev-key-set link-e) (not (prev-key-set new-e)))
                   (let [new-key  (conj prev-key new-e)
                         cur-plan (t new-key)
-                        new-plan (binary-plan db sources rules nodes base-plans ratios prev-plan
-                                              link-e new-e new-key)]
+                        new-plan
+                        (binary-plan db sources rules nodes base-plans
+                                     ratios prev-plan link-e new-e new-key)]
                     (if new-plan
                       (if (or (nil? cur-plan)
-                              (identical? new-plan (compare-plans cur-plan new-plan)))
+                              (identical? new-plan
+                                          (compare-plans cur-plan new-plan)))
                         (assoc! t new-key new-plan)
                         t)
                       t))
@@ -2587,7 +2529,6 @@
   (let [pairs (volatile! #{})]
     (doseq [e    component
             link (get-in nodes [e :links])]
-      ;; All links now use :tgt (or-join points to entity nodes that use the free-vars)
       (vswap! pairs conj [e (:tgt link)]))
     @pairs))
 
@@ -2628,16 +2569,14 @@
                 pn     ^long (u/n-permutations n 2)]
             (.add tables base-plans)
             (dotimes [i n-1]
-              (let [plans (plans db sources rules nodes pairs base-plans (.get tables i)
-                                 ratios)]
+              (let [plans (plans db sources rules nodes pairs base-plans
+                                 (.get tables i) ratios)]
                 (if (< pn (count plans))
                   (.add tables (shrink-space plans))
                   (.add tables plans))))
             (trace-steps tables n-1)))))))
 
 (defn- dfs
-  "Depth-first search through the query graph.
-   All links (including or-join) now use :tgt which points to entity nodes."
   [graph start]
   (loop [stack [start] visited #{}]
     (if (empty? stack)
@@ -2942,7 +2881,8 @@
     (apply f (conj args vals))))
 
 (defn- eval-find-expr
-  "Evaluate a FindExpr by computing its inner aggregates and applying the operator."
+  "Evaluate a FindExpr by computing its inner aggregates and applying the
+  operator."
   [expr context tuples var->idx]
   (let [op   (get built-ins/query-fns (:symbol (:fn expr)))
         args (mapv (fn [arg]
@@ -2972,7 +2912,8 @@
             vars (dp/-find-vars elem)]
         (recur (rest elements)
                (+ idx (count vars))
-               (into result (map vector vars (range idx (+ idx (count vars))))))))))
+               (into result
+                     (map vector vars (range idx (+ idx (count vars))))))))))
 
 (defn -aggregate
   [find-elements context tuples]
@@ -2994,7 +2935,8 @@
             (dp/aggregate? elem)
             (recur (rest elements)
                    (inc tuple-idx)
-                   (conj result (compute-aggregate elem context tuples tuple-idx)))
+                   (conj result
+                         (compute-aggregate elem context tuples tuple-idx)))
 
             :else
             (recur (rest elements)
@@ -3002,7 +2944,8 @@
                    (conj result (nth first-tuple tuple-idx)))))))))
 
 (defn- groupable-elem?
-  "Check if an element should be used for grouping (not an aggregate or find-expr)."
+  "Check if an element should be used for grouping
+  (not an aggregate or find-expr)."
   [elem]
   (not (or (dp/aggregate? elem) (dp/find-expr? elem))))
 
@@ -3149,8 +3092,9 @@
                    (eduction (filter #(instance? Pattern %)))
                    (group-by (fn [{:keys [source pattern]}]
                                [source (first pattern) (second pattern)]))
-                   (eduction (filter #(let [ps (val %)]
-                                        (and (< 1 (count ps)) (const-v ps)))))))]
+                   (eduction (filter
+                               #(let [ps (val %)]
+                                  (and (< 1 (count ps)) (const-v ps)))))))]
     (reduce
       (fn [c [_ patterns]]
         (let [v (const-v patterns)]

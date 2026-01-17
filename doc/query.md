@@ -106,13 +106,13 @@ on.
 
 Since star-like attributes are already handled by merge scan, the optimizer
 works mainly on the simplified graph that consists of stars and the links
-between them [3] [7] [9], this significantly reduces the size of optimizer
+between them [4] [9] [11], this significantly reduces the size of optimizer
 search space.
 
 ### Cost based query optimizer
 
 We built a Selinger style cost-based query optimizer that uses dynamic
-programming for query planning [10], which is used in almost all RDBMS. Instead
+programming for query planning [12], which is used in almost all RDBMS. Instead
 of considering all possible combinations of join orders, the plan enumeration is
 based on connected components of the query graph. Each connected component has
 its own plan and its own execution sequence. Multiple connected components are
@@ -121,7 +121,7 @@ order of which is based on result size.
 
 ### Left-deep join tree
 
-Our planner generates left-deep join trees, which may not be optimal [8], but
+Our planner generates left-deep join trees, which may not be optimal, but
 work well for our simplified query graph, since stars are already turned into
 meta nodes and mostly chains remain. This also reduces the cost of cost
 estimation, which dominates the cost of planning. The impact of the loss of
@@ -216,7 +216,7 @@ A sample of base entity IDs are collected first, then merge scans are performed
 to obtain base selectivity ratios. Finally, the selectivity of all possible two
 way joins are obtained by counting the number of linked entity ids based on
 these samples. Later joins use these selectivity ratios to estimate result
-sizes. We have found sampling more than 2-way joins (e.g. [6]) to be less
+sizes. We have found sampling more than 2-way joins (e.g. [7]) to be less
 effective, so we sample base and 2-way join selectivity only.
 
 ### Recency based link choice (new)
@@ -271,14 +271,14 @@ We conducted several benchmarks to test Datalevin query engine.
 
 ### Datascript Benchmark
 
-An existing benchmark developed in Datascript is performed. The speedup compared
+A benchmark developed in Datascript is performed. The speedup compared
 with the original Datascript engine is substantial. The details can be found
 [here](../benchmarks/datascript-bench). Queries in this benchmarks are simple
 and often do not involve more than one relation.
 
 ### Math Genealogy Benchmark
 
-This [Datalog benchmark](../benchmarks/math-bench) [7] tests Datalog rules
+This [Datalog benchmark](../benchmarks/math-bench) [8] tests Datalog rules
 evaluation performance. We compared with Datascript and Datomic, where Datalevin
 is much faster. For recursive rules in particular, Datalevin is several orders
 of magnitude faster, due to start of the art Datalog [rule engine
@@ -286,7 +286,7 @@ implementation](rule.md).
 
 ### Join Order Benchmark (JOB)
 
-The join order benchmark (JOB) [5] for SQL contains 113 complex queries that
+The join order benchmark (JOB) [6] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
 PostgreSQL [here](../benchmarks/JOB-bench). The query execution time of
 Datalevin are more consistent and much better on average than PostgreSQL, due to
@@ -294,10 +294,10 @@ better query plans produced in Datalevin.
 
 ### LDBC SNB Benchmark
 
-[LDBC SNB](../LDBC-SNB-bench) [6] is an industry standard benchmark for graph
-databases, where Datalevin compares favorably with neo4j. For Short Interactive
-queries, Datalevin is orders of magnitude faster, while often faster in
-Complex Interactive queries, with a couple of exceptions.
+[LDBC SNB](../LDBC-SNB-bench) is an industry standard benchmark for graph
+databases [3], where Datalevin compares favorably with neo4j. For Short
+Interactive queries, Datalevin is orders of magnitude faster, while often faster
+in Complex Interactive queries, with a couple of exceptions.
 
 ## Remark
 
@@ -329,33 +329,33 @@ Testing of RDF Data Management Systems". ISWC. 2014.
 [2] Brodt, A., Schiller, O. and Mitschang, B. "Efficient resource attribute
 retrieval in RDF triple stores." CIKM. 2011.
 
-[3] Erling, O., etc. The LDBC Social Network Benchmark: Interactive Workload. In
-SIGMOD 2015.
+[3] Erling, O., et al. The LDBC Social Network Benchmark: Interactive Workload.
+SIGMOD, 2015.
 
-[3] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
+[4] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[4] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
+[5] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
 optimizer: cardinality estimation, cost model, and plan enumeration." Data
 Science and Engineering, 2021
 
-[5] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
+[6] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
 2015.
 
-[6] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
-Sampling." Cidr. 2017.
+[7] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
+Sampling." CIDR. 2017.
 
-[7] D. Maier, et al. "Datalog: concepts, history, and outlook." In Declarative
+[8] D. Maier, et al. "Datalog: concepts, history, and outlook." In Declarative
 Logic Programming: Theory, Systems, and Applications. 2018. 3-100.
 
-[8] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[9] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[9] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[10] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[10] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[11] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[11] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[12] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.

@@ -685,7 +685,9 @@
     (if/load-datoms store (mapv #(d/datom % :a %) (range 1 (inc size-a))))
     (is (nil? (counts aid-a)))
     (is (= size-a (if/a-size store :a)))
-    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample* store :a aid-a))]
+    (let [sample (mapv #(aget ^objects % 0) (sut/e-sample* store :a aid-a))
+          ratio  (sut/default-ratio* store :a aid-a)]
+      (is (= 1.0 ^double ratio))
       (is (= size-a (counts aid-a)))
       (is (= c/init-exec-size-threshold (count sample)))
       (if/load-datoms store (mapv #(d/datom % :a %)

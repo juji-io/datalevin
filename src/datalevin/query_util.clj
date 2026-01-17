@@ -36,15 +36,25 @@
 
 (def rule-head #{'_ 'or 'or-join 'and 'not 'not-join})
 
+(defn clause-head
+  [clause]
+  (if (source? (first clause))
+    (second clause)
+    (first clause)))
+
+(defn clause-args
+  [clause]
+  (if (source? (first clause))
+    (nnext clause)
+    (rest clause)))
+
 (defn rule?
   [context clause]
   (cond+
     (not (sequential? clause))
     false
 
-    :let [head (if (source? (first clause))
-                 (second clause)
-                 (first clause))]
+    :let [head (clause-head clause)]
 
     (not (symbol? head))
     false

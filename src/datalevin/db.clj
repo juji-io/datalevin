@@ -30,7 +30,7 @@
             val-eq-filter-e-list fetch slice slice-filter e-datoms av-datoms
             ea-first-datom head-filter e-first-datom av-first-datom head
             size size-filter e-size av-size a-size v-size
-            datom-count populated? rslice cardinality
+            datom-count populated? rslice cardinality default-ratio
             av-range-size init-max-eid db-name start-sampling load-datoms
             stop-sampling close av-first-e ea-first-v v-datoms assoc-opt
             max-tx get-env-flags set-env-flags sync abort-transact-kv]])
@@ -84,6 +84,7 @@
   (-sample-init-tuples [db out a mcount v-range pred get-v?])
   (-sample-init-tuples-list [db a mcount v-range pred get-v?])
   (-e-sample [db a])
+  (-default-ratio [db a])
   (-eav-scan-v [db in out eid-idx attrs-v])
   (-eav-scan-v-list [db in eid-idx attrs-v])
   (-val-eq-scan-e [db in out v-idx attr] [db in out v-idx attr bound])
@@ -193,6 +194,12 @@
     (wrap-cache
         store [:e-sample a]
       (e-sample store a)))
+
+  (-default-ratio
+    [db a]
+    (wrap-cache
+        store [:default-ratio a]
+      (default-ratio store a)))
 
   (-eav-scan-v
     [db in out eid-idx attrs-v]

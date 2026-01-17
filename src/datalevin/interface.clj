@@ -315,6 +315,7 @@ values;")
   (analyze [this a])
   (e-sample [this a]
     "Return a sample of eids sampled from full value range of an attribute")
+  (default-ratio [this a] "default fan-out, i.e. size / cardinality")
   (v-size [this v]
     "Return the numbers of ref datoms with the given v value")
   (av-size [this a v]
