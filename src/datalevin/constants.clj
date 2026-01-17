@@ -484,6 +484,10 @@ above which, the same number of items will be sampled instead"}
   magic-cost-hash-join (* 5.0 (.availableProcessors (Runtime/getRuntime))))
 
 (def ^{:dynamic true
+       :doc     "Minimum input size before considering hash join"}
+  hash-join-min-input-size 1000)
+
+(def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}
   sample-processing-interval 10)
 

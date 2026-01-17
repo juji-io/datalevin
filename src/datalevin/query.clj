@@ -59,22 +59,15 @@
 
 (def ^:dynamic *start-time* nil)
 
-;; Debug flag for or-join execution
-(def ^:dynamic *debug-or-join* false)
-
-;; Debug flag for plan selection
-(def ^:dynamic *debug-plan* false)
-
-
 (declare -collect -resolve-clause resolve-clause execute-steps
          hash-join-execute hash-join-execute-into estimate-hash-join-cost
-         compare-plans
-         get-or-join-vars get-or-join-source)
+         compare-plans get-or-join-vars get-or-join-source)
 
 ;; Records
 
 (defrecord Context [parsed-q rels sources rules opt-clauses late-clauses
-                    optimizable-or-joins graph plan intermediates run? result-set])
+                    optimizable-or-joins graph plan intermediates run?
+                    result-set])
 
 (defrecord Plan [steps cost size recency])
 
@@ -82,11 +75,12 @@
   (-type [step] "return the type of step as a keyword")
   (-execute [step db source] "execute query step and return tuples")
   (-execute-pipe [step db source sink] "execute as part of pipeline")
-  (-sample [step db source] "sample the query step")
+  (-sample [step db source] "sample the step, not all steps implement")
   (-explain [step context] "explain the query step"))
 
 (defrecord InitStep
-    [attr pred val range vars in out know-e? cols strata seen-or-joins mcount result sample]
+    [attr pred val range vars in out know-e? cols strata seen-or-joins mcount
+     result sample]
 
   IStep
   (-type [_] :init)
@@ -134,18 +128,18 @@
             db sink attr [[[:closed val] [:closed val]]] nil false)))))
 
   (-sample [_ db _]
-    (let [get-v? (< 1 (count vars))
-          ]
+    (let [get-v? (< 1 (count vars))]
       (cond
         val   (db/-sample-init-tuples-list
                 db attr mcount [[[:closed val] [:closed val]]] nil false)
         range (db/-sample-init-tuples-list db attr mcount range pred get-v?)
-        :else
-        (cond-> (db/-e-sample db attr)
-          get-v?
-          (#(db/-eav-scan-v-list db % 0 [[attr {:skip? false :pred pred}]]))
-          (not get-v?)
-          (#(db/-eav-scan-v-list db % 0 [[attr {:skip? true :pred pred}]]))))))
+        :else (cond-> (db/-e-sample db attr)
+                get-v?
+                (#(db/-eav-scan-v-list db % 0
+                                       [[attr {:skip? false :pred pred}]]))
+                (not get-v?)
+                (#(db/-eav-scan-v-list db % 0
+                                       [[attr {:skip? true :pred pred}]]))))))
 
   (-explain [_ _]
     (str "Initialize " vars " " (cond
@@ -159,7 +153,8 @@
                                   (some? val)
                                   (str "by " attr " = " val ".")))))
 
-(defrecord MergeScanStep [index attrs-v vars in out cols strata seen-or-joins result sample]
+(defrecord MergeScanStep [index attrs-v vars in out cols strata seen-or-joins
+                          result sample]
 
   IStep
   (-type [_] :merge)
@@ -230,12 +225,10 @@
       (hash-join-execute-into in-cols tgt-rel input sink)))
 
   (-explain [_ _]
-    (str "Hash join to " tgt " by "
-         (case link-type
-           :_ref "reverse reference"
-           :val-eq "equal values"
-           "link")
-         ".")))
+    (str "Hash join to " tgt " by " (case link-type
+                                      :_ref   "reverse reference"
+                                      :val-eq "equal values"
+                                      "link") ".")))
 
 (declare or-join-execute-link)
 
@@ -256,9 +249,8 @@
           (when-let [tuple (p/produce src)]
             (.add input tuple)
             (recur))))
-      (let [result (or-join-execute-link
-                     db sources rules input clause bound-var bound-idx free-vars
-                     tgt-attr)]
+      (let [result (or-join-execute-link db sources rules input clause bound-var
+                                         bound-idx free-vars tgt-attr)]
         (.addAll ^Collection sink result))))
 
   (-explain [_ _]
@@ -356,7 +348,6 @@
       (let [tuples (:tuples rel)]
         (when-some [tuple (first tuples)]
           (when (nil? (fnext tuples))
-            ;; tuple can be an object-array, so use aget if it's an array
             (let [idx ((:attrs rel) pattern-el)]
               (if (u/array? tuple)
                 (aget ^objects tuple idx)
@@ -443,7 +434,7 @@
    More efficient than full table scan when value is bound to multiple values.
    Returns tuples in format [e v] or [e] depending on pattern."
   [db pattern value-set e-is-var?]
-  (let [[e a _]   pattern
+  (let [[_ a _]   pattern
         ref-attr? (and (keyword? a) (db/ref? db a))
         acc       (FastList.)]
     (doseq [v value-set]
@@ -462,7 +453,7 @@
                     (aset result 0 (aget t 0))  ;; entity from av-tuples
                     (aset result 1 v)
                     (.add acc result)))
-                (dotimes [i n]
+                (dotimes [_ n]
                   (.add acc (object-array [v])))))))))
     acc))
 
@@ -470,8 +461,7 @@
   [context db pattern]
   (let [[e a v]           pattern
         ;; Check if entity is bound to multiple values
-        entity-values     (when (and (qu/free-var? e)
-                                     (keyword? a))  ;; Only optimize when attr is known
+        entity-values     (when (and (qu/free-var? e) (keyword? a))
                             (bound-values context e))
         use-entity-multi? (and entity-values
                                (<= (.size ^java.util.HashSet entity-values)
@@ -827,33 +817,17 @@
            vars                (into #{} (filter qu/free-var?) vars)
            _                   (check-free-subset (bound-vars context) vars
                                                   branches)
-           join-context        (limit-context context vars)
-           _ (when *debug-or-join*
-               (println "[or-join resolve] vars:" vars
-                        "branches:" (count branches)
-                        "join-context rels:" (mapv #(count (:tuples %)) (:rels join-context))))]
+           join-context        (limit-context context vars)]
        (update context :rels collapse-rels
-               (transduce (comp (map-indexed
-                                  (fn [idx branch]
-                                    (when *debug-or-join*
-                                      (println "[or-join branch" idx "] starting..."))
-                                    (let [result (-> join-context
-                                                     (resolve-clause branch)
-                                                     (limit-context vars))]
-                                      (when *debug-or-join*
-                                        (println "[or-join branch" idx "] result rels:"
-                                                 (mapv #(count (:tuples %)) (:rels result))))
-                                      result)))
+               (transduce (comp (map (fn [branch]
+                                    (-> join-context
+                                        (resolve-clause branch)
+                                        (limit-context vars))))
                              (map #(let [rels (:rels %)]
                                      (if (seq rels)
-                                       (let [joined (reduce j/hash-join rels)]
-                                         (when *debug-or-join*
-                                           (println "[or-join branch] after join:"
-                                                    (count (:tuples joined))))
-                                         joined)
+                                       (reduce j/hash-join rels)
                                        []))))
-                          r/sum-rel
-                          branches)))
+                          r/sum-rel branches)))
 
      '[and *] ;; (and ...)
      (let [[_ & clauses] clause]
@@ -2394,14 +2368,14 @@
         ^long rsize             (if result (.size ^List result) 0)]
     (estimate-round
       (cond+
-        (<= c/link-estimate-min-sample ssize)
+        (<= ^long c/link-estimate-min-sample ssize)
         (let [^long size (count-init-follows db sample attr index)
               ratio      (max (double (/ size ssize))
                               ^double c/magic-link-ratio)]
           (.put ratios ratio-key ratio)
           (* ^long prev-size ratio))
 
-        (<= c/link-estimate-min-sample rsize)
+        (<= ^long c/link-estimate-min-sample rsize)
         (let [^long size (count-init-follows db result attr index)
               ratio      (/ size rsize)]
           (.put ratios ratio-key ratio)
@@ -2545,38 +2519,31 @@
             [e-size result-size]
             (estimate-join-size db sources rules link-e link ratios prev-plan index new-base)]
         (if (and (#{:_ref :val-eq} link-type) new-base)
-          (let [link-plan (e-plan db prev-plan index link-e link new-key new-base
-                                  e-size result-size)
-                hash-plan (hash-join-plan db prev-plan link-e link new-key
-                                          new-base result-size)]
-            (compare-plans link-plan hash-plan))
+          (let [link-plan  (e-plan db prev-plan index link-e link new-key new-base
+                                   e-size result-size)
+                input-size ^long (:size prev-plan)]
+            (if (< input-size c/hash-join-min-input-size)
+              link-plan
+              (let [hash-plan (hash-join-plan db prev-plan link-e link new-key
+                                              new-base result-size)]
+                (compare-plans link-plan hash-plan))))
           (e-plan db prev-plan index link-e link new-key new-base e-size result-size))))))
 
 (defn- binary-plan
   [db sources rules nodes base-plans ratios prev-plan link-e new-e new-key]
-  (let [last-step (peek (:steps prev-plan))
-        seen-or-joins (or (:seen-or-joins last-step) #{})
-        links (get-in nodes [link-e :links])
+  (let [last-step      (peek (:steps prev-plan))
+        seen-or-joins  (or (:seen-or-joins last-step) #{})
+        links          (get-in nodes [link-e :links])
         filtered-links (into []
                              (comp
                                (filter #(= new-e (:tgt %)))
                                (filter #(or (not= :or-join (:type %))
                                             (not (contains? seen-or-joins (:clause %))))))
                              links)
-        candidates (mapv #(binary-plan*
-                            db sources rules base-plans ratios prev-plan link-e new-e % new-key)
-                         filtered-links)]
-    (when *debug-plan*
-      (when (> (count filtered-links) 1)
-        (println "Link candidates from" link-e "to" new-e ":")
-        (doseq [[link plan] (map vector filtered-links candidates)]
-          (case (:type link)
-            :val-eq (println "  -" (:type link) "var" (:var link) "attrs" (:attrs link)
-                             "-> cost:" (:cost plan) "size:" (:size plan))
-            (println "  -" (:type link) (or (:tgt-attr link) (:attr link))
-                     "-> cost:" (:cost plan) "size:" (:size plan))))))
+        candidates     (mapv #(binary-plan*
+                                db sources rules base-plans ratios prev-plan link-e new-e % new-key)
+                             filtered-links)]
     (when (seq candidates)
-      ;; Use size as tiebreaker when cost is equal (accounts for final output size)
       (apply u/min-key-comp (juxt :recency :cost :size) candidates))))
 
 (defn- compare-plans
@@ -2640,11 +2607,6 @@
 (defn- trace-steps
   [^List tables ^long n-1]
   (let [final-plans (vals (.get tables n-1))]
-    (when *debug-plan*
-      (println "Final plan candidates:")
-      (doseq [p final-plans]
-        (println "  - cost:" (:cost p) "size:" (:size p)
-                 "steps:" (mapv #(-explain % nil) (:steps p)))))
     (reduce
       (fn [plans i]
         (cons ((.get tables i) (:in (first (:steps (first plans))))) plans))
@@ -2855,21 +2817,17 @@
   (if (= 1 (transduce (map (fn [[_ components]] (count components))) + plan))
     (update context :rels collapse-rels
             (let [[src components] (first plan)
-                  all-steps (vec (mapcat :steps (first components)))]
-              (when *debug-or-join*
-                (println "[execute-plan] executing" (count all-steps) "steps")
-                (doseq [[i step] (map-indexed vector all-steps)]
-                  (println "[execute-plan] step" i ":" (-type step) "cols:" (:cols step))))
+                  all-steps        (vec (mapcat :steps (first components)))]
               (execute-steps context (sources src) all-steps)))
     (reduce
-        (fn [c r] (update c :rels collapse-rels r))
-        context (->> plan
-                     (mapcat (fn [[src components]]
-                               (let [db (sources src)]
-                                 (for [plans components]
-                                   [db (mapcat :steps plans)]))))
-                     (map+ #(apply execute-steps context %))
-                     (sort-by #(count (:tuples %)))))))
+      (fn [c r] (update c :rels collapse-rels r))
+      context (->> plan
+                   (mapcat (fn [[src components]]
+                             (let [db (sources src)]
+                               (for [plans components]
+                                 [db (mapcat :steps plans)]))))
+                   (map+ #(apply execute-steps context %))
+                   (sort-by #(count (:tuples %)))))))
 
 (defn- plan-explain
   []
@@ -2904,7 +2862,6 @@
         (as-> context c
           (do (plan-explain) c)
           (if run? (execute-plan c) c)
-          ;; Late-clauses are non-optimizable (predicates, not-join, etc.)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
 (defn -collect-tuples

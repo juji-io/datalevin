@@ -1,8 +1,7 @@
 # Datalevin Query Engine
 
 Datalevin has an innovative query engine that handles complex Datalog queries on
-large data sets with ease. It is a sophisticated, multi-stage compiler and
-optimizer.
+large data sets with ease.
 
 ## Motivation
 
@@ -135,25 +134,51 @@ also count in base relations, the size estimation obtained there is quite
 accurate, so we want to leverage that accuracy by keeping at least one base
 relation in each join.
 
-### Join methods
+### Join methods (new)
 
-Currently, we consider three join methods.
+Currently, we consider five join methods. For two sets of where clauses
+involving two classes of entities respectively, e.g. `?e` and `?f`, we currently
+consider the following cases.
 
-For two sets of where clauses involving two classes of entities respectively,
-e.g. `?e` and `?f`, we currently consider the following cases. If there
-is a reference attribute in the clauses that connects these two classes of entities
-e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method will be considered.
-The forward `:ref` method takes the list of `f?` in an existing relation, then
-merge scan values of `?f` entities. Reverse `:_ref` method has an extra step, it
-starts with `?f` relation and scan `:ave` index to obtain corresponding list of
-`?e`, then merge scan values of `?e` entities. The third case is the value
-equality case, where `e` and `f` are linked due to unification of attribute
-values, then `:ave` index is scanned to find the target's entity IDs. These
-methods are essentially scanning indices for a list of entity IDs. Other
-attribute values then need to be merge scanned to obtain a full relation.
+#### Forward references `:ref`
 
-The choice of these methods is determined by the optimizer based on its cost
-estimation.
+If there is a reference attribute in the clauses that connects these two classes
+of entities e.g. `[?e :a/ref ?f]`, forward reference method will be considered.
+The forward `:ref` method takes the list of `f?` in the left relation, then
+merge scan values of `?f` entities.
+
+#### Reverse references `:_ref_`
+
+Reverse reference method has an extra step, it starts with `?f` in left relation
+and scan `:ave` index to obtain corresponding list of `?e`.
+
+#### Value equality join `:val-eq`
+
+The third case is the value equality case, where `e` and `f` are linked due to
+unification of attribute values, then `:ave` index is scanned to find the
+target's entity IDs.
+
+The above two methods are essentially nested loop joins using `AVE` index. They
+scan for a list of entity IDs, and other attribute values then need to be merge
+scanned to obtain a full relation.
+
+#### Hash join `:hash-join`
+
+An alternative to reverse references and value equality joins is hash join. Our
+hash join operator chooses build side vs. probe side based on actual input
+relation sizes, so it is more flexible and handles size estimation inaccuracy
+more robustly.
+
+#### Or-join `:or-join`
+
+When an `or-join` clause connects a bound variable to a free variable, one or
+more join links can be created: the free variable may be a value
+in some triple patterns, the entities of these patterns can now be joined with
+the entity of the bound variable. We first perform the `or-join` operation
+to get a relation, then join with these pattern relations.
+
+The choice of these join methods in the query plan and their ordering is
+determined by the optimizer based on its cost estimation.
 
 ### Directional join result size estimation (new)
 
@@ -226,55 +251,53 @@ processing, so it is done whenever appropriate.
 
 Pipelining is used for plan execution, so multiple tuples in different execution
 steps are in flight at the same time. A tuple generated from one step becomes input
-of next step. Each step is processed by a dedicated thread (putting multiple
-threads on a single step was tried and abandoned due to worse performance).
+of next step. Each step is processed by a dedicated thread.
 
 ### Multiple stage clause resolution
 
-As mentioned, the cost based optimizer works on clauses that directly access
-data indices, i.e. triple patterns as well as single variable predicates.
-Datalevin also supports complex clauses, such as `and`, `or`, `or-join`, `not`,
-`not-join`, multi-variable predicates, function bindings, as well as rules.
-These more complex clauses are deferred until the indices access clauses have
-produced intermediate result. Heuristics and variable dependencies are
-considered to reorder these complex clauses to optimize performance. Rules are
-executed last, see [rules](rules.md) for details of the rule engine.
-
-## Limitation
-
-Currently, the query optimizer handles normal where clauses only: triple
-patterns and predicates. We will gradually extend the optimizer to consider
-more clause types in the future. In addition, only binary joins are
-considered at the moment, future work may consider joins on a hypergraph
-[8]. Particularly, we will consider three-way joins that has the potential to
-solve the so called diamond problem [11].
+In addition to patterns and single variable predicates, Datalevin supports
+complex clauses, such as `and`, `or`, `not`, `not-join`, multi-variable
+predicates, function bindings, as well as rules. We are gradually expanding the
+coverage of the optimizer to handle more clause types. Right
+now, `or-join` is optimized. Other complex clauses are deferred until the
+indices access clauses have produced intermediate result. Heuristics and
+variable dependencies are considered to reorder these complex clauses to
+optimize performance. Rules are executed last, see [rules](rules.md) for details
+of the rule engine.
 
 ## Benchmarks
 
-Currently we conducted two benchmarks.
+We conducted several benchmarks to test Datalevin query engine.
 
 ### Datascript Benchmark
 
 An existing benchmark developed in Datascript is performed. The speedup compared
 with the original Datascript engine is substantial. The details can be found
-[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench).
+[here](../benchmarks/datascript-bench). Queries in this benchmarks are simple
+and often do not involve more than one relation.
 
-Queries in this benchmarks are fairly simple and do not involve more than one
-relation.
+### Math Genealogy Benchmark
+
+This [Datalog benchmark](../benchmarks/math-bench) [7] tests Datalog rules
+evaluation performance. We compared with Datascript and Datomic, where Datalevin
+is much faster. For recursive rules in particular, Datalevin is several orders
+of magnitude faster, due to start of the art Datalog [rule engine
+implementation](rule.md).
 
 ### Join Order Benchmark (JOB)
 
 The join order benchmark (JOB) [5] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
-PostgreSQL
-[here](https://github.com/juji-io/datalevin/tree/master/benchmarks/JOB-bench).
+PostgreSQL [here](../benchmarks/JOB-bench). The query execution time of
+Datalevin are more consistent and much better on average than PostgreSQL, due to
+better query plans produced in Datalevin.
 
-Datalevin's planning time is normally longer than that of PostgreSQL. This is
-expected, as our planner is written in idiomatic Clojure, and our planning
-algorithm is more complex. However, query planning time is just a rounding
-error compared with query execution time on these large data sets. The execution
-time of Datalevin are more consistent and better on average, due to much better
-plans produced, resulting in Datalevin's much smaller total query time.
+### LDBC SNB Benchmark
+
+[LDBC SNB](../LDBC-SNB-bench) [6] is an industry standard benchmark for graph
+databases, where Datalevin compares favorably with neo4j. For Short Interactive
+queries, Datalevin is orders of magnitude faster, while often faster in
+Complex Interactive queries, with a couple of exceptions.
 
 ## Remark
 
@@ -306,6 +329,9 @@ Testing of RDF Data Management Systems". ISWC. 2014.
 [2] Brodt, A., Schiller, O. and Mitschang, B. "Efficient resource attribute
 retrieval in RDF triple stores." CIKM. 2011.
 
+[3] Erling, O., etc. The LDBC Social Network Benchmark: Interactive Workload. In
+SIGMOD 2015.
+
 [3] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
@@ -319,18 +345,17 @@ Science and Engineering, 2021
 [6] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
 Sampling." Cidr. 2017.
 
-[7] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[7] D. Maier, et al. "Datalog: concepts, history, and outlook." In Declarative
+Logic Programming: Theory, Systems, and Applications. 2018. 3-100.
+
+[8] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[8] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[9] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[9] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[10] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[10] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[11] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
-
-[11] Birler, Altan, Alfons Kemper, and Thomas Neumann. "Robust Join Processing
-with Diamond Hardened Joins." Proceedings of the VLDB Endowment 17.11 (2024):
-3215-3228.
