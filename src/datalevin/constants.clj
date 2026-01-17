@@ -448,7 +448,7 @@ above which, the same number of items will be sampled instead"}
   magic-link-ratio 1.0)
 
 (def ^{:dynamic true
-       :doc     "Minimum tuple count for link ratio estimation before falling back to e-sampling"}
+       :doc     "Minimum tuple count for link ratio estimation before falling back to default ratio"}
   link-estimate-min-sample 100)
 
 (def ^{:dynamic true
@@ -481,7 +481,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash-join 1.5)
+  magic-cost-hash-join (* 5.0 (.availableProcessors (Runtime/getRuntime))))
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}

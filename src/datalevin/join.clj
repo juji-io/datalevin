@@ -15,7 +15,7 @@
    [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [concatv]])
   (:import
-   [java.util List HashMap]
+   [java.util List HashMap Collection]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 ;; hash join
@@ -115,6 +115,39 @@
                     (.add acc (r/join-tuples tuple1 keep-idxs1
                                              (.get tuples2 j) keep-idxs2))))))
             acc))))))
+
+(defn hash-join-into
+  [rel1 rel2 sink]
+  (let [tuples1      ^List (:tuples rel1)
+        tuples2      ^List (:tuples rel2)
+        attrs1       (:attrs rel1)
+        attrs2       (:attrs rel2)
+        common-attrs (qu/intersect-keys attrs1 attrs2)
+        keep-attrs1  (attr-keys attrs1)
+        keep-attrs2  (diff-keys keep-attrs1 (attr-keys attrs2))
+        keep-idxs1   (to-array (sort (vals attrs1)))
+        keep-idxs2   (to-array (->Eduction (map attrs2) keep-attrs2))
+        key-fn1      (tuple-key-fn attrs1 common-attrs)
+        key-fn2      (tuple-key-fn attrs2 common-attrs)]
+    (when (and tuples1 tuples2)
+      (if (< (.size tuples1) (.size tuples2))
+        (let [^HashMap hash (hash-tuples key-fn1 tuples1)]
+          (dotimes [i (.size tuples2)]
+            (let [^objects tuple2 (.get tuples2 i)]
+              (when-some [^List tuples1 (.get hash (key-fn2 tuple2))]
+                (dotimes [j (.size tuples1)]
+                  (.add ^Collection sink
+                        (r/join-tuples (.get tuples1 j) keep-idxs1
+                                       tuple2 keep-idxs2)))))))
+        (let [^HashMap hash (hash-tuples key-fn2 tuples2)]
+          (dotimes [i (.size tuples1)]
+            (let [^objects tuple1 (.get tuples1 i)]
+              (when-some [^List tuples2 (.get hash (key-fn1 tuple1))]
+                (dotimes [j (.size tuples2)]
+                  (.add ^Collection sink
+                        (r/join-tuples tuple1 keep-idxs1
+                                       (.get tuples2 j) keep-idxs2)))))))))
+    sink))
 
 (defn subtract-rel
   [a b]

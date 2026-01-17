@@ -67,6 +67,8 @@
 
 
 (declare -collect -resolve-clause resolve-clause execute-steps
+         hash-join-execute hash-join-execute-into estimate-hash-join-cost
+         compare-plans
          get-or-join-vars get-or-join-source)
 
 ;; Records
@@ -207,6 +209,33 @@
     (str "Obtain " var " by "
          (if (identical? type :_ref) "reverse reference" "equal values")
          " of " attr ".")))
+
+(defrecord HashJoinStep [link-type tgt in out in-cols cols strata seen-or-joins
+                         tgt-steps]
+
+  IStep
+  (-type [_] :hash-join)
+
+  (-execute [_ db src]
+    (hash-join-execute db in-cols tgt-steps src))
+
+  (-execute-pipe [_ db src sink]
+    (let [tgt-rel (execute-steps nil db tgt-steps)
+          input   (FastList.)]
+      (when src
+        (loop []
+          (when-let [tuple (p/produce src)]
+            (.add input tuple)
+            (recur))))
+      (hash-join-execute-into in-cols tgt-rel input sink)))
+
+  (-explain [_ _]
+    (str "Hash join to " tgt " by "
+         (case link-type
+           :_ref "reverse reference"
+           :val-eq "equal values"
+           "link")
+         ".")))
 
 (declare or-join-execute-link)
 
@@ -2207,6 +2236,41 @@
   (let [pa (cols index)]
     (mapv (fn [e] (if (and (= e pa) (set? e)) (conj e attr) e)) cols)))
 
+(defn- col-var
+  [col]
+  (if (set? col)
+    (some #(when (symbol? %) %) col)
+    col))
+
+(defn- col-attrs
+  [col]
+  (if (set? col)
+    (into #{} (filter keyword?) col)
+    #{}))
+
+(defn- merge-join-cols
+  "Merge input and target cols for hash join output, preserving input order.
+   Returns [merged-cols new-vars]."
+  [in-cols tgt-cols]
+  (let [in-vars    (mapv col-var in-cols)
+        tgt-vars   (mapv col-var tgt-cols)
+        tgt-map    (zipmap tgt-vars tgt-cols)
+        in-var-set (set in-vars)
+        merged-in  (mapv (fn [col v]
+                           (if-let [tcol (tgt-map v)]
+                             (let [attrs (set/union (col-attrs col)
+                                                    (col-attrs tcol))]
+                               (if (seq attrs)
+                                 (conj attrs v)
+                                 v))
+                             col))
+                         in-cols in-vars)
+        new-cols   (reduce (fn [acc [v col]]
+                             (if (in-var-set v) acc (conj acc col)))
+                           [] (map vector tgt-vars tgt-cols))
+        new-vars   (set/difference (set tgt-vars) in-var-set)]
+    [(into merged-in new-cols) new-vars]))
+
 (defn- link-step
   [type last-step index attr tgt new-key]
   (let [in      (:out last-step)
@@ -2234,6 +2298,28 @@
     (if (= 1 (count new-steps))
       [step]
       [step (merge-scan-step db step n-index new-key new-steps)])))
+
+(defn- hash-join-plan
+  [_db {:keys [steps cost size]} link-e {:keys [type tgt]} new-key new-base-plan
+   result-size]
+  (let [last-step (peek steps)
+        in        (:out last-step)
+        out       (if (set? in) (set new-key) new-key)
+        lcols     (:cols last-step)
+        lstrata   (:strata last-step)
+        lseen     (:seen-or-joins last-step)
+        tgt-steps (:steps new-base-plan)
+        tgt-cols  (:cols (peek tgt-steps))
+        [cols new-vars] (merge-join-cols lcols tgt-cols)
+        step      (HashJoinStep. type tgt in out lcols cols
+                                 (conj lstrata new-vars) lseen tgt-steps)
+        base-cost (or (:cost new-base-plan) 0)
+        base-size (or (:size new-base-plan) 0)
+        join-cost (estimate-hash-join-cost size base-size)]
+    (Plan. [step]
+           (+ ^long cost ^long base-cost ^long join-cost)
+           result-size
+           (- ^long (find-index link-e (:strata last-step))))))
 
 (defn- or-join-plan
   "Create or-join link steps:
@@ -2405,18 +2491,26 @@
   [size]
   (estimate-round (* ^long size ^double c/magic-cost-val-eq-scan-e)))
 
+(defn- estimate-hash-join-cost
+  [^long left-size ^long right-size]
+  (estimate-round (* ^double c/magic-cost-hash-join
+                     (+ left-size right-size))))
+
 (defn- estimate-e-plan-cost
   [prev-size e-size cur-steps]
-  (let [step1 (first cur-steps)]
-    (if (= 1 (count cur-steps))
-      (if (identical? (-type step1) :merge)
-        (estimate-scan-v-cost step1 prev-size)
-        (estimate-link-cost prev-size))
-      (+ ^long (estimate-link-cost prev-size)
-         ^long (estimate-scan-v-cost (peek cur-steps) e-size)))))
+  (let [step1 (first cur-steps)
+        ^long raw
+        (if (= 1 (count cur-steps))
+          (if (identical? (-type step1) :merge)
+            (estimate-scan-v-cost step1 prev-size)
+            (estimate-link-cost prev-size))
+          (+ ^long (estimate-link-cost prev-size)
+             ^long (estimate-scan-v-cost (peek cur-steps) e-size)))]
+    raw))
 
 (defn- e-plan
-  [db {:keys [steps cost size]} index link-e link new-key new-base-plan e-size result-size]
+  [db {:keys [steps cost size]} index link-e link new-key new-base-plan e-size
+   result-size]
   (let [new-steps (:steps new-base-plan)
         last-step (peek steps)
         cur-steps
@@ -2450,7 +2544,13 @@
       (let [new-base (base-plans [new-e])
             [e-size result-size]
             (estimate-join-size db sources rules link-e link ratios prev-plan index new-base)]
-        (e-plan db prev-plan index link-e link new-key new-base e-size result-size)))))
+        (if (and (#{:_ref :val-eq} link-type) new-base)
+          (let [link-plan (e-plan db prev-plan index link-e link new-key new-base
+                                  e-size result-size)
+                hash-plan (hash-join-plan db prev-plan link-e link new-key
+                                          new-base result-size)]
+            (compare-plans link-plan hash-plan))
+          (e-plan db prev-plan index link-e link new-key new-base e-size result-size))))))
 
 (defn- binary-plan
   [db sources rules nodes base-plans ratios prev-plan link-e new-e new-key]
@@ -2604,14 +2704,20 @@
       [(plan-component db sources rules nodes (first cc))]
       (map+ #(plan-component db sources rules nodes %) cc))))
 
+(defn- strip-step-result
+  [step]
+  (let [step (if (instance? HashJoinStep step)
+               (update step :tgt-steps (fn [steps]
+                                         (mapv strip-step-result steps)))
+               step)]
+    (assoc step :result nil :sample nil)))
+
 (defn- strip-result
   [plans]
-  (mapv (fn [[f & r]]
-          (vec
-            (cons (update f :steps
-                          (fn [steps]
-                            (mapv #(assoc % :result nil :sample nil) steps)))
-                  r)))
+  (mapv (fn [plan-vec]
+          (mapv #(update % :steps (fn [steps]
+                                    (mapv strip-step-result steps)))
+                plan-vec))
         plans))
 
 (defn- build-plan
@@ -2672,6 +2778,22 @@
                 col)]
         (assoc m v i)))
     {} cols))
+
+(defn- hash-join-execute
+  [db in-cols tgt-steps tuples]
+  (let [out (FastList.)]
+    (hash-join-execute-into db in-cols tgt-steps tuples out)
+    out))
+
+(defn- hash-join-execute-into
+  ([db in-cols tgt-steps tuples sink]
+   (when (and tuples (pos? (.size ^List tuples)))
+     (let [tgt-rel (execute-steps nil db tgt-steps)]
+       (hash-join-execute-into in-cols tgt-rel tuples sink))))
+  ([in-cols tgt-rel tuples sink]
+   (when (and tuples (pos? (.size ^List tuples)))
+     (let [in-rel (r/relation! (cols->attrs in-cols) tuples)]
+       (j/hash-join-into in-rel tgt-rel sink)))))
 
 (def pipe-thread-pool (Executors/newCachedThreadPool))
 
