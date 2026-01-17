@@ -343,10 +343,9 @@ adjust the priorities based on feedback.
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
   vector database;~~ counted and prefix compressed KV storage; data compression;
   auto upgrade migration; new rule engine.
-* 1.0.0 JSON API and library/client for popular languages.
+* 1.0.0 Transaction log access API; read-only replicas; high availability; JSON API and library/client for popular languages.
 * 1.1.0 TTL; extensible storage/query for arbitrary data.
-* 2.0.0 Transaction log access API; read-only replicas; high availability.
-* 2.1.0 Extended rule syntax to handle complex analytical workload.
+* 2.0.0 Extended rule syntax to handle complex analytical workload.
 * 3.0.0 Incremental view maintenance.
 
 ## :arrows_clockwise: Contact
@@ -360,6 +359,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2026 [Huahai Yang](https://huahaiy.github.io/).
+Copyright © 2020-2026 [Huahai Yang](https://huahaiy.github.io/) and contributions.
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
