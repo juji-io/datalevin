@@ -116,6 +116,22 @@
   `[(ground [:a :e :i :o :u]) [?vowel ...]]`"
   clojure.core/identity)
 
+(def ^:private query-var
+  (delay
+    (clojure.core/or
+      (resolve 'datalevin.query/q)
+      (requiring-resolve 'datalevin.query/q))))
+
+(defn q
+  "Function. Run a nested Datalog query. E.g.
+  `[(q '[:find (min ?duration)
+         :where [_ :track/duration ?duration]]
+      $) [[?duration]]]`"
+  [query & inputs]
+  (if-let [query-fn @query-var]
+    (apply query-fn query inputs)
+    (raise "Can't resolve datalevin.query/q" {:error :query/where})))
+
 (defn missing?
   "Predicate that returns true if the entity has no value for the attribute in DB
   e.g. [(missing? $ ?e :sales)]"
@@ -623,6 +639,8 @@
    'get-some      get-some,
    'missing?      missing?,
    'ground        identity,
+   'quote         identity,
+   'q             q,
    'fulltext      fulltext,
    'vec-neighbors vec-neighbors,
    'tuple         vector,

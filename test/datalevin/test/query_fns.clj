@@ -512,6 +512,16 @@
                     [(missing? $ ?e :_parent)]] db)
              #{[3]})))
 
+    (testing "q built-in"
+      (is (= (d/q '[:find ?e ?age
+                    :where
+                    [(q '[:find (min ?age)
+                          :where [_ :age ?age]]
+                        $) [[?age]]]
+                    [?e :age ?age]]
+                  db)
+             #{[1 15]})))
+
     (testing "Built-ins"
       (is (= (d/q '[:find  ?e1 ?e2
                     :where [?e1 :age ?a1]

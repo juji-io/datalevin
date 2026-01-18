@@ -263,7 +263,23 @@
 
 (defrecord Clause [attr val var range count pred])
 
-(defn collect-vars [clause] (set (u/walk-collect clause qu/free-var?)))
+(defn- quoted-form? [form]
+  (and (seq? form)
+       (symbol? (first form))
+       (#{'quote 'clojure.core/quote} (first form))
+       (= 2 (count form))))
+
+(defn collect-vars [clause]
+  (let [vars (volatile! #{})]
+    (letfn [(walk [form]
+              (cond
+                (quoted-form? form) nil
+                (qu/free-var? form) (vswap! vars conj form)
+                (map? form)         (doseq [[k v] form] (walk k) (walk v))
+                (coll? form)        (doseq [x form] (walk x))
+                :else               nil))]
+      (walk clause)
+      @vars)))
 
 (defn solve-rule
   [context clause]

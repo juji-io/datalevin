@@ -50,6 +50,24 @@
 - [Datalog] Added `:having` clauses, similar to SQL `HAVING`. This allows
   conditions to be applied to results of aggregations, e.g. `:having [(pos? (sum
   ?x))] [(< (sum ?y) 100)]`.
+- [Datalog] Optimizer now includes `or-join` as potential links between
+  entities.
+  [Datalog] Optimizer now considers hash join as an alternative join method to
+  `:_ref` and `:val-eq` joins, when the number of input tuples is greater than
+  `datalevin.constants/hash-join-min-input-size` (default 20000). This enhances
+  query robustness, as hash join handles inaccuracy in cardinality estimation
+  better.
+
+### Improved
+- [Datalog] Much smaller DB footprint due to VAE index removal, prefix
+  compression, and key/value compression.
+- [Datalog] Cut query planning time in half due to faster range counting and
+  sampling of DLMDB.
+- [Datalog] Reduced query execution time due to optimizer improvements and
+  faster DLMDB iterators.
+- [Datalog] More robust query execution: added error handling, timeout and
+  back pressure to query execution pipeline; Pipelining now uses its own thread
+  pool.
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions
@@ -58,14 +76,8 @@
   [#347](https://github.com/juji-io/datalevin/issues/347)
 - [Server] Faster code path for `pull` and `pull-many` on server
   [#322](https://github.com/juji-io/datalevin/issues/322).
-
-### Improved
-- [Datalog] Much smaller DB footprint due to VAE index removal, prefix
-  compression, and key/value compression.
-- [Datalog] Cut query planning time in half due to faster range counting and
-  sampling of DLMDB.
-- [Datalog] Reduced query execution time due to optimizer improvements and
-  faster DLMDB iterators. Now 2X faster than PostgreSQL in JOB benchmark.
+- [Datalog] Support nested `q` as a query
+  function [#323](https://github.com/juji-io/datalevin/issues/323).
 
 ## 0.9.27 (2025-11-19)
 
