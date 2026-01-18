@@ -341,11 +341,13 @@ adjust the priorities based on feedback.
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
-  vector database;~~ counted and prefix compressed KV storage; data compression;
-  auto upgrade migration; new rule engine.
-* 1.0.0 Transaction log access API; read-only replicas; high availability; JSON API and library/client for popular languages.
-* 1.1.0 TTL; extensible storage/query for arbitrary data.
-* 2.0.0 Extended rule syntax to handle complex analytical workload.
+  vector database;~~ counted and prefix compressed KV storage; auto upgrade
+  migration; new rule engine.
+* 1.0.0 Transaction log access API; read-only replicas; high availability; JSON
+  API and library/client for popular languages.
+* 1.1.0 TTL; extensible storage/query for arbitrary data; data compression.
+* 2.0.0 Extended rule syntax to handle complex analytical workload capable of
+  implementing ML algorithms in DB.
 * 3.0.0 Incremental view maintenance.
 
 ## :arrows_clockwise: Contact

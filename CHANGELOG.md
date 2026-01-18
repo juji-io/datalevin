@@ -33,15 +33,6 @@
 - [KV] Range count functions in O(log n) time for `:counted` DBIs (default).
 - [KV] Sampling functions in O(log n) time for `:counted` DBIs (default).
   [#325](https://github.com/juji-io/datalevin/issues/325)
-- [KV] DB wide option `:key-compress :hu`, which compresses keys with
-  order preserving Hu-Tucker coding. This also applies to DUPSORT values if
-  enabled. Turning on the option does not have immediate effect, as `re-index`
-  is needed to re-encode the data. In addition, DB needs to have enough data (>
-  64K entries) to train the compressor.
-  [#14](https://github.com/juji-io/datalevin/issues/14)
-- [KV] DB wide option `:val-compress :zstd`, which compresses values with
-  Zstd compression. Same as above, effective after `re-index` and with
-  enough data to train.
 - [Datalog] `:order-by` now accepts column indices (0-based) in addition to
   variable names, e.g. `:order-by [2 :desc 1 :asc]`, useful for sorting by
   aggregation results in `:find`.
@@ -78,6 +69,9 @@
   [#322](https://github.com/juji-io/datalevin/issues/322).
 - [Datalog] Support nested `q` as a query
   function [#323](https://github.com/juji-io/datalevin/issues/323).
+- [Vector] Handle `:display :refs+dists` in `vec-neighbors`
+  [#342](https://github.com/juji-io/datalevin/issues/342).
+
 
 ## 0.9.27 (2025-11-19)
 
