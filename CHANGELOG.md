@@ -70,7 +70,7 @@
 - [Datalog] Support nested `q` as a query
   function [#323](https://github.com/juji-io/datalevin/issues/323).
 - [Vector] Handle `:display :refs+dists` in `vec-neighbors`
-  [#342](https://github.com/juji-io/datalevin/issues/342).
+  [#327](https://github.com/juji-io/datalevin/issues/327).
 
 
 ## 0.9.27 (2025-11-19)
