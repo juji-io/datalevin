@@ -128,32 +128,91 @@
                        attrs-a tuples-a)
              (sum-rel b)))))))
 
-#_(defn sum-dedupe-rel
-    [a b]
-    (assoc a :tuples
-           (let [tuples-a (:tuples a)
-                 tuples-b (:tuples b)
-                 la       (.size tuples-a)
-                 lb       (.size tuples-b)
-                 res
-                 (if (< la lb)
-                   (let [tuples-a-set (HashSet.)]
-                     (dotimes [i la]
-                       (.add tuples-a-set (wrap-array (.get tuples-a i))))
-                     (dotimes [i lb]
-                       (let [tb (.get tuples-b i)]
-                         (when-not (.contains tuples-a-set (wrap-array tb))
-                           (.add tuples-a tb))))
-                     tuples-a)
-                   (let [tuples-b-set (HashSet.)]
-                     (dotimes [i lb]
-                       (.add tuples-b-set (wrap-array (.get tuples-b i))))
-                     (dotimes [i la]
-                       (let [ta (.get tuples-a i)]
-                         (when-not (.contains tuples-b-set (wrap-array ta))
-                           (.add tuples-b ta))))
-                     tuples-b))]
-             res)))
+(defn dedupe-rel
+  [rel]
+  (let [tuples ^List (:tuples rel)]
+    (if (or (nil? tuples) (zero? (.size tuples)))
+      rel
+      (assoc rel :tuples
+             (let [tset (HashSet.)
+                   new  (FastList.)]
+               (dotimes [i (.size tuples)]
+                 (let [t  (.get tuples i)
+                       tw (wrap-array t)]
+                   (when-not (.contains tset tw)
+                     (.add new t)
+                     (.add tset tw))))
+               new)))))
+
+(defn sum-rel-dedupe
+  ([] (relation! {} (FastList.)))
+  ([a] a)
+  ([a b]
+   (let [attrs-a  (:attrs a)
+         attrs-b  (:attrs b)
+         tuples-a (:tuples a)
+         tuples-b (:tuples b)]
+     (cond
+       (or (nil? tuples-a) (zero? (.size ^List tuples-a))) b
+       (or (nil? tuples-b) (zero? (.size ^List tuples-b))) a
+
+       (= attrs-a attrs-b)
+       (relation!
+         attrs-a
+         (let [^List tuples-a tuples-a
+               ^List tuples-b tuples-b
+               la            (.size tuples-a)
+               lb            (.size tuples-b)
+               res           (FastList. (+ la lb))
+               seen          (HashSet.)]
+           (dotimes [i la]
+             (let [t  (.get tuples-a i)
+                   tw (wrap-array t)]
+               (when-not (.contains seen tw)
+                 (.add seen tw)
+                 (.add res t))))
+           (dotimes [i lb]
+             (let [t  (.get tuples-b i)
+                   tw (wrap-array t)]
+               (when-not (.contains seen tw)
+                 (.add seen tw)
+                 (.add res t))))
+           res))
+
+       (not (same-keys? attrs-a attrs-b))
+       (raise
+         "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
+         {:error :query/where})
+
+       (every? number? (vals attrs-a))
+       (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
+                               [idx-b (attrs-a sym)]))
+             tlen       (->> (vals attrs-a) ^long (apply max) u/long-inc)
+             ^List tuples-a tuples-a
+             ^List tuples-b tuples-b
+             la         (.size tuples-a)
+             lb         (.size tuples-b)
+             res        (FastList. (+ la lb))
+             seen       (HashSet.)]
+         (dotimes [i la]
+           (let [t  (.get tuples-a i)
+                 tw (wrap-array t)]
+             (when-not (.contains seen tw)
+               (.add seen tw)
+               (.add res t))))
+         (dotimes [i lb]
+           (let [^objects tuple-b (.get tuples-b i)
+                 ^objects tuple   (object-array tlen)]
+             (doseq [[idx-b idx-a] idxb->idxa]
+               (aset tuple idx-a (aget tuple-b idx-b)))
+             (let [tw (wrap-array tuple)]
+               (when-not (.contains seen tw)
+                 (.add seen tw)
+                 (.add res tuple)))))
+         (relation! attrs-a res))
+
+       :else
+       (dedupe-rel (sum-rel a b))))))
 
 (defn prod-tuples
   ([] (doto (FastList.) (.add (object-array []))))
@@ -210,19 +269,6 @@
                               (when-not (.contains s2 (wrap-array tuple))
                                 (.add new-tuples tuple))))
                           new-tuples)))))
-
-#_(defn dedupe-rel
-    [rel]
-    (assoc rel :tuples (let [tuples ^List (:tuples rel)
-                             tset   (HashSet.)
-                             new    (FastList.)]
-                         (dotimes [i (.size tuples)]
-                           (let [t  (.get tuples i)
-                                 tw (wrap-array t)]
-                             (when-not (.contains tset tw)
-                               (.add new t)
-                               (.add tset tw))))
-                         new)))
 
 (defn select-tuples
   [pred ^List tuples]

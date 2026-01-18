@@ -800,7 +800,7 @@
            contexts       (map #(resolve-clause context %) branches)]
        (assoc (first contexts) :rels [(transduce
                                         (map #(reduce j/hash-join (:rels %)))
-                                        r/sum-rel
+                                        r/sum-rel-dedupe
                                         contexts)]))
 
      '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
@@ -826,7 +826,7 @@
                                      (if (seq rels)
                                        (reduce j/hash-join rels)
                                        []))))
-                          r/sum-rel branches)))
+                         r/sum-rel-dedupe branches)))
 
      '[and *] ;; (and ...)
      (let [[_ & clauses] clause]
@@ -935,11 +935,11 @@
       (dotimes [i (.size tuples)]
         (let [^objects in-tuple (.get tuples i)
               bv                (aget in-tuple bound-idx)]
-          (when-let [^List or-matches (.get or-by-bound bv)]
+          (when-let [^List or-matches (.get ^HashMap or-by-bound bv)]
             (dotimes [j (.size or-matches)]
-              (let [^objects or-tuple     (.get or-matches j)
-                    fv                    (aget or-tuple free-var-idx)
-                    ^objects joined-tuple (object-array (inc tuple-len))]
+              (let [^objects or-tuple (.get or-matches j)
+                    fv                (aget or-tuple free-var-idx)
+                    joined-tuple      (object-array (inc ^long tuple-len))]
                 (System/arraycopy in-tuple 0 joined-tuple 0 tuple-len)
                 (aset joined-tuple tuple-len fv)
                 (.add joined joined-tuple))))))
