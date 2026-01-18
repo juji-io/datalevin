@@ -1,5 +1,6 @@
 (ns ldbc-snb-bench.queries.interactive
-  "LDBC SNB Interactive Complex Queries (IC1-IC14) implemented per spec."
+  "LDBC SNB Interactive Complex Queries (IC1-IC14) implemented per specification at
+  https://ldbcouncil.org/ldbc_snb_docs/ldbc-snb-specification.pdf"
   (:require
    [ldbc-snb-bench.queries.common :as common]))
 

@@ -14,12 +14,13 @@ simulates a social network workload with:
 - **14 complex queries (IC1-IC14)**: Multi-hop traversals, aggregations, path
   finding
 
-We implemented the benchmark specification [1] in Datalevin. We also include
-an implementation in Neo4j for comparison.
+We unofficially implemented the benchmark specification [1] in Datalevin. We
+also include an implementation in Neo4j for comparison.
 
 ## Schema
 
-The LDBC SNB data model is mapped to the attribute centered Datalevin schema:
+The LDBC SNB data model is mapped to the attribute centered Datalevin
+[schema](src/ldbc_snb_bench/schema.clj):
 
 ```clojure
 ;; Entity attributes
@@ -38,7 +39,7 @@ The LDBC SNB data model is mapped to the attribute centered Datalevin schema:
 
 Two classes of queries are included in the benchmark.
 
-### Interactive Short Queries (IS1-IS7)
+### Interactive [Short](src/ldbc_snb_bench/queries/short.clj) Queries (IS1-IS7)
 
 | Query | Description |
 |-------|-------------|
@@ -50,7 +51,8 @@ Two classes of queries are included in the benchmark.
 | IS6 | Forum of a message |
 | IS7 | Replies to a message |
 
-### Interactive Complex Queries (IC1-IC14)
+### [Interactive](src/ldbc_snb_bench/queries/interactive.clj) Complex Queries
+(IC1-IC14)
 
 | Query | Description | Key Features |
 |-------|-------------|--------------|
@@ -224,21 +226,21 @@ clj -M -m ldbc-snb-bench.core bench -o results/ic-results.csv -p results/ic-perf
 | IC14  | 19354.1    | 3896.0         |
 | **Avg** | **3144.6** | **2783.1**   |
 
-Datalevin is ~12% faster overall in these complex graph queries.
+Datalevin is about 12% faster overall in these complex graph queries.
 
 Datalevin performs better on the majority of the queries, with some, IC6,
 IC8, IC11, are even orders of magnitude better than Neo4j, while lags behind in
 IC3, IC5, and IC9.
 
 Datalevin performs the worst in IC9, which "is one of the most complex queries",
-commented on page 67 of the specification [1]. Neo4j performs surprisingly well
+according to page 67 of the specification [1]. Neo4j performs surprisingly well
 on this one.
 
 ## Remark
 
 Considering Neo4j is on the Graph Data Council as one of the authors of this
-benchmark, it is remarkable that Datalevin performs so favorably without any special
-customization for this benchmark.
+benchmark, it is remarkable that Datalevin performs so favorably without any
+tuning or customization.
 
 ## Extending the Benchmark
 

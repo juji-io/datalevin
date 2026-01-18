@@ -159,121 +159,6 @@
    :is6  {:message-id 1099512606636}
    :is7  {:message-id 1099512606636}})
 
-;; ============================================================
-;; IC4 Diagnostic (for comparing with Neo4j)
-;; ============================================================
-
-(defn diagnose-ic4
-  "Run diagnostic queries for IC4 to compare with Neo4j.
-   Prints counts for: friends, tags in window, tags before window."
-  [db {:keys [person-id start-date duration-days]}]
-  (let [end-date (common/add-days start-date duration-days)]
-    (println "\n=== IC4 Diagnostic for person-id:" person-id "===")
-    (println "Window: " start-date " to " end-date)
-
-    ;; Count friends
-    (let [friends (d/q '[:find ?friend
-                         :in $ ?person-id
-                         :where
-                         [?start :person/id ?person-id]
-                         [?k :knows/person1 ?start]
-                         [?k :knows/person2 ?friend]]
-                       db person-id)]
-      (println "\n1. Friends count:" (count friends)))
-
-    ;; Tags in window (outer query without not-join)
-    (let [tags-in-window (d/q '[:find ?tag-name
-                                :in $ ?person-id ?start-date ?duration-days
-                                :where
-                                [?start :person/id ?person-id]
-                                [?k :knows/person1 ?start]
-                                [?k :knows/person2 ?friend]
-                                [?post :message/hasCreator ?friend]
-                                [?post :message/containerOf _]
-                                [(ldbc-snb-bench.queries.common/add-days
-                                   ?start-date ?duration-days) ?end-date]
-                                [?post :message/creationDate ?date]
-                                [(<= ?start-date ?date)]
-                                [(< ?date ?end-date)]
-                                [?post :message/hasTag ?tag]
-                                [?tag :tag/name ?tag-name]]
-                              db person-id start-date duration-days)]
-      (println "\n2. Unique tags in window:" (count tags-in-window))
-      (println "   Tags:" (sort (map first tags-in-window))))
-
-    ;; Tags before window (what the negation finds)
-    (let [tags-before (d/q '[:find ?tag-name
-                             :in $ ?person-id ?start-date
-                             :where
-                             [?start :person/id ?person-id]
-                             [?k :knows/person1 ?start]
-                             [?k :knows/person2 ?friend]
-                             [?post :message/hasCreator ?friend]
-                             [?post :message/containerOf _]
-                             [?post :message/creationDate ?date]
-                             [(< ?date ?start-date)]
-                             [?post :message/hasTag ?tag]
-                             [?tag :tag/name ?tag-name]]
-                           db person-id start-date)]
-      (println "\n3. Unique tags before window:" (count tags-before))
-      (println "   Tags:" (sort (map first tags-before))))
-
-    (println "\n=== End IC4 Diagnostic ===\n")))
-
-(defn diagnose-ic5
-  [db {:keys [person-id start-date duration-days]}]
-  (let [end-date (common/add-days start-date duration-days)]
-    (println "\n=== IC5 Diagnostic for person-id:" person-id "===")
-    (println "Window: " start-date " to " end-date)
-
-    ;; Count friends
-    (let [friends (d/q '[:find ?friend
-                         :in $ ?person-id
-                         :where
-                         [?start :person/id ?person-id]
-                         [?k :knows/person1 ?start]
-                         [?k :knows/person2 ?friend]]
-                       db person-id)]
-      (println "\n1. Friends count:" (count friends)))
-
-    ;; Tags in window (outer query without not-join)
-    (let [tags-in-window (d/q '[:find ?tag-name
-                                :in $ ?person-id ?start-date ?duration-days
-                                :where
-                                [?start :person/id ?person-id]
-                                [?k :knows/person1 ?start]
-                                [?k :knows/person2 ?friend]
-                                [?post :message/hasCreator ?friend]
-                                [?post :message/containerOf _]
-                                [(ldbc-snb-bench.queries.common/add-days
-                                   ?start-date ?duration-days) ?end-date]
-                                [?post :message/creationDate ?date]
-                                [(<= ?start-date ?date)]
-                                [(< ?date ?end-date)]
-                                [?post :message/hasTag ?tag]
-                                [?tag :tag/name ?tag-name]]
-                              db person-id start-date duration-days)]
-      (println "\n2. Unique tags in window:" (count tags-in-window))
-      (println "   Tags:" (sort (map first tags-in-window))))
-
-    ;; Tags before window (what the negation finds)
-    (let [tags-before (d/q '[:find ?tag-name
-                             :in $ ?person-id ?start-date
-                             :where
-                             [?start :person/id ?person-id]
-                             [?k :knows/person1 ?start]
-                             [?k :knows/person2 ?friend]
-                             [?post :message/hasCreator ?friend]
-                             [?post :message/containerOf _]
-                             [?post :message/creationDate ?date]
-                             [(< ?date ?start-date)]
-                             [?post :message/hasTag ?tag]
-                             [?tag :tag/name ?tag-name]]
-                           db person-id start-date)]
-      (println "\n3. Unique tags before window:" (count tags-before))
-      (println "   Tags:" (sort (map first tags-before))))
-
-    (println "\n=== End IC4 Diagnostic ===\n")))
 
 ;; ============================================================
 ;; Database connection
@@ -605,8 +490,6 @@
   ;; Interactive exploration
   (def conn (get-conn))
   (def db (d/db conn))
-
-  (diagnose-ic4 db (:ic4 sample-params))
 
   (binding [q/*debug-plan* true]
     (let [{:keys [person-id min-date]} (:ic5 sample-params)]

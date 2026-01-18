@@ -142,6 +142,4 @@
    :likes/creationDate {:db/valueType :db.type/instant}})
 
 ;; Database options for optimal performance
-(def db-opts
-  {:kv-opts {:mapsize 50000  ; 50GB max for SF10
-             :key-compress :hu}})
+(def db-opts {:kv-opts {:mapsize 50000}}); 50GB max for SF10
