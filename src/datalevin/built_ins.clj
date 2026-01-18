@@ -220,12 +220,22 @@
 (defn- vec-neighbors*
   [store lmdb indices query opts domain]
   (when-let [index (indices domain)]
-    (sequence
-      (map (fn [d]
-             (if (clojure.core/= :g (nth d 0))
-               (st/gt->datom lmdb (peek d))
-               (st/e-aid-v->datom store d))))
-      (search-vec index query opts))))
+    (let [display (or (:display opts)
+                      (:display (.-search-opts ^datalevin.vector.VectorIndex index))
+                      :refs)]
+      (sequence
+        (map (fn [d]
+               (if (clojure.core/= :refs+dists display)
+                 (let [[vec-ref dist] d
+                       datom          (if (clojure.core/= :g (nth vec-ref 0))
+                                        (st/gt->datom lmdb (peek vec-ref))
+                                        (st/e-aid-v->datom store vec-ref))]
+                   (conj (dd/datom-eav datom) dist))
+                 (let [datom (if (clojure.core/= :g (nth d 0))
+                               (st/gt->datom lmdb (peek d))
+                               (st/e-aid-v->datom store d))]
+                   (dd/datom-eav datom)))))
+        (search-vec index query opts)))))
 
 (defn vec-neighbors
   "Function that does vector similarity search. Returns matching datoms in the
@@ -233,6 +243,7 @@
 
   The last argument of the 4 arity function is the search option map.
   See [[datalevin.core.search-vec]].
+  When `:display` is `:refs+dists`, each result is `[e a v dist]`.
 
   When neither an attribute nor a `:domains` is specified, an exception will
   be thrown.
@@ -259,8 +270,7 @@
          query        (if attr? arg2 arg1)
          opts         (if attr? arg3 arg2)]
      (sequence
-       (comp (mapcat #(vec-neighbors* store lmdb indices query opts %))
-          dd/datom->vec-xf)
+       (mapcat #(vec-neighbors* store lmdb indices query opts %))
        (if (and (sequential? domains) (seq domains))
          domains
          (raise "Need a vector search domain." {}))))))

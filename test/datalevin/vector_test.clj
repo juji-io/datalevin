@@ -217,5 +217,12 @@
                          [[?e]]]
                         [?e :chunk/id ?i]]
                       (d/db conn) (vec-data "cat"))))
+    (is (number? (d/q '[:find ?dist .
+                        :in $ ?q
+                        :where
+                        [(vec-neighbors $ :chunk/embedding ?q
+                                        {:top 1 :display :refs+dists})
+                         [[_ _ _ ?dist]]]]
+                      (d/db conn) (vec-data "cat"))))
     (d/close conn)
     (u/delete-files dir)))

@@ -28,7 +28,7 @@ own.
 The new rule engine uses a bottom-up Datalog evaluation strategy. It handles
 recursive rules more efficiently.
 
-### Semi-naive evaluation
+### Semi-naive fix-point evaluation
 
 The rule engine employs the well known semi-naive evaluation (SNE) strategy [1]
 [2]. The engine generates tuples from the rule sets until a fix-point is
@@ -56,7 +56,8 @@ filters to prevent the generation of unnecessary tuples during SNE.
 As an innovation, we identify the clauses that are not involved in recursions,
 pull them out and add them to the regular query clauses to allow the cost-based
 query optimizer to work on them. That is to say, SNE only works on the rules
-that involved in recursions. This reduces the amount of work SNE has to do.
+that involved in recursions. This increases efficiency as index based joins are
+faster than SNE.
 
 ### Temporal elimination
 
@@ -67,31 +68,18 @@ process can be optimized to avoid storing intermediate results.
 
 ## Benchmarks
 
-### Math Genealogy
+### Math Genealogy Benchmark
 
 A benchmark comparing this rule engine with that of Datomic and Datascript can
 be found [here](../benchmarks/math-bench). The short summary is that this rule
 engine is significantly faster. For recursive rules in particular, the speedup
-can be orders of magnitude.
+can be several orders of magnitude.
 
 ### LDBC SNB Benchmark
 
 This industry standard benchmark for graph databases also contains some queries
 that leverage rules. Datalevin is compared favorably with neo4j
 [here](../benchmarks/LDBC-SNB-bench), particularly those queries that use rules.
-
-## Datalog Extensions (WIP)
-
-We extend the rule syntax to support more powerful applications,
-e.g. to implement algorithm for machine learning, statistics, graph analytics,
-and so on, enabling in-database data analytics. Examples of such analytics
-include gradient descent (hence all types of regressions, SVM, etc.), K-means,
-page-rank, and so on.
-
-The primary extension to the rule syntax is to allow aggregation functions, eg.
-`sum`, `count`, etc. to appear in the rule head. This extension allows free
-mixing of aggregations in recursions, thus increases the expressiveness of
-Datalevin rule language significantly.
 
 ## References
 
