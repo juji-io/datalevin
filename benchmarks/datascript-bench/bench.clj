@@ -126,11 +126,11 @@
 
 (def default-benchmarks
   [
-   ;; "add-1"
-   ;; "add-5"
-   ;; "add-all"
-   ;; "init"
-   ;; "retract-5"
+   "add-1"
+   "add-5"
+   "add-all"
+   "init"
+   "retract-5"
    "q1"
    "q2"
    "q2-switch"

@@ -1,0 +1,23 @@
+# Data files (large, generated)
+data/
+db/
+
+neo4j/data/
+neo4j/results/
+neo4j/import/
+
+# Results (regenerated)
+results/*.csv
+
+# Clojure
+.cpcache/
+.nrepl-port
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store

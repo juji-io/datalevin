@@ -54,7 +54,8 @@ the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over
 any flavor of SQL, once they get to use it. Perhaps it is because Datalog is
 more declarative and composable than SQL, e.g. the automatic implicit joins seem
 to be its killer feature. In addition, the recursive rules feature of Datalog
-makes it suitable for graph processing and deductive reasoning.
+makes it suitable for [graph processing](benchmarks/LDBC-SNB-bench) and
+[deductive reasoning](benchmarks/math-bench).
 
 The feature set of Datomic® may not be a good fit for some use cases. One thing
 that may [confuse some
@@ -68,20 +69,20 @@ semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
 
 In addition to support Datomic® flavor of Datalog query language, Datalevin has
 a [novel cost-based query optimizer](doc/query.md) with a much better query
-performance, which is [competitive](benchmarks/JOB-bench) with popular SQL RDBMS
-such as PostgreSQL.
+performance, which is competitive with SQL RDBMS such as
+[PostgreSQL](benchmarks/JOB-bench) and graph databases such as
+[Neo4j](benchmarks/LDBC-SNB-bench).
 
 Datalevin provides robust ACID transaction features on the basis of
 [our fork](https://github.com/huahaiy/dlmdb) of [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
-for its high read performance. With built-in support of asynchronous
-transaction, Datalevin can also handle [write](benchmarks/write-bench) intensive
-workload, as well as storing large documents.
+for its high read performance. With built-in support for asynchronous
+transaction, Datalevin can also handle [write intensive
+workload](benchmarks/write-bench), as well as storing large documents.
 
 Datalevin supports [vector database](doc/vector.md) features by integrating an
 efficient SIMD accelerated vector indexing and search
-[library](https://github.com/unum-cloud/usearch).
-
-Datalevin has a [novel full-text search engine](doc/search.md) that has
+[library](https://github.com/unum-cloud/usearch). Datalevin has a [novel
+full-text search engine](doc/search.md) that has
 [competitive](benchmarks/search-bench) search performance.
 
 Datalevin can be used as a fast key-value store for
