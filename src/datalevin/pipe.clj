@@ -14,7 +14,7 @@
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
-   [java.util List Collection]
+   [java.util List Collection HashMap]
    [java.util.concurrent LinkedBlockingQueue TimeUnit]))
 
 (defn- enqueue
@@ -54,7 +54,7 @@
       (when-not (identical? :datalevin/end-scan o) o)))
   (drain-to [_ sink] (.drainTo queue sink))
   (reset [_] (.clear queue))
-  (total [_] total)
+  (total [_] 0)
 
   Collection
   (add [_ o] (enqueue queue o))
@@ -103,3 +103,56 @@
         (do (.remove ^List tuples s-1)
             (recur tuples))
         tuples))))
+
+(deftype OrJoinTuplePipe [^List tuples
+                          ^long bound-idx
+                          ^HashMap or-by-bound
+                          ^long free-var-idx
+                          ^long tuple-len
+                          ^:unsynchronized-mutable ^long i
+                          ^:unsynchronized-mutable ^objects current
+                          ^:unsynchronized-mutable ^List matches
+                          ^:unsynchronized-mutable ^long j]
+  ITuplePipe
+  (pipe? [_] true)
+  (finish [_] nil)
+  (produce [_]
+    (loop []
+      (if (and matches (< j (.size ^List matches)))
+        (let [^objects or-tuple (.get ^List matches j)
+              fv                (aget or-tuple free-var-idx)
+              ^objects joined   (object-array (inc tuple-len))]
+          (System/arraycopy current 0 joined 0 tuple-len)
+          (aset joined tuple-len fv)
+          (set! j (inc j))
+          joined)
+        (when (< i (.size ^List tuples))
+          (let [^objects in-tuple (.get ^List tuples i)
+                bv                (aget in-tuple bound-idx)
+                ^List m           (.get ^HashMap or-by-bound bv)]
+            (set! i (inc i))
+            (if (and m (pos? (.size m)))
+              (do (set! current in-tuple)
+                  (set! matches m)
+                  (set! j 0)
+                  (recur))
+              (do (set! current nil)
+                  (set! matches nil)
+                  (set! j 0)
+                  (recur))))))))
+  (drain-to [this sink]
+    (loop [t (produce this)]
+      (when t
+        (.add ^Collection sink t)
+        (recur (produce this)))))
+  (reset [_]
+    (set! i 0)
+    (set! current nil)
+    (set! matches nil)
+    (set! j 0))
+  (total [_] 0))
+
+(defn or-join-tuple-pipe
+  [tuples bound-idx or-by-bound free-var-idx tuple-len]
+  (OrJoinTuplePipe. tuples bound-idx or-by-bound free-var-idx
+                    tuple-len 0 nil nil 0))

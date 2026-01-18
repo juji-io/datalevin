@@ -51,7 +51,7 @@ seeding tuples are often produced more efficiently than SNE, as they benefit
 from indices and the cost based query optimizer. These seeds effectively act as
 filters to prevent the generation of unnecessary tuples during SNE.
 
-### Pull-out of non-recursive rule clauses (new)
+### Inline non-recursive rule clauses (new)
 
 As an innovation, we identify the clauses that are not involved in recursions,
 pull them out and add them to the regular query clauses to allow the cost-based
@@ -73,6 +73,12 @@ A benchmark comparing this rule engine with that of Datomic and Datascript can
 be found [here](../benchmarks/math-bench). The short summary is that this rule
 engine is significantly faster. For recursive rules in particular, the speedup
 can be orders of magnitude.
+
+### LDBC SNB Benchmark
+
+This industry standard benchmark for graph databases also contains some queries
+that leverage rules. Datalevin is compared favorably with neo4j
+[here](../benchmarks/LDBC-SNB-bench), particularly those queries that use rules.
 
 ## Datalog Extensions (WIP)
 
