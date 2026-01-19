@@ -54,7 +54,7 @@ the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over
 any flavor of SQL, once they get to use it. Perhaps it is because Datalog is
 more declarative and composable than SQL, e.g. the automatic implicit joins seem
 to be its killer feature. In addition, the recursive rules feature of Datalog
-makes it suitable for [graph processing](benchmarks/LDBC-SNB-bench) and
+makes it suitable for [graph queries](benchmarks/LDBC-SNB-bench) and
 [deductive reasoning](benchmarks/math-bench).
 
 The feature set of Datomic® may not be a good fit for some use cases. One thing
@@ -99,6 +99,7 @@ for shell scripting.
 
 More information can be found in these articles and presentation:
 
+* [Triple Store, Triple Progress: Datalevin Posited for the Future](https://yyhh.org/blog/2026/01/triple-store-triple-progress-datalevin-posited-for-the-future/)
 * [Achieving High Throughput and Low Latency through Adaptive Asynchronous Transaction](https://yyhh.org/blog/2025/02/achieving-high-throughput-and-low-latency-through-adaptive-asynchronous-transaction/)
 * [Competing for the JOB with a Triplestore](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
 * [If I had to Pick One: Datalevin](https://vimsical.notion.site/If-I-Had-To-Pick-One-Datalevin-be5c4b62cda342278a10a5e5cdc2206d)
