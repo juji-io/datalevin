@@ -147,7 +147,7 @@ of entities e.g. `[?e :a/ref ?f]`, forward reference method will be considered.
 The forward `:ref` method takes the list of `f?` in the left relation, then
 merge scan values of `?f` entities.
 
-#### Reverse references `:_ref_`
+#### Reverse references `:_ref`
 
 Reverse reference method has an extra step, it starts with `?f` in left relation
 and scan `:ave` index to obtain corresponding list of `?e`.

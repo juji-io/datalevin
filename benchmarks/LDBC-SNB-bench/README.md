@@ -176,7 +176,8 @@ We ran this benchmark on a 2023 Apple M2 Max with 12 cores, 32GB RAM, 1TB SSD,
 running macOS 15.2 and OpenJDK 21, with Clojure 1.12.4.
 
 The dataset is LDBC SNB SF1 (scale factor 1), which contains approximately 3.2M
-entities and 17.3M edges.
+entities and 17.3M edges. For both Datalevin and Neo4j, we ran queries twice,
+Warm up in the first, and report results of the second run.
 
 ### Interactive Short Queries (IS1-IS7)
 

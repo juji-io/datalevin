@@ -43,15 +43,17 @@
   ?x))] [(< (sum ?y) 100)]`.
 - [Datalog] Optimizer now includes `or-join` as potential links between
   entities.
-  [Datalog] Optimizer now considers hash join as an alternative join method to
-  `:_ref` and `:val-eq` joins, when the number of input tuples is greater than
+- [Datalog] Optimizer now considers hash join as an alternative to `:_ref` and
+  `:val-eq` joins when the number of input tuples is greater than
   `datalevin.constants/hash-join-min-input-size` (default 20000). This enhances
   query robustness, as hash join handles inaccuracy in cardinality estimation
   better.
+- [Benchmark] [LDBC-SNB-bench](benchmarks/LDBC-SNB-bench) that compares
+  Datalevin with Neo4j on graph queries.
 
 ### Improved
-- [Datalog] Much smaller DB footprint due to VAE index removal, prefix
-  compression, and key/value compression.
+- [Datalog] 40% less DB footprint due to VAE index removal and prefix
+  compression.
 - [Datalog] Cut query planning time in half due to faster range counting and
   sampling of DLMDB.
 - [Datalog] Reduced query execution time due to optimizer improvements and
