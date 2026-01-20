@@ -22,7 +22,7 @@ task:
 
     script/install-graalvm
 
-    export GRAALVM_HOME=$PWD/graalvm-jdk
+    export GRAALVM_HOME="$(cd graalvm-jdk && pwd)"
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 
@@ -63,14 +63,14 @@ task:
     DTLV_OS: macos
   script: |
 
-    brew install leiningen libomp llvm
-    lein run
-
     script/install-graalvm
 
-    export GRAALVM_HOME=$PWD/graalvm-jdk/Contents/Home
+    export GRAALVM_HOME="$(cd graalvm-jdk/Contents/Home && pwd)"
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
+
+    brew install leiningen libomp llvm
+    lein run
 
     script/compile-native
 
