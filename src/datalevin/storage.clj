@@ -1145,31 +1145,35 @@
 
 (defn e-sample*
   [^Store store a aid]
-  (let [lmdb   (.-lmdb store)
-        counts ^ConcurrentHashMap (.-counts store)
-        as     (.a-size store a)
-        ts     (FastList.)]
-    (.put counts aid as)
-    (binding [c/sample-time-budget    Long/MAX_VALUE
-              c/sample-iteration-step Long/MAX_VALUE]
-      (.sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
-                          nil false))
-    (transact-kv lmdb (map-indexed
-                        (fn [i ^objects t]
-                          [:put c/meta [aid i] ^long (aget t 0)
-                           :int-int :id])
-                        ts))
-    ts))
+  (when-not (.closed? store)
+    (let [lmdb   (.-lmdb store)
+          counts ^ConcurrentHashMap (.-counts store)
+          as     (.a-size store a)
+          ts     (FastList.)]
+      (.put counts aid as)
+      (binding [c/sample-time-budget    Long/MAX_VALUE
+                c/sample-iteration-step Long/MAX_VALUE]
+        (.sample-ave-tuples store ts a as [[[:closed c/v0] [:closed c/vmax]]]
+                            nil false))
+      (when-not (.closed? store)
+        (transact-kv lmdb (map-indexed
+                            (fn [i ^objects t]
+                              [:put c/meta [aid i] ^long (aget t 0)
+                               :int-int :id])
+                            ts)))
+      ts)))
 
 (defn default-ratio*
   [^Store store a aid]
-  (let [card ^long (.cardinality store a)]
-    (if (zero? card)
-      1.0
-      (let [ratio (double (/ ^long (.a-size store a) card))
-            lmdb  (.-lmdb store)]
-        (transact-kv lmdb [[:put c/meta [aid :ratio] ratio :data :double]])
-        ratio))))
+  (when-not (.closed? store)
+    (let [card ^long (.cardinality store a)]
+      (if (zero? card)
+        1.0
+        (let [ratio (double (/ ^long (.a-size store a) card))
+              lmdb  (.-lmdb store)]
+          (when-not (.closed? store)
+            (transact-kv lmdb [[:put c/meta [aid :ratio] ratio :data :double]]))
+          ratio)))))
 
 (defn- analyze*
   [^Store store attr]

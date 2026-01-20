@@ -52,7 +52,7 @@
   []
   (when-let [^ExecutorService pool @worker-thread-pool-atom]
     (.shutdownNow pool)
-    (.awaitTermination pool 5 TimeUnit/MILLISECONDS)))
+    (.awaitTermination pool 100 TimeUnit/MILLISECONDS)))
 
 (defonce scheduler-atom (atom nil))
 
@@ -68,7 +68,7 @@
   []
   (when-let [^ExecutorService pool @scheduler-atom]
     (.shutdownNow pool)
-    (.awaitTermination pool 5 TimeUnit/MILLISECONDS)))
+    (.awaitTermination pool 100 TimeUnit/MILLISECONDS)))
 
 (defn seqable?
   ^Boolean [x]
