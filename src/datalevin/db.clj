@@ -1479,6 +1479,17 @@
                            [report' v']))]
                    (recur report' (cons [op e a v'] entities)))
 
+                 ;; resolve idents (keywords) in tuple refs
+                 (some #(and (identical? (first %) :db.type/ref)
+                             (keyword? (second %))) vs)
+                 (let [v' (mapv (fn [[tuple-type v]]
+                                  (if (and (identical? tuple-type :db.type/ref)
+                                           (keyword? v))
+                                    (entid-strict db v)
+                                    v))
+                                vs)]
+                   (recur report (cons [op e a v'] entities)))
+
                  (identical? op :db/add)
                  (recur (transact-add report entity) entities)
 

@@ -1,12 +1,13 @@
 (ns datalevin.test.tuples
   (:require
-   [clojure.test :as t :refer        [is are deftest testing]]
+   [clojure.test :as t :refer [is are deftest testing]]
    [datalevin.core :as d]
    [datalevin.db :as db]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc])
-  (:import [clojure.lang ExceptionInfo]
-           [java.util UUID]))
+  (:import
+   [clojure.lang ExceptionInfo]
+   [java.util UUID]))
 
 (deftest test-schema
   (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
@@ -465,4 +466,36 @@
                   [?e2 :c "A"]]
                 db)))
     (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-ident-in-tuple
+  (let [dir  (u/tmp-dir (str "ident-in-tuple" (UUID/randomUUID)))
+        conn (d/get-conn
+               dir
+               {:artist/name {:db/valueType   :db.type/string
+                              :db/cardinality :db.cardinality/one
+                              :db/unique      :db.unique/identity}
+
+                :artist/country
+                {:db/valueType   :db.type/ref
+                 :db/cardinality :db.cardinality/one
+                 :db/doc         "An artist's country of residence"}
+
+                :artist/l11n {:db/valueType   :db.type/tuple
+                              :db/tupleTypes  [:db.type/string :db.type/ref]
+                              :db/cardinality :db.cardinality/many}}
+               {:validate-data? true})]
+    (d/transact conn [{:db/ident :country/CA}
+                      {:db/ident :country/JP}
+                      {:db/ident :country/CN}])
+    (d/transact conn [{:artist/name    "Leonard Cohen"
+                       :artist/country :country/CA
+                       :artist/l11n    [["レナード・コーエン" :country/JP]
+                                        ["列昂纳德·科恩" :country/CN]]}])
+    (is (= 1 (d/q '[:find (count ?a) .
+                    :in $ ?n
+                    :where
+                    [?a :artist/name ?n]]
+                  (d/db conn) "Leonard Cohen")))
+    (d/close conn)
     (u/delete-files dir)))

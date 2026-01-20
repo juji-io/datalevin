@@ -75,9 +75,11 @@
   [#331](https://github.com/juji-io/datalevin/issues/331).
 - [Datalog] Handle lookup ref in type coercion
   [#338](https://github.com/juji-io/datalevin/issues/338).
+- [Datalog] Handle idents in tuple refs
+  [#340](https://github.com/juji-io/datalevin/issues/340).
 - [Vector] Handle `:display :refs+dists` in `vec-neighbors`
   [#327](https://github.com/juji-io/datalevin/issues/327).
-- [Async] Run callback in worker thread.
+- [Async] Run callback in worker thread
   [#329](https://github.com/juji-io/datalevin/issues/329).
 
 
