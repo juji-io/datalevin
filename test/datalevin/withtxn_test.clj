@@ -73,3 +73,52 @@
 
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest issue-331-test
+  (let [dir  (u/tmp-dir (str "issue-331-test-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir
+               {:user/username {:db/valueType   :db.type/string
+                                :db/cardinality :db.cardinality/one
+                                :db/unique      :db.unique/identity}
+
+                :group/id {:db/valueType   :db.type/uuid
+                           :db/cardinality :db.cardinality/one
+                           :db/unique      :db.unique/identity}
+
+                :group/users {:db/valueType   :db.type/ref
+                              :db/cardinality :db.cardinality/many}
+
+                :rule/group {:db/valueType   :db.type/ref
+                             :db/cardinality :db.cardinality/one}
+
+                :rule/permission {:db/valueType   :db.type/keyword
+                                  :db/cardinality :db.cardinality/one}
+
+                :rule/group+permission {:db/valueType   :db.type/tuple
+                                        :db/cardinality :db.cardinality/one
+                                        :db/tupleAttrs  [:rule/group :rule/permission]
+                                        :db/unique      :db.unique/identity}}
+               {:validate-data? true
+                :closed-schema? true
+                :kv-opts        {:flags (conj c/default-env-flags :nosync)}})
+        init-tx [{:db/id         -1
+                  :user/username "sasha"}
+                 {:db/id       -2
+                  :group/id    (random-uuid)
+                  :group/users [-1]}
+                 {:rule/group      -2
+                  :rule/permission :permission/manager}]
+        query   '[:find ?g . :in $ ?username
+                  :where
+                  [?u :user/username ?username]
+                  [?g :group/users ?u]
+                  [?r :rule/group ?g]
+                  [?r :rule/permission :permission/manager]]]
+    (d/transact! conn init-tx)
+    (is (= 2 (d/q query (d/db conn) "sasha")))
+    (is (= 2 (d/with-transaction [cn conn]
+               (d/q query (d/db cn) "sasha"))))
+
+    (d/close conn)
+    (u/delete-files dir)))

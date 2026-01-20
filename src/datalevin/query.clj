@@ -2136,12 +2136,17 @@
   [db nodes]
   (if (= (count nodes) 1)
     (let [[e node] (first nodes)] {e (count-datoms db e node)})
-    (into {} (map+ (fn [e] [e (count-datoms db e (get nodes e))])
-                   (keys nodes)))))
+    (let [f (fn [e] [e (count-datoms db e (get nodes e))])]
+      (into {} (if (writing? db)
+                 (map f (keys nodes))
+                 (map+ f (keys nodes)))))))
 
 (defn- build-base-plans
   [db nodes component]
-  (into {} (map+ (fn [e] [[e] (base-plan db nodes e)]) component)))
+  (let [f (fn [e] [[e] (base-plan db nodes e)])]
+    (into {} (if (writing? db)
+               (map f component)
+               (map+ f component)))))
 
 (defn- find-index
   [a-or-v cols]
