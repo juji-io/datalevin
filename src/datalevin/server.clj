@@ -1709,7 +1709,9 @@
                              #(assoc % (if writing? :wdt-db :dt-db) db))
               rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
-              res (select-keys rp [:tx-data :tempids])]
+              res (cond-> (select-keys rp [:tx-data :tempids])
+                    (:new-attributes rp)
+                    (assoc :new-attributes (:new-attributes rp)))]
           (if (< ct ^long c/+wire-datom-batch-size+)
             (write-message skey {:type :command-complete :result res})
             (let [{:keys [tx-data tempids]} res]

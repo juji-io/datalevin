@@ -33,6 +33,8 @@
 - [KV] Range count functions in O(log n) time for `:counted` DBIs (default).
 - [KV] Sampling functions in O(log n) time for `:counted` DBIs (default).
   [#325](https://github.com/juji-io/datalevin/issues/325)
+- [Datalog] Add `:new-attributes` to transaction report.
+  [#301](https://github.com/juji-io/datalevin/issues/301).
 - [Datalog] `:order-by` now accepts column indices (0-based) in addition to
   variable names, e.g. `:order-by [2 :desc 1 :asc]`, useful for sorting by
   aggregation results in `:find`.

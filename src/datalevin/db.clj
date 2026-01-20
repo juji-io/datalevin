@@ -1137,6 +1137,11 @@
   (validate-val  v ent)
   (let [tx        (or tx (current-tx report))
         db        (:db-after report)
+        store     (.-store ^DB db)
+        report    (if (or (contains? (::new-attributes report) a)
+                          ((schema store) a))
+                    report
+                    (update report ::new-attributes u/conjv a))
         e         (entid-strict db e)
         v         (if (ref? db a) (entid-strict db v) v)
         new-datom (datom e a v tx)
@@ -1264,13 +1269,16 @@
                 es     initial-es']
            (cond+
              (empty? es)
-             (-> report
-                 check-value-tempids
-                 (dissoc ::upserted-tempids)
-                 (dissoc ::reverse-tempids)
-                 (update :tempids #(u/removem auto-tempid? %))
-                 (update :tempids assoc :db/current-tx (current-tx report))
-                 (update :db-after update :max-tx u/long-inc))
+             (let [new-attrs (::new-attributes report)]
+               (cond-> (-> report
+                           check-value-tempids
+                           (dissoc ::upserted-tempids)
+                           (dissoc ::reverse-tempids)
+                           (dissoc ::new-attributes)
+                           (update :tempids #(u/removem auto-tempid? %))
+                           (update :tempids assoc :db/current-tx (current-tx report))
+                           (update :db-after update :max-tx u/long-inc))
+                 (seq new-attrs) (assoc :new-attributes new-attrs)))
 
              :let [[entity & entities] es]
 
@@ -1561,12 +1569,12 @@
 (defn- remote-tx-result
   [res]
   (if (map? res)
-    (let [{:keys [tx-data tempids]} res]
-      [tx-data (dissoc tempids :max-eid) (tempids :max-eid)])
+    (let [{:keys [tx-data tempids new-attributes]} res]
+      [tx-data (dissoc tempids :max-eid) (tempids :max-eid) new-attributes])
     (let [[tx-data tempids] (split-with datom? res)
           max-eid           (-> tempids last second)
           tempids           (into {} (butlast tempids))]
-      [tx-data tempids max-eid])))
+      [tx-data tempids max-eid nil])))
 
 ;; HACK to avoid circular dependency
 (def de-entity? (delay (resolve 'datalevin.entity/entity?)))
@@ -1622,16 +1630,17 @@
         tx-time (System/currentTimeMillis)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
-        (let [res                       (r/tx-data store initial-es simulated?)
-              [tx-data tempids max-eid] (remote-tx-result res)]
-          (assoc initial-report
-                 :db-after (-> (new-db store)
-                               (assoc :max-eid max-eid)
-                               (#(if simulated?
-                                   (update % :max-tx u/long-inc)
-                                   %)))
-                 :tx-data tx-data
-                 :tempids tempids))
+        (let [res                                    (r/tx-data store initial-es simulated?)
+              [tx-data tempids max-eid new-attributes] (remote-tx-result res)]
+          (cond-> (assoc initial-report
+                         :db-after (-> (new-db store)
+                                       (assoc :max-eid max-eid)
+                                       (#(if simulated?
+                                           (update % :max-tx u/long-inc)
+                                           %)))
+                         :tx-data tx-data
+                         :tempids tempids)
+            (seq new-attributes) (assoc :new-attributes new-attributes)))
         (catch Exception e
           (if (:resized (ex-data e))
             (throw e)

@@ -37,6 +37,31 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest test-new-attributes-in-report
+  (let [dir  (u/tmp-dir (str "new-attrs-" (UUID/randomUUID)))
+        conn (d/create-conn dir
+                            {:name {:db/valueType :db.type/string}}
+                            {:kv-opts
+                             {:flags (conj c/default-env-flags :nosync)}})]
+    (testing "no new attributes when using existing schema attrs"
+      (let [report (d/transact! conn [{:db/id -1 :name "Alice"}])]
+        (is (nil? (:new-attributes report)))))
+
+    (testing "new attribute detected"
+      (let [report (d/transact! conn [{:db/id 1 :age 30}])]
+        (is (= [:age] (:new-attributes report)))))
+
+    (testing "multiple new attributes detected"
+      (let [report (d/transact! conn [{:db/id 1 :email "alice@example.com" :city "NYC"}])]
+        (is (= #{:email :city} (set (:new-attributes report))))))
+
+    (testing "no new attributes when reusing previously added attrs"
+      (let [report (d/transact! conn [{:db/id 1 :name "Alice Updated" :age 31}])]
+        (is (nil? (:new-attributes report)))))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest test-with-1
   (let [dir (u/tmp-dir (str "with-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
