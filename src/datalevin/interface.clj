@@ -150,6 +150,24 @@
     [db dbi-name k k-type v-type]
     [db dbi-name k k-type v-type ignore-key?]
     "Get kv pair of the specified key `k`. ")
+  (get-rank
+    [db dbi-name k]
+    [db dbi-name k k-type]
+    "Get the rank (0-based position) of the key `k` in the sorted key order.
+     Returns nil if the key does not exist.")
+  (get-by-rank
+    [db dbi-name rank]
+    [db dbi-name rank k-type]
+    [db dbi-name rank k-type v-type]
+    [db dbi-name rank k-type v-type ignore-key?]
+    "Get the key-value pair at the given rank (0-based position) in sorted order.
+     Returns nil if the rank is out of bounds.")
+  (sample-kv
+    [db dbi-name n]
+    [db dbi-name n k-type]
+    [db dbi-name n k-type v-type]
+    [db dbi-name n k-type v-type ignore-key?]
+    "Return n random samples of key-value pairs from the dbi.")
   (get-first
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

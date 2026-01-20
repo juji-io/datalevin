@@ -30,9 +30,10 @@
   download old uberjar. [#276](https://github.com/juji-io/datalevin/issues/276)
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs (default).
-- [KV] Range count functions in O(log n) time for `:counted` DBIs (default).
-- [KV] Sampling functions in O(log n) time for `:counted` DBIs (default).
-  [#325](https://github.com/juji-io/datalevin/issues/325)
+      * `get-rank`, return the rank (0-based) of the key.
+      * `get-by-rank`, return the key/value at the given rank.
+- [KV] Sampling function `sample-kv` in O(log n) time for `:counted` DBIs
+  (default). [#325](https://github.com/juji-io/datalevin/issues/325)
 - [Datalog] Add `:new-attributes` to transaction report.
   [#301](https://github.com/juji-io/datalevin/issues/301).
 - [Datalog] `:order-by` now accepts column indices (0-based) in addition to

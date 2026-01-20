@@ -59,6 +59,11 @@
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx]
     "Get value of the key given in `put-key` of rtx, return a byte buffer")
+  (get-key-rank [this rtx]
+    "Get the rank (0-based position) of the key given in `put-key` of rtx.
+     Returns nil if the key does not exist.")
+  (get-key-by-rank [this rtx rank]
+    "Get the key-value at the given rank. Returns [key-buffer value-buffer] or nil.")
   (iterate-kv [this rtx cur k-range k-type v-type]
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx cur k-range k-type]

@@ -1167,6 +1167,91 @@ set of keywords. See [[set-env-flags]] for their meanings."}
         ;;==> nil "}
   get-value i/get-value)
 
+(def ^{:arglists '([db dbi-name k]
+                   [db dbi-name k k-type])
+       :doc      "Get the rank (0-based position) of the key `k` in the sorted key order
+  of the key-value store.
+
+  `k-type` is the data type of `k`. The allowed data types are described
+  in [[read-buffer]]. Default is `:data`.
+
+  Returns nil if the key does not exist.
+
+  Examples:
+
+        (get-rank lmdb \"a\" 1)
+        ;;==> 0
+
+        ;; specify data type
+        (get-rank lmdb \"a\" :annunaki/enki :attr)
+        ;;==> 5
+
+        ;; key doesn't exist
+        (get-rank lmdb \"a\" 999)
+        ;;==> nil "}
+  get-rank i/get-rank)
+
+(def ^{:arglists '([db dbi-name rank]
+                   [db dbi-name rank k-type]
+                   [db dbi-name rank k-type v-type]
+                   [db dbi-name rank k-type v-type ignore-key?])
+       :doc      "Get the key-value pair at the given rank (0-based position) in sorted
+  key order of the key-value store.
+
+  `rank` is the 0-based position in the sorted key order.
+
+  `k-type` and `v-type` are data types of the key and value, respectively.
+  The allowed data types are described in [[read-buffer]].
+
+  If `ignore-key?` is `true` (default), only return the value,
+  otherwise return `[k v]`.
+
+  Returns nil if the rank is out of bounds.
+
+  Examples:
+
+        (get-by-rank lmdb \"a\" 0)
+        ;;==> returns value of first key
+
+        ;; specify data types
+        (get-by-rank lmdb \"a\" 0 :long :string)
+        ;;==> \"first-value\"
+
+        ;; return key value pair
+        (get-by-rank lmdb \"a\" 0 :long :string false)
+        ;;==> [1 \"first-value\"]
+
+        ;; rank out of bounds
+        (get-by-rank lmdb \"a\" 999999)
+        ;;==> nil "}
+  get-by-rank i/get-by-rank)
+
+(def ^{:arglists '([db dbi-name n]
+                   [db dbi-name n k-type]
+                   [db dbi-name n k-type v-type]
+                   [db dbi-name n k-type v-type ignore-key?])
+       :doc      "Return n random samples of key-value pairs from the key-value store.
+
+  `n` is the number of samples to return.
+
+  `k-type` and `v-type` are data types of the key and value, respectively.
+  The allowed data types are described in [[read-buffer]].
+
+  If `ignore-key?` is `true` (default), only return values,
+  otherwise return `[k v]` pairs.
+
+  Returns nil if n is greater than the number of entries.
+
+  Examples:
+
+        (sample-kv lmdb \"a\" 3)
+        ;;==> [\"val1\" \"val2\" \"val3\"]
+
+        ;; return key value pairs
+        (sample-kv lmdb \"a\" 3 :long :string false)
+        ;;==> [[1 \"val1\"] [5 \"val2\"] [10 \"val3\"]] "}
+  sample-kv i/sample-kv)
+
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]

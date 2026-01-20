@@ -112,6 +112,45 @@
       (is (= "nice year"
              (if/get-value lmdb "d" #inst "1969-01-01" :instant :string))))
 
+    (testing "get-rank"
+      (if/open-dbi lmdb "rank-test")
+      (if/transact-kv lmdb [[:put "rank-test" 10 "ten" :long :string]
+                            [:put "rank-test" 20 "twenty" :long :string]
+                            [:put "rank-test" 30 "thirty" :long :string]
+                            [:put "rank-test" 40 "forty" :long :string]
+                            [:put "rank-test" 50 "fifty" :long :string]])
+      (is (= 0 (if/get-rank lmdb "rank-test" 10 :long)))
+      (is (= 1 (if/get-rank lmdb "rank-test" 20 :long)))
+      (is (= 2 (if/get-rank lmdb "rank-test" 30 :long)))
+      (is (= 3 (if/get-rank lmdb "rank-test" 40 :long)))
+      (is (= 4 (if/get-rank lmdb "rank-test" 50 :long)))
+      (is (nil? (if/get-rank lmdb "rank-test" 99 :long))))
+
+    (testing "get-by-rank"
+      (is (= "ten" (if/get-by-rank lmdb "rank-test" 0 :long :string)))
+      (is (= "twenty" (if/get-by-rank lmdb "rank-test" 1 :long :string)))
+      (is (= "thirty" (if/get-by-rank lmdb "rank-test" 2 :long :string)))
+      (is (= "forty" (if/get-by-rank lmdb "rank-test" 3 :long :string)))
+      (is (= "fifty" (if/get-by-rank lmdb "rank-test" 4 :long :string)))
+      (is (= [10 "ten"] (if/get-by-rank lmdb "rank-test" 0 :long :string false)))
+      (is (= [50 "fifty"] (if/get-by-rank lmdb "rank-test" 4 :long :string false)))
+      (is (nil? (if/get-by-rank lmdb "rank-test" 99 :long :string))))
+
+    (testing "sample-kv"
+      (let [samples (if/sample-kv lmdb "rank-test" 3 :long :string)]
+        (is (= 3 (count samples)))
+        (is (every? #{"ten" "twenty" "thirty" "forty" "fifty"} samples)))
+      (let [samples (if/sample-kv lmdb "rank-test" 3 :long :string false)]
+        (is (= 3 (count samples)))
+        (is (every? (fn [[k v]]
+                      (and (#{10 20 30 40 50} k)
+                           (#{"ten" "twenty" "thirty" "forty" "fifty"} v)))
+                    samples)))
+      (let [all-samples (if/sample-kv lmdb "rank-test" 5 :long :string)]
+        (is (= 5 (count all-samples)))
+        (is (= #{"ten" "twenty" "thirty" "forty" "fifty"} (set all-samples))))
+      (is (nil? (if/sample-kv lmdb "rank-test" 10 :long :string))))
+
     (testing "get-first and get-first-n"
       (is (= [1 2] (if/get-first lmdb "a" [:closed 1 10] :data)))
       (is (= [[1 2] [5 {}]] (if/get-first-n lmdb "a" 2 [:closed 1 10] :data)))

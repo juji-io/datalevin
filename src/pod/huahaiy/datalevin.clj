@@ -444,6 +444,36 @@
    (when-let [d (get-kv db)]
      (d/get-value d dbi-name k k-type v-type ignore-key?))))
 
+(defn get-rank
+  ([db dbi-name k]
+   (when-let [d (get-kv db)] (d/get-rank d dbi-name k)))
+  ([db dbi-name k k-type]
+   (when-let [d (get-kv db)] (d/get-rank d dbi-name k k-type))))
+
+(defn get-by-rank
+  ([db dbi-name rank]
+   (when-let [d (get-kv db)] (d/get-by-rank d dbi-name rank)))
+  ([db dbi-name rank k-type]
+   (when-let [d (get-kv db)] (d/get-by-rank d dbi-name rank k-type)))
+  ([db dbi-name rank k-type v-type]
+   (when-let [d (get-kv db)]
+     (d/get-by-rank d dbi-name rank k-type v-type)))
+  ([db dbi-name rank k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
+     (d/get-by-rank d dbi-name rank k-type v-type ignore-key?))))
+
+(defn sample-kv
+  ([db dbi-name n]
+   (when-let [d (get-kv db)] (d/sample-kv d dbi-name n)))
+  ([db dbi-name n k-type]
+   (when-let [d (get-kv db)] (d/sample-kv d dbi-name n k-type)))
+  ([db dbi-name n k-type v-type]
+   (when-let [d (get-kv db)]
+     (d/sample-kv d dbi-name n k-type v-type)))
+  ([db dbi-name n k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
+     (d/sample-kv d dbi-name n k-type v-type ignore-key?))))
+
 (defn get-first
   ([db dbi-name k-range]
    (when-let [d (get-kv db)] (d/get-first d dbi-name k-range)))
@@ -876,6 +906,9 @@
    'transact-kv               transact-kv
    'transact-kv-async*        transact-kv-async*
    'get-value                 get-value
+   'get-rank                  get-rank
+   'get-by-rank               get-by-rank
+   'sample-kv                 sample-kv
    'get-first                 get-first
    'get-first-n               get-first-n
    'get-range                 get-range

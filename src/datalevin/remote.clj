@@ -417,6 +417,35 @@
       client :get-value
       [db-name dbi-name k k-type v-type ignore-key?] writing?))
 
+  (get-rank [db dbi-name k]
+    (.get-rank db dbi-name k :data))
+  (get-rank [_ dbi-name k k-type]
+    (cl/normal-request
+      client :get-rank
+      [db-name dbi-name k k-type] writing?))
+
+  (get-by-rank [db dbi-name rank]
+    (.get-by-rank db dbi-name rank :data :data true))
+  (get-by-rank [db dbi-name rank k-type]
+    (.get-by-rank db dbi-name rank k-type :data true))
+  (get-by-rank [db dbi-name rank k-type v-type]
+    (.get-by-rank db dbi-name rank k-type v-type true))
+  (get-by-rank [_ dbi-name rank k-type v-type ignore-key?]
+    (cl/normal-request
+      client :get-by-rank
+      [db-name dbi-name rank k-type v-type ignore-key?] writing?))
+
+  (sample-kv [db dbi-name n]
+    (.sample-kv db dbi-name n :data :data true))
+  (sample-kv [db dbi-name n k-type]
+    (.sample-kv db dbi-name n k-type :data true))
+  (sample-kv [db dbi-name n k-type v-type]
+    (.sample-kv db dbi-name n k-type v-type true))
+  (sample-kv [_ dbi-name n k-type v-type ignore-key?]
+    (cl/normal-request
+      client :sample-kv
+      [db-name dbi-name n k-type v-type ignore-key?] writing?))
+
   (get-first [db dbi-name k-range]
     (.get-first db dbi-name k-range :data :data false))
   (get-first [db dbi-name k-range k-type]

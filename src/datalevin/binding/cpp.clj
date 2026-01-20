@@ -323,6 +323,22 @@
       (Util/checkRc ^int rc)
       (when-not (= rc DTLV/MDB_NOTFOUND)
         (.outBuf vp))))
+  (get-key-rank [_ rtx]
+    (let [^BufVal kp   (.-kp ^Rtx rtx)
+          ^LongPointer rp (LongPointer. 1)
+          rc           (DTLV/mdb_get_key_rank (.get ^Txn (.-txn ^Rtx rtx))
+                                              (.get db) (.ptr kp) nil rp)]
+      (Util/checkRc ^int rc)
+      (when-not (= rc DTLV/MDB_NOTFOUND)
+        (.get rp))))
+  (get-key-by-rank [_ rtx rank]
+    (let [^BufVal kp (.-kp ^Rtx rtx)
+          ^BufVal vp (.-vp ^Rtx rtx)
+          rc         (DTLV/mdb_get_rank (.get ^Txn (.-txn ^Rtx rtx))
+                                        (.get db) (long rank) (.ptr kp) (.ptr vp))]
+      (Util/checkRc ^int rc)
+      (when-not (= rc DTLV/MDB_NOTFOUND)
+        [(.outBuf kp) (.outBuf vp)])))
   (iterate-key [this rtx cur [range-type k1 k2] k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable lmdb this cur rtx ctx)))
@@ -1068,6 +1084,29 @@
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
     (scan/get-value this dbi-name k k-type v-type ignore-key?))
+
+  (get-rank [this dbi-name k]
+    (.get-rank this dbi-name k :data))
+  (get-rank [this dbi-name k k-type]
+    (scan/get-rank this dbi-name k k-type))
+
+  (get-by-rank [this dbi-name rank]
+    (.get-by-rank this dbi-name rank :data :data true))
+  (get-by-rank [this dbi-name rank k-type]
+    (.get-by-rank this dbi-name rank k-type :data true))
+  (get-by-rank [this dbi-name rank k-type v-type]
+    (.get-by-rank this dbi-name rank k-type v-type true))
+  (get-by-rank [this dbi-name rank k-type v-type ignore-key?]
+    (scan/get-by-rank this dbi-name rank k-type v-type ignore-key?))
+
+  (sample-kv [this dbi-name n]
+    (.sample-kv this dbi-name n :data :data true))
+  (sample-kv [this dbi-name n k-type]
+    (.sample-kv this dbi-name n k-type :data true))
+  (sample-kv [this dbi-name n k-type v-type]
+    (.sample-kv this dbi-name n k-type v-type true))
+  (sample-kv [this dbi-name n k-type v-type ignore-key?]
+    (scan/sample-kv this dbi-name n k-type v-type ignore-key?))
 
   (get-first [this dbi-name k-range]
     (.get-first this dbi-name k-range :data :data false))

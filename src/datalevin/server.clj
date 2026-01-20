@@ -1194,6 +1194,9 @@
    'abort-transact-kv
    'transact-kv
    'get-value
+   'get-rank
+   'get-by-rank
+   'sample-kv
    'get-first
    'get-first-n
    'key-range
@@ -2095,6 +2098,18 @@
 (defn- get-value
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler get-value)))
+
+(defn- get-rank
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler get-rank)))
+
+(defn- get-by-rank
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler get-by-rank)))
+
+(defn- sample-kv
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler sample-kv)))
 
 (defn- get-first
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
