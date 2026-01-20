@@ -1379,6 +1379,13 @@
         (gensym "?placeholder")
         v))))
 
+(defn- replace-blanks
+  "Replace all _ (blank) placeholders in a pattern with unique gensym'd variables.
+   This ensures that _ in different patterns (or different positions) are not
+   incorrectly unified."
+  [pattern]
+  (mapv (fn [el] (if (= el '_) (gensym "?blank") el)) pattern))
+
 (defn- make-node
   [[e patterns]]
   [e (reduce (fn [m pattern]
@@ -1429,7 +1436,8 @@
 
 (defn- make-nodes
   [[src patterns]]
-  [src (let [graph (into {} (map make-node) (group-by first patterns))]
+  [src (let [patterns' (mapv replace-blanks patterns)
+             graph     (into {} (map make-node) (group-by first patterns'))]
          (if (< 1 (count graph))
            (-> graph link-refs link-eqs)
            graph))])

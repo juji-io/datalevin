@@ -1204,3 +1204,18 @@
            #{[1 2]}))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest issue-341-test
+  (let [dir  (u/tmp-dir (str "issue-341-" (UUID/randomUUID)))
+        conn (d/get-conn dir)]
+    (d/transact! conn [{:foo 1}
+                       {:bar 2}
+                       {:foo 3 :bar 4}])
+    (is (= (d/q '[:find ?x ?y
+                  :where
+                  [_ :foo ?x]
+                  [_ :bar ?y]]
+                (d/db conn))
+           #{[3 4] [1 4] [1 2] [3 2]}))
+    (d/close conn)
+    (u/delete-files dir)))
