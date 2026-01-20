@@ -34,7 +34,7 @@
     "Return a callback for when a work is done. This callback takes as
      input the result of do-work. This could be nil."))
 
-(deftype WorkItem [work promise])
+(deftype WorkItem [work promise cb])
 
 (deftype WorkQueue [^ConcurrentLinkedQueue items  ; [WorkItem ...]
                     fw ; first work
@@ -47,20 +47,36 @@
        (catch Exception e
          [:err e])))
 
-(defn- handle-result
-  [p cb]
-  (let [[status payload] @p]
-    (when cb (cb payload))
-    (if (identical? status :ok)
-      payload
-      (throw payload))))
+(deftype AsyncResult [p]
+  clojure.lang.IDeref
+  (deref [_]
+    (let [[status payload] @p]
+      (if (identical? status :ok)
+        payload
+        (throw payload))))
+  clojure.lang.IBlockingDeref
+  (deref [_ timeout-ms timeout-val]
+    (let [result (deref p timeout-ms ::timeout)]
+      (if (identical? result ::timeout)
+        timeout-val
+        (let [[status payload] result]
+          (if (identical? status :ok)
+            payload
+            (throw payload))))))
+  clojure.lang.IPending
+  (isRealized [_] (realized? p)))
 
 (defn- individual-work
   [^ConcurrentLinkedQueue items]
   (loop []
     (when (.peek items)
-      (let [^WorkItem item (.poll items)]
-        (deliver (.-promise item) (do-work* (.-work item))))
+      (let [^WorkItem item (.poll items)
+            res            (do-work* (.-work item))
+            [status payload] res
+            cb             (.-cb item)]
+        (when (and cb (identical? status :ok))
+          (cb payload))
+        (deliver (.-promise item) res))
       (recur))))
 
 (defn- combined-work
@@ -71,9 +87,14 @@
       (let [^WorkItem item (.poll items)]
         (.add stage item))
       (recur)))
-  (let [res (do-work* (cmb (mapv #(.-work ^WorkItem %) stage)))]
+  (let [res              (do-work* (cmb (mapv #(.-work ^WorkItem %) stage)))
+        [status payload] res]
     (dotimes [i (.size stage)]
-      (deliver (.-promise ^WorkItem (.get stage i)) res))))
+      (let [^WorkItem item (.get stage i)
+            cb             (.-cb item)]
+        (when (and cb (identical? status :ok))
+          (cb payload))
+        (deliver (.-promise item) res)))))
 
 (defn- event-handler
   [^ConcurrentHashMap work-queues k]
@@ -132,12 +153,12 @@
       (assert (or (nil? cb) (ifn? cb)) "callback should be nil or a function")
       (.putIfAbsent work-queues k (new-workqueue work))
       (let [p                        (promise)
-            item                     (->WorkItem work p)
+            item                     (->WorkItem work p cb)
             ^WorkQueue wq            (.get work-queues k)
             ^ConcurrentLinkedQueue q (.-items wq)]
         (.offer q item)
         (.offer event-queue k)
-        (future (handle-result p cb))))))
+        (->AsyncResult p)))))
 
 (defn- new-async-executor
   []
