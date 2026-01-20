@@ -689,18 +689,34 @@
         binding              (dp/parse-binding out)
         attrs                (collect-vars args)
         [context production] (rel-prod-by-attrs context attrs)
+        ;; Check if scalar output variable is already bound in production
+        out-var              (when (instance? BindScalar binding)
+                               (get-in binding [:variable :symbol]))
+        out-idx              (when out-var (get (:attrs production) out-var))
         new-rel
-        (let [tuple-fn (-call-fn context production f args)
-              rels     (for [tuple (:tuples production)
-                             :let  [val (tuple-fn tuple)]
-                             :when (not (nil? val))]
-                         (r/prod-rel
-                           (r/relation! (:attrs production)
-                                        (doto (FastList.) (.add tuple)))
-                           (in->rel binding val)))]
-          (if (empty? rels)
-            (r/prod-rel production (empty-rel binding))
-            (reduce r/sum-rel rels)))]
+        (if out-idx
+          ;; Output variable already bound - filter tuples where values match
+          (let [tuple-fn (-call-fn context production f args)]
+            (clojure.core/update
+              production :tuples
+              #(r/select-tuples
+                 (fn [^objects tuple]
+                   (let [val (tuple-fn tuple)]
+                     (and (not (nil? val))
+                          (= (aget tuple (int out-idx)) val))))
+                 %)))
+          ;; Output variable not bound - create new binding
+          (let [tuple-fn (-call-fn context production f args)
+                rels     (for [tuple (:tuples production)
+                               :let  [val (tuple-fn tuple)]
+                               :when (not (nil? val))]
+                           (r/prod-rel
+                             (r/relation! (:attrs production)
+                                          (doto (FastList.) (.add tuple)))
+                             (in->rel binding val)))]
+            (if (empty? rels)
+              (r/prod-rel production (empty-rel binding))
+              (reduce r/sum-rel rels))))]
     (update context :rels collapse-rels new-rel)))
 
 (defn dynamic-lookup-attrs

@@ -78,47 +78,6 @@
         (when-not (l/writing? lmdb)
           (i/return-rtx lmdb rtx))))))
 
-(defn sample-kv
-  [lmdb dbi-name n k-type v-type ignore-key?]
-  (i/check-ready lmdb)
-  (let [total     (i/entries lmdb dbi-name)
-        indices   (u/reservoir-sampling total n)
-        list-dbi? (i/list-dbi? lmdb dbi-name)]
-    (when indices
-      (let [dbi (i/get-dbi lmdb dbi-name false)
-            rtx (if (l/writing? lmdb)
-                  @(l/write-txn lmdb)
-                  (i/get-rtx lmdb))
-            cur (l/get-cursor dbi rtx)]
-        (try
-          (with-open [^AutoCloseable iter
-                      (.iterator
-                        ^Iterable (if list-dbi?
-                                    (l/iterate-list-sample
-                                      dbi rtx cur indices 0 0 [:all] k-type)
-                                    (l/iterate-key-sample
-                                      dbi rtx cur indices 0 0 [:all] k-type)))]
-            (let [^SpillableVector holder
-                  (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
-              (loop []
-                (if (.hasNext ^Iterator iter)
-                  (let [kv (.next ^Iterator iter)
-                        v  (b/read-buffer (l/v kv) v-type)]
-                    (.cons holder (if ignore-key?
-                                    v
-                                    [(b/read-buffer (l/k kv) k-type) v]))
-                    (recur))
-                  holder))))
-          (catch Throwable e
-            (raise "Fail to sample-kv: " e
-                   {:dbi dbi-name :n n :k-type k-type :v-type v-type}))
-          (finally
-            (if (l/read-only? rtx)
-              (l/return-cursor dbi cur)
-              (l/close-cursor dbi cur))
-            (when-not (l/writing? lmdb)
-              (i/return-rtx lmdb rtx))))))))
-
 (defmacro scan
   ([call error]
    `(scan ~call ~error false))
@@ -140,6 +99,43 @@
               (l/close-cursor ~'dbi ~'cur))
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
               (i/return-rtx ~'lmdb ~'rtx))))))))
+
+(defn sample-kv
+  [lmdb dbi-name n k-type v-type ignore-key?]
+  (let [total     (i/entries lmdb dbi-name)
+        indices   (u/reservoir-sampling total n)
+        list-dbi? (i/list-dbi? lmdb dbi-name)
+        sample
+        (fn [^Iterator iter]
+          (let [^SpillableVector holder
+                (sp/new-spillable-vector nil (:spill-opts (i/env-opts lmdb)))]
+            (loop []
+              (if (.hasNext iter)
+                (let [kv (.next iter)
+                      v  (b/read-buffer (l/v kv) v-type)]
+                  (.cons holder (if ignore-key?
+                                  v
+                                  [(b/read-buffer (l/k kv) k-type) v]))
+                  (recur))
+                holder))))]
+    (when indices
+      (if list-dbi?
+        (scan
+          (with-open [^AutoCloseable iter
+                      (.iterator ^Iterable
+                                 (l/iterate-list-sample
+                                   dbi rtx cur indices 0 0 [:all] k-type))]
+            (sample iter))
+          (raise "Fail to sample-kv: " e
+                 {:dbi dbi-name :n n :k-type k-type :v-type v-type}))
+        (scan
+          (with-open [^AutoCloseable iter
+                      (.iterator ^Iterable
+                                 (l/iterate-key-sample
+                                   dbi rtx cur indices 0 0 [:all] k-type))]
+            (sample iter))
+          (raise "Fail to sample-kv: " e
+                 {:dbi dbi-name :n n :k-type k-type :v-type v-type}))))))
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]

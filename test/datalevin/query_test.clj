@@ -1219,3 +1219,26 @@
            #{[3 4] [1 4] [1 2] [3 2]}))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-fn-clause-unification
+  ;; When a variable is bound by multiple function clauses, the values must unify
+  (testing "conflicting function bindings should return empty result"
+    (is (= (d/q '[:find ?f
+                  :where
+                  [(ground "different") ?e]
+                  [(str "know " ?e) ?f]
+                  [(str "something completely " ?e) ?f]])
+           #{})))
+  (testing "matching function bindings should return the value"
+    (is (= (d/q '[:find ?f
+                  :where
+                  [(ground "world") ?e]
+                  [(str "hello " ?e) ?f]
+                  [(str "hello " ?e) ?f]])
+           #{["hello world"]})))
+  (testing "single function binding works normally"
+    (is (= (d/q '[:find ?f
+                  :where
+                  [(ground "test") ?e]
+                  [(str "hello " ?e) ?f]])
+           #{["hello test"]}))))

@@ -72,8 +72,10 @@
   [#347](https://github.com/juji-io/datalevin/issues/347)
 - [Server] Faster code path for `pull` and `pull-many` on server
   [#322](https://github.com/juji-io/datalevin/issues/322).
-- [Datalog] Support nested `q` as a query
-  function [#323](https://github.com/juji-io/datalevin/issues/323).
+- [Datalog] Unify, not overwrite
+  [#232](https://github.com/juji-io/datalevin/issues/232).
+- [Datalog] Support nested `q` as a query function
+  [#323](https://github.com/juji-io/datalevin/issues/323).
 - [Datalog] Run query in the invoking thread when in write tx
   [#331](https://github.com/juji-io/datalevin/issues/331).
 - [Datalog] Handle lookup ref in type coercion
