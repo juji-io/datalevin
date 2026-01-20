@@ -848,7 +848,26 @@
     (d/close conn)
     (u/delete-files dir)))
 
-;; (deftest issue-338-test)
+(deftest issue-338-test
+  (let [dir  (u/tmp-dir (str "issue-338-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir
+               {:person/id       {:db/valueType :db.type/string
+                                  :db/unique    :db.unique/identity}
+                :passport/person {:db/valueType   :db.type/ref
+                                  :db/cardinality :db.cardinality/one
+                                  :db/unique      :db.unique/identity}}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (d/transact! conn [{:person/id "person-123"}])
+    (d/transact! conn [{:passport/person [:person/id "person-123"]}])
+    (is (= 1 (d/q '[:find (count ?pass) .
+                    :in $ ?pid
+                    :where
+                    [?p :person/id ?pid]
+                    [?pass :passport/person ?p]]
+                  (d/db conn) "person-123")))
+    (d/close conn)
+    (u/delete-files dir)))
 
 ;; TODO
 #_(deftest test-transitive-type-compare-386

@@ -1052,9 +1052,10 @@
                  (seq upsert) (assoc a upsert))])
 
             :else
-            (if-some [e (resolve a (correct-value (.-store ^DB db) a v))]
-              [entity' (assoc upserts a {v e})]
-              [(assoc entity' a v) upserts])))
+            (let [v' (if (ref? db a) v (correct-value (.-store ^DB db) a v))]
+              (if-some [e (resolve a v')]
+                [entity' (assoc upserts a {v e})]
+                [(assoc entity' a v) upserts]))))
         [{} {}]
         entity))
     [entity nil]))
@@ -1395,6 +1396,10 @@
                      (recur (-> (allocate-eid tx-time report v resolved)
                                 (update ::value-tempids assoc resolved v))
                             es)))
+
+                 (and (ref? db a) (sequential? v))
+                 (let [resolved (entid-strict db v)]
+                   (recur report (cons [op e a resolved] entities)))
 
                  (tempid? e)
                  (let [upserted-eid  (when (-is-attr? db a :db.unique/identity)
