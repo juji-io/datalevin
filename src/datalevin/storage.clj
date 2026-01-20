@@ -38,6 +38,7 @@
    [java.util List Comparator Collection HashMap UUID]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap
     ScheduledFuture]
+   [java.util.concurrent.locks ReentrantReadWriteLock]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -478,7 +479,8 @@
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-tx
                 scheduled-sampling
-                write-txn]
+                write-txn
+                ^ReentrantReadWriteLock sampling-lock]
 
   IWriting
 
@@ -498,8 +500,13 @@
   (dir [_] (env-dir lmdb))
 
   (close [this]
-    (.stop-sampling this)
-    (close-kv lmdb))
+    (let [wlock (.writeLock sampling-lock)]
+      (.lock wlock)
+      (try
+        (.stop-sampling this)
+        (close-kv lmdb)
+        (finally
+          (.unlock wlock)))))
 
   (closed? [_] (closed-kv? lmdb))
 
@@ -1187,8 +1194,14 @@
   (work-key [_] (->> (db-name store) hash (str "sampling") keyword))
   (do-work [_]
     (when (a/running? exe)
-      (try (sampling store)
-           (catch Throwable _))))
+      (let [rlock (.readLock ^ReentrantReadWriteLock (.-sampling-lock store))]
+        (when (.tryLock rlock)
+          (try
+            (when-not (closed? store)
+              (sampling store))
+            (catch Throwable _)
+            (finally
+              (.unlock rlock)))))))
   (combine [_] nil)
   (callback [_] nil))
 
@@ -1589,7 +1602,8 @@
                 (init-max-gt lmdb)
                 (init-max-tx lmdb)
                 (volatile! nil)
-                (volatile! :storage-mutex))))))
+                (volatile! :storage-mutex)
+                (ReentrantReadWriteLock.))))))
 
 (defn- transfer-engines
   [engines lmdb]
@@ -1615,4 +1629,5 @@
            (max-gt old)
            (max-tx old)
            (.-scheduled-sampling old)
-           (.-write-txn old)))
+           (.-write-txn old)
+           (ReentrantReadWriteLock.)))

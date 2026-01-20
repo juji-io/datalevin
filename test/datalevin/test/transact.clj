@@ -848,6 +848,8 @@
     (d/close conn)
     (u/delete-files dir)))
 
+;; (deftest issue-338-test)
+
 ;; TODO
 #_(deftest test-transitive-type-compare-386
     (let [txs    [[{:block/uid "2LB4tlJGy"}]

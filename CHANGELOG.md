@@ -71,6 +71,8 @@
   [#322](https://github.com/juji-io/datalevin/issues/322).
 - [Datalog] Support nested `q` as a query
   function [#323](https://github.com/juji-io/datalevin/issues/323).
+- [Datalog] Run query in the invoking thread when in write tx
+  [#331](https://github.com/juji-io/datalevin/issues/331).
 - [Vector] Handle `:display :refs+dists` in `vec-neighbors`
   [#327](https://github.com/juji-io/datalevin/issues/327).
 - [Async] Run callback in worker thread.

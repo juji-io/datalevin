@@ -29,7 +29,8 @@
    [datalevin.interface IAdmin IVectorIndex]
    [java.io FileOutputStream FileInputStream DataOutputStream DataInputStream]
    [java.util Map]
-   [java.util.concurrent.atomic AtomicLong]))
+   [java.util.concurrent.atomic AtomicLong]
+   [java.util.concurrent.locks ReentrantReadWriteLock]))
 
 (defn- metric-key->type
   [k]
@@ -158,13 +159,18 @@
 
 (def vec-save-key (memoize vec-save-key*))
 
-(deftype AsyncVecSave [vec-index fname]
+(deftype AsyncVecSave [vec-index fname ^ReentrantReadWriteLock vec-lock]
   IAsyncWork
   (work-key [_] (vec-save-key fname))
   (do-work [_]
-    (when-not (i/vec-closed? vec-index)
-      (try (i/persist-vecs vec-index)
-           (catch Throwable _))))
+    (let [rlock (.readLock vec-lock)]
+      (when (.tryLock rlock)
+        (try
+          (when-not (i/vec-closed? vec-index)
+            (i/persist-vecs vec-index))
+          (catch Throwable _)
+          (finally
+            (.unlock rlock))))))
   (combine [_] first)
   (callback [_] nil))
 
@@ -183,13 +189,14 @@
                       ^String vecs-dbi
                       ^SpillableMap vecs     ; vec-id -> vec-ref
                       ^AtomicLong max-vec
-                      ^Map search-opts]
+                      ^Map search-opts
+                      ^ReentrantReadWriteLock vec-lock]
   IVectorIndex
   (add-vec [this vec-ref vec-data]
     (let [vec-id  (.incrementAndGet max-vec)
           vec-arr (vec->arr dimensions quantization vec-data)]
       (add index quantization vec-id vec-arr)
-      (a/exec (a/get-executor) (AsyncVecSave. this fname))
+      (a/exec (a/get-executor) (AsyncVecSave. this fname vec-lock))
       (.put vecs vec-id vec-ref)
       (i/transact-kv
         lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)])
@@ -205,17 +212,22 @@
       (doseq [^long id ids]
         (VecIdx/remove index id)
         (.remove vecs id))
-      (a/exec (a/get-executor) (AsyncVecSave. this fname))
+      (a/exec (a/get-executor) (AsyncVecSave. this fname vec-lock))
       (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))
 
   (persist-vecs [_] (when-not @closed? (VecIdx/save index fname)))
 
   (close-vecs [this]
-    (when-not (.vec-closed? this)
-      (.persist_vecs this)
-      (vreset! closed? true)
-      (swap! l/vector-indices dissoc fname)
-      (VecIdx/free index)))
+    (let [wlock (.writeLock vec-lock)]
+      (.lock wlock)
+      (try
+        (when-not (.vec-closed? this)
+          (.persist_vecs this)
+          (vreset! closed? true)
+          (swap! l/vector-indices dissoc fname)
+          (VecIdx/free index))
+        (finally
+          (.unlock wlock)))))
 
   (vec-closed? [_] @closed?)
 
@@ -331,7 +343,8 @@
                      vecs-dbi
                      vecs
                      (AtomicLong. max-vec-id)
-                     search-opts))))
+                     search-opts
+                     (ReentrantReadWriteLock.)))))
 
 (defn new-vector-index
   [lmdb opts]
@@ -354,6 +367,7 @@
                  (.-vecs-dbi old)
                  (.-vecs old)
                  (.-max-vec old)
-                 (.-search-opts old)))
+                 (.-search-opts old)
+                 (ReentrantReadWriteLock.)))
 
 (defn attr-domain [attr] (s/replace (u/keyword->string attr) "/" "_"))
