@@ -580,6 +580,13 @@
   "Function similar to Clojure `identity`"
   clojure.core/identity)
 
+(defn query-apply
+  "Apply for use in queries. The first argument should be a function,
+   which is resolved by the query engine from built-in functions or
+   clojure.core before being passed here."
+  [f & args]
+  (apply apply f args))
+
 (def query-fns
   {'=             =,
    '==            ==,
@@ -618,6 +625,7 @@
    'complement    complement,
    'identical?    identical?,
    'identity      identity,
+   'apply         query-apply,
    'keyword       keyword,
    'meta          meta,
    'name          name,

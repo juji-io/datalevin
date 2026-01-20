@@ -661,7 +661,10 @@
         (cond
           (symbol? arg) (if-some [source (get sources arg)]
                           (aset static-args i source)
-                          (aset tuples-args i (get attrs arg)))
+                          (if-some [fn-val (or (get built-ins/query-fns arg)
+                                               (resolve-sym arg))]
+                            (aset static-args i fn-val)
+                            (aset tuples-args i (get attrs arg))))
           (list? arg)   (aset tuples-args i
                               (-call-fn context rel (first arg) (rest arg)))
           :else         (aset static-args i arg))))

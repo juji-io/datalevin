@@ -792,6 +792,11 @@
 
 (defn sample-query-fn [] 42)
 
+(defn sum-and-double
+  "Custom function for testing apply with fully qualified functions"
+  [& nums]
+  (* 2 (reduce + nums)))
+
 (deftest test-symbol-resolution
   (is (= 42
          (d/q '[:find ?x .
@@ -894,3 +899,53 @@
                 db)))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest test-apply-fn
+  (testing "apply with built-in functions"
+    (is (= (d/q '[:find ?result .
+                  :in ?nums
+                  :where [(apply + ?nums) ?result]]
+                [1 2 3])
+           6))
+    (is (= (d/q '[:find ?result .
+                  :in ?nums
+                  :where [(apply * ?nums) ?result]]
+                [2 3 4])
+           24))
+    (is (= (d/q '[:find ?result .
+                  :in ?items
+                  :where [(apply str ?items) ?result]]
+                ["a" "b" "c"])
+           "abc"))
+    (is (= (d/q '[:find ?result .
+                  :in ?nums
+                  :where [(apply max ?nums) ?result]]
+                [3 7 2 9 1])
+           9)))
+
+  (testing "apply with fully qualified functions"
+    (is (= (d/q '[:find ?result .
+                  :in ?nums
+                  :where [(apply clojure.core/+ ?nums) ?result]]
+                [1 2 3])
+           6))
+    (is (= (d/q '[:find ?result .
+                  :in ?nums
+                  :where [(apply datalevin.test.query-fns/sum-and-double ?nums) ?result]]
+                [1 2 3])
+           12)))
+
+  (testing "apply in query with data"
+    (let [dir (u/tmp-dir (str "apply-test-" (UUID/randomUUID)))
+          db  (-> (d/empty-db dir {:nums {:db/valueType   :db.type/tuple
+                                          :db/tupleType   :db.type/long}})
+                  (d/db-with [{:db/id 1 :nums [1 2 3]}
+                              {:db/id 2 :nums [10 20 30]}]))]
+      (is (= (d/q '[:find ?e ?sum
+                    :where
+                    [?e :nums ?nums]
+                    [(apply + ?nums) ?sum]]
+                  db)
+             #{[1 6] [2 60]}))
+      (d/close-db db)
+      (u/delete-files dir))))

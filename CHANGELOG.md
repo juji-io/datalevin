@@ -41,7 +41,7 @@
   aggregation results in `:find`.
 - [Datalog] `:find` now allows arithmetic expression over aggregations, e.g. `(+
   sum(?x) sum(?y))`.
-- [Datalog] Added `:having` clauses, similar to SQL `HAVING`. This allows
+- [Datalog] Add `:having` clauses, similar to SQL `HAVING`. This allows
   conditions to be applied to results of aggregations, e.g. `:having [(pos? (sum
   ?x))] [(< (sum ?y) 100)]`.
 - [Datalog] Optimizer now includes `or-join` as potential links between
@@ -51,6 +51,8 @@
   `datalevin.constants/hash-join-min-input-size` (default 20000). This enhances
   query robustness, as hash join handles inaccuracy in cardinality estimation
   better.
+- [Datalog] Add `apply` as a query function
+  [#344](https://github.com/juji-io/datalevin/issues/344).
 - [Benchmark] [LDBC-SNB-bench](benchmarks/LDBC-SNB-bench) that compares
   Datalevin with Neo4j on graph queries.
 
@@ -72,7 +74,7 @@
   [#347](https://github.com/juji-io/datalevin/issues/347)
 - [Server] Faster code path for `pull` and `pull-many` on server
   [#322](https://github.com/juji-io/datalevin/issues/322).
-- [Datalog] Unify, not overwrite
+- [Datalog] Unify, not overwrite, in function binding
   [#232](https://github.com/juji-io/datalevin/issues/232).
 - [Datalog] Support nested `q` as a query function
   [#323](https://github.com/juji-io/datalevin/issues/323).
