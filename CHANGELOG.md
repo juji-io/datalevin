@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.10.0 (2026-01-21)
 
 ### Changed
 - [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
