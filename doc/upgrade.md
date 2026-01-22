@@ -112,9 +112,9 @@ Sometimes, you may have written some Java objects as data in the database, the
 command line method above would not work. This is because the Java classes
 needed for serialization of these Java objects would not be present in
 standalone Datalevin command line. In this case, you can call
-[`datalein.main/dump`](https://cljdoc.org/d/datalevin/datalevin/0.9.12/api/datalevin.main#dump)
+[`datalevin.main/dump`](https://cljdoc.org/d/datalevin/datalevin/0.10.1/api/datalevin.main#dump)
 and
-[`datalevin.main/load`](https://cljdoc.org/d/datalevin/datalevin/0.9.12/api/datalevin.main#load)
+[`datalevin.main/load`](https://cljdoc.org/d/datalevin/datalevin/0.10.1/api/datalevin.main#load)
 function in your code to dump and load the database, assuming your code has
 necessary dependencies. First dump the database with the old version of
 Datalevin library, then change the dependency to new version of Datalevin
