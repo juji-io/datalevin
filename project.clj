@@ -2,7 +2,7 @@
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
-  :url "https://github.com/juji-io/datalevin"
+  :url "https://github.com/datalevin/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies

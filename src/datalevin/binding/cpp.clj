@@ -1599,5 +1599,5 @@
              (raise "Corrupt VERSION file" {:input version})))
          (open-kv* dir dir-file db-file opts))
        :else
-       (raise "Database requires migration. Please follow instruction at https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md"
+       (raise "Database requires migration. Please follow instruction at https://github.com/datalevin/datalevin/blob/master/doc/upgrade.md"
               {:dir dir})))))

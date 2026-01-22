@@ -52,37 +52,3 @@ task:
     ./install
 
     bb --config .build/bb.edn release-artifact
-
-task:
-  name: MacOS ARM64 Build
-  macos_instance:
-    image: ghcr.io/cirruslabs/macos-runner:sonoma
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'script/*')"
-  env:
-    DTLV_OS: macos
-  script: |
-
-    script/install-graalvm
-
-    export GRAALVM_HOME="$(cd graalvm-jdk/Contents/Home && pwd)"
-    export JAVA_HOME=$GRAALVM_HOME
-    export PATH=$GRAALVM_HOME/bin:$PATH
-
-    brew install leiningen libomp llvm
-    lein run
-
-    script/compile-native
-
-    ./dtlv-test0
-
-    brew install p7zip
-
-    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
-    export DTLV_TAG="${CIRRUS_TAG}"
-
-    7z a -tzip "$DTLV_ARCHIVE" dtlv
-
-    brew install borkdude/brew/babashka
-
-    bb --config .build/bb.edn release-artifact

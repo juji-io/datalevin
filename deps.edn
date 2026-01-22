@@ -1,20 +1,20 @@
 {:paths ["src" "target/classes"]
  :deps  {
-         org.clojure/clojure                           {:mvn/version "1.12.3"}
+         org.clojure/clojure                           {:mvn/version "1.12.4"}
          babashka/babashka.pods                        {:mvn/version "0.2.0"}
          com.cognitect/transit-clj                     {:mvn/version "1.0.333"}
          com.taoensso/nippy                            {:mvn/version "3.6.0"}
          com.github.luben/zstd-jni                     {:mvn/version "1.5.7-6"}
          com.taoensso/timbre                           {:mvn/version "6.5.0"}
-         me.lemire.integercompression/JavaFastPFOR     {:mvn/version "0.3.8"}
+         me.lemire.integercompression/JavaFastPFOR     {:mvn/version "0.3.10"}
          metosin/jsonista                              {:mvn/version "0.3.13"}
          nrepl/bencode                                 {:mvn/version "1.2.0"}
-         org.babashka/sci                              {:mvn/version "0.10.49"}
-         org.clojure/tools.cli                         {:mvn/version "1.2.245"}
-         org.clojars.huahaiy/dtlvnative-macosx-arm64   {:mvn/version "0.15.3"}
-         org.clojars.huahaiy/dtlvnative-linux-arm64    {:mvn/version "0.15.3"}
-         org.clojars.huahaiy/dtlvnative-linux-x86_64   {:mvn/version "0.15.3"}
-         org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version "0.15.3"}
+         org.babashka/sci                              {:mvn/version "0.11.50"}
+         org.clojure/tools.cli                         {:mvn/version "1.3.250"}
+         org.clojars.huahaiy/dtlvnative-macosx-arm64   {:mvn/version "0.15.5"}
+         org.clojars.huahaiy/dtlvnative-linux-arm64    {:mvn/version "0.15.5"}
+         org.clojars.huahaiy/dtlvnative-linux-x86_64   {:mvn/version "0.15.5"}
+         org.clojars.huahaiy/dtlvnative-windows-x86_64 {:mvn/version "0.15.5"}
          org.eclipse.collections/eclipse-collections   {:mvn/version "13.0.0"}
          org.roaringbitmap/RoaringBitmap               {:mvn/version "1.3.0"}
          org.bouncycastle/bcpkix-jdk15on               {:mvn/version "1.70"}
@@ -29,12 +29,14 @@
            :dev {
                  :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                             "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                            "--enable-native-access=ALL-UNNAMED"
                             "-Dclojure.compiler.direct-linking=true"]
                  }
 
            :pod   {
                    :jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                                 "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "--enable-native-access=ALL-UNNAMED"
                                 "-Dclojure.compiler.direct-linking=true"]
                    :main-opts  ["-m" "pod.huahaiy.datalevin"]
                    :ns-default pod.huahaiy.datalevin
@@ -43,6 +45,7 @@
                    :extra-paths ["test"]
                    :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                 "--enable-native-access=ALL-UNNAMED"
                                  "-Dclojure.compiler.direct-linking=true"]
                    }
            :build {:deps       {io.github.clojure/tools.build {:git/tag "v0.8.3" :git/sha "0d20256"}}
