@@ -22,7 +22,7 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 {:deps {datalevin/datalevin {:mvn/version "0.10.1"}}}
 ```
 
-This library supports Java 17 and above.
+This library supports Java 21 and above.
 
 ### Native Dependencies
 
@@ -51,8 +51,8 @@ dependency in `deps.edn` (remember to change the `:sha`):
 
 ```Clojure
 {:deps {datalevin/datalevin
-        {:git/url "https://github.com/juji-io/datalevin.git"
-         :sha "d839883e4dec35b89442fa8ebbd50c99a2b25a50"}}}
+        {:git/url "https://github.com/datalevin/datalevin.git"
+         :sha "d3251eb29e4b6baf6cce6c161f6f585c7a61acbc"}}}
 ```
 Make sure to go to `~/.gitlibs/libs/datalevin/datalevin/$SHA` and run `lein test` to
 compile and run tests first.
@@ -100,7 +100,7 @@ we will be happy to link to it here if you have done so.
 ## Command Line Tool
 
 A command line tool
-[`dtlv`](https://github.com/juji-io/datalevin/blob/master/doc/dtlv.md) is built
+[`dtlv`](https://github.com/datalevin/datalevin/blob/master/doc/dtlv.md) is built
 to work with Datalevin databases in shell scripting, doing work such as database
 backup/compaction, data import/export, query/transaction execution, server
 administration, and so on. The same binary can also run as a Datalevin server.
@@ -149,13 +149,13 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-macos-14-aarch64.zip)
+* [MacOS](https://github.com/datalevin/datalevin/releases/download/0.10.1/dtlv-0.10.1-macos-14-aarch64.zip)
   on arm64 (AARCH64)
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-22.04-amd64.zip)
+* [Linux](https://github.com/datalevin/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-22.04-amd64.zip)
   on x86_64 (AMD64)
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-24.04-arm-aarch64.zip)
+* [Linux](https://github.com/datalevin/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-24.04-arm-aarch64.zip)
   on arm64 (AARCH64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-windows-amd64.zip)
+* [Windows](https://github.com/datalevin/datalevin/releases/download/0.10.1/dtlv-0.10.1-windows-amd64.zip)
   on x86-64 (AMD64)
 
 Unzip to get a `dtlv` executable, put it on your path.
@@ -165,7 +165,7 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 ### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.10.1/datalevin-0.10.1-standalone.jar)
+[uberjar](https://github.com/datalevin/datalevin/releases/download/0.10.1/datalevin-0.10.1-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is not as efficient as Hotspot JVM for long running programs, or when a
