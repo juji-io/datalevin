@@ -26,8 +26,15 @@ This library supports Java 17 and above.
 
 ### Native Dependencies
 
-For now, Datalevin requires some system libraries to be present, such as `libc`,
-`libomp`, and `libmvec`. These are normally easy to get:
+If the native dependencies of Datalevin are not met, Datalevin may fail to load
+and report `java.lang.UnsatisfiedLinkError`.
+
+Datalevin requires system library `libc` (whatever version appropriate for your
+OS) to be present in your system. Other native dependencies such as `libomp`  are
+bundled in the release jar, so you normally do not need to do anything.
+
+If the bundled libraries do not work on your machine, you may get them
+yourself:
 
 * Linux needs [OpenMP](https://www.openmp.org/) and [Vectorized
   Math](https://sourceware.org/glibc/wiki/libmvec) from GCC, e.g. on
@@ -35,9 +42,6 @@ For now, Datalevin requires some system libraries to be present, such as `libc`,
 
 * MacOSX needs the same libraries as the above from Clang, e.g. `brew
   install libomp llvm`
-
-Otherwise, Datalevin may fail to load and report
-`java.lang.UnsatisfiedLinkError`.
 
 ### Unreleased Code
 
@@ -145,15 +149,14 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-macos-14-aarch64.zip)
+  on arm64 (AARCH64)
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-22.04-amd64.zip)
   on x86_64 (AMD64)
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-latest-aarch64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-ubuntu-24.04-arm-aarch64.zip)
   on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-macos-latest-aarch64.zip)
-  on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-macos-13-amd64.zip)
-  on x86_64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.10.1/dtlv-0.10.1-windows-amd64.zip)
+  on x86-64 (AMD64)
 
 Unzip to get a `dtlv` executable, put it on your path.
 
