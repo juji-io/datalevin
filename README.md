@@ -19,13 +19,6 @@ alt="bb compatible"></img></a>
 <a href="https://github.com/juji-io/datalevin/actions"><img
 src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg"
 alt="datalevin linux/macos amd64 build status"></img></a>
-<a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img
-src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true"
-alt="datalevin windows build status"></img></a>
-<a href="https://cirrus-ci.com/github/juji-io/datalevin"><img
-src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg" alt="datalevin
-arm64 build status"></img></a>
-</p>
 
 
 > I love Datalog, why hasn't everyone used this already?
@@ -342,15 +335,15 @@ adjust the priorities based on feedback.
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 0.10.1 ~~Async transaction; boolean search expression and phrase search; as a
-  vector database;~~ counted and prefix compressed KV storage; auto upgrade
-  migration; new rule engine.
+* 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
+  vector database; counted and prefix compressed KV storage; auto upgrade
+  migration; new rule engine.~~
 * 1.0.0 Transaction log access API; read-only replicas; high availability; JSON
-  API and library/client for popular languages.
+  API; as a document database; and library/client for popular languages.
 * 1.1.0 TTL; extensible storage/query for arbitrary data; data compression.
-* 2.0.0 Extended rule syntax to handle complex analytical workload capable of
+* 2.0.0 Incremental view maintenance.
+* 3.0.0 Extended rule syntax to handle complex analytical workload capable of
   implementing ML algorithms in DB.
-* 3.0.0 Incremental view maintenance.
 
 ## :arrows_clockwise: Contact
 
