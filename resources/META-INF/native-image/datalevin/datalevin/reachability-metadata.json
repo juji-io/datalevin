@@ -890,6 +890,9 @@
         },
         {
             "glob": "datalevin/dtlvnative/macosx-arm64/libjniDTLV.dylib"
+        },
+        {
+            "glob": "datalevin/dtlvnative/macosx-arm64/libomp.dylib"
         }
     ],
     "jni": [
@@ -899,6 +902,38 @@
             "allPublicConstructors": true,
             "allDeclaredMethods": true,
             "allPublicMethods": true
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$usearch_index_t",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true,
+            "unsafeAllocated": true
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$usearch_init_options_t",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true,
+            "unsafeAllocated": true
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$usearch_metric_t",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true,
+            "unsafeAllocated": true
+        },
+        {
+            "type": "datalevin.dtlvnative.DTLV$usearch_filter",
+            "allDeclaredConstructors": true,
+            "allPublicConstructors": true,
+            "allDeclaredMethods": true,
+            "allPublicMethods": true,
+            "unsafeAllocated": true
         },
         {
             "type": "java.lang.Boolean",

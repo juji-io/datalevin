@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-BASE_URL="https://download.oracle.com/graalvm/23/latest/"
+BASE_URL="https://download.oracle.com/graalvm/25/latest/"
 
-FILENAME="graalvm-jdk-23_${DTLV_OS}-${DTLV_ARCH}_bin.tar.gz"
+FILENAME="graalvm-jdk-25_${DTLV_OS}-${DTLV_ARCH}_bin.tar.gz"
 
 GRAALVM_HOME="graalvm-jdk"
 

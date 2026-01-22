@@ -2,6 +2,6 @@
 
 set -eou pipefail
 
-cd ../benchmarks/JOB-bench
+cd ../benchmarks/LDBC-SNB-bench
 
 clj -M:test

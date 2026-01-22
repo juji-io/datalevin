@@ -746,11 +746,11 @@
   (char-array "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"))
 
 (def ^:private chars-len (alength ^chars characters))
-(def ^:private rng (Random.))
 
 (defn random-string
   ^String [n]
-  (let [sb (StringBuilder. (int n))]
+  (let [rng (Random.)
+        sb  (StringBuilder. (int n))]
     (dotimes [_ n]
       (.append sb (aget ^chars characters (.nextInt ^Random rng chars-len))))
     (.toString sb)))

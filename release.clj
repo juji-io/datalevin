@@ -76,6 +76,12 @@
   (println "\n\n[ Running JOB tests ]\n")
   (sh "./job-test" :dir "script")
 
+  (println "\n\n[ Running math tests ]\n")
+  (sh "./math-test" :dir "script")
+
+  (println "\n\n[ Running LDBC-SNB tests ]\n")
+  (sh "./ldbc-snb-test" :dir "script")
+
   (println "\n\n[ Testing jar ]\n")
   (sh "./jar" :dir "script")
   (sh "test-jar/test.sh")

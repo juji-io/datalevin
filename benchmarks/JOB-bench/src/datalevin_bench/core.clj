@@ -3282,12 +3282,12 @@
 (defn grid [&opts]
   (doseq [p [3.5]
           v [5.5]
-          f [1.2]]
+          f [1.4]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
           (binding [c/magic-cost-pred p
-                    c/magic-cost-var  v
+
                     c/magic-cost-fidx f
                     q/*cache?*        false]
             (let [start (System/currentTimeMillis)]

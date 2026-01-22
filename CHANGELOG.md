@@ -66,6 +66,7 @@
 - [Datalog] More robust query execution: added error handling, timeout and
   back pressure to query execution pipeline; Pipelining now uses its own thread
   pool.
+- [Platform] Deps update. Upgrade to GraalVM 25.
 
 ### Fixed
 - [KV] Enable virtual threads usage by not reusing read only transactions

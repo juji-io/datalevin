@@ -465,7 +465,7 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Cost associated with running a filter during scan"}
-  magic-cost-fidx 1.6)
+  magic-cost-fidx 1.4)
 
 (def ^{:dynamic true
        :doc     "Cost associated with scanning e based on a"}
