@@ -12,8 +12,9 @@ stores, such as clickhouse, DuckDB, and so on.
 
 With this feature, Datalevin can be used as a vector database to support
 applications such as semantic search, image search, retrieval augmented
-generation (RAG), and so on. This feature is currently available on Linux and
-MacOSX on both x86_64 and arm64 CPUs.
+generation (RAG), and so on. This feature is currently available on Linux for
+both x86_64 and arm64 CPUs, and on MacOSX for arm64. Windows support is
+experimental.
 
 ## Configurations
 

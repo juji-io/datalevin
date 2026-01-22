@@ -25,4 +25,5 @@
   Clojure-hosting runtimes is possible, since bindings for LMDB
   exist in almost all major languages and are available on most platforms.
 
-* Expect some native dependencies: libc, libomp, and libmvec.
+* Expect certain native dependencies on the system. mainly libc. Others are bundled
+  in the release jar.

@@ -20,6 +20,9 @@ to LMDB storage, but has since deviated from that origin signficantly.
 * Datalevin Datalog engine has a cost-based query optimizer, so queries are
   truly declarative and clause ordering does not affect query performance.
 
+* Datalevin has a modern rule engine that leverage query optimizer. It handles
+  recursive rules efficiently.
+
 * Datalevin is not an immutable database, and there is no
   "database as a value" feature.  Since history is not kept, transaction ids are
   not stored.
@@ -50,7 +53,13 @@ to LMDB storage, but has since deviated from that origin signficantly.
 
 * Support more query functions, such as `like` and `not-like` that are similar
   to LIKE and NOT LIKE operators in SQL; `in` and `not-in` that are similar to
-  IN and NOT IN operators in SQL, among others.
+  IN and NOT IN operators in SQL, among others. `<`, `>` etc. work on other
+  types such as `Date`.
+
+* Extended Datalog query syntax to add clauses such as `:having`, `:limit`,
+  `:offset`, `:order-by`.
+
+* Allow math functions in `:find`.
 
 * The attribute and value leading index (AVE) is enabled for all datoms, so
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
