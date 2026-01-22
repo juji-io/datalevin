@@ -11,13 +11,13 @@ cljdoc"></img></a>
 src="https://img.shields.io/clojars/v/datalevin.svg?color=success"
 alt="datalevin on clojars"></img></a>
 <a
-href="https://github.com/juji-io/datalevin/blob/master/doc/install.md#babashka-pod"><img
+href="https://github.com/datalevin/datalevin/blob/master/doc/install.md#babashka-pod"><img
 src="https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg"
 alt="bb compatible"></img></a>
 </p>
 <p align="center">
-<a href="https://github.com/juji-io/datalevin/actions"><img
-src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg"
+<a href="https://github.com/datalevin/datalevin/actions"><img
+src="https://github.com/datalevin/datalevin/actions/workflows/release.binaries.yml/badge.svg"
 alt="datalevin linux/macos amd64 build status"></img></a>
 
 
@@ -66,8 +66,9 @@ performance, which is competitive with SQL RDBMS such as
 [PostgreSQL](benchmarks/JOB-bench) and graph databases such as
 [Neo4j](benchmarks/LDBC-SNB-bench).
 
-Datalevin provides robust ACID transaction features on the basis of
-[our fork](https://github.com/huahaiy/dlmdb) of [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
+Datalevin provides robust ACID transaction features on the basis of [our
+fork](https://github.com/huahaiy/dlmdb) of
+[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
 for its high read performance. With built-in support for asynchronous
 transaction, Datalevin can also handle [write intensive
 workload](benchmarks/write-bench), as well as storing large documents.
@@ -84,7 +85,7 @@ EDN data capability of Datalevin should be beneficial for Clojure programs.
 
 Datalevin can be used as a library, embedded in applications to manage state,
 e.g. used like SQLite; or it can run in a networked
-[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
+[client/server](https://github.com/datalevin/datalevin/blob/master/doc/server.md)
 mode (default port is 8898) with full-fledged role-based access control (RBAC)
 on the server, e.g. used like PostgreSQL; or it can be used as a [babashka
 pod](https://github.com/babashka/pod-registry/blob/master/examples/datalevin.clj)
@@ -109,7 +110,7 @@ project. There are also several other installation options. Please see details i
 
 Please read
 [Upgrade
-Documentation](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md)
+Documentation](https://github.com/datalevin/datalevin/blob/master/doc/upgrade.md)
 for information regarding upgrading your existing Datalevin database from older
 versions.
 
@@ -235,7 +236,8 @@ for EDN data.
 
 ;; This allows you to iterate over all DB keys inside a transaction.
 ;; You can perform writes inside the transaction.
-;; Avoid long-lived transactions. Read transactions prevent reuse of pages freed by newer write transactions, thus the database can grow quickly.
+;; Avoid long-lived transactions. Read transactions prevent reuse of pages freed
+;; by newer write transactions, thus the database can grow quickly.
 ;; Write transactions prevent other write transactions, since writes are serialized.
 (d/visit db misc-table
             (fn [kv]
@@ -268,8 +270,9 @@ Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io), among other companies.
 
 Running the [benchmark suite adopted from
-Datascript](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench),
-which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
+Datascript](https://github.com/datalevin/datalevin/tree/master/benchmarks/datascript-bench),
+which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux
+server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
 
 <p align="center">
 <img src="benchmarks/datascript-bench/Read.png" alt="query benchmark" height="300"></img>
@@ -290,14 +293,15 @@ the average times:
 <img src="benchmarks/JOB-bench/means.png" alt="JOB benchmark averages" height="300"></img>
 </p>
 
-Datalevin is about 2X faster than PostgreSQL on average in running the complex
+Datalevin is faster than PostgreSQL on average in running the complex
 queries that involves many joins. The gain is mainly due to shorter query
 execution time as Datalevin's query optimizer generates better plans. Details of
 the analysis can be found in [this
 article](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
 
 For durable transaction performance, we compared Datalevin with
-SQLite using [this write benchmark](benchmark/write-bench) on a 2016 Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive.
+SQLite using [this write benchmark](benchmark/write-bench) on a 2016 Ubuntu
+Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive.
 
 <p align="center">
 <img src="benchmarks/write-bench/throughput-1.png" alt="Throughput at 1" height="300"></img>
@@ -337,7 +341,7 @@ adjust the priorities based on feedback.
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
   vector database; counted and prefix compressed KV storage; auto upgrade
-  migration; new rule engine.~~
+  migration; new rule engine.~~[Done 2026/01/22]
 * 1.0.0 Transaction log access API; read-only replicas; high availability; JSON
   API; as a document database; and library/client for popular languages.
 * 1.1.0 TTL; extensible storage/query for arbitrary data; data compression.
