@@ -358,17 +358,21 @@
 
   The content will be written to `dest-file` if given, or to stdout.
 
-  If `list?` is true, will list the names of the sub-databases only, not the
-  content.
+  If `list?` is true, will list the names of the key-value sub-databases only,
+  not the content.
 
   If `datalog?` is true, will dump the whole database as a Datalog store,
-  including the schema and all the datoms.
+  including the schema and all the datoms. By default, datoms are printed as
+  strings. If there are unprintable values in DB, set `nippy?` to `true`.
 
-  If `all?` is true, will dump raw data of all the sub-databases.
+  If `all?` is true, will dump raw data of all the key-value sub-databases,
+  unless `datalog?` is true.
 
-  If `nippy?` is true, dump in nippy binary format, `dest-file` must be given
+  If `nippy?` is true, dump is in nippy binary format, and `dest-file` must be
+  given.
 
-  If `dbis` is not empty, will dump raw data of only the named sub-databases."
+  If `dbis` is not empty, will dump raw data of only the named key-value sub-databases,
+  unless `datalog?` is true."
   ([src-dir dest-file dbis list? datalog? all?]
    (dump src-dir dest-file dbis list? datalog? all? false))
   ([src-dir dest-file dbis list? datalog? all? nippy?]
@@ -409,8 +413,8 @@
   "Load content into the database at data directory path `dir`,
   from `src-file` if given, or from stdin.
 
-  If `datalog?` is true, the content are schema and datoms, otherwise they are
-  raw data.
+  If `datalog?` is true, the content are expected to be schema and datoms,
+  otherwise they are expected to be key-value data.
 
   If `nippy?` is true, load a nippy binary file, `src-file` must be given.
 
