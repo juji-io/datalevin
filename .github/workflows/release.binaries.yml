@@ -18,6 +18,10 @@ jobs:
             arch: aarch64
           - os: ubuntu-22.04
             arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: windows-latest
+            arch: amd64
 
     steps:
       - name: Checkout repository and submodules
@@ -37,18 +41,34 @@ jobs:
           macos: |
             brew install leiningen libomp llvm
           linux: |
+            sudo apt-get update
+            sudo apt-get install -y gcc-12 g++-12 zlib1g-dev
             curl -O https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
             chmod a+x lein
-            mv lein /usr/local/bin/
+            sudo mv lein /usr/local/bin/
+          windows: |
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein.bat" -OutFile "lein.bat"
+            .\lein.bat self-install
 
       - name: Run Tests then Uberjar
-        run: |
-          lein run
-          lein uberjar
-          echo "Generated JAR files:"
-          ls -l target/*.jar
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: |
+            lein uberjar
+            echo "Generated JAR files:"
+            ls -l target/*.jar
+          linux: |
+            lein uberjar
+            echo "Generated JAR files:"
+            ls -l target/*.jar
+          windows: |
+            .\lein.bat run
+            .\lein.bat uberjar
+            echo "Generated JAR files:"
+            dir target\*.jar
 
       - name: Upload Uberjar
+        if: matrix.os == 'ubuntu-22.04'
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -62,25 +82,38 @@ jobs:
           distribution: 'graalvm'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Native Datalevin
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          macos: |
-            export DTLV_OS=macos
-            export DTLV_ARCH=aarch64
+      - name: Setup Visual Studio shell
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Native Datalevin (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          export DTLV_OS=${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+          export DTLV_ARCH=${{ matrix.arch }}
+          if [ "${{ runner.os }}" == "macOS" ]; then
             bash script/compile-native
-          linux: |
-            export DTLV_OS=linux
-            export DTLV_ARCH=amd64
+          else
             bash script/compile-native-linux
+          fi
+
+      - name: Build Native Datalevin (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: cmd
+        run: |
+          call script\compile-native.bat
 
       - name: Run Native Tests
-        run: |
-          ./dtlv-test0
+        if: matrix.os != 'windows-latest'
+        run: ./dtlv-test0
 
-      - name: Zip Binary
-        run: |
-          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.zip dtlv
+      - name: Zip Binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: 7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.zip dtlv
+
+      - name: Zip Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: 7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.zip dtlv.exe
 
       - name: Upload Binary
         uses: shogo82148/actions-upload-release-asset@v1
