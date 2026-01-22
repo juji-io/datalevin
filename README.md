@@ -39,8 +39,8 @@ query looks like in Datalevin:
 
 ## :question: Why
 
-The rationale is to have a simple, fast and open source Datalog query engine
-running on durable storage.
+The rationale is to have a simple, fast, versatile and open source Datalog query
+engine running on durable storage.
 
 It is our observation that many developers prefer
 the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over
@@ -91,7 +91,8 @@ on the server, e.g. used like PostgreSQL; or it can be used as a [babashka
 pod](https://github.com/babashka/pod-registry/blob/master/examples/datalevin.clj)
 for shell scripting.
 
-More information can be found in these articles and presentation:
+More information about our vision and design decisions can be found in these
+articles and presentation:
 
 * [Triple Store, Triple Progress: Datalevin Posited for the Future](https://yyhh.org/blog/2026/01/triple-store-triple-progress-datalevin-posited-for-the-future/)
 * [Achieving High Throughput and Low Latency through Adaptive Asynchronous Transaction](https://yyhh.org/blog/2025/02/achieving-high-throughput-and-low-latency-through-adaptive-asynchronous-transaction/)
@@ -328,8 +329,9 @@ while Datomic and Datascript struggle.
 
 ## :earth_americas: Roadmap
 
-These are the tentative goals that we try to reach as soon as we can. We may
-adjust the priorities based on feedback.
+The goal of Datalevin is to simplify data storage and access. We aim to support
+diverse workloads and use cases. Below are the tentative goals that we try to
+reach as soon as we can. We may adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Networked server mode with role based access control.~~ [Done 2021/09/06]
@@ -351,15 +353,16 @@ adjust the priorities based on feedback.
 
 ## :arrows_clockwise: Contact
 
-We appreciate and welcome your contributions or suggestions. Please feel free to
-file issues or pull requests.
+Datalevin will remain open source for the foreseeable future. We appreciate and
+welcome your contributions or suggestions. Please feel free to file issues or
+pull requests.
 
-If commercial support is needed for Datalevin, talk to us.
+If commercial support is needed, talk to us.
 
 You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://clojurians.net/).
 
 ## License
 
-Copyright © 2020-2026 [Huahai Yang](https://huahaiy.github.io/) and contributions.
+Copyright © 2020-2026 [Huahai Yang](https://huahaiy.github.io/) and contributors.
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
