@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.10.0 (2026-01-21)
+## 0.10.1 (2026-01-21)
 
 ### Changed
 - [KV] KV storage is now [DLMDB](https://github.com/huahaiy/dlmdb), which has
@@ -10,10 +10,10 @@
 - [KV] Default Env flag is now `#{:nordahead}`
 - [KV] Default DBI flag is now `#{:create :counted :prefix-compression}`
 - [KV] Default `:max-readers` is now 1024.
-  [Datalog] Rewritten rule engine. Implemented a bottom-up SNE approach with
+- [Datalog] Rewritten rule engine. Implemented a bottom-up SNE approach with
   magic set rewrites that solves OOM problem with the old engine
   [#170](https://github.com/juji-io/datalevin/issues/170), and this can be
-  orders of magnitude faster than Datomic in recursive rule resolution,
+  orders of magnitude faster than Datomic in recursive rule resolution, see
   [benchmark](benchmarks/math-bench).
 - [Datalog] Removed VAE index. This may reduce DB size by 30% and cut write time
   by 50% for datasets with heavy `:db.type/ref` presence (e.g. JOB benchmark
@@ -30,8 +30,8 @@
   download old uberjar. [#276](https://github.com/juji-io/datalevin/issues/276)
 - [KV] Random access and rank lookup functions in O(log n) time for
   `:counted` DBIs (default).
-      * `get-rank`, return the rank (0-based) of the key.
-      * `get-by-rank`, return the key/value at the given rank.
+      - `get-rank`, return the rank (0-based) of the key.
+      - `get-by-rank`, return the key/value at the given rank.
 - [KV] Sampling function `sample-kv` in O(log n) time for `:counted` DBIs
   (default). [#325](https://github.com/juji-io/datalevin/issues/325)
 - [Datalog] Add `:new-attributes` to transaction report.
