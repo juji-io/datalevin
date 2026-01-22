@@ -342,7 +342,7 @@ adjust the priorities based on feedback.
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~
   [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
+* 0.10.1 ~~Async transaction; boolean search expression and phrase search; as a
   vector database;~~ counted and prefix compressed KV storage; auto upgrade
   migration; new rule engine.
 * 1.0.0 Transaction log access API; read-only replicas; high availability; JSON
