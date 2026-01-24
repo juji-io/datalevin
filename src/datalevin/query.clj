@@ -2463,8 +2463,10 @@
         [e-size (estimate-scan-v-size e-size steps)]))))
 
 (defn- estimate-link-cost
-  [size]
-  (estimate-round (* ^long size ^double c/magic-cost-val-eq-scan-e)))
+  [^long outer-size ^long result-size]
+  (estimate-round
+    (+ (* outer-size ^double c/magic-cost-link-probe)
+       (* result-size ^double c/magic-cost-link-retrieval))))
 
 (defn- estimate-hash-join-cost
   [^long left-size ^long right-size]
@@ -2477,8 +2479,8 @@
     (if (= 1 (count cur-steps))
       (if (identical? (-type step1) :merge)
         (estimate-scan-v-cost step1 prev-size)
-        (estimate-link-cost prev-size))
-      (+ ^long (estimate-link-cost prev-size)
+        (estimate-link-cost prev-size e-size))
+      (+ ^long (estimate-link-cost prev-size e-size)
          ^long (estimate-scan-v-cost (peek cur-steps) e-size)))))
 
 (defn- e-plan

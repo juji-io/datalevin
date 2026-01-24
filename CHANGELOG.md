@@ -3,6 +3,7 @@
 ## WIP
 
 ### Improved
+- [Datalog] Planner cost model adjustment.
 - [Datalog] More robust samplers.
 
 ## 0.10.1 (2026-01-21)

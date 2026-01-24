@@ -473,11 +473,15 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Cost associated with merge-scan join"}
-  magic-cost-merge-scan-v 7.5)
+  magic-cost-merge-scan-v 5.5)
 
 (def ^{:dynamic true
-       :doc     "Cost associated with val-eq-scan join"}
-  magic-cost-val-eq-scan-e 2.5)
+       :doc     "Cost per index probe in indexed nested loop join"}
+  magic-cost-link-probe 2.5)
+
+(def ^{:dynamic true
+       :doc     "Cost per tuple retrieved from index in indexed nested loop join"}
+  magic-cost-link-retrieval 1.2)
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
