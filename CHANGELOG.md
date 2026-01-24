@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Datalog] More robust samplers.
+
 ## 0.10.1 (2026-01-21)
 
 ### Changed

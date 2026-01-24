@@ -3287,7 +3287,7 @@
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
           (binding [c/magic-cost-pred p
-
+                    c/magic-cost-var  v
                     c/magic-cost-fidx f
                     q/*cache?*        false]
             (let [start (System/currentTimeMillis)]
