@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Datalog] Implemented sideway information passing (SIP) for `:_ref` type of
+  hash join.
+
 ## 0.10.2 (2026-01-24)
 
 ### Improved

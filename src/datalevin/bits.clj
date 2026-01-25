@@ -26,6 +26,7 @@
    [java.nio.charset StandardCharsets]
    [java.lang String]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
+   [org.roaringbitmap.longlong Roaring64Bitmap]
    [datalevin.utl BitOps]))
 
 ;; base64
@@ -146,6 +147,48 @@
   (let [bm (RoaringBitmap.)] (.deserialize bm bf) bm))
 
 (defn- put-bitmap [^ByteBuffer bf ^RoaringBitmap x] (.serialize x bf))
+
+;; 64-bit bitmap
+
+(defn bitmap64
+  "Create a 64-bit roaring bitmap from a collection of longs"
+  ([]
+   (Roaring64Bitmap.))
+  ([longs]
+   (let [bm (Roaring64Bitmap.)]
+     (doseq [l longs] (.addLong bm (long l)))
+     bm)))
+
+(defn bitmap64-add
+  "Add a long to the 64-bit bitmap"
+  [^Roaring64Bitmap bm ^long l]
+  (.addLong bm l)
+  bm)
+
+(defn bitmap64-contains?
+  "Check if the 64-bit bitmap contains the given long"
+  [^Roaring64Bitmap bm ^long l]
+  (.contains bm l))
+
+(defn bitmap64-cardinality
+  "Return the number of elements in the 64-bit bitmap"
+  ^long [^Roaring64Bitmap bm]
+  (.getLongCardinality bm))
+
+(defn bitmap64-min
+  "Return the minimum value in the 64-bit bitmap"
+  ^long [^Roaring64Bitmap bm]
+  (.first bm))
+
+(defn bitmap64-max
+  "Return the maximum value in the 64-bit bitmap"
+  ^long [^Roaring64Bitmap bm]
+  (.last bm))
+
+(defn bitmap64->longs
+  "Return the values in the 64-bit bitmap as a long array"
+  [^Roaring64Bitmap bm]
+  (.toArray bm))
 
 ;; data read/write from/to buffer
 

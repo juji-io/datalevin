@@ -485,11 +485,21 @@ above which, the same number of items will be sampled instead"}
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash-join (* 5.0 (.availableProcessors (Runtime/getRuntime))))
+  magic-cost-hash-join (* 5.0
+                          ;; for hash join is a barrier to parallelism
+                          (.availableProcessors (Runtime/getRuntime))))
 
 (def ^{:dynamic true
        :doc     "Minimum input size before considering hash join"}
   hash-join-min-input-size 20000)
+
+(def ^{:dynamic true
+       :doc     "Maximum number of single-value ranges for SIP optimization in hash join. When the input cardinality is at or below this threshold, entity IDs are converted to individual ranges instead of using a bitmap predicate."}
+  sip-range-threshold 1000)
+
+(def ^{:dynamic true
+       :doc     "Ratio threshold for SIP optimization. SIP is applied when target size > input size * this ratio."}
+  sip-ratio-threshold 5)
 
 (def ^{:dynamic true
        :doc     "Time interval between sample processing, in seconds "}

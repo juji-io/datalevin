@@ -1135,6 +1135,70 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest or-join-bounded-values-test
+  (testing "Or-join uses bounded values to limit target-side processing (SIP-like)"
+    ;; Or-join extracts unique bounded values from input tuples and passes them
+    ;; to constrain pattern lookups inside branches. This is a form of SIP.
+    ;; When the bounded entity count is small, lookup-pattern-multi-entity
+    ;; does point lookups instead of full table scans.
+    (let [dir       (u/tmp-dir (str "or-join-sip-" (UUID/randomUUID)))
+          schema    {:item/special {:db/valueType :db.type/boolean}
+                     :item/value   {:db/valueType :db.type/long}}
+          conn      (d/get-conn dir schema)
+          ;; Create dataset:
+          ;; - 100 "special" items (IDs 1-100) with :item/special true
+          ;; - 10,000 "other" items (IDs 101-10100) with :item/special false
+          ;; - All items have :item/value
+          n-special 100
+          n-others  10000
+          tx-data   (concat
+                      ;; Special items
+                      (for [i (range n-special)]
+                        {:db/id        (- (inc i))
+                         :item/special true
+                         :item/value   (inc i)})
+                      ;; Other items
+                      (for [i (range n-others)]
+                        {:db/id        (- (+ n-special 1 i))
+                         :item/special false
+                         :item/value   (+ n-special 1 i)}))]
+      (d/transact! conn (vec tx-data))
+
+      (let [db         (d/db conn)
+            ;; Counter to track how many tuples are processed inside or-join
+            counter    (atom 0)
+            count-pred (fn [v] (swap! counter inc) true)
+            ;; Query: Find special items and their values via or-join
+            ;; The or-join branch should only process bounded entities (100),
+            ;; not all entities with :item/value (10,100)
+            query      '[:find ?e ?v
+                         :in $ ?count-pred
+                         :where
+                         [?e :item/special true]
+                         (or-join [?e ?v]
+                                  (and [?e :item/value ?v]
+                                       [(?count-pred ?v)]))]]
+
+        ;; Execute query and measure tuple processing
+        (reset! counter 0)
+        (let [result        (d/q query db count-pred)
+              process-count @counter]
+          ;; Verify correctness
+          (is (= (count result) n-special)
+              "Should return all special items")
+
+          ;; Verify effectiveness: counter should be close to n-special (100),
+          ;; not n-special + n-others (10,100)
+          ;; With SIP working: ~100 tuples processed (only special items)
+          ;; Without SIP: ~10,100 tuples processed (all items scanned)
+          (is (<= process-count (* 2 n-special))
+              (str "Or-join SIP should limit processing to bounded entities. "
+                   "Expected ~" n-special ", got " process-count
+                   " (without SIP would be ~" (+ n-special n-others) ")"))))
+
+      (d/close conn)
+      (u/delete-files dir))))
+
 (deftest issue-304-305-test
   (let [dir  (u/tmp-dir (str "issue-304-" (UUID/randomUUID)))
         conn (d/get-conn dir {})]
@@ -1242,3 +1306,170 @@
                   [(ground "test") ?e]
                   [(str "hello " ?e) ?f]])
            #{["hello test"]}))))
+
+(deftest sip-hash-join-test
+  (testing "SIP (Sideways Information Passing) optimization for hash join with :_ref"
+    (let [dir    (u/tmp-dir (str "sip-test-" (UUID/randomUUID)))
+          schema {:person/friend  {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many}
+                  :person/name    {:db/valueType :db.type/string}
+                  :person/special {:db/valueType :db.type/boolean}}
+          conn   (d/get-conn dir schema)
+          ;; Create a dataset for meaningful SIP testing:
+          ;; - Small set of "special" people (input side: 100 entities)
+          ;; - Large set of friend references, most pointing to NON-special
+          ;; - SIP should filter out non-special references
+          n-special     100
+          n-others      10000
+          n-referencers 10000
+          ;; Generate data
+          tx-data       (concat
+                          ;; Special people (entity IDs will be 1-100)
+                          (for [i (range n-special)]
+                            {:db/id          (- (inc i))
+                             :person/name    (str "Special-" i)
+                             :person/special true})
+                          ;; Other people (entity IDs 101-10100)
+                          (for [i (range n-others)]
+                            {:db/id       (- (+ n-special 1 i))
+                             :person/name (str "Other-" i)})
+                          ;; Referencers: each references 3 special + 10 others
+                          ;; This creates many friend refs to non-special that SIP can filter
+                          (for [i (range n-referencers)]
+                            {:db/id         (- (+ n-special n-others 1 i))
+                             :person/name   (str "Referrer-" i)
+                             :person/friend (vec (concat
+                                                   ;; 3 refs to special people
+                                                   (for [j (range 3)]
+                                                     (- (inc (mod (+ i j) n-special))))
+                                                   ;; 10 refs to other (non-special) people
+                                                   (for [j (range 10)]
+                                                     (- (+ n-special 1 (mod (+ i j) n-others))))))}))]
+      ;; Insert data
+      (d/transact! conn (vec tx-data))
+
+      (let [db    (d/db conn)
+            ;; Query with MergeScanStep SIP path
+            query '[:find ?referrer-name
+                    :where
+                    [?f :person/special true]
+                    [?p :person/friend ?f]
+                    [?p :person/name ?referrer-name]]]
+
+        ;; Test with SIP enabled - verify hash join with SIP is selected
+        (binding [c/hash-join-min-input-size 10
+                  c/magic-cost-hash-join     0.1
+                  c/sip-ratio-threshold      0
+                  sut/*cache?*               false]
+          (let [explain (d/explain {:run? true} query db)
+                plan-str (str (:plan explain))]
+            (is (.contains plan-str "with SIP")
+                (str "Expected hash join with SIP in plan: " plan-str)))
+          ;; Verify correctness
+          (let [result (d/q query db)]
+            (is (= (count result) n-referencers)
+                "SIP should produce correct result count")))
+
+        ;; Test without SIP - verify same results
+        (binding [c/hash-join-min-input-size 10
+                  c/magic-cost-hash-join     0.1
+                  c/sip-ratio-threshold      1000000
+                  sut/*cache?*               false]
+          (let [explain (d/explain {:run? true} query db)
+                plan-str (str (:plan explain))]
+            (is (not (.contains plan-str "with SIP"))
+                "SIP should be disabled"))
+          (let [result (d/q query db)]
+            (is (= (count result) n-referencers)
+                "Without SIP should produce same result count"))))
+
+      (d/close conn)
+      (u/delete-files dir)))
+
+  (testing "SIP optimization for hash join - InitStep path"
+    ;; This tests the case where SIP modifies the InitStep directly
+    ;; (when join-attr == init-attr). This happens when the target entity's
+    ;; base plan has InitStep scanning the same attribute as the join.
+    ;; We achieve this by adding a range constraint on the join attribute.
+    (let [dir    (u/tmp-dir (str "sip-init-test-" (UUID/randomUUID)))
+          schema {:person/friend  {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many}
+                  :person/special {:db/valueType :db.type/boolean}}
+          conn   (d/get-conn dir schema)
+          ;; Create dataset:
+          ;; - Small set of "special" people (100 entities, IDs 1-100)
+          ;; - Large set of non-special people (10000 entities, IDs 101-10100)
+          ;; - Referencers with friend references
+          n-special     100
+          n-others      10000
+          n-referencers 10000
+          tx-data       (concat
+                          ;; Special people (entity IDs 1-100)
+                          (for [i (range n-special)]
+                            {:db/id          (- (inc i))
+                             :person/special true})
+                          ;; Other people (entity IDs 101-10100) - non-special
+                          (for [i (range n-others)]
+                            {:db/id          (- (+ n-special 1 i))
+                             :person/special false})
+                          ;; Referencers: each references 3 special + 10 others
+                          (for [i (range n-referencers)]
+                            {:db/id         (- (+ n-special n-others 1 i))
+                             :person/friend (vec (concat
+                                                   ;; 3 refs to special people
+                                                   (for [j (range 3)]
+                                                     (- (inc (mod (+ i j) n-special))))
+                                                   ;; 10 refs to other people
+                                                   (for [j (range 10)]
+                                                     (- (+ n-special 1 (mod (+ i j) n-others))))))}))]
+      (d/transact! conn (vec tx-data))
+
+      (let [db         (d/db conn)
+            ;; Counter to track target side tuple processing
+            counter    (atom 0)
+            count-pred (fn [v] (swap! counter inc) true)
+            ;; Query where join-attr equals init-attr (InitStep SIP path)
+            ;; The predicate on ?g counts how many tuples are processed on target side
+            query      '[:find ?p
+                         :in $ ?count-pred
+                         :where
+                         [?f :person/special true]
+                         [?p :person/friend ?g]
+                         [(?count-pred ?g)]
+                         [?p :person/friend ?f]]]
+
+        ;; Test with SIP enabled - should process fewer tuples on target side
+        (reset! counter 0)
+        (binding [c/hash-join-min-input-size 10
+                  c/magic-cost-hash-join     0.1
+                  c/sip-ratio-threshold      0
+                  sut/*cache?*               false]
+          (let [explain     (d/explain {:run? true} query db count-pred)
+                plan-str    (str (:plan explain))
+                sip-count   @counter
+                result      (d/q query db count-pred)]
+            (is (.contains plan-str "with SIP")
+                (str "Expected hash join with SIP in plan: " plan-str))
+            (is (= (count result) n-referencers)
+                "SIP InitStep path should produce correct result count")
+
+            ;; Test without SIP - should process more tuples on target side
+            (reset! counter 0)
+            (binding [c/sip-ratio-threshold 1000000]
+              (let [no-sip-explain (d/explain {:run? true} query db count-pred)
+                    no-sip-plan    (str (:plan no-sip-explain))
+                    no-sip-count   @counter
+                    no-sip-result  (d/q query db count-pred)]
+                (is (not (.contains no-sip-plan "with SIP"))
+                    "SIP should be disabled")
+                (is (= (count no-sip-result) n-referencers)
+                    "Without SIP should produce same result count")
+                ;; Key effectiveness test: SIP should reduce target side tuple count
+                ;; Without SIP: processes all 130,000 friend refs (10K × 13)
+                ;; With SIP: processes only refs to special people (~30,000)
+                (is (< sip-count no-sip-count)
+                    (str "SIP should reduce target tuples: with SIP=" sip-count
+                         ", without SIP=" no-sip-count)))))))
+
+      (d/close conn)
+      (u/delete-files dir))))

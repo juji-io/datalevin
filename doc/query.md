@@ -169,6 +169,9 @@ hash join operator chooses build side vs. probe side based on actual input
 relation sizes, so it is more flexible and handles size estimation inaccuracy
 more robustly.
 
+For reverse reference type of hash join, we implement a form of sideway
+information passing (SIP) using a bitmap [13] to pre-filter target relation.
+
 #### Or-join `:or-join`
 
 When an `or-join` clause connects a bound variable to a free variable, one or
@@ -359,3 +362,6 @@ estimation for RDF queries with multiple joins." ICDE. 2011.
 
 [12] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
+
+[13] Zhao, H., et al. "I Can’t Believe It’s Not Yannakakis: Pragmatic Bitmap
+Filters in Microsoft SQL Server.", CIDR, 2026.

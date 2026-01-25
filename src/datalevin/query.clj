@@ -60,8 +60,8 @@
 (def ^:dynamic *start-time* nil)
 
 (declare -collect -resolve-clause resolve-clause execute-steps
-         hash-join-execute hash-join-execute-into estimate-hash-join-cost
-         get-or-join-vars get-or-join-source)
+         hash-join-execute hash-join-execute-into sip-hash-join-execute
+         estimate-hash-join-cost get-or-join-vars get-or-join-source)
 
 ;; Records
 
@@ -205,30 +205,53 @@
          (if (identical? type :_ref) "reverse reference" "equal values")
          " of " attr ".")))
 
-(defrecord HashJoinStep [link-type tgt in out in-cols cols strata seen-or-joins
-                         tgt-steps]
+(declare sip-execute-pipe)
+
+(defrecord HashJoinStep [link link-e in out in-cols cols strata seen-or-joins
+                         tgt-steps in-size tgt-size]
 
   IStep
   (-type [_] :hash-join)
 
   (-execute [_ db src]
-    (hash-join-execute db in-cols tgt-steps src))
+    (let [use-sip? (and (identical? (:type link) :_ref)
+                        (> (long tgt-size) (* (long in-size)
+                                              (long c/sip-ratio-threshold))))]
+      (if use-sip?
+        (sip-hash-join-execute db link link-e in-cols tgt-steps src)
+        (hash-join-execute db in-cols tgt-steps src))))
 
   (-execute-pipe [_ db src sink]
-    (let [tgt-rel (execute-steps nil db tgt-steps)
-          input   (FastList.)]
-      (when src
-        (loop []
-          (when-let [tuple (p/produce src)]
-            (.add input tuple)
-            (recur))))
-      (hash-join-execute-into in-cols tgt-rel input sink)))
+    (let [use-sip? (and (identical? (:type link) :_ref)
+                        (> (long tgt-size) (* (long in-size)
+                                              (long c/sip-ratio-threshold))))]
+      (if use-sip?
+        (let [input (FastList.)]
+          (when src
+            (loop []
+              (when-let [tuple (p/produce src)]
+                (.add input tuple)
+                (recur))))
+          (when (pos? (.size input))
+            (sip-execute-pipe db link link-e in-cols tgt-steps input sink)))
+        (let [tgt-rel (execute-steps nil db tgt-steps)
+              input   (FastList.)]
+          (when src
+            (loop []
+              (when-let [tuple (p/produce src)]
+                (.add input tuple)
+                (recur))))
+          (hash-join-execute-into in-cols tgt-rel input sink)))))
 
   (-explain [_ _]
-    (str "Hash join to " tgt " by " (case link-type
-                                      :_ref   "reverse reference"
-                                      :val-eq "equal values"
-                                      "link") ".")))
+    (let [use-sip? (and (identical? (:type link) :_ref)
+                        (> (long tgt-size) (* (long in-size)
+                                              (long c/sip-ratio-threshold))))]
+      (str "Hash join to " (:tgt link) " by " (case (:type link)
+                                                :_ref   "reverse reference"
+                                                :val-eq "equal values"
+                                                "link")
+           (when use-sip? " with SIP") "."))))
 
 (declare or-join-execute-link or-join-execute-link-into)
 
@@ -2305,7 +2328,7 @@
       [step (merge-scan-step db step n-index new-key new-steps)])))
 
 (defn- hash-join-plan
-  [_db {:keys [steps cost size]} link-e {:keys [type tgt]} new-key
+  [_db {:keys [steps cost size]} link-e link new-key
    new-base-plan result-size]
   (let [last-step       (peek steps)
         in              (:out last-step)
@@ -2314,13 +2337,15 @@
         lstrata         (:strata last-step)
         lseen           (:seen-or-joins last-step)
         tgt-steps       (:steps new-base-plan)
+        in-size         (or size 0)
+        tgt-size        (or (:size new-base-plan) 0)
         tgt-cols        (:cols (peek tgt-steps))
         [cols new-vars] (merge-join-cols lcols tgt-cols)
-        step            (HashJoinStep. type tgt in out lcols cols
-                                       (conj lstrata new-vars) lseen tgt-steps)
+        step            (HashJoinStep. link link-e in out lcols cols
+                                       (conj lstrata new-vars) lseen tgt-steps
+                                       in-size tgt-size)
         base-cost       (or (:cost new-base-plan) 0)
-        base-size       (or (:size new-base-plan) 0)
-        join-cost       (estimate-hash-join-cost size base-size)]
+        join-cost       (estimate-hash-join-cost in-size tgt-size)]
     (Plan. [step]
            (+ ^long cost ^long base-cost ^long join-cost)
            result-size
@@ -2535,8 +2560,7 @@
         (if (and (#{:_ref :val-eq} link-type) new-base)
           (let [link-plan (e-plan db prev-plan index link-e link new-key
                                   new-base e-size result-size)]
-            (if (< ^long (:size prev-plan)
-                   ^long c/hash-join-min-input-size)
+            (if (< ^long (:size prev-plan) ^long c/hash-join-min-input-size)
               link-plan
               (let [hash-plan (hash-join-plan db prev-plan link-e link new-key
                                               new-base result-size)]
@@ -2763,6 +2787,122 @@
    (when (and tuples (pos? (.size ^List tuples)))
      (let [in-rel (r/relation! (cols->attrs in-cols) tuples)]
        (j/hash-join-into in-rel tgt-rel sink)))))
+
+(defn- build-sip-bitmap
+  "Build a 64-bit bitmap from the values at col-idx in input tuples"
+  [^List input ^long col-idx]
+  (let [bm (b/bitmap64)]
+    (dotimes [i (.size input)]
+      (let [tuple ^objects (.get input i)
+            v     (aget tuple col-idx)]
+        (when (integer? v)
+          (b/bitmap64-add bm (long v)))))
+    bm))
+
+(defn- values->ranges
+  "Convert a collection of values to single-value ranges"
+  [values]
+  (mapv (fn [v] [[:closed v] [:closed v]]) values))
+
+(defn- compose-pred
+  "Compose a new predicate with an existing one"
+  [existing-pred new-pred]
+  (if existing-pred
+    (fn [v] (and (existing-pred v) (new-pred v)))
+    new-pred))
+
+(defn- find-attr-in-attrs-v
+  "Find the index of attr in attrs-v and return [index opts]"
+  [attrs-v attr]
+  (reduce-kv
+    (fn [_ i [a opts]]
+      (when (= a attr)
+        (reduced [i opts])))
+    nil attrs-v))
+
+(defn- modify-init-step-for-sip
+  "Modify InitStep with SIP optimization - either ranges or bitmap pred"
+  [init-step bm]
+  (let [cardinality (b/bitmap64-cardinality bm)]
+    (if (<= cardinality c/sip-range-threshold)
+      ;; Small cardinality: convert to individual ranges
+      (let [values     (b/bitmap64->longs bm)
+            new-ranges (values->ranges values)
+            old-range  (:range init-step)]
+        (assoc init-step :range (if old-range
+                                  (intersect-ranges old-range new-ranges)
+                                  new-ranges)))
+      ;; Large cardinality: use min/max range + bitmap predicate
+      (let [min-v     (b/bitmap64-min bm)
+            max-v     (b/bitmap64-max bm)
+            new-range [[[:closed min-v] [:closed max-v]]]
+            old-range (:range init-step)
+            bm-pred   (fn [v] (b/bitmap64-contains? bm v))
+            old-pred  (:pred init-step)]
+        (assoc init-step
+               :range (if old-range
+                        (intersect-ranges old-range new-range)
+                        new-range)
+               :pred (compose-pred old-pred bm-pred))))))
+
+(defn- modify-merge-scan-step-for-sip
+  "Modify MergeScanStep attrs-v to add bitmap predicate for join attr"
+  [merge-step bm join-attr]
+  (let [attrs-v (:attrs-v merge-step)
+        bm-pred (fn [v] (b/bitmap64-contains? bm v))
+        new-attrs-v
+        (mapv (fn [[a opts :as entry]]
+                (if (= a join-attr)
+                  [a (update opts :pred #(compose-pred % bm-pred))]
+                  entry))
+              attrs-v)]
+    (assoc merge-step :attrs-v new-attrs-v)))
+
+(defn- apply-sip-to-tgt-steps
+  "Apply SIP optimization to target steps for :_ref link type"
+  [tgt-steps bm join-attr]
+  (let [init-step (first tgt-steps)
+        init-attr (:attr init-step)]
+    (if (= init-attr join-attr)
+      (assoc (vec tgt-steps) 0
+             (modify-init-step-for-sip init-step bm))
+      (if (< 1 (count tgt-steps))
+        (let [merge-step (second tgt-steps)
+              attrs-v    (:attrs-v merge-step)]
+          (if (find-attr-in-attrs-v attrs-v join-attr)
+            (assoc (vec tgt-steps) 1
+                   (modify-merge-scan-step-for-sip merge-step bm join-attr))
+            tgt-steps))
+        tgt-steps))))
+
+(defn- sip-execute-pipe
+  "Execute hash join with SIP (Sideways Information Passing) optimization.
+   Called when SIP is determined to be beneficial."
+  [db link link-e in-cols tgt-steps ^FastList input sink]
+  (let [join-attr   (:attr link)
+        col-idx     (find-index link-e in-cols)
+        bm          (build-sip-bitmap input col-idx)
+        cardinality (b/bitmap64-cardinality bm)]
+    (when (pos? cardinality)
+      (let [modified-tgt-steps (apply-sip-to-tgt-steps tgt-steps bm join-attr)
+            tgt-rel            (execute-steps nil db modified-tgt-steps)]
+        (hash-join-execute-into in-cols tgt-rel input sink)))))
+
+(defn- sip-hash-join-execute
+  "Execute hash join with SIP optimization (for -execute path)"
+  [db link link-e in-cols tgt-steps input]
+  (when (and input (pos? (.size ^List input)))
+    (let [join-attr   (:attr link)
+          col-idx     (find-index link-e in-cols)
+          bm          (build-sip-bitmap input col-idx)
+          cardinality (b/bitmap64-cardinality bm)]
+      (if (pos? cardinality)
+        (let [modified-tgt-steps (apply-sip-to-tgt-steps tgt-steps bm join-attr)
+              tgt-rel            (execute-steps nil db modified-tgt-steps)
+              out                (FastList.)]
+          (hash-join-execute-into in-cols tgt-rel input out)
+          out)
+        (FastList.)))))
 
 (def pipe-thread-pool (Executors/newCachedThreadPool))
 
