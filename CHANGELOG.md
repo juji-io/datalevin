@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.10.2 (2026-01-24)
 
 ### Improved
 - [Datalog] Planner cost model adjustment.
