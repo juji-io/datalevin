@@ -2425,14 +2425,16 @@
         ^long rsize             (if result (.size ^List result) 0)]
     (estimate-round
       (cond
-        (<= ^long c/link-estimate-min-sample ssize)
+        (< 0 ssize)
         (let [^long size (count-init-follows db sample attr index)
-              ratio      (max (double (/ size ssize))
-                              ^double c/magic-link-ratio)]
+              base-ratio (double (db/-default-ratio db attr))
+              blended    (/ (+ size (* c/link-estimate-prior-size base-ratio))
+                            (+ ssize c/link-estimate-prior-size))
+              ratio      (max blended ^double c/magic-link-ratio)]
           (.put ratios ratio-key ratio)
           (* ^long prev-size ratio))
 
-        (<= ^long c/link-estimate-min-sample rsize)
+        (< 0 rsize)
         (let [^long size (count-init-follows db result attr index)
               ratio      (/ size rsize)]
           (.put ratios ratio-key ratio)

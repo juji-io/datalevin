@@ -448,8 +448,9 @@ above which, the same number of items will be sampled instead"}
   magic-link-ratio 1.0)
 
 (def ^{:dynamic true
-       :doc     "Minimum tuple count for link ratio estimation before falling back to default ratio"}
-  link-estimate-min-sample 100)
+       :doc     "Prior sample size used when blending sample link ratios with
+the default ratio to reduce skew from tiny samples"}
+  link-estimate-prior-size 10)
 
 (def ^{:dynamic true
        :doc     "Default expansion ratio for or-join size estimate"}
