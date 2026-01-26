@@ -450,7 +450,7 @@ above which, the same number of items will be sampled instead"}
 (def ^{:dynamic true
        :doc     "Prior sample size used when blending sample link ratios with
 the default ratio to reduce skew from tiny samples"}
-  link-estimate-prior-size 10)
+  link-estimate-prior-size 100)
 
 (def ^{:dynamic true
        :doc     "Default expansion ratio for or-join size estimate"}

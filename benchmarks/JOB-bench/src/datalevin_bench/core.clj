@@ -1213,8 +1213,7 @@
              [?mc :movie-companies/movie ?t]
              [?mc :movie-companies/company-type ?ct]
              [?mc :movie-companies/company ?cn]
-             [?t :title/title ?t.title]
-             [?lt :link-type/link ?lt.link]])
+             [?t :title/title ?t.title]])
 
 ;; good plan
 (def q-11d '[:find (min ?cn.name) (min ?mc.note) (min ?t.title)
@@ -1236,8 +1235,7 @@
              [?mc :movie-companies/movie ?t]
              [?mc :movie-companies/company-type ?ct]
              [?mc :movie-companies/company ?cn]
-             [?t :title/title ?t.title]
-             [?lt :link-type/link ?lt.link]])
+             [?t :title/title ?t.title]])
 
 (def q-12a '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
@@ -1482,7 +1480,6 @@
              [?mi :movie-info/info-type ?it1]
              [?mc :movie-companies/company ?cn]
              [?t :title/title ?t.title]
-             [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
              ])
 
@@ -1509,7 +1506,6 @@
              [?mi :movie-info/info-type ?it1]
              [?mc :movie-companies/company ?cn]
              [?t :title/title ?t.title]
-             [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
              ])
 
@@ -1533,7 +1529,6 @@
              [?mi :movie-info/info-type ?it1]
              [?mc :movie-companies/company ?cn]
              [?t :title/title ?t.title]
-             [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
              ])
 
@@ -1548,14 +1543,12 @@
              [(< 1990 ?t.production-year)]
              [?at :aka-title/movie ?t]
              [?mi :movie-info/movie ?t]
-             [?mk :movie-keyword/movie ?t]
              [?mc :movie-companies/movie ?t]
-             [?mk :movie-keyword/keyword ?k]
              [?mi :movie-info/info-type ?it1]
              [?mc :movie-companies/company ?cn]
              [?t :title/title ?t.title]
-             [?mi :movie-info/info ?mi.info]
              [?mc :movie-companies/company-type ?ct]
+             [?mk :movie-keyword/movie ?t]
              ])
 
 ;; good plan
@@ -2086,39 +2079,6 @@
              [?cn :company-name/name ?cn.name]
              ])
 
-(def q-22a '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
-             :where
-             [?cn :company-name/country-code ?cn.country-code]
-             [(not= ?cn.country-code "[us]")]
-             [?it1 :info-type/info "countries"]
-             [?it2 :info-type/info "rating"]
-             [?k :keyword/keyword ?k.keyword]
-             [(in ?k.keyword ["murder", "murder-in-title", "blood", "violence"])]
-             [?kt :kind-type/kind ?kt.kind]
-             [(in ?kt.kind ["movie", "episode"])]
-             [?mc :movie-companies/note ?mc.note]
-             [(not-like ?mc.note "%(USA)%")]
-             [(like ?mc.note "%(200%)%")]
-             [?mi :movie-info/info ?mi.info]
-             [(in ?mi.info ["Germany","German", "USA", "American"])]
-             [?mi-idx :movie-info-idx/info ?mi-idx.info]
-             [(< ?mi-idx.info "7.0")]
-             [?t :title/production-year ?t.production-year]
-             [(< 2008 ?t.production-year)]
-             [?t :title/kind ?kt]
-             [?mi :movie-info/movie ?t]
-             [?mk :movie-keyword/movie ?t]
-             [?mi-idx :movie-info-idx/movie ?t]
-             [?mc :movie-companies/movie ?t]
-             [?mk :movie-keyword/keyword ?k]
-             [?mi :movie-info/info-type ?it1]
-             [?mi-idx :movie-info-idx/info-type ?it2]
-             [?mc :movie-companies/company-type ?ct]
-             [?mc :movie-companies/company ?cn]
-             [?t :title/title ?t.title]
-             [?cn :company-name/name ?cn.name]
-             ])
-
 (def q-22b '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code ?cn.country-code]
@@ -2512,7 +2472,6 @@
              [?cc :complete-cast/subject ?cct1]
              [?cc :complete-cast/status ?cct2]
              [?mi-idx :movie-info-idx/info-type ?it2]
-             [?n :name/name ?n.name]
              [?t :title/title ?t.title]
              ])
 
@@ -2544,7 +2503,6 @@
              [?cc :complete-cast/subject ?cct1]
              [?cc :complete-cast/status ?cct2]
              [?mi-idx :movie-info-idx/info-type ?it2]
-             [?n :name/name ?n.name]
              [?t :title/title ?t.title]
              ])
 
@@ -3182,42 +3140,6 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(def q-33b '[:find (min ?cn1.name) (min ?cn2.name)
-             (min ?mi-idx1.info) (min ?mi-idx2.info)
-             (min ?t1.title) (min ?t2.title)
-             :where
-             [?cn1 :company-name/country-code "[nl]"]
-             [?it1 :info-type/info "rating"]
-             [?it2 :info-type/info "rating"]
-             [?kt1 :kind-type/kind ?kt1.kind]
-             [(in ?kt1.kind ["tv series"])]
-             [?kt2 :kind-type/kind ?kt2.kind]
-             [(in ?kt2.kind ["tv series"])]
-             [?lt :link-type/link ?lt.link]
-             [(like ?lt.link "%follow%")]
-             [?mi-idx2 :movie-info-idx/info-type ?it2]
-             [?mi-idx2 :movie-info-idx/movie ?t2]
-             [?mi-idx2 :movie-info-idx/info ?mi-idx2.info]
-             [(< ?mi-idx2.info "3.0")]
-             [?t2 :title/production-year 2007]
-             [?ml :movie-link/link-type ?lt]
-             [?ml :movie-link/movie ?t1]
-             [?ml :movie-link/linked-movie ?t2]
-             [?mi-idx1 :movie-info-idx/info-type ?it1]
-             [?mi-idx1 :movie-info-idx/movie ?t1]
-             [?mi-idx1 :movie-info-idx/info ?mi-idx1.info]
-             [?t1 :title/kind ?kt1]
-             [?mc1 :movie-companies/company ?cn1]
-             [?mc1 :movie-companies/movie ?t1]
-             [?t2 :title/kind ?kt2]
-             [?mc2 :movie-companies/company ?cn2]
-             [?mc2 :movie-companies/movie ?t2]
-             [?t1 :title/title ?t1.title]
-             [?t2 :title/title ?t2.title]
-             [?cn1 :company-name/name ?cn1.name]
-             [?cn2 :company-name/name ?cn2.name]
-             ])
-
 ;; good plan
 (def q-33c '[:find (min ?cn1.name) (min ?cn2.name)
              (min ?mi-idx1.info) (min ?mi-idx2.info)
@@ -3282,14 +3204,14 @@
 (defn grid [&opts]
   (doseq [p [5.5]
           v [2.5]
-          f [1.2]]
+          f [100]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
-          (binding [c/magic-cost-merge-scan-v   p
-                    c/magic-cost-link-probe     v
-                    c/magic-cost-link-retrieval f
-                    q/*cache?*                  false]
+          (binding [c/magic-cost-merge-scan-v  p
+                    c/magic-cost-link-probe    v
+                    c/link-estimate-prior-size f
+                    q/*cache?*                 false]
             (let [start (System/currentTimeMillis)]
               (d/q query (d/db conn))
               (println q "took" (- (System/currentTimeMillis) start))))))
