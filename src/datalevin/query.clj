@@ -1872,24 +1872,40 @@
           (aset args-arr i (f x))))
       (call args-arr))))
 
+(defn- split-and-clauses
+  "If pred is an (and ...) form where every arg is a predicate list,
+  return a flat seq of those predicate lists; otherwise nil."
+  [pred]
+  (when (and (list? pred) (= 'and (first pred)))
+    (let [args (rest pred)]
+      (when (every? list? args)
+        (mapcat (fn [arg]
+                  (or (split-and-clauses arg) [arg]))
+                args)))))
+
 (defn- add-pred-clause
   [graph clause v]
-  (w/postwalk
-    (fn [m]
-      (if (= (:var m) v)
-        (let [[f & args :as pred] (first clause)]
-          (if (some list? pred)
-            (update m :pred add-pred (nested-pred f args v))
-            (case f
-              (< <= > >=) (inequality->range m f args v)
-              =           (equality->range m args)
-              like        (optimize-like m pred args v false)
-              not-like    (optimize-like m pred args v true)
-              in          (in-convert-range m args false)
-              not-in      (in-convert-range m args true)
-              (update m :pred add-pred (activate-var-pred v pred)))))
-        m))
-    graph))
+  (let [pred       (first clause)
+        and-clauses (split-and-clauses pred)
+        preds      (or and-clauses [pred])
+        apply-pred (fn [m pred]
+                     (let [[f & args] pred]
+                       (if (some list? pred)
+                         (update m :pred add-pred (nested-pred f args v))
+                         (case f
+                           (< <= > >=) (inequality->range m f args v)
+                           =           (equality->range m args)
+                           like        (optimize-like m pred args v false)
+                           not-like    (optimize-like m pred args v true)
+                           in          (in-convert-range m args false)
+                           not-in      (in-convert-range m args true)
+                           (update m :pred add-pred (activate-var-pred v pred))))))]
+    (w/postwalk
+      (fn [m]
+        (if (= (:var m) v)
+          (reduce apply-pred m preds)
+          m))
+      graph)))
 
 (defn- free->bound
   "cases where free var can be rewritten as bound:
@@ -2824,7 +2840,7 @@
   "Modify InitStep with SIP optimization - either ranges or bitmap pred"
   [init-step bm]
   (let [cardinality (b/bitmap64-cardinality bm)]
-    (if (<= cardinality c/sip-range-threshold)
+    (if (<= cardinality ^long c/sip-range-threshold)
       ;; Small cardinality: convert to individual ranges
       (let [values     (b/bitmap64->longs bm)
             new-ranges (values->ranges values)

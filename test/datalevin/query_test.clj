@@ -1167,7 +1167,7 @@
       (let [db         (d/db conn)
             ;; Counter to track how many tuples are processed inside or-join
             counter    (atom 0)
-            count-pred (fn [v] (swap! counter inc) true)
+            count-pred (fn [_] (swap! counter inc) true)
             ;; Query: Find special items and their values via or-join
             ;; The or-join branch should only process bounded entities (100),
             ;; not all entities with :item/value (10,100)
@@ -1427,7 +1427,7 @@
       (let [db         (d/db conn)
             ;; Counter to track target side tuple processing
             counter    (atom 0)
-            count-pred (fn [v] (swap! counter inc) true)
+            count-pred (fn [_] (swap! counter inc) true)
             ;; Query where join-attr equals init-attr (InitStep SIP path)
             ;; The predicate on ?g counts how many tuples are processed on target side
             query      '[:find ?p
