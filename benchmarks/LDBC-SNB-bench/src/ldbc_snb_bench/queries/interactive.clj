@@ -60,10 +60,9 @@
                   ;; messages
                   [?message :message/hasCreator ?friend]
                   [?message :message/id ?message-id]
-                  (or-join [?message ?content]
-                           [?message :message/content ?content]
-                           (and (not [?message :message/content _])
-                                [?message :message/imageFile ?content]))
+                  [(get-some $ ?message
+                             :message/content
+                             :message/imageFile) [_ ?content]]
                   [?message :message/creationDate ?creation-date]
                   [(< ?creation-date ?max-date)]
                   :order-by [?creation-date :desc ?message-id :asc]
@@ -73,12 +72,23 @@
   {:name        "IC3"
    :description "Friends and friends of friends in given countries: Given a start Person with ID, find Persons that are their friends and friends of friends (excluding the start Person) that have made Posts / Comments in both of the given Countries (named countryXName and countryYName), within [startDate, startDate + durationDays) (closedopen interval). Only Persons that are foreign to these Countries are considered, that is Persons whose location Country is neither named countryXName nor countryYName."
    :params      [:person-id :country-x-name :country-y-name
-                 :start-date :duration-days]
+                 :start-date :end-date]
+   :param-fn    (fn [params]
+                  (if (:end-date params)
+                    params
+                    (assoc params :end-date
+                           (common/add-days
+                             (:start-date params)
+                             (:duration-days params)))))
    :query       '[:find ?person ?first-name ?last-name (sum ?x-inc) (sum ?y-inc)
                   (+ (sum ?x-inc) (sum ?y-inc))
                   :in $ ?person-id ?country-x-name ?country-y-name
-                  ?start-date ?duration-days
+                  ?start-date ?end-date
                   :where
+                  ;; Resolve country entities once for ID comparisons
+                  [?country-x :place/name ?country-x-name]
+                  [?country-y :place/name ?country-y-name]
+
                   ;; Friends within 2 hops
                   [?start :person/id ?person-id]
                   (or-join [?start ?person]
@@ -96,26 +106,22 @@
                   ;; Person must be foreign (city -> country direct)
                   [?person :person/isLocatedIn ?city]
                   [?city :place/isPartOf ?person-country]
-                  [?person-country :place/name ?pcn]
-                  [(not= ?pcn ?country-x-name)]
-                  [(not= ?pcn ?country-y-name)]
+                  [(not= ?person-country ?country-x)]
+                  [(not= ?person-country ?country-y)]
 
                   ;; Messages in country X or Y
                   [?message :message/hasCreator ?person]
                   [?message :message/isLocatedIn ?loc]
-                  [?loc :place/name ?loc-name]
-                  (or-join [?loc-name ?country-x-name ?country-y-name
+                  (or-join [?loc ?country-x ?country-y
                             ?x-inc ?y-inc]
-                           (and [(= ?loc-name ?country-x-name)]
+                           (and [(= ?loc ?country-x)]
                                 [(ground 1) ?x-inc]
                                 [(ground 0) ?y-inc])
-                           (and [(= ?loc-name ?country-y-name)]
+                           (and [(= ?loc ?country-y)]
                                 [(ground 0) ?x-inc]
                                 [(ground 1) ?y-inc]))
 
                   ;; Message date range
-                  [(ldbc-snb-bench.queries.common/add-days
-                     ?start-date ?duration-days) ?end-date]
                   [?message :message/creationDate ?date]
                   [(<= ?start-date ?date)]
                   [(< ?date ?end-date)]
@@ -166,7 +172,7 @@
   {:name        "IC5"
    :description "New groups: Given a start Person with ID, denote their friends and friends of friends (excluding the start Person) as otherPerson. Find Forums that any otherPerson became a member of after a given date (minDate). For each of those Forums, count the number of Posts that were created by the otherPerson."
    :params      [:person-id :min-date]
-   :query       '[:find ?forum-id ?forum-title (count ?post)
+   :query       '[:find ?forum-id ?forum-title (count-distinct ?post)
                   :in $ ?person-id ?min-date
                   :where
                   ;; Friends within 2 hops
@@ -238,10 +244,9 @@
                   [?message :message/hasCreator ?start]
                   [?message :message/id ?message-id]
                   [?message :message/creationDate ?message-date]
-                  (or-join [?message ?message-content]
-                           [?message :message/content ?message-content]
-                           (and (not [?message :message/content _])
-                                [?message :message/imageFile ?message-content]))
+                  [(get-some $ ?message
+                             :message/content
+                             :message/imageFile) [_ ?message-content]]
 
                   ;; Likes on those messages
                   [?like :likes/message ?message]
@@ -318,8 +323,8 @@
                   ?creation-date
                   :in $ ?person-id ?max-date
                   :where
-                  ;; Friends within 2 hops (excluding start)
                   [?start :person/id ?person-id]
+                  ;; Friends within 2 hops (excluding start)
                   (or-join [?start ?person]
                            (and [?k :knows/person1 ?start]
                                 [?k :knows/person2 ?person])
@@ -518,9 +523,10 @@
   {:name        "IC14"
    :description "Trusted connection paths: Find all shortest paths between two persons and calculate trust weight based on interaction frequency. Returns paths as [p1-id, m1-id, m2-id, p2-id], interaction count, and half-weight. Actual weight = 2 * half-weight."
    :params      [:person1-id :person2-id]
+   :rules       common/rule-interaction-half-weight
    :query       '[:find ?p1-id ?m1-id ?m2-id ?p2-id
                   (count-distinct ?interaction) (sum ?half-weight)
-                  :in $ ?person1-id ?person2-id
+                  :in $ % ?person1-id ?person2-id
                   :where
                   ;; Find start and end persons
                   [?p1 :person/id ?person1-id]
@@ -547,78 +553,12 @@
                   ;; Comment replies have half-weight 0.25 (actual weight 0.5)
                   ;; Actual weight = 2 * sum(half-weight)
                   (or-join [?p1 ?m1 ?m2 ?p2 ?interaction ?half-weight]
-                           ;; Edge 1: post reply p1 -> m1
-                           (and [?interaction :message/hasCreator ?p1]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?m1]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 1: post reply m1 -> p1
-                           (and [?interaction :message/hasCreator ?m1]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?p1]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 1: comment reply p1 -> m1
-                           (and [?interaction :message/hasCreator ?p1]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?m1]
-                                [(ground 0.25) ?half-weight])
-                           ;; Edge 1: comment reply m1 -> p1
-                           (and [?interaction :message/hasCreator ?m1]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?p1]
-                                [(ground 0.25) ?half-weight])
-                           ;; Edge 2: post reply m1 -> m2
-                           (and [?interaction :message/hasCreator ?m1]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?m2]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 2: post reply m2 -> m1
-                           (and [?interaction :message/hasCreator ?m2]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?m1]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 2: comment reply m1 -> m2
-                           (and [?interaction :message/hasCreator ?m1]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?m2]
-                                [(ground 0.25) ?half-weight])
-                           ;; Edge 2: comment reply m2 -> m1
-                           (and [?interaction :message/hasCreator ?m2]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?m1]
-                                [(ground 0.25) ?half-weight])
-                           ;; Edge 3: post reply m2 -> p2
-                           (and [?interaction :message/hasCreator ?m2]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?p2]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 3: post reply p2 -> m2
-                           (and [?interaction :message/hasCreator ?p2]
-                                [?interaction :message/replyOf ?post]
-                                [?post :message/containerOf _]
-                                [?post :message/hasCreator ?m2]
-                                [(ground 0.5) ?half-weight])
-                           ;; Edge 3: comment reply m2 -> p2
-                           (and [?interaction :message/hasCreator ?m2]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?p2]
-                                [(ground 0.25) ?half-weight])
-                           ;; Edge 3: comment reply p2 -> m2
-                           (and [?interaction :message/hasCreator ?p2]
-                                [?interaction :message/replyOf ?parent]
-                                [?parent :message/replyOf _]
-                                [?parent :message/hasCreator ?m2]
-                                [(ground 0.25) ?half-weight]))
+                           (interaction-half-weight ?p1 ?m1
+                                                     ?interaction ?half-weight)
+                           (interaction-half-weight ?m1 ?m2
+                                                     ?interaction ?half-weight)
+                           (interaction-half-weight ?m2 ?p2
+                                                     ?interaction ?half-weight))
 
                   :order-by [5 :desc]]})
 

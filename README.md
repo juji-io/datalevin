@@ -265,39 +265,24 @@ for EDN data.
 Please refer to the [API
 documentation](https://cljdoc.org/d/datalevin/datalevin) for more details.
 
-## :rocket: Status
+## :bar_chart: Benchmarks
 
-Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io), among other companies.
+This repository contains several [benchmarks](benchmarks) that compare
+performance of Datalevin with other databases.
 
-Running the [benchmark suite adopted from
-Datascript](https://github.com/datalevin/datalevin/tree/master/benchmarks/datascript-bench),
-which includes several queries on 100K random datoms, on a 2016 Ubuntu Linux
-server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
-
-<p align="center">
-<img src="benchmarks/datascript-bench/Read.png" alt="query benchmark" height="300"></img>
-</p>
-
-In all benchmarked queries, Datalevin is the fastest among the three tested
-systems, as Datalevin has a [cost based query optimizer](doc/query.md) while
-Datascript and Datomic do not. Datalevin also has a caching layer for index
-access. See [here](benchmarks/datascript-bench) for a detailed analysis of the
-results.
-
-We also compared Datalevin and PostgreSQL in handling complex queries, using
+We compared Datalevin with PostgreSQL and SQLite in handling complex queries, using
 [Join Order Benchmark](benchmarks/JOB-bench). On a
-MacBook Pro, Apple M3 chip with 12 cores, 30 GB memory and 1TB SSD drive, here's
-the average times:
+MacBook Pro, Apple M3 chip with 12 cores, 30 GB memory and 1TB SSD drive, the
+chart below plots query latency for all 113 queries in the benchmark.
 
 <p align="center">
-<img src="benchmarks/JOB-bench/means.png" alt="JOB benchmark averages" height="300"></img>
+<img src="benchmarks/JOB-bench/job_benchmark_log_bars.svg" alt="JOB benchmark" height="300"></img>
 </p>
 
-Datalevin is faster than PostgreSQL on average in running the complex
-queries that involves many joins. The gain is mainly due to shorter query
-execution time as Datalevin's query optimizer generates better plans. Details of
-the analysis can be found in [this
+Datalevin is about 2X faster than PostgreSQL and more than 3X faster than SQLite
+on average in running these complex queries that involves many joins. The gain
+is mainly due to shorter query execution time as Datalevin's query optimizer
+generates better plans. Details of the analysis can be found in [this
 article](https://yyhh.org/blog/2024/09/competing-for-the-job-with-a-triplestore/)
 
 For durable transaction performance, we compared Datalevin with
@@ -313,8 +298,8 @@ Datalevin's default transaction function is over 5X faster than SQLite's
 default; while Datlevin's asynchronous transaction mode is over 20X faster than
 SQLite's WAL mode.
 
-Datalevin also has an advanced [rule engine](doc/rules.md). It is much faster than
-Datomic and Datascript that implement the same rule language. [This
+Datalevin also has an advanced [rule engine](doc/rules.md), which is much faster
+than Datomic and Datascript that implement the same rule language. [This
 benchmark](benchmarks/math-bench) shows the running time in milliseconds of
 applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
 
@@ -326,6 +311,16 @@ applying 4 rules to a mathematics genealogy data set on a Macbook Pro 2023.
 
 For recursive rules like Q4, Datalevin can be orders of magnitude faster,
 while Datomic and Datascript struggle.
+
+Datalevin compares favorably with Neo4j on [an industrial standard graph
+database benchmark](benchmarks/LDBC-SNB-bench). For point access in
+graphs, Datalevin is several orders of magnitude faster, while performs
+comparably with Neo4j on complex graph queries.
+
+## :rocket: Status
+
+Datalevin is extensively tested with property-based testing and is used
+in production at [Juji](https://juji.io), among other companies.
 
 ## :earth_americas: Roadmap
 

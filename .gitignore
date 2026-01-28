@@ -9,7 +9,6 @@ benchmarks/JOB-bench/db/data.mdb
 .settings/
 */JOB-bench/data/*.csv
 */JOB-bench/*.dat
-*/JOB-bench/*.sql
 */JOB-bench/*.out
 */JOB-bench/*.json
 */math-bench/*.json

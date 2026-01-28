@@ -49,9 +49,9 @@
     RulesVar SrcVar Variable Pattern Predicate]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
-(def ^:dynamic *query-cache* (LRUCache. 128))
+(def ^:dynamic *query-cache* (LRUCache. c/query-result-cache-size))
 
-(def ^:dynamic *plan-cache* (LRUCache. 128))
+(def ^:dynamic *plan-cache* (LRUCache. c/query-result-cache-size))
 
 (def ^:dynamic *explain* nil)
 
@@ -2267,12 +2267,13 @@
 (defn- index-by-link
   [cols link-e link]
   (case (:type link)
-    :ref    (or (find-index (:tgt link) cols)
-                (find-index (:attr link) cols))
-    :_ref   (find-index link-e cols)
-    :val-eq (or (find-index (:var link) cols)
-                (find-index ((:attrs link) link-e) cols))
-    ;; For or-join, return index where tgt will be after step adds free-vars and tgt
+    :ref     (or (find-index (:tgt link) cols)
+                 (find-index (:attr link) cols))
+    :_ref    (find-index link-e cols)
+    :val-eq  (or (find-index (:var link) cols)
+                 (find-index ((:attrs link) link-e) cols))
+    ;; For or-join, return index where tgt will be after step adds free-vars
+    ;; and tgt
     :or-join (+ (count cols) (count (:free-vars link)))))
 
 (defn- enrich-cols
@@ -2403,6 +2404,27 @@
       (rd/map #(av-size store attr (aget ^objects % index))
               (p/remove-end-scan tuples)))))
 
+(defn- count-init-follows-stats
+  [^DB db tuples attr index]
+  (let [store    (.-store db)
+        ^List ts (p/remove-end-scan tuples)
+        n        (.size ts)]
+    (loop [i     0
+           sum   0.0
+           sumsq 0.0
+           mx    0.0]
+      (if (< i n)
+        (let [^objects t (.get ts i)
+              f          (double (av-size store attr (aget t index)))]
+          (recur (u/long-inc i)
+                 (+ sum f)
+                 (+ sumsq (* f f))
+                 (if (> f mx) f mx)))
+        {:n       n
+         :sum     sum
+         :sumsq   sumsq
+         :max-val mx}))))
+
 (defn- link-ratio-key
   [link-e {:keys [type attr attrs tgt]}]
   (case type
@@ -2426,13 +2448,29 @@
     (estimate-round
       (cond
         (< 0 ssize)
-        (let [^long size (count-init-follows db sample attr index)
+        (let [{:keys [^long n ^double sum ^double sumsq ^double max-val]}
+              (count-init-follows-stats db sample attr index)
+
+              mean       (if (pos? n) (/ sum (double n)) 0.0)
+              variance   (if (pos? n)
+                           (max 0.0 (- (/ sumsq (double n)) (* mean mean)))
+                           0.0)
+              cv2        (if (pos? mean) (/ variance (* mean mean)) 0.0)
               base-ratio (double (db/-default-ratio db attr))
-              blended    (/ (+ size (* c/link-estimate-prior-size base-ratio))
-                            (+ ssize c/link-estimate-prior-size))
-              ratio      (max blended ^double c/magic-link-ratio)]
+              k-eff      (* (double c/link-estimate-prior-size)
+                            (+ 1.0 (* (double c/link-estimate-var-alpha) cv2)))
+              blended    (if (pos? (+ (double n) k-eff))
+                           (/ (+ sum (* k-eff base-ratio))
+                              (+ (double n) k-eff))
+                           base-ratio)
+              ub         (if (pos? n)
+                           (min (+ mean (/ (- max-val mean)
+                                           (Math/sqrt (double n))))
+                                (* mean (double c/link-estimate-max-multi)))
+                           base-ratio)
+              ratio      (max base-ratio blended ub (double c/magic-link-ratio))]
           (.put ratios ratio-key ratio)
-          (* ^long prev-size ratio))
+          (* (double prev-size) ratio))
 
         (< 0 rsize)
         (let [^long size (count-init-follows db result attr index)
@@ -2676,7 +2714,8 @@
                 tables (FastList. n)
                 ratios (ConcurrentHashMap.)
                 n-1    (dec n)
-                pn     ^long (u/n-permutations n 2)]
+                pn     ^long (min (long c/plan-search-max)
+                                  (long (u/n-permutations n 2)))]
             (.add tables base-plans)
             (dotimes [i n-1]
               (let [plans (plans db sources rules nodes pairs base-plans

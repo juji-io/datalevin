@@ -212,32 +212,12 @@
 (defn run-query
   "Run a single query and return timing results."
   [db query-def params]
-  (if-let [runner (:runner query-def)]
-    (let [start-time (System/nanoTime)
-          result-rows (vec (runner db params))
-          result-count (count result-rows)
-          end-time (System/nanoTime)
-          exec-time (/ (- end-time start-time) 1000000.0)]
-      {:name (:name query-def)
-       :planning-time 0.0
-       :execution-time exec-time
-       :result-count result-count
-       :rows result-rows
-       :columns (:columns query-def)})
-    (let [query (:query query-def)
-          rules (:rules query-def)
-          post-process (:post-process query-def)
-          param-vals (map #(get params %) (:params query-def))
-          ;; Build query inputs
-          inputs (if rules
-                   (concat [db rules] param-vals)
-                   (concat [db] param-vals))
-          start-time (System/nanoTime)]
-      (let [rows (apply d/q query inputs)
-            final-rows (if post-process
-                         (post-process db params rows)
-                         rows)
-            result-rows (vec final-rows)
+  (let [params (if-let [param-fn (:param-fn query-def)]
+                 (param-fn params)
+                 params)]
+    (if-let [runner (:runner query-def)]
+      (let [start-time (System/nanoTime)
+            result-rows (vec (runner db params))
             result-count (count result-rows)
             end-time (System/nanoTime)
             exec-time (/ (- end-time start-time) 1000000.0)]
@@ -246,7 +226,30 @@
          :execution-time exec-time
          :result-count result-count
          :rows result-rows
-         :columns (query-find-columns query)}))))
+         :columns (:columns query-def)})
+      (let [query (:query query-def)
+            rules (:rules query-def)
+            post-process (:post-process query-def)
+            param-vals (map #(get params %) (:params query-def))
+            ;; Build query inputs
+            inputs (if rules
+                     (concat [db rules] param-vals)
+                     (concat [db] param-vals))
+            start-time (System/nanoTime)]
+        (let [rows (apply d/q query inputs)
+              final-rows (if post-process
+                           (post-process db params rows)
+                           rows)
+              result-rows (vec final-rows)
+              result-count (count result-rows)
+              end-time (System/nanoTime)
+              exec-time (/ (- end-time start-time) 1000000.0)]
+          {:name (:name query-def)
+           :planning-time 0.0
+           :execution-time exec-time
+           :result-count result-count
+           :rows result-rows
+           :columns (query-find-columns query)})))))
 
 (defn- normalize-query-names
   [names]

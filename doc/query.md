@@ -106,18 +106,18 @@ on.
 
 Since star-like attributes are already handled by merge scan, the optimizer
 works mainly on the simplified graph that consists of stars and the links
-between them [4] [10] [12], this significantly reduces the size of optimizer
+between them [4] [11] [13], this significantly reduces the size of optimizer
 search space.
 
 ### Cost based query optimizer
 
 We built a Selinger style cost-based query optimizer that uses dynamic
-programming for query planning [13], which is used in almost all RDBMS. Instead
-of considering all possible combinations of join orders, the plan enumeration is
-based on connected components of the query graph. Each connected component has
-its own plan and its own execution sequence. Multiple connected components are
-processed concurrently. The resulting relations are joined afterwards, and the
-order of which is based on result size.
+programming for query planning [14]. Instead of considering all possible
+combinations of join orders, the plan enumeration is based on connected
+components of the query graph. Each connected component has its own plan and its
+own execution sequence. Multiple connected components are processed
+concurrently. The resulting relations are joined afterwards, and the order of
+which is based on result size.
 
 ### Left-deep join tree
 
@@ -126,7 +126,7 @@ work well for our simplified query graph, since stars are already turned into
 meta nodes and mostly chains remain. This also reduces the cost of cost
 estimation, which dominates the cost of planning. The impact of the loss of
 search space is relatively small, compared with the impact of inaccuracy in
-cardinality estimation. [6]
+cardinality estimation. [7]
 
 We do not consider bushy join trees, as our join methods are mainly based on
 scanning indices, so a base relation is needed for each join. Since we
@@ -170,7 +170,7 @@ relation sizes, so it is more flexible and handles size estimation inaccuracy
 more robustly.
 
 For reverse reference type of hash join, we implement a form of sideway
-information passing (SIP) using a bitmap [14] to pre-filter target relation.
+information passing (SIP) using a bitmap [15] to pre-filter target relation.
 
 #### Or-join `:or-join`
 
@@ -217,12 +217,13 @@ takes advantage of O(log n) rank operation of the counted feature of our KV
 storage.
 
 A sample of base entity IDs are collected first, then merge scans are performed
-to obtain base selectivity ratios. Finally, the selectivity of all possible two
-way joins are obtained by counting the number of linked entity ids based on
+to obtain base selectivity ratios. After that, the selectivity of all possible
+two way joins are obtained by counting the number of linked entity ids based on
 these samples. The estimated selectivity is then calculated using
-empirical-Bayes shrinkage with a prior [5]. Later joins use these selectivity
-ratios to estimate result sizes. We have found our method is more effective than
-sampling more than 2-way joins (e.g. [8]).
+empirical-Bayes shrinkage with a prior [6]. To combat extreme skew, we implements
+skew‑aware upper‑bound correction inspired by skew‑robust statistics [5]. Later
+joins use these selectivity ratios to estimate result sizes. We have found our
+method is more effective than sampling more than 2-way joins (e.g. [9]).
 
 ### Recency based link choice (new)
 
@@ -282,7 +283,7 @@ and often do not involve more than one relation.
 
 ### Math Genealogy Benchmark
 
-This [Datalog benchmark](../benchmarks/math-bench) [7] tests Datalog rules
+This [Datalog benchmark](../benchmarks/math-bench) [10] tests Datalog rules
 evaluation performance. We compared with Datascript and Datomic, where Datalevin
 is much faster. For recursive rules in particular, Datalevin is several orders
 of magnitude faster, due to start of the art Datalog [rule engine
@@ -290,7 +291,7 @@ implementation](rule.md).
 
 ### Join Order Benchmark (JOB)
 
-The join order benchmark (JOB) [7] for SQL contains 113 complex queries that
+The join order benchmark (JOB) [8] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
 PostgreSQL [here](../benchmarks/JOB-bench). The query execution time of
 Datalevin are more consistent and much better on average than PostgreSQL, due to
@@ -339,33 +340,36 @@ SIGMOD, 2015.
 [4] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[5] Heimel, M., Markl V., and Murthy, K.. "A bayesian approach to estimating the
+[5] Haas, P., and Swami, A. N. "Sampling-based selectivity estimation for joins
+using augmented frequent value statistics." ICDE, 1995.
+
+[6] Heimel, M., Markl V., and Murthy, K.. "A bayesian approach to estimating the
 selectivity of conjunctive predicates." DBIS. 2009.
 
-[6] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
+[7] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
 optimizer: cardinality estimation, cost model, and plan enumeration." Data
 Science and Engineering, 2021
 
-[7] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
+[8] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
 2015.
 
-[8] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
+[9] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
 Sampling." CIDR. 2017.
 
-[9] D. Maier, et al. "Datalog: concepts, history, and outlook." In Declarative
+[10] D. Maier, et al. "Datalog: concepts, history, and outlook." In Declarative
 Logic Programming: Theory, Systems, and Applications. 2018. 3-100.
 
-[10] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[11] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[11] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[12] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[12] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[13] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[13] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[14] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
 
-[14] Zhao, H., et al. "I Can’t Believe It’s Not Yannakakis: Pragmatic Bitmap
+[15] Zhao, H., et al. "I Can’t Believe It’s Not Yannakakis: Pragmatic Bitmap
 Filters in Microsoft SQL Server.", CIDR, 2026.

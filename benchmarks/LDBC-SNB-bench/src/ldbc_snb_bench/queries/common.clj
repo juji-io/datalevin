@@ -91,3 +91,30 @@
      [(not= ?friend ?start)]
      [(not= ?friend ?mid1)]
      [(ground 3) ?dist]]])
+
+(def rule-interaction-half-weight
+  "Interaction half-weights between two persons (both directions)."
+  '[[(interaction-half-weight ?a ?b ?interaction ?half-weight)
+     [?interaction :message/hasCreator ?a]
+     [?interaction :message/replyOf ?post]
+     [?post :message/containerOf _]
+     [?post :message/hasCreator ?b]
+     [(ground 0.5) ?half-weight]]
+    [(interaction-half-weight ?a ?b ?interaction ?half-weight)
+     [?interaction :message/hasCreator ?b]
+     [?interaction :message/replyOf ?post]
+     [?post :message/containerOf _]
+     [?post :message/hasCreator ?a]
+     [(ground 0.5) ?half-weight]]
+    [(interaction-half-weight ?a ?b ?interaction ?half-weight)
+     [?interaction :message/hasCreator ?a]
+     [?interaction :message/replyOf ?parent]
+     [?parent :message/replyOf _]
+     [?parent :message/hasCreator ?b]
+     [(ground 0.25) ?half-weight]]
+    [(interaction-half-weight ?a ?b ?interaction ?half-weight)
+     [?interaction :message/hasCreator ?b]
+     [?interaction :message/replyOf ?parent]
+     [?parent :message/replyOf _]
+     [?parent :message/hasCreator ?a]
+     [(ground 0.25) ?half-weight]]])

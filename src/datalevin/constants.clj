@@ -435,9 +435,23 @@
 ;; datalog query engine
 
 (def ^{:dynamic true
+       :doc     "Limit of the number of items hold in global query result cache"}
+  query-result-cache-size 1024)
+
+(def ^{:dynamic true
+       :doc     "Limit of the number of items hold in global query plan cache"}
+  query-plan-cache-size 1024)
+
+(def ^{:dynamic true
        :doc     "Size below which the initial plan will execute during planning,
 above which, the same number of items will be sampled instead"}
-  init-exec-size-threshold 1000)
+  init-exec-size-threshold 500)
+
+(def ^{:dynamic true
+       :doc     "Upper bound on the plan search space. When the number of plans
+considered exceeds this cap, the planner switches from exhaustive to greedy. Default
+is Integer/MAX_VALUE, i.e. no cap."}
+  plan-search-max Integer/MAX_VALUE)
 
 (def ^{:dynamic true
        :doc     "Default ratio for merge scan size change estimate"}
@@ -451,6 +465,16 @@ above which, the same number of items will be sampled instead"}
        :doc     "Prior sample size used when blending sample link ratios with
 the default ratio to reduce skew from tiny samples"}
   link-estimate-prior-size 100)
+
+(def ^{:dynamic true
+       :doc     "Variance inflation factor for link ratio prior size. Higher
+values put more weight on the default ratio when sample CV^2 is large."}
+  link-estimate-var-alpha 0.4)
+
+(def ^{:dynamic true
+       :doc     "Multiplier over mean for link ratio upper bound. Higher
+values means trust sampled high ratio more."}
+  link-estimate-max-multi 1.0)
 
 (def ^{:dynamic true
        :doc     "Default expansion ratio for or-join size estimate"}

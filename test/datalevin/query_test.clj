@@ -1149,16 +1149,16 @@
           ;; - 100 "special" items (IDs 1-100) with :item/special true
           ;; - 10,000 "other" items (IDs 101-10100) with :item/special false
           ;; - All items have :item/value
-          n-special 100
-          n-others  10000
+          n-special (long 100)
+          n-others  (long 10000)
           tx-data   (concat
                       ;; Special items
-                      (for [i (range n-special)]
+                      (for [^long i (range n-special)]
                         {:db/id        (- (inc i))
                          :item/special true
                          :item/value   (inc i)})
                       ;; Other items
-                      (for [i (range n-others)]
+                      (for [^long i (range n-others)]
                         {:db/id        (- (+ n-special 1 i))
                          :item/special false
                          :item/value   (+ n-special 1 i)}))]
@@ -1319,32 +1319,32 @@
           ;; - Small set of "special" people (input side: 100 entities)
           ;; - Large set of friend references, most pointing to NON-special
           ;; - SIP should filter out non-special references
-          n-special     100
-          n-others      10000
-          n-referencers 10000
+          n-special     (long 100)
+          n-others      (long 10000)
+          n-referencers (long 10000)
           ;; Generate data
           tx-data       (concat
                           ;; Special people (entity IDs will be 1-100)
-                          (for [i (range n-special)]
+                          (for [^long i (range n-special)]
                             {:db/id          (- (inc i))
                              :person/name    (str "Special-" i)
                              :person/special true})
                           ;; Other people (entity IDs 101-10100)
-                          (for [i (range n-others)]
+                          (for [^long i (range n-others)]
                             {:db/id       (- (+ n-special 1 i))
                              :person/name (str "Other-" i)})
                           ;; Referencers: each references 3 special + 10 others
                           ;; This creates many friend refs to non-special that SIP can filter
-                          (for [i (range n-referencers)]
+                          (for [^long i (range n-referencers)]
                             {:db/id         (- (+ n-special n-others 1 i))
                              :person/name   (str "Referrer-" i)
                              :person/friend (vec (concat
                                                    ;; 3 refs to special people
-                                                   (for [j (range 3)]
-                                                     (- (inc (mod (+ i j) n-special))))
+                                                   (for [^long j (range 3)]
+                                                     (- (inc (long (mod (+ i j) n-special)))))
                                                    ;; 10 refs to other (non-special) people
-                                                   (for [j (range 10)]
-                                                     (- (+ n-special 1 (mod (+ i j) n-others))))))}))]
+                                                   (for [^long j (range 10)]
+                                                     (- (+ n-special 1 (long (mod (+ i j) n-others)))))))}))]
       ;; Insert data
       (d/transact! conn (vec tx-data))
 
@@ -1400,28 +1400,28 @@
           ;; - Small set of "special" people (100 entities, IDs 1-100)
           ;; - Large set of non-special people (10000 entities, IDs 101-10100)
           ;; - Referencers with friend references
-          n-special     100
-          n-others      10000
-          n-referencers 10000
+          n-special     (long 100)
+          n-others      (long 10000)
+          n-referencers (long 10000)
           tx-data       (concat
                           ;; Special people (entity IDs 1-100)
-                          (for [i (range n-special)]
+                          (for [^long i (range n-special)]
                             {:db/id          (- (inc i))
                              :person/special true})
                           ;; Other people (entity IDs 101-10100) - non-special
-                          (for [i (range n-others)]
+                          (for [^long i (range n-others)]
                             {:db/id          (- (+ n-special 1 i))
                              :person/special false})
                           ;; Referencers: each references 3 special + 10 others
-                          (for [i (range n-referencers)]
+                          (for [^long i (range n-referencers)]
                             {:db/id         (- (+ n-special n-others 1 i))
                              :person/friend (vec (concat
                                                    ;; 3 refs to special people
-                                                   (for [j (range 3)]
-                                                     (- (inc (mod (+ i j) n-special))))
+                                                   (for [^long j (range 3)]
+                                                     (- (inc (long (mod (+ i j) n-special)))))
                                                    ;; 10 refs to other people
-                                                   (for [j (range 10)]
-                                                     (- (+ n-special 1 (mod (+ i j) n-others))))))}))]
+                                                   (for [^long j (range 10)]
+                                                     (- (+ n-special 1 (long (mod (+ i j) n-others)))))))}))]
       (d/transact! conn (vec tx-data))
 
       (let [db         (d/db conn)

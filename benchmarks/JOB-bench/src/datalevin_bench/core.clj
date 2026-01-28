@@ -6,7 +6,8 @@
    [clojure.java.io :as io]
    [clojure.string :as s])
   (:import
-   [java.util Arrays]))
+   [java.util Arrays]
+   [datalevin.utl LRUCache]))
 
 (def schema
   {:aka-name/person        {:db/valueType :db.type/ref}
@@ -136,43 +137,43 @@
 (def role-type-base       50)
 (def title-base           80000000)
 
-(defn- add-comp-cast-type []
+(defn- add-comp-cast-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long comp-cast-type-base (Long/parseLong id))
                   :comp-cast-type/kind content))
-       (d/read-csv (slurp "data/comp_cast_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-company-type []
+(defn- add-company-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long company-type-base (Long/parseLong id))
                   :company-type/kind content))
-       (d/read-csv (slurp  "data/company_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-kind-type []
+(defn- add-kind-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long kind-type-base (Long/parseLong id))
                   :kind-type/kind content))
-       (d/read-csv (slurp "data/kind_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-link-type []
+(defn- add-link-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long link-type-base (Long/parseLong id))
                   :link-type/link content))
-       (d/read-csv (slurp "data/link_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-role-type []
+(defn- add-role-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long role-type-base (Long/parseLong id))
                   :role-type/role content))
-       (d/read-csv (slurp "data/role_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-info-type []
+(defn- add-info-type [reader]
   (map (fn [[id content]]
          (d/datom (+ ^long info-type-base (Long/parseLong id))
                   :info-type/info content))
-       (d/read-csv (slurp "data/info_type.csv"))))
+       (d/read-csv reader)))
 
-(defn- add-movie-link []
+(defn- add-movie-link [reader]
   (sequence
     (comp
       (map (fn [[id movie linked-movie link-type]]
@@ -184,9 +185,9 @@
                 (d/datom eid :movie-link/link-type
                          (+ ^long link-type-base (Long/parseLong link-type)))])))
       cat)
-    (d/read-csv (slurp "data/movie_link.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-aka-name []
+(defn- add-aka-name [reader]
   (sequence
     (comp
       (map
@@ -205,9 +206,9 @@
               (not (s/blank? surname-pcode))
               (conj (d/datom eid :aka-name/surname-pcode surname-pcode))))))
       cat)
-    (d/read-csv (slurp "data/aka_name.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-aka-title []
+(defn- add-aka-title [reader]
   (sequence
     (comp
       (map
@@ -237,9 +238,9 @@
               (not (s/blank? note))
               (conj (d/datom eid :aka-title/note note))))))
       cat)
-    (d/read-csv (slurp "data/aka_title.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-company-name []
+(defn- add-company-name [reader]
   (sequence
     (comp
       (map
@@ -255,9 +256,9 @@
               (not (s/blank? name-pcode-sf))
               (conj (d/datom eid :company-name/name-pcode-sf name-pcode-sf))))))
       cat)
-    (d/read-csv (slurp "data/company_name.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-complete-cast []
+(defn- add-complete-cast [reader]
   (sequence
     (comp
       (map
@@ -270,9 +271,9 @@
              (d/datom eid :complete-cast/status
                       (+ ^long comp-cast-type-base (Long/parseLong status)))])))
       cat)
-    (d/read-csv (slurp "data/complete_cast.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-keyword []
+(defn- add-keyword [reader]
   (sequence
     (comp
       (map
@@ -281,9 +282,9 @@
             [(d/datom eid :keyword/keyword keyword)
              (d/datom eid :keyword/phonetic-code phonetic-code)])))
       cat)
-    (d/read-csv (slurp "data/keyword.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-char-name []
+(defn- add-char-name [reader]
   (sequence
     (comp
       (map
@@ -299,9 +300,9 @@
               (not (s/blank? surname-pcode))
               (conj (d/datom eid :char-name/surname-pcode surname-pcode))))))
       cat)
-    (d/read-csv (slurp "data/char_name.csv"))))
+    (d/read-csv reader)))
 
-(defn- add-movie-companies []
+(defn- add-movie-companies [reader]
   (sequence
     (comp
       (map
@@ -318,7 +319,7 @@
               (not (s/blank? note))
               (conj (d/datom eid :movie-companies/note note))))))
       cat)
-    (d/read-csv (slurp "data/movie_companies.csv"))))
+    (d/read-csv reader)))
 
 (defn- add-movie-info [reader]
   (sequence
@@ -459,74 +460,65 @@
       cat)
     (d/read-csv reader)))
 
+(defn- load-table
+  "Open a CSV reader, fill db, close reader, show timing."
+  [db start label add-fn csv-file]
+  (let [db (with-open [rdr (io/reader csv-file)]
+             (d/fill-db db (add-fn rdr)))
+        now (System/currentTimeMillis)]
+    (println label "took" (- now @start))
+    (reset! start now)
+    db))
+
 (defn db [&opts]
   (println "Loading data to db, please wait...")
-  (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
-              movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")
-              movie-keyword-rdr  (io/reader "data/movie_keyword.csv")
-              name-rdr           (io/reader "data/name.csv")
-              person-info-rdr    (io/reader "data/person_info.csv")
-              title-rdr          (io/reader "data/title.csv")
-              cast-info-rdr      (io/reader "data/cast_info.csv")]
-    (let [start (atom (System/currentTimeMillis))
-          show  (fn [db label]
-                  (let [now (System/currentTimeMillis)]
-                    (println label "took" (- now @start))
-                    (reset! start now))
-                  db)
-          db
-          ;; hard-code dir to be "db" for now
-          (-> (d/empty-db "db" schema {:closed-schema? true
-                                       :kv-opts        {:mapsize      100000
-                                                        :key-compress :hu}})
-              (show "empty db")
-              (d/fill-db (add-comp-cast-type))
-              (show "comp-cast-type")
-              (d/fill-db (add-company-type))
-              (show "company-type")
-              (d/fill-db (add-kind-type))
-              (show "kind-type")
-              (d/fill-db (add-link-type))
-              (show "link-type")
-              (d/fill-db (add-role-type))
-              (show "role-type")
-              (d/fill-db (add-info-type))
-              (show "info-type")
-              (d/fill-db (add-movie-link))
-              (show "movie-link")
-              (d/fill-db (add-aka-name))
-              (show "aka-name")
-              (d/fill-db (add-aka-title))
-              (show "aka-title")
-              (d/fill-db (add-company-name))
-              (show "company-name")
-              (d/fill-db (add-complete-cast))
-              (show "complete-cast")
-              (d/fill-db (add-keyword))
-              (show "keyword")
-              (d/fill-db (add-char-name))
-              (show "char-name")
-              (d/fill-db (add-movie-companies))
-              (show "movie-companies")
-              (d/fill-db (add-movie-info movie-info-rdr))
-              (show "movie-info")
-              (d/fill-db (add-movie-info-idx movie-info-idx-rdr))
-              (show "movie-info-idx")
-              (d/fill-db (add-movie-keyword movie-keyword-rdr))
-              (show "movie-keyword")
-              (d/fill-db (add-name name-rdr))
-              (show "name")
-              (d/fill-db (add-person-info person-info-rdr))
-              (show "person-info")
-              (d/fill-db (add-title title-rdr))
-              (show "title")
-              (d/fill-db (add-cast-info cast-info-rdr))
-              (show "cast-info")
-              )]
-      (d/close-db db)
-      (println "Done loading data to db")
-      (shutdown-agents)
-      (System/exit 0))))
+  (let [load-start (System/currentTimeMillis)
+        start      (atom load-start)
+        show       (fn [db label]
+                     (let [now (System/currentTimeMillis)]
+                       (println label "took" (- now @start))
+                       (reset! start now))
+                     db)
+        db
+        ;; hard-code dir to be "db" for now
+        (-> (d/empty-db "db" schema {:closed-schema? true
+                                     :kv-opts        {:mapsize      100000
+                                                      :key-compress :hu}})
+            (show "empty db")
+            (load-table start "comp-cast-type"  add-comp-cast-type  "data/comp_cast_type.csv")
+            (load-table start "company-type"    add-company-type    "data/company_type.csv")
+            (load-table start "kind-type"       add-kind-type       "data/kind_type.csv")
+            (load-table start "link-type"       add-link-type       "data/link_type.csv")
+            (load-table start "role-type"       add-role-type       "data/role_type.csv")
+            (load-table start "info-type"       add-info-type       "data/info_type.csv")
+            (load-table start "movie-link"      add-movie-link      "data/movie_link.csv")
+            (load-table start "aka-name"        add-aka-name        "data/aka_name.csv")
+            (load-table start "aka-title"       add-aka-title       "data/aka_title.csv")
+            (load-table start "company-name"    add-company-name    "data/company_name.csv")
+            (load-table start "complete-cast"   add-complete-cast   "data/complete_cast.csv")
+            (load-table start "keyword"         add-keyword         "data/keyword.csv")
+            (load-table start "char-name"       add-char-name       "data/char_name.csv")
+            (load-table start "movie-companies" add-movie-companies "data/movie_companies.csv")
+            (load-table start "movie-info"      add-movie-info      "data/movie_info.csv")
+            (load-table start "movie-info-idx"  add-movie-info-idx  "data/movie_info_idx.csv")
+            (load-table start "movie-keyword"   add-movie-keyword   "data/movie_keyword.csv")
+            (load-table start "name"            add-name            "data/name.csv")
+            (load-table start "person-info"     add-person-info     "data/person_info.csv")
+            (load-table start "title"           add-title           "data/title.csv")
+            (load-table start "cast-info"       add-cast-info       "data/cast_info.csv"))
+        load-elapsed (- (System/currentTimeMillis) load-start)]
+    (println (format "Total load time: %d ms (%.1f s)"
+                     load-elapsed (/ load-elapsed 1000.0)))
+    (println "Running analyze...")
+    (let [analyze-start (System/currentTimeMillis)]
+      (d/analyze db)
+      (let [analyze-elapsed (- (System/currentTimeMillis) analyze-start)]
+        (println (format "Analyze time: %d ms (%.1f s)"
+                         analyze-elapsed (/ analyze-elapsed 1000.0)))))
+    (d/close-db db)
+    (println "Done loading data to db")
+    (shutdown-agents)
+    (System/exit 0)))
 
 ;; assume data is already loaded into db
 (def conn (d/get-conn "db"))
@@ -3191,25 +3183,27 @@
   (with-open [w (io/writer result-filename)]
     (d/write-csv w [["Query Name" "Planning Time (ms)" "Execution Time (ms)"]])
     (doseq [q queries]
-      (let [qname  (s/replace (name q) "q-" "")
-            query  (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
-            result (d/explain {:run? true} query (d/db conn))
-            ]
-        (d/write-csv w [[qname
-                         (:prepare-time result)
-                         (:execution-time result)]]))))
+      (let [qname     (s/replace (name q) "q-" "")
+            _         (print (str "  " qname "... "))
+            query     (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)
+            result    (d/explain {:run? true} query (d/db conn))
+            plan-time (:prepare-time result)
+            exec-time (:execution-time result)]
+        (println (str plan-time " + " exec-time " ms"))
+        (d/write-csv w [[qname plan-time exec-time]]))))
   (d/close conn)
   (println "Done. Results are in " result-filename))
 
 (defn grid [&opts]
-  (doseq [p [5.5]
-          v [2.5]
+  (doseq [p [0.4]
+          v [500]
           f [100]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
+        (.clear ^LRUCache q/*plan-cache*)
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
-          (binding [c/magic-cost-merge-scan-v  p
-                    c/magic-cost-link-probe    v
+          (binding [c/link-estimate-var-alpha  p
+                    c/init-exec-size-threshold v
                     c/link-estimate-prior-size f
                     q/*cache?*                 false]
             (let [start (System/currentTimeMillis)]

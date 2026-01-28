@@ -5,8 +5,9 @@
 ### Improved
 - [Datalog] Faster hash join execution using bitmap based sideway information
   passing (SIP) for `:_ref` type of hash join.
-- [Datalog] More robust cardinality estimation using empirical Bayes shrinkage
-  for link ratio calculation.
+- [Datalog] More robust link ratio calculation using empirical-Bayes shrinkage
+  and skew‑aware upper‑bound correction.
+- [Benchmark] Added SQLite to JOB benchmark.
 
 ## 0.10.2 (2026-01-24)
 
