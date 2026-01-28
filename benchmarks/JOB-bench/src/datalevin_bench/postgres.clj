@@ -78,9 +78,9 @@
   (println "Done. Data loaded into PostgreSQL."))
 
 (defn- query-files
-  "Return sorted list of .sql files in the current directory (non-recursive)."
+  "Return sorted list of .sql files in the queries directory."
   []
-  (->> (.listFiles (io/file "."))
+  (->> (.listFiles (io/file "queries"))
        (filter #(and (.isFile %) (s/ends-with? (.getName %) ".sql")))
        (sort-by #(.getName %))))
 
