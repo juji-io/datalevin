@@ -192,7 +192,7 @@ clj -M -m ldbc-snb-bench.core bench -o results/is-results.csv -p results/is-perf
 | IS1   | 1168.9     | 3.6           |
 | IS2   | 1173.2     | 62.0          |
 | IS3   | 1166.2     | 11.4           |
-| IS4   | 1484.7     | 09            |
+| IS4   | 1484.7     | 0.9            |
 | IS5   | 1445.9     | 1.2            |
 | IS6   | 1494.5     | 1.9            |
 | IS7   | 5424.6     | 6.8           |
