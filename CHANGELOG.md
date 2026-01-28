@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.10.3 (2026-01-27)
 
 ### Improved
 - [Datalog] Faster hash join execution using bitmap based sideway information
