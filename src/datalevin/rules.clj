@@ -1289,6 +1289,17 @@
                                  magic-seeds)
                                start-totals)
 
+                ;; Maintain seen-sets for efficient deduplication across iterations.
+                ;; This is critical for cyclic graphs where the same tuple can be
+                ;; reached through paths of different lengths.
+                seen-sets
+                (reduce
+                  (fn [m rname]
+                    (let [seen (HashSet.)]
+                      (r/add-to-seen! (start-totals rname) seen)
+                      (assoc m rname seen)))
+                  {} stratum)
+
                 final-totals
                 (loop [totals      start-totals
                        deltas      start-totals
@@ -1322,17 +1333,16 @@
                                          (empty-stratum-rels rname)))))
                             {} stratum)
 
+                          ;; Use incremental seen-set deduplication. This is more
+                          ;; efficient than rebuilding HashSets each iteration
+                          ;; and correctly handles cyclic graphs where tuples can
+                          ;; be reached via paths of different lengths.
                           new-deltas
                           (reduce
                             (fn [acc rname]
                               (let [cand-rel (candidates rname)
-                                    old-rel
-                                    (if temporal-elim?
-                                      (deltas rname)
-                                      (get totals rname
-                                           (empty-rel-for-rule
-                                             rname full-renamed-rules)))
-                                    diff     (r/difference cand-rel old-rel)]
+                                    diff     (r/difference-with-seen!
+                                               cand-rel (seen-sets rname))]
                                 (if (r/rel-not-empty diff)
                                   (assoc acc rname diff)
                                   acc)))

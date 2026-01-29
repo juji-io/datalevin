@@ -270,6 +270,30 @@
                                 (.add new-tuples tuple))))
                           new-tuples)))))
 
+(defn difference-with-seen!
+  "Returns tuples from r1 not already in seen-set. Mutates seen-set by adding
+   new tuples. More efficient than difference for iterative algorithms."
+  [r1 ^HashSet seen-set]
+  (let [^List t1 (:tuples r1)]
+    (if (or (nil? t1) (.isEmpty t1))
+      r1
+      (assoc r1 :tuples (let [new-tuples (FastList.)]
+                          (dotimes [i (.size t1)]
+                            (let [tuple (.get t1 i)
+                                  tw    (wrap-array tuple)]
+                              (when (.add seen-set tw)
+                                (.add new-tuples tuple))))
+                          new-tuples)))))
+
+(defn add-to-seen!
+  "Add all tuples from relation to seen-set. Returns the seen-set."
+  [rel ^HashSet seen-set]
+  (let [^List tuples (:tuples rel)]
+    (when (and tuples (pos? (.size tuples)))
+      (dotimes [i (.size tuples)]
+        (.add seen-set (wrap-array (.get tuples i)))))
+    seen-set))
+
 (defn select-tuples
   [pred ^List tuples]
   (let [res (FastList.)]

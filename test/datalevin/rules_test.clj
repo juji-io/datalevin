@@ -347,7 +347,6 @@
                            :where (chain ?limit ?n)]
                          db rules limit)]
           ;; Should only contain the last element(s) from the final frontier
-          ;; Since chain(n) generates chain(n+1) uniquely, the frontier size is 1.
           (is (= 1 (count res)))
           (is (= #{[limit]} res))))
       (finally
@@ -1074,5 +1073,89 @@
                          :where
                          (eligible ?name)]
                        (d/db conn) rules)))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest cyclic-transitive-closure-test
+  (let [dir  (u/tmp-dir (str "cyclic-tc-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
+                              :edge {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}}
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})]
+    ;; Create a small cyclic graph: 0 -> 1 -> 2 -> 0 (triangle)
+    ;; and 0 -> 3 (additional branch)
+    (d/transact! conn [{:db/id -1 :node 0 :edge [-2 -4]}
+                       {:db/id -2 :node 1 :edge -3}
+                       {:db/id -3 :node 2 :edge -1}
+                       {:db/id -4 :node 3}])
+
+    (let [rules '[[(tc ?a ?b)
+                   [?x :node ?a]
+                   [?x :edge ?y]
+                   [?y :node ?b]]
+                  [(tc ?a ?b)
+                   [?x :node ?a]
+                   [?x :edge ?z]
+                   [?z :node ?mid]
+                   (tc ?mid ?b)]]]
+      ;; From node 0, should reach: 1, 2, 0 (via cycle), 3
+      (is (= #{0 1 2 3}
+             (set (d/q '[:find [?b ...]
+                         :in $ % ?start
+                         :where (tc ?start ?b)]
+                       (d/db conn) rules 0))))
+
+      ;; Full TC should have no duplicates
+      (let [all-pairs (d/q '[:find ?a ?b
+                             :in $ %
+                             :where (tc ?a ?b)]
+                           (d/db conn) rules)]
+        ;; 0 reaches: 0, 1, 2, 3
+        ;; 1 reaches: 0, 1, 2, 3
+        ;; 2 reaches: 0, 1, 2, 3
+        ;; 3 reaches: nothing
+        (is (= 12 (count all-pairs)))
+        (is (= (count all-pairs) (count (set all-pairs))))))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest cyclic-mesh-tc-test
+  (let [dir  (u/tmp-dir (str "cyclic-mesh-tc-test-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:node {:db/unique :db.unique/identity}
+                              :edge {:db/valueType   :db.type/ref
+                                     :db/cardinality :db.cardinality/many}}
+                         {:kv-opts {:flags (conj c/default-env-flags
+                                                 :nosync :nolock)}})
+        ;; Create a cyclic mesh:
+        ;;  each node i connects to (i+1) mod n and (i+step) mod n
+        n    10
+        step 3
+        txs  (for [i (range n)]
+               {:db/id (- (inc i))
+                :node  i
+                :edge  (vec (distinct [(- (inc (mod (inc i) n)))
+                                       (- (inc (mod (+ i step) n)))]))})]
+    (d/transact! conn txs)
+
+    (let [rules '[[(tc ?a ?b)
+                   [?x :node ?a]
+                   [?x :edge ?y]
+                   [?y :node ?b]]
+                  [(tc ?a ?b)
+                   [?x :node ?a]
+                   [?x :edge ?z]
+                   [?z :node ?mid]
+                   (tc ?mid ?b)]]]
+      ;; Full TC on a cyclic mesh of n nodes should have n^2 pairs
+      ;; (every node reaches every other node, including itself via cycles)
+      (let [all-pairs (d/q '[:find ?a ?b
+                             :in $ %
+                             :where (tc ?a ?b)]
+                           (d/db conn) rules)]
+        (is (= (* n n) (count all-pairs)))
+        (is (= (count all-pairs) (count (set all-pairs))))))
+
     (d/close conn)
     (u/delete-files dir)))

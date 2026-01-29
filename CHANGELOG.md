@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Datalog] Improve handling of cyclic rules.
+
 ## 0.10.3 (2026-01-27)
 
 ### Improved
