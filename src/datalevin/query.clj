@@ -399,14 +399,31 @@
    Returns nil if not bound, or a set of values if bound to multiple values."
   [context var]
   (when (qu/free-var? var)
-    (when-some [rel (rel-with-attr context var)]
+    (if-some [rel (rel-with-attr context var)]
       (let [^List tuples (:tuples rel)
             n            (.size tuples)]
         (when (> n 1)
           (let [idx ((:attrs rel) var)
-                res (java.util.HashSet.)]
+                res (HashSet.)]
             (dotimes [i n]
               (.add res (aget ^objects (.get tuples i) idx)))
+            res)))
+      ;; Also check :rule-rels for small deltas (enables index probes)
+      (when-let [rule-rels (:rule-rels context)]
+        (let [threshold (long c/rule-delta-index-threshold)
+              res       (HashSet.)]
+          (loop [rels (seq rule-rels)]
+            (when rels
+              (let [[_ rel] (first rels)]
+                (when-let [idx (get (:attrs rel) var)]
+                  (let [^List tuples (:tuples rel)]
+                    (when (and tuples
+                               (pos? (.size tuples))
+                               (<= (.size tuples) threshold))
+                      (dotimes [i (.size tuples)]
+                        (.add res (aget ^objects (.get tuples i) (int idx))))))))
+              (recur (next rels))))
+          (when (> (.size res) 1)
             res))))))
 
 (defn resolve-pattern-lookup-refs [source pattern]
@@ -502,7 +519,7 @@
         entity-values     (when (and (qu/free-var? e) (keyword? a))
                             (bound-values context e))
         use-entity-multi? (and entity-values
-                               (<= (.size ^java.util.HashSet entity-values)
+                               (<= (.size ^HashSet entity-values)
                                    multi-lookup-threshold))
         ;; Check if value is bound to multiple values (and entity is NOT bound)
         value-values      (when (and (not use-entity-multi?)
@@ -511,7 +528,7 @@
                                      (keyword? a))
                             (bound-values context v))
         use-value-multi?  (and value-values
-                               (<= (.size ^java.util.HashSet value-values)
+                               (<= (.size ^HashSet value-values)
                                    multi-lookup-threshold))]
     (cond
       use-entity-multi?
@@ -580,13 +597,15 @@
 (defn collapse-rels
   [rels new-rel]
   (persistent!
-    (loop [rels    rels
-           new-rel new-rel
-           acc     (transient [])]
+    (loop [rels          rels
+           new-rel       new-rel
+           new-rel-attrs (:attrs new-rel)
+           acc           (transient [])]
       (if-some [rel (first rels)]
-        (if (not-empty (qu/intersect-keys (:attrs new-rel) (:attrs rel)))
-          (recur (next rels) (j/hash-join rel new-rel) acc)
-          (recur (next rels) new-rel (conj! acc rel)))
+        (if (not-empty (qu/intersect-keys new-rel-attrs (:attrs rel)))
+          (let [joined (j/hash-join rel new-rel)]
+            (recur (next rels) joined (:attrs joined) acc))
+          (recur (next rels) new-rel new-rel-attrs (conj! acc rel)))
         (conj! acc new-rel)))))
 
 (defn- context-resolve-val
@@ -595,7 +614,10 @@
     (when-some [^objects tuple (.get ^List (:tuples rel) 0)]
       (aget tuple ((:attrs rel) sym)))))
 
-(defn- rel-contains-attrs? [rel attrs] (some #((:attrs rel) %) attrs))
+(defn- rel-contains-attrs?
+  [rel attrs]
+  (let [rel-attrs (:attrs rel)]
+    (some #(rel-attrs %) attrs)))
 
 (defn- rel-prod-by-attrs
   [context attrs]

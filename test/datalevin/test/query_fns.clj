@@ -795,7 +795,7 @@
 (defn sum-and-double
   "Custom function for testing apply with fully qualified functions"
   [& nums]
-  (* 2 (reduce + nums)))
+  (* 2 (long (reduce + nums))))
 
 (deftest test-symbol-resolution
   (is (= 42

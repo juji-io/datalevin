@@ -1130,13 +1130,14 @@
                                                  :nosync :nolock)}})
         ;; Create a cyclic mesh:
         ;;  each node i connects to (i+1) mod n and (i+step) mod n
-        n    10
-        step 3
+        n    (long 10)
+        step (long 3)
         txs  (for [i (range n)]
-               {:db/id (- (inc i))
-                :node  i
-                :edge  (vec (distinct [(- (inc (mod (inc i) n)))
-                                       (- (inc (mod (+ i step) n)))]))})]
+               (let [i (long i)]
+                 {:db/id (- (inc i))
+                  :node  i
+                  :edge  (vec (distinct [(- (inc (long (mod (inc i) n))))
+                                         (- (inc (long (mod (+ i step) n))))]))}))]
     (d/transact! conn txs)
 
     (let [rules '[[(tc ?a ?b)

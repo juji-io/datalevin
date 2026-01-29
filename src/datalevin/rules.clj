@@ -18,7 +18,8 @@
    [datalevin.db :as db]
    [datalevin.query-util :as qu]
    [datalevin.join :as j]
-   [datalevin.util :as u :refer [raise concatv cond+]]
+   [datalevin.constants :as c]
+   [datalevin.util :as u :refer [raise concatv cond+ map+]]
    [datalevin.relation :as r])
   (:import
    [datalevin.db DB]
@@ -384,6 +385,35 @@
 
 (defn- clause->pattern [clause] (mapv #(if (qu/free-var? %) nil %) clause))
 
+(defn- rel-size
+  [rel]
+  (let [^List tuples (:tuples rel)]
+    (if tuples (.size tuples) 0)))
+
+(defn- cached-rule-rel-size
+  [context clause]
+  (when (rule-call? context clause)
+    (when-let [rel (get-in context [:rule-rels (rule-head clause)])]
+      (rel-size rel))))
+
+(defn- unbound-eav-pattern?
+  [clause context]
+  (let [bound (context-bound-vars context)
+        [e _ v] clause]
+    (and (or (qu/free-var? e) (= e '_))
+         (or (qu/free-var? v) (= v '_))
+         (not (contains? bound e))
+         (not (contains? bound v)))))
+
+(defn- scale-estimate
+  [^long n ^long factor]
+  (if (or (= n Long/MAX_VALUE) (= factor 1))
+    n
+    (let [limit (quot Long/MAX_VALUE factor)]
+      (if (> n limit)
+        Long/MAX_VALUE
+        (unchecked-multiply n factor)))))
+
 (defn- estimate-clause-size
   [clause context]
   (cond
@@ -393,14 +423,17 @@
          (not (dp/parse-fn clause)))
     (if-let [^DB db (clause-source clause context)]
       (try
-        (or (db/-count (.-store db) (clause->pattern clause))
-            Long/MAX_VALUE)
+        (let [n (or (db/-count (.-store db) (clause->pattern clause))
+                    Long/MAX_VALUE)]
+          (if (unbound-eav-pattern? clause context)
+            (scale-estimate n c/rule-unbound-pattern-penalty)
+            n))
         (catch Exception _ Long/MAX_VALUE))
       Long/MAX_VALUE)
 
     (sequential? clause)
     (if (rule-call? context clause)
-      Long/MAX_VALUE
+      (or (cached-rule-rel-size context clause) Long/MAX_VALUE)
       0)
 
     :else Long/MAX_VALUE))
@@ -451,6 +484,21 @@
             body-rel               (reduce j/hash-join (:rels body-res-context))
             projected-rel          (project-rule-result body-rel args)]
         (r/sum-rel rel projected-rel)))
+    (empty-rel-for-rule rule-name (:rules context))
+    rule-branches))
+
+(defn- eval-rule-body-with-dedup
+  [context rule-name rule-branches resolve-fn ^HashSet seen-set]
+  (reduce
+    (fn [rel branch]
+      (let [[[_ & args] & clauses] branch
+            ordered-clauses        (reorder-clauses clauses context)
+            body-res-context       (reduce resolve-fn context ordered-clauses)
+            body-rel               (reduce j/hash-join (:rels body-res-context))
+            projected-rel          (project-rule-result body-rel args)
+            deduped-rel            (r/difference-with-seen! projected-rel
+                                                            seen-set)]
+        (r/sum-rel rel deduped-rel)))
     (empty-rel-for-rule rule-name (:rules context))
     rule-branches))
 
@@ -522,6 +570,19 @@
 (def ^:private magic-special-heads #{'or 'or-join 'and 'not 'not-join})
 
 (defn- magic-head? [sym] (str/starts-with? (name sym) "magic__"))
+
+(defn- magic-rules-size
+  "Sum the tuple count of all magic-prefixed rules in the given relations map."
+  ^long [rule-rels]
+  (reduce-kv
+    (fn [^long acc rname rel]
+      (if (and (symbol? rname) (magic-head? rname))
+        (let [^List tuples (:tuples rel)]
+          (if tuples
+            (+ acc (.size tuples))
+            acc))
+        acc))
+    0 rule-rels))
 
 (defn- flatten-head-vars
   [head-clause]
@@ -1064,8 +1125,8 @@
         head-vars  (rest (ffirst (rules rule-name)))]
     (if cached-rel
       (map-rule-result cached-rel head-vars args)
-      (let [sccs       (dependency-sccs deps)
-            stratum    (some #(when (% rule-name) %) sccs)
+      (let [sccs               (dependency-sccs deps)
+            stratum            (some #(when (% rule-name) %) sccs)
             stratum-recursive? (recursive-stratum? stratum deps rule-name)]
         (if-not stratum
           (raise "Rule not found in strata" {:rule rule-name})
@@ -1079,22 +1140,22 @@
                   {} stratum)
 
                 full-renamed-rules (merge rules renamed-rules-map)
-                rules-context     (assoc context :rules full-renamed-rules)
-                stratum-branches  (mapcat identity (vals renamed-rules-map))
-                external-heads    (external-rule-heads stratum-branches
-                                                       rules-context
-                                                       stratum-set)
+                rules-context      (assoc context :rules full-renamed-rules)
+                stratum-branches   (mapcat identity (vals renamed-rules-map))
+                external-heads     (external-rule-heads stratum-branches
+                                                        rules-context
+                                                        stratum-set)
                 ;; Check if any args are bound (either constants or vars with values)
                 ;; If so, skip precomputation - filtering will be more efficient
-                has-bound-args?   (some (fn [arg]
-                                          (or (not (qu/free-var? arg))
-                                              (some #(contains? (:attrs %) arg)
-                                                    (:rels context))))
-                                        args)
-                precompute?       (and stratum-recursive?
-                                       (get context :precompute-rule-rels? true)
-                                       (seq external-heads)
-                                       (not has-bound-args?))
+                has-bound-args?    (some (fn [arg]
+                                           (or (not (qu/free-var? arg))
+                                               (some #(contains? (:attrs %) arg)
+                                                     (:rels context))))
+                                         args)
+                precompute?        (and stratum-recursive?
+                                        (get context :precompute-rule-rels? true)
+                                        (seq external-heads)
+                                        (not has-bound-args?))
                 precompute-context
                 (when precompute?
                   (-> context
@@ -1109,9 +1170,9 @@
                     (fn [m rname]
                       (let [branches (full-renamed-rules rname)]
                         (cond
-                          (nil? branches) m
+                          (nil? branches)                        m
                           (contains? (:rule-rels context) rname) m
-                          (recursive? deps rname) m
+                          (recursive? deps rname)                m
                           :else
                           (let [head-vars (rest (ffirst branches))]
                             (assoc m rname
@@ -1120,15 +1181,15 @@
                                                       head-vars
                                                       resolve-clause-fn))))))
                     {} external-heads))
-                base-rule-rels (merge (:rule-rels context) precomputed-rels)
+                base-rule-rels     (merge (:rule-rels context) precomputed-rels)
 
                 ;; Detection of Temporal Elimination
                 temporal-idx   (when stratum-recursive?
                                  (temporal-index stratum renamed-rules-map
                                                  temporal-cache))
                 temporal-elim? (or *temporal-elimination*
-                                    (and *auto-optimize-temporal*
-                                         temporal-idx))
+                                   (and *auto-optimize-temporal*
+                                        temporal-idx))
 
                 ;; 2. Determine Required Seeds
                 entry-renamed-branches (renamed-rules-map rule-name)
@@ -1183,17 +1244,21 @@
                           arg (nth args idx)]
                       (if (qu/free-var? arg)
                         ;; Bind to Outer Context Var
-                        (let [outer-rels (filterv #((:attrs %) arg)
-                                                  (:rels context))]
-                          (if (seq outer-rels)
+                        ;; Filter and extract index in single pass to avoid
+                        ;; repeated (:attrs rel) lookups
+                        (let [outer-with-idx (into []
+                                                   (keep (fn [rel]
+                                                           (when-let [idx ((:attrs rel) arg)]
+                                                             [rel idx])))
+                                                   (:rels context))]
+                          (if (seq outer-with-idx)
                             (into
                               rels
-                              (map (fn [rel]
-                                     (let [idx ((:attrs rel) arg)]
-                                       ;; View: Rename attr
-                                       (r/relation! {hv 0}
-                                                    (unique-seeds rel idx)))))
-                              outer-rels)
+                              (map (fn [[rel idx]]
+                                     ;; View: Rename attr
+                                     (r/relation! {hv 0}
+                                                  (unique-seeds rel idx))))
+                              outer-with-idx)
                             rels))
                         ;; Bind to Constant
                         (conj rels
@@ -1274,7 +1339,21 @@
                                        #(r/sum-rel warm-start %))
                                start-totals)
 
-                start-totals (if-let [magic-seeds (:magic-seeds context)]
+                ;; Track initial magic seed size for explosion detection
+                magic-seeds     (:magic-seeds context)
+                init-magic-size (if magic-seeds
+                                  (reduce-kv
+                                    (fn [^long acc _ rel]
+                                      (let [^List ts (:tuples rel)]
+                                        (if ts (+ acc (.size ts)) acc)))
+                                    0 magic-seeds)
+                                  0)
+
+                magic-threshold (when (pos? ^long init-magic-size)
+                                  (* ^long init-magic-size
+                                     ^long c/magic-explosion-factor))
+
+                start-totals (if magic-seeds
                                (reduce
                                  (fn [acc [rname seed-rel]]
                                    (if (and seed-rel (stratum-set rname))
@@ -1285,18 +1364,22 @@
                                                        seed-rel head-vars)]
                                        (update acc rname r/sum-rel seed-rel))
                                      acc))
-                                 start-totals
-                                 magic-seeds)
+                                 start-totals magic-seeds)
                                start-totals)
 
-                ;; Maintain seen-sets for efficient deduplication across iterations.
+                ;; Maintain seen-sets for deduplication across iterations.
                 ;; This is critical for cyclic graphs where the same tuple can be
                 ;; reached through paths of different lengths.
                 seen-sets
                 (reduce
                   (fn [m rname]
-                    (let [seen (HashSet.)]
-                      (r/add-to-seen! (start-totals rname) seen)
+                    (let [init-rel  (start-totals rname)
+                          init-size (if-let [^List ts (:tuples init-rel)]
+                                      (.size ts)
+                                      0)
+                          capacity  (max 16 (* 4 ^long init-size))
+                          seen      (HashSet. (int capacity))]
+                      (r/add-to-seen! init-rel seen)
                       (assoc m rname seen)))
                   {} stratum)
 
@@ -1315,38 +1398,30 @@
                                                    empty-stratum-rels
                                                    deltas))
 
-                          candidates
-                          (reduce
-                            (fn [acc rname]
-                              (let [branches (rec-branches-map rname)
-                                    deps     (stratum-deps rname)
-                                    dep-delta?
-                                    (some (fn [dep]
-                                            (let [rel (deltas dep)]
-                                              (and rel (r/rel-not-empty rel))))
-                                          deps)]
-                                (assoc acc rname
-                                       (if (and branches dep-delta?)
-                                         (eval-rule-body
-                                           iter-context rname
-                                           branches resolve-clause-fn)
-                                         (empty-stratum-rels rname)))))
-                            {} stratum)
+                          ;; Fused tuple production with deduplication.
+                          eval-one
+                          (fn [rname]
+                            (let [branches (rec-branches-map rname)
+                                  deps     (stratum-deps rname)
+                                  dep-delta?
+                                  (some (fn [dep]
+                                          (let [rel (deltas dep)]
+                                            (and rel (r/rel-not-empty rel))))
+                                        deps)]
+                              (when (and branches dep-delta?)
+                                (let [deduped (eval-rule-body-with-dedup
+                                                iter-context rname branches
+                                                resolve-clause-fn
+                                                (seen-sets rname))]
+                                  (when (r/rel-not-empty deduped)
+                                    [rname deduped])))))
 
-                          ;; Use incremental seen-set deduplication. This is more
-                          ;; efficient than rebuilding HashSets each iteration
-                          ;; and correctly handles cyclic graphs where tuples can
-                          ;; be reached via paths of different lengths.
                           new-deltas
-                          (reduce
-                            (fn [acc rname]
-                              (let [cand-rel (candidates rname)
-                                    diff     (r/difference-with-seen!
-                                               cand-rel (seen-sets rname))]
-                                (if (r/rel-not-empty diff)
-                                  (assoc acc rname diff)
-                                  acc)))
-                            {} stratum)
+                          (if (> (count stratum) 1)
+                            (into {} (keep identity) (pmap eval-one stratum))
+                            (if-let [result (eval-one (first stratum))]
+                              {(first result) (second result)}
+                              {}))
 
                           new-totals
                           (if (and temporal-elim?
@@ -1360,7 +1435,17 @@
                                   (if diff
                                     (update acc rname r/sum-rel diff)
                                     acc)))
-                              totals stratum))]
+                              totals stratum))
+
+                          ;; Check for magic explosion: if magic rules have grown
+                          ;; beyond threshold, abort and fall back to non-magic
+                          _ (when magic-threshold
+                              (let [cur-size (magic-rules-size new-totals)]
+                                (when (> cur-size ^long magic-threshold)
+                                  (throw (ex-info "Magic explosion"
+                                                  {:type         ::magic-explosion
+                                                   :current-size cur-size
+                                                   :threshold    magic-threshold})))))]
 
                       (recur new-totals new-deltas
                              (seq new-deltas) (inc iter)))))]
@@ -1409,6 +1494,7 @@
              (not (magic-head? rule-name))
              (magic-effective? rules rule-name
                                (bound-indices magic-pattern) stratum-set))
+      ;; Try magic evaluation; fall back to non-magic if explosion detected
       (let [{:keys [rules magic-heads goal]}
             (magic-rewrite-program rules rule-name magic-pattern stratum-set)
             magic-goal   (magic-name goal)
@@ -1420,8 +1506,16 @@
                               (assoc :rules rules
                                      :rules-deps (dependency-graph rules)
                                      :magic-seeds {magic-goal seed-rel}))]
-        (binding [*magic-rewrite?* false]
-          (solve-stratified* magic-context goal args resolve-clause-fn)))
+        (try
+          (binding [*magic-rewrite?* false]
+            (solve-stratified* magic-context goal args resolve-clause-fn))
+          (catch clojure.lang.ExceptionInfo e
+            (if (= ::magic-explosion (:type (ex-data e)))
+              ;; Magic caused explosion, retry without magic
+              (binding [*magic-rewrite?* false]
+                (solve-stratified* context rule-name args resolve-clause-fn))
+              ;; Re-throw other exceptions
+              (throw e)))))
       (binding [*magic-rewrite?* false]
         (solve-stratified* context rule-name args resolve-clause-fn)))))
 

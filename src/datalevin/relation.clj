@@ -75,21 +75,28 @@
 
 (defn- sum-rel*
   [attrs-a ^List tuples-a attrs-b ^List tuples-b]
-  (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
-                          [idx-b (attrs-a sym)]))
-        tlen       (->> (vals attrs-a) ^long (apply max) u/long-inc)
-        size-a     (.size tuples-a)
-        size-b     (.size tuples-b)]
-    (if (< 0 (.size tuples-b))
+  (let [n            (count attrs-b)
+        ^ints idxs-b (int-array n)
+        ^ints idxs-a (int-array n)
+        _            (loop [i 0, entries (seq attrs-b)]
+                       (when entries
+                         (let [[sym idx-b] (first entries)]
+                           (aset idxs-b i (int idx-b))
+                           (aset idxs-a i (int (attrs-a sym)))
+                           (recur (unchecked-inc i) (next entries)))))
+        tlen         (->> (vals attrs-a) ^long (apply max) u/long-inc)
+        size-a       (.size tuples-a)
+        size-b       (.size tuples-b)]
+    (if (< 0 size-b)
       (relation!
         attrs-a
         (let [res (FastList. (+ size-a size-b))]
           (.addAll res tuples-a)
-          (dotimes [i (.size tuples-b)]
+          (dotimes [i size-b]
             (let [^objects tuple-b (.get tuples-b i)
                   ^objects tuple   (object-array tlen)]
-              (doseq [[idx-b idx-a] idxb->idxa]
-                (aset tuple idx-a (aget tuple-b idx-b)))
+              (dotimes [j n]
+                (aset tuple (aget idxs-a j) (aget tuple-b (aget idxs-b j))))
               (.add res tuple)))
           res))
       (relation! attrs-a tuples-a))))
@@ -161,10 +168,10 @@
          attrs-a
          (let [^List tuples-a tuples-a
                ^List tuples-b tuples-b
-               la            (.size tuples-a)
-               lb            (.size tuples-b)
-               res           (FastList. (+ la lb))
-               seen          (HashSet.)]
+               la             (.size tuples-a)
+               lb             (.size tuples-b)
+               res            (FastList. (+ la lb))
+               seen           (HashSet.)]
            (dotimes [i la]
              (let [t  (.get tuples-a i)
                    tw (wrap-array t)]
@@ -185,15 +192,22 @@
          {:error :query/where})
 
        (every? number? (vals attrs-a))
-       (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
-                               [idx-b (attrs-a sym)]))
-             tlen       (->> (vals attrs-a) ^long (apply max) u/long-inc)
+       (let [n              (count attrs-b)
+             ^ints idxs-b   (int-array n)
+             ^ints idxs-a   (int-array n)
+             _              (loop [i 0, entries (seq attrs-b)]
+                              (when entries
+                                (let [[sym idx-b] (first entries)]
+                                  (aset idxs-b i (int idx-b))
+                                  (aset idxs-a i (int (attrs-a sym)))
+                                  (recur (unchecked-inc i) (next entries)))))
+             tlen           (->> (vals attrs-a) ^long (apply max) u/long-inc)
              ^List tuples-a tuples-a
              ^List tuples-b tuples-b
-             la         (.size tuples-a)
-             lb         (.size tuples-b)
-             res        (FastList. (+ la lb))
-             seen       (HashSet.)]
+             la             (.size tuples-a)
+             lb             (.size tuples-b)
+             res            (FastList. (+ la lb))
+             seen           (HashSet. (int (+ la lb)))]
          (dotimes [i la]
            (let [t  (.get tuples-a i)
                  tw (wrap-array t)]
@@ -203,8 +217,8 @@
          (dotimes [i lb]
            (let [^objects tuple-b (.get tuples-b i)
                  ^objects tuple   (object-array tlen)]
-             (doseq [[idx-b idx-a] idxb->idxa]
-               (aset tuple idx-a (aget tuple-b idx-b)))
+             (dotimes [j n]
+               (aset tuple (aget idxs-a j) (aget tuple-b (aget idxs-b j))))
              (let [tw (wrap-array tuple)]
                (when-not (.contains seen tw)
                  (.add seen tw)

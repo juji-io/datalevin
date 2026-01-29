@@ -39,6 +39,21 @@
   "if this version of Datalevin calls for migrating db"
   true)
 
+(def rule-unbound-pattern-penalty
+  "Multiplier for the cost of unbound EAV scans during rule evaluation."
+  3)
+
+(def rule-delta-index-threshold
+  "Maximum delta size for using index probes in recursive rules.
+   When deltas are larger than this, hash joins are preferred."
+  100)
+
+(def magic-explosion-factor
+  "Factor by which magic seed can grow before falling back to non-magic.
+   If total magic rule tuples exceed initial-seed-size * this factor,
+   magic is considered ineffective and evaluation restarts without it."
+  10)
+
 (def data-file-name
   "Name of the file that stores data on disk"
   "data.mdb")
