@@ -391,9 +391,12 @@
     (if tuples (.size tuples) 0)))
 
 (defn- cached-rule-rel-size
+  "Get cached size for a rule call. Only uses :rule-totals which contains
+   stable pre-computed results for non-recursive external rules.
+   Does NOT fall back to :rule-rels which may contain deltas during iteration."
   [context clause]
   (when (rule-call? context clause)
-    (when-let [rel (get-in context [:rule-rels (rule-head clause)])]
+    (when-let [rel (get-in context [:rule-totals (rule-head clause)])]
       (rel-size rel))))
 
 (defn- unbound-eav-pattern?
@@ -474,33 +477,62 @@
                           (drop (inc best-idx) remaining))
                  (conj ordered best-clause)))))))
 
+(defn- extract-delta-bound-values
+  "Pre-extract bound values from current rule's delta for all variables.
+   Returns a map of {var -> HashSet} for variables with multiple values,
+   or nil if delta is too large or empty."
+  [context rule-name]
+  (when-let [rel (get (:rule-rels context) rule-name)]
+    (let [^List tuples (:tuples rel)
+          threshold    (long c/rule-delta-index-threshold)]
+      (when (and tuples
+                 (pos? (.size tuples))
+                 (<= (.size tuples) threshold))
+        (let [attrs (:attrs rel)
+              n     (.size tuples)]
+          (reduce-kv
+            (fn [acc var idx]
+              (let [res (HashSet.)]
+                (dotimes [i n]
+                  (.add res (aget ^objects (.get tuples i) (int idx))))
+                (if (> (.size res) 1)
+                  (assoc acc var res)
+                  acc)))
+            {} attrs))))))
+
 (defn- eval-rule-body
   [context rule-name rule-branches resolve-fn]
-  (reduce
-    (fn [rel branch]
-      (let [[[_ & args] & clauses] branch
-            ordered-clauses        (reorder-clauses clauses context)
-            body-res-context       (reduce resolve-fn context ordered-clauses)
-            body-rel               (reduce j/hash-join (:rels body-res-context))
-            projected-rel          (project-rule-result body-rel args)]
-        (r/sum-rel rel projected-rel)))
-    (empty-rel-for-rule rule-name (:rules context))
-    rule-branches))
+  (let [delta-bounds (extract-delta-bound-values context rule-name)
+        context      (cond-> (assoc context :current-rule rule-name)
+                       delta-bounds (assoc :delta-bound-values delta-bounds))]
+    (reduce
+      (fn [rel branch]
+        (let [[[_ & args] & clauses] branch
+              ordered-clauses        (reorder-clauses clauses context)
+              body-res-context       (reduce resolve-fn context ordered-clauses)
+              body-rel               (reduce j/hash-join (:rels body-res-context))
+              projected-rel          (project-rule-result body-rel args)]
+          (r/sum-rel rel projected-rel)))
+      (empty-rel-for-rule rule-name (:rules context))
+      rule-branches)))
 
 (defn- eval-rule-body-with-dedup
   [context rule-name rule-branches resolve-fn ^HashSet seen-set]
-  (reduce
-    (fn [rel branch]
-      (let [[[_ & args] & clauses] branch
-            ordered-clauses        (reorder-clauses clauses context)
-            body-res-context       (reduce resolve-fn context ordered-clauses)
-            body-rel               (reduce j/hash-join (:rels body-res-context))
-            projected-rel          (project-rule-result body-rel args)
-            deduped-rel            (r/difference-with-seen! projected-rel
-                                                            seen-set)]
-        (r/sum-rel rel deduped-rel)))
-    (empty-rel-for-rule rule-name (:rules context))
-    rule-branches))
+  (let [delta-bounds (extract-delta-bound-values context rule-name)
+        context      (cond-> (assoc context :current-rule rule-name)
+                       delta-bounds (assoc :delta-bound-values delta-bounds))]
+    (reduce
+      (fn [rel branch]
+        (let [[[_ & args] & clauses] branch
+              ordered-clauses        (reorder-clauses clauses context)
+              body-res-context       (reduce resolve-fn context ordered-clauses)
+              body-rel               (reduce j/hash-join (:rels body-res-context))
+              projected-rel          (project-rule-result body-rel args)
+              deduped-rel            (r/difference-with-seen! projected-rel
+                                                              seen-set)]
+          (r/sum-rel rel deduped-rel)))
+      (empty-rel-for-rule rule-name (:rules context))
+      rule-branches)))
 
 (defn- branch-requires?
   [branch var context]
@@ -1328,7 +1360,8 @@
                                          (eval-rule-body
                                            (assoc clean-context
                                                   :rules full-renamed-rules
-                                                  :rels seed-rels)
+                                                  :rels seed-rels
+                                                  :rule-totals base-rule-rels)
                                            rname branches resolve-clause-fn)
                                          (empty-rel-for-rule
                                            rname full-renamed-rules)))))
@@ -1396,7 +1429,12 @@
                                  :rels seed-rels
                                  :rule-rels (merge base-rule-rels
                                                    empty-stratum-rels
-                                                   deltas))
+                                                   deltas)
+                                 ;; Only use base-rule-rels for size estimation
+                                 ;; (pre-computed non-recursive rules), not the
+                                 ;; stratum's iterative totals which can affect
+                                 ;; clause ordering in ways that break correctness
+                                 :rule-totals base-rule-rels)
 
                           ;; Fused tuple production with deduplication.
                           eval-one

@@ -394,37 +394,37 @@
 (defn substitute-constants [context pattern]
   (mapv #(or (substitute-constant context %) %) pattern))
 
+(defn- compute-rels-bound-values
+  "Compute bound values for a variable from context relations."
+  [context var]
+  (when-some [rel (rel-with-attr context var)]
+    (let [^List tuples (:tuples rel)
+          n            (.size tuples)]
+      (when (> n 1)
+        (let [idx ((:attrs rel) var)
+              res (HashSet.)]
+          (dotimes [i n]
+            (.add res (aget ^objects (.get tuples i) idx)))
+          res)))))
+
 (defn- bound-values
   "Extract unique values for a variable from context relations.
-   Returns nil if not bound, or a set of values if bound to multiple values."
+   Returns nil if not bound, or a set of values if bound to multiple values.
+   Uses :rels-bound-cache volatile for lazy caching within a clause resolution."
   [context var]
   (when (qu/free-var? var)
-    (if-some [rel (rel-with-attr context var)]
-      (let [^List tuples (:tuples rel)
-            n            (.size tuples)]
-        (when (> n 1)
-          (let [idx ((:attrs rel) var)
-                res (HashSet.)]
-            (dotimes [i n]
-              (.add res (aget ^objects (.get tuples i) idx)))
-            res)))
-      ;; Also check :rule-rels for small deltas (enables index probes)
-      (when-let [rule-rels (:rule-rels context)]
-        (let [threshold (long c/rule-delta-index-threshold)
-              res       (HashSet.)]
-          (loop [rels (seq rule-rels)]
-            (when rels
-              (let [[_ rel] (first rels)]
-                (when-let [idx (get (:attrs rel) var)]
-                  (let [^List tuples (:tuples rel)]
-                    (when (and tuples
-                               (pos? (.size tuples))
-                               (<= (.size tuples) threshold))
-                      (dotimes [i (.size tuples)]
-                        (.add res (aget ^objects (.get tuples i) (int idx))))))))
-              (recur (next rels))))
-          (when (> (.size res) 1)
-            res))))))
+    (if-some [cache (:rels-bound-cache context)]
+      ;; Use cached value or compute and cache
+      (let [cached @cache]
+        (if (contains? cached var)
+          (get cached var)
+          (let [result (or (compute-rels-bound-values context var)
+                           (get (:delta-bound-values context) var))]
+            (vswap! cache assoc var result)
+            result)))
+      ;; No cache, compute directly (fallback for non-clause contexts)
+      (or (compute-rels-bound-values context var)
+          (get (:delta-bound-values context) var)))))
 
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
@@ -955,17 +955,18 @@
 
 (defn resolve-clause
   [context clause]
-  (if (some r/rel-empty (:rels context))
-    (assoc context :rels
-           [(r/relation!
-              (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
-              (FastList.))])
-    (if (qu/rule? context clause)
-      (if (qu/source? (first clause))
-        (binding [qu/*implicit-source* (get (:sources context) (first clause))]
-          (resolve-clause context (next clause)))
-        (update context :rels collapse-rels (solve-rule context clause)))
-      (-resolve-clause context clause))))
+  (let [context (assoc context :rels-bound-cache (volatile! {}))]
+    (if (some r/rel-empty (:rels context))
+      (assoc context :rels
+             [(r/relation!
+                (zipmap (mapcat #(keys (:attrs %)) (:rels context)) (range))
+                (FastList.))])
+      (if (qu/rule? context clause)
+        (if (qu/source? (first clause))
+          (binding [qu/*implicit-source* (get (:sources context) (first clause))]
+            (resolve-clause context (next clause)))
+          (update context :rels collapse-rels (solve-rule context clause)))
+        (-resolve-clause context clause)))))
 
 (defn- or-join-build
   [sources rules ^List tuples clause bound-var bound-idx free-vars]
