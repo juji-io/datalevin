@@ -279,7 +279,7 @@ chart below plots query latency for all 113 queries in the benchmark.
 <img src="benchmarks/JOB-bench/job_benchmark_log_bars.svg" alt="JOB benchmark" height="300"></img>
 </p>
 
-Datalevin is about 2X faster than PostgreSQL and more than 3X faster than SQLite
+Datalevin is about 2.4X faster than PostgreSQL and 4X faster than SQLite
 on average in running these complex queries that involves many joins. The gain
 is mainly due to shorter query execution time as Datalevin's query optimizer
 generates better plans. Details of the analysis can be found in [this

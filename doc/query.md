@@ -1,11 +1,9 @@
 # Datalevin Query Engine
 
 Datalevin has an innovative query engine that handles complex Datalog queries on
-large data sets with ease.
-
-It is a compiler and optimizer that essentially compiles query logic into an
-efficient sequence of nested index walks, which is close to a hand-written
-program.
+large data sets with ease. It is an optimizing compiler that compiles query
+logic into an efficient sequence of index walks similar to a hand-written
+data access program.
 
 ## Motivation
 
