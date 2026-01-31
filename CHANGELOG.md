@@ -3,7 +3,10 @@
 ## WIP
 
 ### Improved
+- [Datalog] Batch and sort input tuples so index scans can take advantage of
+  DLMDB's forward seek optimization, resulting in about 12% query speedup.
 - [Datalog] Improve handling of cyclic rules.
+- [Datalog] Cache bound values in rule resolution context.
 
 ## 0.10.3 (2026-01-27)
 

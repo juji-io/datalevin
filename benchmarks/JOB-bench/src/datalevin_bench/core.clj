@@ -3197,15 +3197,15 @@
 (defn grid [&opts]
   (doseq [p [0.4]
           v [500]
-          f [100]]
+          f [65536 32768 12384 ]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
-        (.clear ^LRUCache q/*plan-cache*)
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
           (binding [c/link-estimate-var-alpha  p
                     c/init-exec-size-threshold v
-                    c/link-estimate-prior-size f
+                    c/query-pipe-batch-size    f
                     q/*cache?*                 false]
+            (.clear ^LRUCache q/*plan-cache*)
             (let [start (System/currentTimeMillis)]
               (d/q query (d/db conn))
               (println q "took" (- (System/currentTimeMillis) start))))))

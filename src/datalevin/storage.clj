@@ -35,7 +35,7 @@
             add-vec remove-vec schema closed? a-size db-name populated?]]
    [clojure.string :as str])
   (:import
-   [java.util List Comparator Collection HashMap UUID]
+   [java.util List Comparator Collection HashMap UUID Arrays]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap
     ScheduledFuture]
    [java.util.concurrent.locks ReentrantReadWriteLock]
@@ -318,14 +318,20 @@
           (.add out (object-array [(.-e r)])))))))
 
 (defn- sort-tuples-by-eid
-  [tuples ^long eid-idx]
-  (if (vector? tuples)
-    (sort-by #(nth % eid-idx) tuples)
-    (doto ^List tuples
-      (.sort (reify Comparator
-               (compare [_ a b]
-                 (Long/compare ^long (aget ^objects a eid-idx)
-                               ^long (aget ^objects b eid-idx))))))))
+  [^List tuples ^long eid-idx]
+  (doto tuples
+    (.sort (reify Comparator
+             (compare [_ a b]
+               (Long/compare ^long (aget ^objects a eid-idx)
+                             ^long (aget ^objects b eid-idx)))))))
+
+(defn- sort-tuples-by-val
+  [^List tuples ^long v-idx]
+  (doto tuples
+    (.sort (reify Comparator
+             (compare [_ a b]
+               (d/compare-with-type (aget ^objects a v-idx)
+                                    (aget ^objects b v-idx)))))))
 
 (defn- group-counts
   [aids]
@@ -913,7 +919,7 @@
         (p/remove-end-scan out))))
 
   (sample-ave-tuples-list [store attr mcount val-ranges vpred get-v?]
-    (let [out (FastList.)]
+    (let [out (FastList. (int c/init-exec-size-threshold))]
       (.sample-ave-tuples store out attr mcount val-ranges vpred get-v?)
       out))
 
@@ -966,13 +972,13 @@
             na        (count aids)
             in        (sort-tuples-by-eid in eid-idx)
             nt        (.size ^List in)
-            out       (FastList.)
+            out       (FastList. nt)
             maps      (mapv peek attrs-v)
             skips     (boolean-array (map :skip? maps))
             preds     (object-array (map :pred maps))
             fidxs     (object-array (map :fidx maps))
             aids      (int-array aids)
-            seen      (LongObjectHashMap.)
+            seen      (LongObjectHashMap. nt)
             dbi-name  c/eav]
         (scan/scan
           (with-open [^AutoCloseable iter
@@ -1020,14 +1026,16 @@
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
               aid      (props :db/aid)
-              out      (FastList.)
-              seen     (HashMap.)
+              in       (sort-tuples-by-val in v-idx)
+              nt       (.size ^List in)
+              out      (FastList. (* 2 nt))
+              seen     (HashMap. nt)
               dbi-name c/ave]
           (scan/scan
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
                           (lmdb/iterate-list-val-full dbi rtx cur))]
-              (dotimes [i (.size ^List in)]
+              (dotimes [i nt]
                 (let [^objects tuple (.get ^List in i)
                       v              (aget tuple v-idx)]
                   (val-eq-scan-e* iter out tuple seen aid v vt))))
@@ -1059,10 +1067,11 @@
     (when attr
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
+              in       (sort-tuples-by-val in v-idx)
               nt       (.size ^List in)
               aid      (props :db/aid)
               dbi-name c/ave
-              out      (FastList.)]
+              out      (FastList. nt)]
           (scan/scan
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
@@ -1101,14 +1110,16 @@
     (when attr
       (when-let [props (schema attr)]
         (let [vt       (value-type props)
-              out      (FastList.)
+              in       (sort-tuples-by-val in v-idx)
+              nt       (.size ^List in)
+              out      (FastList. nt)
               dbi-name c/ave
               aid      (props :db/aid)]
           (scan/scan
             (with-open [^AutoCloseable iter
                         (lmdb/val-iterator
                           (lmdb/iterate-list-val-full dbi rtx cur))]
-              (dotimes [i (.size ^List in)]
+              (dotimes [i nt]
                 (let [^objects tuple (.get ^List in i)
                       old-e          (aget tuple f-idx)
                       v              (aget tuple v-idx)]
@@ -1149,7 +1160,7 @@
     (let [lmdb   (.-lmdb store)
           counts ^ConcurrentHashMap (.-counts store)
           as     (.a-size store a)
-          ts     (FastList.)]
+          ts     (FastList. (int c/init-exec-size-threshold))]
       (.put counts aid as)
       (binding [c/sample-time-budget    Long/MAX_VALUE
                 c/sample-iteration-step Long/MAX_VALUE]
@@ -1370,7 +1381,8 @@
                       (index->k :eav schema high-datom true)] :id
                      [:closed (index->v :eav schema low-datom false)
                       (index->v :eav schema high-datom true)] :avg)
-        res        (FastList.)]
+        size       (.size ^Collection coll)
+        res        (FastList. size)]
     (doseq [[_ r] coll]
       (.add res (object-array [(retrieved->v lmdb r)])))
     res))
@@ -1392,7 +1404,8 @@
                       (index->k :eav schema high-datom true)] :id
                      [:closed (index->v :eav schema low-datom false)
                       (index->v :eav schema high-datom true)] :avg)
-        res        (FastList.)]
+        size       (.size ^Collection coll)
+        res        (FastList. size)]
     (doseq [attr coll] (.add res (object-array [attr])))
     res))
 
@@ -1401,7 +1414,8 @@
   (let [lmdb  (.-lmdb store)
         attrs (attrs store)
         coll  (get-list lmdb c/eav e :id :avg)
-        res   (FastList.)]
+        size  (.size ^Collection coll)
+        res   (FastList. size)]
     (doseq [^Retrieved r coll]
       (.add res (object-array [(attrs (.-a r)) (retrieved->v lmdb r)])))
     res))
@@ -1413,7 +1427,8 @@
         coll   (get-list
                  lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false)
                  :avg :id)
-        res    (FastList.)]
+        size   (.size ^Collection coll)
+        res    (FastList. size)]
     (doseq [e coll] (.add res (object-array [e])))
     res))
 
@@ -1440,7 +1455,8 @@
                       (index->k :eav schema high-datom true)] :id
                      [:closed (index->v :eav schema low-datom false)
                       (index->v :eav schema high-datom true)] :avg)
-        res        (FastList.)]
+        size       (.size ^Collection coll)
+        res        (FastList. size)]
     (doseq [[e attr] coll] (.add res (object-array [e attr])))
     res))
 
@@ -1457,7 +1473,8 @@
                       (index->k :eav schema high-datom true)] :id
                      [:closed (index->v :eav schema low-datom false)
                       (index->v :eav schema high-datom true)] :avg)
-        res        (FastList.)]
+        size       (.size ^Collection coll)
+        res        (FastList. size)]
     (doseq [[e r] coll]
       (.add res (object-array [e
                                (retrieved->attr attrs r)

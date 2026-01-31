@@ -167,13 +167,13 @@
       (cond
         ;; using `compare` on colls throws when items at the same index of
         ;; the coll are not of the same type, so we use `=`. since `a` and
-        ;; `b` are of identical type
-        (coll? a)  (if (= a b) 0 1)
+        ;; `b` are of identical type, use hash for ordering when not equal
+        (coll? a)  (if (= a b) 0 (Long/compare (hash a) (hash b)))
         (bytes? a) (if (Arrays/equals ^bytes a ^bytes b)
                      0
                      (BitOps/compareBytes a b))
-        ;; TODO change this when needs arise
-        :else      -1))))
+        ;; for different types, order by type name for consistency
+        :else      (compare (str (type a)) (str (type b)))))))
 
 (def nil-cmp (nil-check-cmp-fn compare))
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))

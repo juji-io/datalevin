@@ -3,6 +3,10 @@
 Datalevin has an innovative query engine that handles complex Datalog queries on
 large data sets with ease.
 
+It is a compiler and optimizer that essentially compiles query logic into an
+efficient sequence of nested index walks, which is close to a hand-written
+program.
+
 ## Motivation
 
 One of the main reasons for people to use Datomic flavored Datalog stores is to
@@ -281,21 +285,13 @@ with the original Datascript engine is substantial. The details can be found
 [here](../benchmarks/datascript-bench). Queries in this benchmarks are simple
 and often do not involve more than one relation.
 
-### Math Genealogy Benchmark
-
-This [Datalog benchmark](../benchmarks/math-bench) [10] tests Datalog rules
-evaluation performance. We compared with Datascript and Datomic, where Datalevin
-is much faster. For recursive rules in particular, Datalevin is several orders
-of magnitude faster, due to start of the art Datalog [rule engine
-implementation](rule.md).
-
 ### Join Order Benchmark (JOB)
 
 The join order benchmark (JOB) [8] for SQL contains 113 complex queries that
 stresses the optimizer. We ported these queries to Datalog and compared with
-PostgreSQL [here](../benchmarks/JOB-bench). The query execution time of
-Datalevin are more consistent and much better on average than PostgreSQL, due to
-better query plans produced in Datalevin.
+PostgreSQL and SQLite [here](../benchmarks/JOB-bench). The query execution time
+of Datalevin are more consistent and much better (2X and more) on average than
+PostgreSQL and SQLite, due to better query plans produced in Datalevin.
 
 ### LDBC SNB Benchmark
 
@@ -303,6 +299,14 @@ better query plans produced in Datalevin.
 databases [3], where Datalevin compares favorably with neo4j. For Short
 Interactive queries, Datalevin is orders of magnitude faster, while often faster
 in Complex Interactive queries, with a couple of exceptions.
+
+### Math Genealogy Benchmark
+
+This [Datalog benchmark](../benchmarks/math-bench) [10] tests Datalog rules
+evaluation performance. We compared with Datascript and Datomic, where Datalevin
+is much faster. For recursive rules in particular, Datalevin is several orders
+of magnitude faster, due to start of the art Datalog [rule engine
+implementation](rule.md).
 
 ## Remark
 

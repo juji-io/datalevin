@@ -263,11 +263,12 @@
         unique-call-vars (unique-vars call-args)
         ^longs projection-idxs
         (projection-indices var->positions head-idxs unique-call-vars)
-        n                (alength projection-idxs)]
+        n                (alength projection-idxs)
+        size             (.size tuples)]
     (r/relation!
       (zipmap unique-call-vars (range))
-      (let [acc (FastList.)]
-        (dotimes [i (.size tuples)]
+      (let [acc (FastList. size)]
+        (dotimes [i size]
           (let [^objects tuple (.get tuples i)]
             (when (and (const-check const-checks tuple)
                        (equality-check equality-idxs tuple))
@@ -564,11 +565,12 @@
 
 (defn- unique-seeds
   [rel idx]
-  (let [^List tuples (:tuples rel)]
+  (let [^List tuples (:tuples rel)
+        size         (.size tuples)]
     (if tuples
-      (let [seen (HashSet.)
-            res  (FastList.)]
-        (dotimes [i (.size tuples)]
+      (let [seen (HashSet. size)
+            res  (FastList. size)]
+        (dotimes [i size]
           (let [^objects tuple (.get tuples i)
                 v              (aget tuple idx)]
             (when (.add seen v)

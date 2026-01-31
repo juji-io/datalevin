@@ -567,11 +567,16 @@ values means trust sampled high ratio more."}
 
 (def ^{:dynamic true
        :doc     "Max milliseconds to wait for a tuple before failing. nil to wait forever."}
-  *query-pipe-timeout* 3000000)
+  query-pipe-timeout 3000000)
 
 (def ^{:dynamic true
        :doc     "Maximum queue size for a tuple pipe. Producers block when full, providing back-pressure."}
-  *query-pipe-capacity* 10000000)
+  query-pipe-capacity 10000000)
+
+(def ^{:dynamic true
+       :doc     "Batch size for pipelined scans. Tuples are buffered, sorted, then scanned in batch for sequential seeks. Set to 0 to disable batching."}
+  query-pipe-batch-size 12384)
+
 
 ;; search engine
 

@@ -445,7 +445,7 @@
 
 (defn map-fl
   [f coll]
-  (let [res (FastList.)]
+  (let [res (FastList. (count coll))]
     (doseq [e coll] (.add res (f e)))
     res))
 

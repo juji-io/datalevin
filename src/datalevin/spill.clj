@@ -309,7 +309,7 @@
    (let [^SpillableVector svec (SpillableVector. spill-threshold
                                                  spill-root
                                                  (volatile! nil)
-                                                 (FastList.)
+                                                 (FastList. (count vs))
                                                  (volatile! nil)
                                                  (volatile! 0)
                                                  nil)]

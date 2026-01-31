@@ -171,7 +171,21 @@
               (when (p/produce source)
                 (recur))))
           (.addAll ^Collection sink result))
-      (db/-eav-scan-v db source sink index attrs-v)))
+      (let [batch-size (long c/query-pipe-batch-size)]
+        (if (zero? batch-size)
+          (db/-eav-scan-v db source sink index attrs-v)
+          (let [buffer (p/batch-buffer)]
+            (loop []
+              (if-let [tuple (p/produce source)]
+                (do (.add buffer tuple)
+                    (when (>= (.size buffer) batch-size)
+                      (.addAll ^Collection sink
+                               (db/-eav-scan-v-list db buffer index attrs-v))
+                      (.clear buffer))
+                    (recur))
+                (when (pos? (.size buffer))
+                  (.addAll ^Collection sink
+                           (db/-eav-scan-v-list db buffer index attrs-v))))))))))
 
   (-sample [_ db tuples]
     (if (< 0 (.size ^List tuples))
@@ -195,10 +209,38 @@
       :else      (db/-val-eq-scan-e-list db src index attr)))
 
   (-execute-pipe [_ db src sink]
-    (cond
-      (int? var) (db/-val-eq-scan-e db src sink index attr var)
-      fidx       (db/-val-eq-filter-e db src sink index attr fidx)
-      :else      (db/-val-eq-scan-e db src sink index attr)))
+    (let [batch-size (long c/query-pipe-batch-size)]
+      (if (zero? batch-size)
+        (cond
+          (int? var) (db/-val-eq-scan-e db src sink index attr var)
+          fidx       (db/-val-eq-filter-e db src sink index attr fidx)
+          :else      (db/-val-eq-scan-e db src sink index attr))
+        (let [buffer (p/batch-buffer)]
+          (loop []
+            (if-let [tuple (p/produce src)]
+              (do (.add buffer tuple)
+                  (when (>= (.size buffer) batch-size)
+                    (.addAll
+                      ^Collection sink
+                      (cond
+                        (int? var)
+                        (db/-val-eq-scan-e-list db buffer index attr var)
+                        fidx
+                        (db/-val-eq-filter-e-list db buffer index attr fidx)
+                        :else
+                        (db/-val-eq-scan-e-list db buffer index attr)))
+                    (.clear buffer))
+                  (recur))
+              (when (pos? (.size buffer))
+                (.addAll
+                  ^Collection sink
+                  (cond
+                    (int? var)
+                    (db/-val-eq-scan-e-list db buffer index attr var)
+                    fidx
+                    (db/-val-eq-filter-e-list db buffer index attr fidx)
+                    :else
+                    (db/-val-eq-scan-e-list db buffer index attr))))))))))
 
   (-explain [_ _]
     (str "Obtain " var " by "
@@ -1012,8 +1054,9 @@
   (if-let [{:keys [or-by-bound free-var-idx tuple-len]}
            (or-join-build sources rules tuples clause bound-var bound-idx
                           free-vars)]
-    (let [joined (FastList.)]
-      (dotimes [i (.size tuples)]
+    (let [size   (.size tuples)
+          joined (FastList. size)]
+      (dotimes [i size]
         (let [^objects in-tuple (.get tuples i)
               bv                (aget in-tuple bound-idx)]
           (when-let [^List or-matches (.get ^HashMap or-by-bound bv)]
@@ -2853,8 +2896,8 @@
     {} cols))
 
 (defn- hash-join-execute
-  [db in-cols tgt-steps tuples]
-  (let [out (FastList.)]
+  [db in-cols tgt-steps ^List tuples]
+  (let [out (FastList. (.size tuples))]
     (hash-join-execute-into db in-cols tgt-steps tuples out)
     out))
 
@@ -2979,7 +3022,7 @@
       (if (pos? cardinality)
         (let [modified-tgt-steps (apply-sip-to-tgt-steps tgt-steps bm join-attr)
               tgt-rel            (execute-steps nil db modified-tgt-steps)
-              out                (FastList.)]
+              out                (FastList. cardinality)]
           (hash-join-execute-into in-cols tgt-rel input out)
           out)
         (FastList.)))))
@@ -2989,7 +3032,7 @@
 (defn- pipelining
   [context db attrs steps n]
   (let [n-1    (dec ^long n)
-        tuples (FastList.)
+        tuples (FastList. (int c/init-exec-size-threshold))
         pipes  (object-array (repeatedly n-1 #(if *explain*
                                                 (p/counted-tuple-pipe)
                                                 (p/tuple-pipe))))
