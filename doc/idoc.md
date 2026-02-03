@@ -35,7 +35,8 @@ be a map. Vectors are allowed as arrays. You can nest map and vectors
 arbitrarily. However, the maximal path cannot be over 511 bytes.
 
 lists are **not** allowed. `nil` values are normalized to `:json/null`. Literal
-`:json/null` is reserved and cannot be used in input.
+`:json/null` is reserved and cannot be used in input. For `:edn` format, strings
+are parsed with `clojure.edn/read-string` and must yield a map.
 
 ```clojure
 (d/transact! conn
@@ -59,6 +60,7 @@ Idoc enforces a few structural rules at ingest:
 * Lists are not allowed anywhere; use vectors for arrays.
 * `nil` values are normalized to `:json/null`.
 * Literal `:json/null` is reserved and rejected on input.
+* EDN strings must parse to a map.
 * Markdown content must start under a header (text before any header is invalid).
 * Circular references are rejected.
 
@@ -111,7 +113,9 @@ Boolean expressions can be used to combine match conditions. Use `[:and ...]`,
 #### Predicates
 
 Predicates can be used as map values or as a standalone expression with a path.
-Supported predicates are `nil?`, `>`, `>=`, `<`, `<=`, and `between`.
+Supported predicates are `nil?`, `>`, `>=`, `<`, and `<=`. Comparison operators
+support multiple arity, so you can express ranges without a dedicated
+`between` predicate.
 
 ```clojure
 ;; inline predicate in a map value
@@ -127,6 +131,13 @@ Supported predicates are `nil?`, `>`, `>=`, `<`, `<=`, and `between`.
        :where [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
      db
      '(>= [:profile :age] 30))
+
+;; range predicate via multi-arity comparison
+(d/q '[:find ?e
+       :in $ ?q
+       :where [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+     db
+     '(< 20 [:profile :age] 40))
 ```
 
 #### Wildcard paths
@@ -183,11 +194,18 @@ when the path traverses arrays.
 * **Document storage**: The original document is stored in the datom value. The
   idoc index only stores references to the datom, similar to fulltext indexing.
 * **Index structure** (per idoc domain):
-  * **doc-ref map**: `doc-id -> datom-ref` (datom or a giant pointer).
+  * **doc-ref map**: `datom-ref -> doc-id` (doc-ref is datom or a giant datom id).
   * **path dictionary**: `path -> path-id` with stable numeric ids.
   * **inverted index**: `(path-id, typed-value) -> [doc-id ...]`.
 * **Indexing**: During transactions, idoc indices are updated synchronously.
   There is no multi-step indexing process.
+* **Large values**: Values that exceed the index key size are indexed by a
+  truncated prefix (same scheme used by core indices). This can introduce
+  extra candidates, but exact matches are verified against the full document
+  during query evaluation.
+* **Id ranges**: Idoc assigns a per-domain document id using 32-bit signed
+  integers (about 2.1 billion docs per domain). Path ids are also 32-bit
+  integers and are append-only.
 * **Paths**: Paths are encoded as strings with `/` separators and include
   keyword vs string segment markers for lossless decode.
 * **Markdown**: Markdown is parsed into a nested map. Headers are normalized

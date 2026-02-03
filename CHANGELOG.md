@@ -3,8 +3,9 @@
 ## WIP
 
 ### Added
-- [Datalog] Document database feature.
-  [#169](https://github.com/juji-io/datalevin/issues/169)
+- [Datalog] Document database feature
+  [#169](https://github.com/juji-io/datalevin/issues/169). Details in
+  [doc](https://github.com/datalevin/datalevin/blob/master/doc/idoc.md)
 
 ### Improved
 - [Datalog] Batch and sort input tuples so index scans can take advantage of

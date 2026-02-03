@@ -118,6 +118,13 @@
                         :where
                         [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
                       db
+                      '(< 20 [:profile :age] 40))))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
                       '(>= [:profile :?] 30))))
         (is (= #{[1]}
                (sut/q '[:find ?e
@@ -178,8 +185,16 @@
                {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
     (is (thrown-with-msg?
           Exception
-          #"String input is not allowed for :edn idoc"
-          (sut/transact! conn [{:db/id 1 :doc/edn "{\"a\":1}"}])))
+          #"Invalid EDN string for idoc"
+          (sut/transact! conn [{:db/id 1 :doc/edn "{:a 1"}])))
+    (is (thrown-with-msg?
+          Exception
+          #"Invalid JSON string for idoc"
+          (sut/transact! conn [{:db/id 2 :doc/json "{\"a\":1"}])))
+    (is (thrown-with-msg?
+          Exception
+          #"Markdown content appears before any header"
+          (sut/transact! conn [{:db/id 3 :doc/md "Just text"}])))
     (is (thrown-with-msg?
           Exception
           #"Lists are not valid idoc values"
@@ -192,6 +207,14 @@
           Exception
           #"Idoc keys must be keywords or strings"
           (sut/transact! conn [{:db/id 4 :doc/edn {1 "bad"}}])))
+    (sut/transact! conn [{:db/id 6 :doc/edn "{:status \"active\"}"}])
+    (is (= #{[6]}
+           (sut/q '[:find ?e
+                    :in $
+                    :where
+                    [(idoc-match $ :doc/edn {:status "active"})
+                     [[?e ?a ?v]]]]
+                 (sut/db conn))))
     (sut/transact! conn [{:db/id 5 :doc/json json-doc}])
     (is (thrown-with-msg?
           Exception
@@ -268,5 +291,107 @@
         (is (nil? (bi/idoc-get json-doc' "missing")))
         (is (nil? (bi/idoc-get md-doc' :missing)))
         (is (= :json/null (bi/idoc-get alt-doc' :maybe)))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))
+
+(deftest idoc-update-test
+  (let [dir  (u/tmp-dir (str "idoc-update-test-" (UUID/randomUUID)))
+        conn (sut/create-conn
+               dir
+               base-schema
+               {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        doc1 {:status  "active"
+              :profile {:age 30 :name "Alice"}
+              :tags    ["a" "b"]
+              :orders  [{:product "A" :qty 10}
+                        {:product "B" :qty 20}]}
+        doc2 {:status  "active"
+              :profile {:age 31 :name "Alice"}
+              :tags    ["b" "c"]
+              :orders  [{:product "A" :qty 10}
+                        {:product "C" :qty 5}]}]
+    (sut/transact! conn [{:db/id 1 :doc/edn doc1}])
+    (sut/transact! conn [{:db/id 1 :doc/edn doc2}])
+    (let [db (sut/db conn)]
+      (testing "updated fields are reflected in queries"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:status "active"})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 31}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 30}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:tags "c"})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:tags "a"})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:orders {:product "C"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:orders {:product "B"}})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))
+
+(deftest idoc-giant-value-test
+  (let [dir      (u/tmp-dir (str "idoc-giant-test-" (UUID/randomUUID)))
+        conn     (sut/create-conn
+                   dir
+                   base-schema
+                   {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        base-len (+ c/+val-bytes-wo-hdr+ 100)
+        big1     (apply str (repeat base-len "a"))
+        big2     (str big1 "b")]
+    (sut/transact! conn [{:db/id 1 :doc/edn {:bio big1}}
+                         {:db/id 2 :doc/edn {:bio big2}}])
+    (let [db (sut/db conn)]
+      (testing "giant values are indexed by prefix and matched exactly"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:bio big1})))
+        (is (= #{[2]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:bio big2})))))
     (sut/close conn)
     (when-not (u/windows?) (u/delete-files dir))))

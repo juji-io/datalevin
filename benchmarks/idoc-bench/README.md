@@ -124,7 +124,7 @@ The `idoc` operation randomly picks one of these query shapes:
   - Idoc: `{:profile {:lang "en"}}`
   - SQL/Mongo: `profile.lang = 'en'`
 - **Range predicate**: score between two values.
-  - Idoc: `(between [:stats :score] 0.3 0.8)`
+  - Idoc: `(< 0.3 [:stats :score] 0.8)`
   - SQL/Mongo: `stats.score BETWEEN 0.3 AND 0.8`
 - **Wildcard (one segment)**: match any `:facts` value.
   - Idoc: `{:facts {:? "SF"}}`

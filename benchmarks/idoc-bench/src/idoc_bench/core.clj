@@ -167,7 +167,7 @@
   [spec]
   (case (:type spec)
     :nested {:profile {:lang (:value spec)}}
-    :range (list 'between [:stats :score] (:lo spec) (:hi spec))
+    :range (list '< (:lo spec) [:stats :score] (:hi spec))
     :wildcard-one {:facts {:? (:value spec)}}
     :wildcard-depth {:* {:entity {:name (:value spec)}}}
     :array {:events {:tags (:value spec)}}))

@@ -1162,16 +1162,48 @@
 
 (defn idoc-index
   [idoc-indices id-ds]
-  (doseq [res    id-ds
-          :let   [op (peek res)
-                  d (nth op 1)
+  (let [updates (volatile! {})
+        others  (FastList.)]
+    (doseq [res id-ds
+            :let [op     (peek res)
+                  d      (nth op 1)
                   domain (nth res 0)
-                  index (idoc-indices domain)]]
-    (case (nth op 0)
-      :a (idoc/add-doc index d (peek d) false)
-      :d (idoc/remove-doc index d (peek d))
-      :g (idoc/add-doc index [:g (nth d 0)] (peek d) false)
-      :r (idoc/remove-doc index [:g (nth d 0)] (peek d)))))
+                  kind   (nth op 0)]]
+      (case kind
+        (:a :d)
+        (let [k [(nth d 0) (nth d 1)]]
+          (vswap! updates update-in [domain k kind] (fnil conj []) op))
+        (:g :r)
+        (.add others res)))
+    (doseq [[domain ops] @updates
+            :let [index (idoc-indices domain)]]
+      (doseq [[_ {:keys [a d]}] ops]
+        (if (and (= 1 (count a)) (= 1 (count d)))
+          (let [old-d  (nth (first d) 1)
+                new-d  (nth (first a) 1)
+                old-ref old-d
+                new-ref new-d
+                old-doc (peek old-d)
+                new-doc (peek new-d)
+                res     (idoc/update-doc index old-ref old-doc new-ref new-doc)]
+            (when (= res :doc-missing)
+              (idoc/remove-doc index old-ref old-doc)
+              (idoc/add-doc index new-ref new-doc false)))
+          (do
+            (doseq [op a
+                    :let [d (nth op 1)]]
+              (idoc/add-doc index d (peek d) false))
+            (doseq [op d
+                    :let [d (nth op 1)]]
+              (idoc/remove-doc index d (peek d)))))))
+    (doseq [res others
+            :let [op     (peek res)
+                  d      (nth op 1)
+                  domain (nth res 0)
+                  index  (idoc-indices domain)]]
+      (case (nth op 0)
+        :g (idoc/add-doc index [:g (nth d 0)] (peek d) false)
+        :r (idoc/remove-doc index [:g (nth d 0)] (peek d))))))
 
 (defn e-sample*
   [^Store store a aid]

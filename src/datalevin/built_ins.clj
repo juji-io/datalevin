@@ -290,7 +290,8 @@
         lmdb     (.-lmdb store)]
     (keep
       (fn [doc-id]
-        (let [doc-ref (.get ^java.util.HashMap doc-refs (long doc-id))
+        (let [doc-ref (.get ^org.eclipse.collections.impl.map.mutable.primitive.IntObjectHashMap
+                            doc-refs (int doc-id))
               doc     (idoc/doc-ref->doc lmdb doc-ref)]
           (when (and doc-ref (idoc/matches-doc? index doc query))
             (if (and (vector? doc-ref)
