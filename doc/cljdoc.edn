@@ -9,4 +9,5 @@
   ["Query Engine" {:file "doc/query.md"}]
   ["Search Engine" {:file "doc/search.md"}]
   ["Vector Database" {:file "doc/vector.md"}]
+  ["Document Database" {:file "doc/idoc.md"}]
   ["Limitations" {:file "doc/limits.md"}]]}

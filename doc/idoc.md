@@ -1,10 +1,17 @@
 # Datalevin Idoc (Indexed Documents)
 
-Idoc is a structured-document value type with a built-in index. It lets you
-store nested documents in regular datoms while supporting fast path/value
-matching in Datalog queries. Idoc complements full-text and vector search: you
-can keep a canonical document in the DB, then add full-text, vector, and idoc
-indices as needed.
+Datalevin provides document database feature through idoc. Idoc is a
+structured-document value type with a built-in index. The index is keyed on
+paths in the document. It lets you store nested documents in regular datoms
+while supporting fast path/value matching in Datalog queries.
+
+Idoc is designed to be orthogonal to full-text and vector indices. You can index
+the same document in multiple ways (idoc, fulltext, vector) and mix their
+queries in a single Datalog query.
+
+Another common use of path indexed documents is to have flexibility in data
+modeling, as the document format can evolve independently without touching the
+schema.
 
 ## Usage
 
@@ -16,7 +23,7 @@ optional idoc format and a domain name:
 * `:db/idocFormat` -- one of `:edn` (default), `:json`, or `:markdown`.
 * `:db/domain` -- optional idoc domain. If absent, the attribute name is used as
   the domain. If specified, the values of this attribute will be added to the
-  domain.
+  domain. Domain allows scoped search of idocs.
 
 ```clojure
 (def schema
@@ -30,9 +37,10 @@ optional idoc format and a domain name:
 
 ### Transact idoc values
 
-Idoc values must be maps whose keys are keywords or strings, i.e. top level must
-be a map. Vectors are allowed as arrays. You can nest map and vectors
-arbitrarily. However, the maximal path cannot be over 511 bytes.
+Idoc values must be maps whose keys are keywords or strings, i.e. top level of
+the document must be a map. Vectors are allowed as arrays. You can nest map and
+vectors arbitrarily. However, the maximal path when binary encoded cannot be
+over 511 bytes.
 
 lists are **not** allowed. `nil` values are normalized to `:json/null`. Literal
 `:json/null` is reserved and cannot be used in input. For `:edn` format, strings
@@ -48,10 +56,10 @@ are parsed with `clojure.edn/read-string` and must yield a map.
     :doc/md   "# User Profile\n## Getting Started!\nName: Alice\nAge: 30"}])
 ```
 
-`#doc/md` uses Markdown parsing (see Implementation below), producing a nested
+`:doc/md` uses Markdown parsing (see Implementation below), producing a nested
 map; the parsed map is stored in the datom and indexed.
 
-### Document expectations
+### Document requirements
 
 Idoc enforces a few structural rules at ingest:
 
@@ -216,7 +224,3 @@ when the path traverses arrays.
   Querying for null requires `(nil?)`.
 
 ## Notes
-
-Idoc is designed to be orthogonal to full-text and vector indices. You can
-index the same document in multiple ways (idoc, fulltext, vector) and mix their
-queries in a single Datalog query.
