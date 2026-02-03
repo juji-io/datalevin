@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.10.4 (2026-02-03)
 
 ### Added
 - [Datalog] Document database feature supports storage and query of EDN, JSON
