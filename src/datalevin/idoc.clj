@@ -20,8 +20,8 @@
     :refer [open-dbi open-list-dbi get-value visit transact-kv]]
    [datalevin.lmdb :as l]
    [datalevin.util :as u :refer [raise]]
-   [cybermonday.ir :as cm-ir]
-   [jsonista.core :as json])
+   [jsonista.core :as json]
+   [nextjournal.markdown :as md])
   (:import
    [java.util IdentityHashMap HashSet]
    [java.util.concurrent.atomic AtomicInteger]
@@ -84,81 +84,77 @@
           (raise "Markdown content appears before any header" {}))
         m)
 
-      (str/blank? content)
-      m
+      (str/blank? content) m
 
-      :else
-      (let [existing (get-in m path)]
-        (cond
-          (nil? existing) (assoc-in m path content)
+      :else (let [existing (get-in m path)]
+              (cond
+                (nil? existing) (assoc-in m path content)
 
-          (map? existing)
-          (raise "Markdown header has both content and subheaders"
-                 {:path path})
+                (map? existing)
+                (raise "Markdown header has both content and subheaders"
+                       {:path path})
 
-          :else (assoc-in m path content))))))
+                :else (assoc-in m path content))))))
+
+(def ^:private markdown-break-tags
+  #{:softbreak :hardbreak :linebreak :soft-line-break :hard-line-break :br})
 
 (defn- node-children
-  [node]
-  (let [[_ a & more] node]
-    (if (map? a) more (cons a more))))
+  [content]
+  (cond
+    (vector? content)     content
+    (sequential? content) (vec content)
+    :else                 []))
 
 (defn- node-text
   [node]
   (cond
     (string? node) node
 
-    (vector? node)
-    (let [tag      (first node)
-          children (node-children node)]
-      (case tag
-        (:markdown/soft-line-break :markdown/hard-line-break :br) "\n"
-        (apply str (map node-text children))))
+    (map? node)
+    (let [tag      (:type node)
+          content  (:content node)
+          children (node-children content)
+          text     (:text node)]
+      (cond
+        (markdown-break-tags tag) "\n"
+        (string? content)         content
+        (string? text)            text
+        (seq children)            (apply str (map node-text children))
+        (sequential? text)        (apply str (map node-text text))
+        :else                     ""))
 
     (sequential? node) (apply str (map node-text node))
     :else              ""))
 
 (defn- header-node?
   [node]
-  (and (vector? node)
-       (let [tag (first node)]
-         (or (= tag :markdown/heading)
-             (and (keyword? tag)
-                  (re-matches #"h[1-6]" (name tag)))))))
+  (and (map? node) (identical? (:type node) :heading)))
 
 (defn- header-level
   [node]
-  (let [tag (first node)]
-    (cond
-      (= tag :markdown/heading) (:level (second node))
-      (keyword? tag) (Long/parseLong (subs (name tag) 1))
-      :else nil)))
+  (let [level (or (:heading-level node)
+                  (:level node)
+                  (get-in node [:attrs :level]))]
+    (when-not level
+      (raise "Markdown heading missing level" {:node node}))
+    (if (string? level)
+      (Long/parseLong level)
+      (long level))))
 
-(defn- header-text
-  [node]
-  (let [tag      (first node)
-        children (node-children node)]
-    (if (identical? tag :markdown/heading)
-      (node-text (if (map? (second node)) (drop 2 node) children))
-      (node-text children))))
+(defn- header-text [node] (node-text (or (:content node) (:text node) node)))
 
 (defn- top-level-nodes
   [ir]
   (cond
-    (and (vector? ir) (keyword? (first ir)))
-    (let [tag      (first ir)
-          children (node-children ir)]
-      (if (or (identical? tag :markdown/document)
-              (identical? tag :div))
-        children
-        [ir]))
-
+    (map? ir)        (let [content (:content ir)]
+                       (if (sequential? content) content [ir]))
     (sequential? ir) ir
     :else            [ir]))
 
 (defn- parse-markdown
   [s]
-  (let [ir      (cm-ir/md-to-ir (str s))
+  (let [ir      (md/parse (str s))
         nodes   (top-level-nodes ir)
         result  (volatile! {})
         levels  (volatile! [])
@@ -166,9 +162,9 @@
         content (volatile! [])]
     (doseq [node nodes]
       (if (header-node? node)
-        (let [level (long (header-level node))
-              title (header-text node)
-              key   (normalize-header title)]
+        (let [^long level (header-level node)
+              title       (header-text node)
+              key         (normalize-header title)]
           (vswap! result set-content @path @content)
           (vreset! content [])
           (loop []

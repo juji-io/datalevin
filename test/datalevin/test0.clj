@@ -10,6 +10,7 @@
    datalevin.remote-withtxn-test
    datalevin.search-test
    datalevin.vector-test
+   datalevin.idoc-test
    datalevin.main-test
    datalevin.core-test)
   (:gen-class))
@@ -25,6 +26,7 @@
           'datalevin.remote-withtxn-test
           'datalevin.search-test
           'datalevin.vector-test
+          'datalevin.idoc-test
           'datalevin.main-test
           'datalevin.core-test)]
     (System/exit (if (zero? ^long (+ ^long fail ^long error)) 0 1))))
