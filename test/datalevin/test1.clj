@@ -3,6 +3,7 @@
   (:require
    [clojure.test :as t]
    datalevin.interpret-test
+   datalevin.idoc-test
    datalevin.search-utils-test
    datalevin.spill-test
    datalevin.hu-test
@@ -66,6 +67,7 @@
           'datalevin.withtxn-test
           'datalevin.map-resize-test
           'datalevin.search-utils-test
+          'datalevin.idoc-test
           'datalevin.bits-test
           'datalevin.protocol-test
           'datalevin.interpret-test

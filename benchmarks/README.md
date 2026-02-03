@@ -17,5 +17,7 @@ The following benchmarks are included:
 * [Wikipedia Full-text Search](search-bench) compares Lucene and Datalevin on
   full-text search performance using Wikipedia data set and realistic Web
   queries.
+* [Idoc](idoc-bench) runs YCSB-style A/C/F workloads plus idoc query mixes
+  (nested paths, ranges, wildcards, arrays) to stress document queries.
 * [Write](write-bench) studies writing synthetic data to measure Datalevin's write
   performance in various conditions, and compares with SQLite.

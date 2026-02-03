@@ -20,6 +20,7 @@
    [datalevin.pipe :as p]
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.search :as s]
+   [datalevin.idoc :as idoc]
    [datalevin.vector :as v]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
@@ -35,7 +36,7 @@
             add-vec remove-vec schema closed? a-size db-name populated?]]
    [clojure.string :as str])
   (:import
-   [java.util List Comparator Collection HashMap UUID Arrays]
+   [java.util List Comparator Collection HashMap UUID]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap
     ScheduledFuture]
    [java.util.concurrent.locks ReentrantReadWriteLock]
@@ -470,12 +471,13 @@
       (when (= ^int aid ^int (b/read-buffer bf :int))
         (b/read-buffer (.rewind bf) :avg)))))
 
-(declare insert-datom delete-datom fulltext-index vector-index check
+(declare insert-datom delete-datom fulltext-index vector-index idoc-index check
          transact-opts ->SamplingWork e-sample* default-ratio* analyze*)
 
 (deftype Store [lmdb
                 search-engines
                 vector-indices
+                idoc-indices
                 ^ConcurrentHashMap counts   ; aid -> touched times
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
@@ -610,18 +612,22 @@
           ft-ds  (FastList.)
           ;; vector, same
           vi-ds  (FastList.)
+          ;; idoc [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
+          ;; or [:r d [gt v]]
+          id-ds  (FastList.)
           giants (HashMap.)]
       (locking (lmdb/write-txn lmdb)
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds vi-ds giants)
-            (delete-datom this datom txs ft-ds vi-ds giants)))
+            (insert-datom this datom txs ft-ds vi-ds id-ds giants)
+            (delete-datom this datom txs ft-ds vi-ds id-ds giants)))
         (.add txs (lmdb/kv-tx :put c/meta :max-tx
                               (.advance-max-tx this) :attr :long))
         (.add txs (lmdb/kv-tx :put c/meta :last-modified
                               (System/currentTimeMillis) :attr :long))
         (fulltext-index search-engines ft-ds)
         (vector-index vector-indices vi-ds)
+        (idoc-index idoc-indices id-ds)
         (transact-kv lmdb txs))))
 
   (fetch [_ datom]
@@ -1154,6 +1160,19 @@
       :g (add-vec index [:g (nth d 0)] (peek d))
       :r (remove-vec index [:g d]))))
 
+(defn idoc-index
+  [idoc-indices id-ds]
+  (doseq [res    id-ds
+          :let   [op (peek res)
+                  d (nth op 1)
+                  domain (nth res 0)
+                  index (idoc-indices domain)]]
+    (case (nth op 0)
+      :a (idoc/add-doc index d (peek d) false)
+      :d (idoc/remove-doc index d (peek d))
+      :g (idoc/add-doc index [:g (nth d 0)] (peek d) false)
+      :r (idoc/remove-doc index [:g (nth d 0)] (peek d)))))
+
 (defn e-sample*
   [^Store store a aid]
   (when-not (.closed? store)
@@ -1289,7 +1308,7 @@
 
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
-   ^HashMap giants]
+   ^FastList id-ds ^HashMap giants]
   (let [schema (schema store)
         opts   (opts store)
         attr   (.-a d)
@@ -1317,6 +1336,12 @@
     (when (identical? vt :db.type/vec)
       (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                    (if giant? [:g [max-gt v]] [:a [e aid v]])]))
+    (when (identical? vt :db.type/idoc)
+      (let [domain (or (props :db/domain) (u/keyword->string attr))]
+        (.add id-ds [domain
+                     (if giant?
+                       [:g [max-gt v]]
+                       [:a [e aid v]])])))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
@@ -1324,7 +1349,7 @@
 
 (defn- delete-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
-   ^HashMap giants]
+   ^FastList id-ds ^HashMap giants]
   (let [schema (schema store)
         e      (.-e d)
         attr   (.-a d)
@@ -1350,6 +1375,12 @@
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
+    (when (identical? vt :db.type/idoc)
+      (let [domain (or (props :db/domain) (u/keyword->string attr))]
+        (.add id-ds [domain
+                     (if gt
+                       [:r [gt v]]
+                       [:d [e aid v]])])))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
       (.add txs (lmdb/kv-tx :del-list c/ave ii [e] :avg :id))
       (.add txs (lmdb/kv-tx :del-list c/eav e [ii] :id :avg))
@@ -1581,6 +1612,28 @@
       (assoc m domain (v/new-vector-index lmdb opts)))
     {} domains))
 
+(defn- init-idoc-domains
+  [schema]
+  (reduce-kv
+    (fn [dms attr {:keys [db/valueType db/domain db/idocFormat]}]
+      (if (identical? valueType :db.type/idoc)
+        (let [domain (or domain (u/keyword->string attr))
+              fmt    (or idocFormat :edn)
+              prior  (get dms domain)]
+          (cond
+            (nil? prior) (assoc dms domain {:domain domain :format fmt})
+            (= (:format prior) fmt) dms
+            :else (assoc dms domain (assoc prior :format :mixed))))
+        dms))
+    {} schema))
+
+(defn- init-idoc-indices
+  [lmdb domains]
+  (reduce-kv
+    (fn [m domain opts]
+      (assoc m domain (idoc/new-idoc-index lmdb opts)))
+    {} domains))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -1609,11 +1662,13 @@
            s-domains (init-search-domains (:search-domains opts2)
                                           schema search-opts search-domains)
            v-domains (init-vector-domains (:vector-domains opts2)
-                                          schema vector-opts vector-domains)]
+                                          schema vector-opts vector-domains)
+           i-domains (init-idoc-domains schema)]
        (transact-opts lmdb opts2)
        (->Store lmdb
                 (init-engines lmdb s-domains)
                 (init-indices lmdb v-domains)
+                (init-idoc-indices lmdb i-domains)
                 (ConcurrentHashMap.)
                 (load-opts lmdb)
                 schema
@@ -1634,6 +1689,10 @@
   [indices lmdb]
   (zipmap (keys indices) (map #(v/transfer % lmdb) (vals indices))))
 
+(defn- transfer-idoc-indices
+  [indices lmdb]
+  (zipmap (keys indices) (map #(idoc/transfer % lmdb) (vals indices))))
+
 (defn transfer
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
@@ -1641,6 +1700,7 @@
   (->Store lmdb
            (transfer-engines (.-search-engines old) lmdb)
            (transfer-indices (.-vector-indices old) lmdb)
+           (transfer-idoc-indices (.-idoc-indices old) lmdb)
            (.-counts old)
            (opts old)
            (schema old)

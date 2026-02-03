@@ -767,7 +767,8 @@
 (defn default-in [qwhere]
   (if (seq (collect explicit-input qwhere))
     '[$]
-    []))
+    (let [srcs (collect #(instance? SrcVar %) qwhere)]
+      (if (some #(= '$ (:symbol %)) srcs) '[$] []))))
 
 (defn validate-query [q form form-map]
   (let [find-vars  (set (collect-vars (:qfind q)))

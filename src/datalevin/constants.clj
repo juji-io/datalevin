@@ -303,6 +303,20 @@
   "dbi name suffix for vec-ref -> vec-id map is `vec-refs`"
   "vec-refs")
 
+;; idoc
+
+(def ^:const idoc-doc-ref
+  "dbi name suffix for idoc doc-ref map is `doc-ref`"
+  "doc-ref")
+
+(def ^:const idoc-doc-index
+  "dbi name suffix for idoc inverted index is `doc-index`"
+  "doc-index")
+
+(def ^:const idoc-path-dict
+  "dbi name suffix for idoc path dictionary is `path-dict`"
+  "path-dict")
+
 (def ^:const +max-term-length+
   "The full text search engine ignores exceedingly long strings. The maximal
   allowed term length is 128 characters"
@@ -314,7 +328,7 @@
   #{:db.type/keyword :db.type/symbol :db.type/string :db.type/boolean
     :db.type/long :db.type/double :db.type/float :db.type/ref
     :db.type/bigint :db.type/bigdec :db.type/instant :db.type/uuid
-    :db.type/bytes :db.type/tuple :db.type/vec})
+    :db.type/bytes :db.type/tuple :db.type/vec :db.type/idoc})
 
 (def ^:no-doc kv-value-types
   #{:keyword :symbol :string :boolean :long :double :float :instant :uuid

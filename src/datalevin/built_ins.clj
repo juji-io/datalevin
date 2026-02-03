@@ -21,6 +21,7 @@
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as st]
+   [datalevin.idoc :as idoc]
    [datalevin.vector :as v]
    [datalevin.entity :as de]
    [datalevin.remote :as r]
@@ -258,7 +259,7 @@
   ([db query]
    (vec-neighbors db query nil))
   ([db arg1 arg2]
-   (vec-neighbors db arg1 arg2 nil))
+  (vec-neighbors db arg1 arg2 nil))
   ([^DB db arg1 arg2 arg3]
    (let [^Store store (.-store db)
          lmdb         (.-lmdb store)
@@ -274,6 +275,75 @@
        (if (and (sequential? domains) (seq domains))
          domains
          (raise "Need a vector search domain." {}))))))
+
+(defn- idoc-domain
+  [store attr]
+  (let [props ((schema store) attr)]
+    (when-not (clojure.core/identical? (:db/valueType props) :db.type/idoc)
+      (raise "Attribute is not an idoc type: " attr {:attribute attr}))
+    (or (:db/domain props) (u/keyword->string attr))))
+
+(defn- idoc-match-domain
+  [^Store store index query]
+  (let [ids      (idoc/candidate-ids index query)
+        doc-refs (.-doc-refs ^datalevin.idoc.IdocIndex index)
+        lmdb     (.-lmdb store)]
+    (keep
+      (fn [doc-id]
+        (let [doc-ref (.get ^java.util.HashMap doc-refs (long doc-id))
+              doc     (idoc/doc-ref->doc lmdb doc-ref)]
+          (when (and doc-ref (idoc/matches-doc? index doc query))
+            (if (and (vector? doc-ref)
+                     (clojure.core/= :g (first doc-ref)))
+              (st/gt->datom lmdb (second doc-ref))
+              (st/e-aid-v->datom store doc-ref)))))
+      ids)))
+
+(defn idoc-match
+  "Function that searches indexed documents. Returns matching datoms in the
+  form of [e a v] for convenient vector destructuring.
+
+  When neither an attribute nor :domains is specified, a full DB search is
+  performed across all idoc domains.
+
+  * Full DB search: `[(idoc-match $ {:status \"active\"}) [[?e ?a ?v]]]`
+  * Attribute specific search:
+       `[(idoc-match $ :person/profile {:status \"active\"}) [[?e ?a ?v]]]`
+  * Domain specific search:
+       `[(idoc-match $ {:status \"active\"} {:domains [\"profiles\"]})
+         [[?e ?a ?v]]]`"
+  ([db query]
+   (idoc-match db query nil))
+  ([db arg1 arg2]
+   (idoc-match db arg1 arg2 nil))
+  ([^DB db arg1 arg2 arg3]
+   (let [^Store store (.-store db)
+         indices      (.-idoc-indices store)
+         attr?        (keyword? arg1)
+         domains0     (if attr?
+                        [(idoc-domain store arg1)]
+                        (:domains arg2))
+         query        (if attr? arg2 arg1)
+         opts         (if attr? arg3 arg2)
+         domains      (or (when (map? opts) (:domains opts))
+                          domains0
+                          (keys indices))
+         missing      (seq (remove indices domains))]
+     (when missing
+       (raise "Idoc domain not found: " missing {:domains missing}))
+     (sequence
+       (comp (mapcat #(idoc-match-domain store (indices %) query))
+             dd/datom->vec-xf)
+       (if (seq domains) domains [])))))
+
+(defn idoc-get
+  "Function that extracts a value by path from a bound idoc document."
+  [doc & path]
+  (let [segments (if (and (clojure.core/= 1 (clojure.core/count path))
+                          (vector? (first path)))
+                   (first path)
+                   (vec path))]
+    (idoc/get-path doc segments)))
 
 (defn- less
   ([_] true)
@@ -660,6 +730,8 @@
    'quote         identity,
    'q             q,
    'fulltext      fulltext,
+   'idoc-match    idoc-match,
+   'idoc-get      idoc-get,
    'vec-neighbors vec-neighbors,
    'tuple         vector,
    'untuple       identity

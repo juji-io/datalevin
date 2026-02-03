@@ -2,6 +2,10 @@
 
 ## WIP
 
+### Added
+- [Datalog] Document database feature.
+  [#169](https://github.com/juji-io/datalevin/issues/169)
+
 ### Improved
 - [Datalog] Batch and sort input tuples so index scans can take advantage of
   DLMDB's forward seek optimization, resulting in about 12% query speedup.

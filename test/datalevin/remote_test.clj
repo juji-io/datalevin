@@ -1,7 +1,6 @@
 (ns datalevin.remote-test
   (:require
    [datalevin.remote :as sut]
-   [datalevin.storage :as st]
    [datalevin.interpret :as i]
    [datalevin.interface :as if]
    [datalevin.datom :as d]
@@ -16,6 +15,55 @@
    [datalevin.datom Datom]))
 
 (use-fixtures :each server-fixture)
+
+(deftest remote-idoc-test
+  (let [dir    "dtlv://datalevin:datalevin@localhost/remote-idoc-test"
+        schema {:doc/idoc {:db/valueType :db.type/idoc
+                           :db/domain    "profiles"}}
+        conn   (dc/create-conn
+                 dir
+                 schema
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (dc/transact!
+      conn
+      [{:db/id    1
+        :doc/idoc {:status  "active"
+                   :profile {:age 30}
+                   :tags    ["a" "b"]}}
+       {:db/id    2
+        :doc/idoc {:status  "inactive"
+                   :profile {:age 40}}}])
+    (let [db (dc/db conn)]
+      (is (= #{[1]}
+             (dc/q '[:find ?e
+                     :in $
+                     :where
+                     [(idoc-match $ :doc/idoc {:status "active"})
+                      [[?e ?a ?v]]]]
+                   db)))
+      (is (= #{[1]}
+             (dc/q '[:find ?e
+                     :in $
+                     :where
+                     [(idoc-match $ :doc/idoc {:tags "b"})
+                      [[?e ?a ?v]]]]
+                   db)))
+      (is (= #{[2]}
+             (dc/q '[:find ?e
+                     :in $ ?q
+                     :where
+                     [(idoc-match $ :doc/idoc ?q) [[?e ?a ?v]]]]
+                   db
+                   '(> [:profile :age] 35))))
+      (is (= #{[1]}
+             (dc/q '[:find ?e
+                     :in $ ?q
+                     :where
+                     [(idoc-match $ ?q {:domains ["profiles"]})
+                      [[?e ?a ?v]]]]
+                   db
+                   {:status "active"}))))
+    (dc/close conn)))
 
 (deftest dt-store-ops-test
   (testing "permission"

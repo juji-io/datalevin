@@ -18,6 +18,7 @@
    [datalevin.datom :as d :refer [datom datom-added datom?]]
    [datalevin.util :as u
     :refer [case-tree raise defrecord-updatable conjv conjs concatv cond+]]
+   [datalevin.idoc :as idoc]
    [datalevin.storage :as s]
    [datalevin.bits :as b]
    [datalevin.remote :as r]
@@ -647,17 +648,23 @@
     v))
 
 (defn- correct-datom*
-  [^Datom datom vt]
-  (d/datom (.-e datom) (.-a datom) (type-coercion vt (.-v datom))
+  [^Datom datom v]
+  (d/datom (.-e datom) (.-a datom) v
            (d/datom-tx datom) (d/datom-added datom)))
+
+(declare correct-value)
 
 (defn- correct-datom
   [store ^Datom datom]
-  (correct-datom* datom (validate-type store (.-a datom) (.-v datom))))
+  (correct-datom* datom (correct-value store (.-a datom) (.-v datom))))
 
 (defn- correct-value
   [store a v]
-  (type-coercion (validate-type store a v) v))
+  (let [props ((schema store) a)
+        vt    (s/value-type props)]
+    (if (identical? vt :db.type/idoc)
+      (idoc/parse-value a props (opts store) v)
+      (type-coercion (validate-type store a v) v))))
 
 (defn- pour
   [store datoms]
@@ -872,11 +879,8 @@
     entity))
 
 (defn- validate-datom [^DB db ^Datom datom]
-  (let [store (.-store db)
-        a     (.-a datom)
-        v     (.-v datom)
-        vt    (validate-type store a v)
-        v     (correct-value store a v)]
+  (let [a (.-a datom)
+        v (.-v datom)]
     (when (and (-is-attr? db a :db/unique) (datom-added datom))
       (when-some [found (or (not (.isEmpty
                                    (.subSet ^TreeSortedSet (:avet db)
@@ -887,7 +891,7 @@
                {:error     :transact/unique
                 :attribute a
                 :datom     datom})))
-    vt))
+    v))
 
 (defn- validate-attr [attr at]
   (when-not (keyword? attr)
@@ -952,7 +956,8 @@
        (update :db-after advance-max-eid eid)))))
 
 (defn- with-datom [db datom]
-  (let [^Datom datom (correct-datom* datom (validate-datom db datom))
+  (let [v           (validate-datom db datom)
+        ^Datom datom (correct-datom* datom v)
         add          #(do (.add ^TreeSortedSet % datom) %)
         del          #(do (.remove ^TreeSortedSet % datom) %)]
     (if (datom-added datom)
@@ -1144,14 +1149,15 @@
                     (update report ::new-attributes u/conjv a))
         e         (entid-strict db e)
         v         (if (ref? db a) (entid-strict db v) v)
-        new-datom (datom e a v tx)
+        v'        (correct-value store a v)
+        new-datom (datom e a v' tx)
         multival? (multival? db a)
         ^Datom old-datom
         (if multival?
           (or (sf (.subSet ^TreeSortedSet (:eavt db)
-                           (datom e a v tx0)
-                           (datom e a v txmax)))
-              (first (fetch (:store db) (datom e a v))))
+                           (datom e a v' tx0)
+                           (datom e a v' txmax)))
+              (first (fetch (:store db) (datom e a v'))))
           (or (sf (.subSet ^TreeSortedSet (:eavt db)
                            (datom e a nil tx0)
                            (datom e a nil txmax)))
@@ -1160,7 +1166,7 @@
       (nil? old-datom)
       (transact-report report new-datom)
 
-      (= (.-v old-datom) v)
+      (= (.-v old-datom) v')
       (if (some #(and (not (datom-added %)) (= % new-datom))
                 (:tx-data report))
         ;; special case: retract then transact the same datom

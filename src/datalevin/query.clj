@@ -1100,9 +1100,13 @@
         to-rm   (keep-indexed
                   (fn [i qin]
                     (let [v (:variable qin)
-                          s (:symbol v)]
+                          s (:symbol v)
+                          val (nth inputs i)]
                       (when (and (instance? BindScalar qin)
                                  (instance? Variable v)
+                                 ;; keep list inputs as variables so function
+                                 ;; calls don't eagerly evaluate them
+                                 (not (list? val))
                                  (not (some #(= s %) finds))
                                  (not (some #(or-join-var? % s) owheres)))
                         [i s])))

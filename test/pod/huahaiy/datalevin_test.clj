@@ -165,6 +165,53 @@
     (pd/close conn)
     (u/delete-files dir)))
 
+(deftest idoc-pod-test
+  (let [dir    (u/tmp-dir (str "datalevin-pod-idoc-test-" (UUID/randomUUID)))
+        schema {:doc/idoc {:db/valueType :db.type/idoc
+                           :db/domain    "profiles"}}
+        conn   (pd/create-conn dir schema)]
+    (pd/transact!
+      conn
+      [{:db/id    1
+        :doc/idoc {:status  "active"
+                   :profile {:age 30}
+                   :tags    ["a" "b"]}}
+       {:db/id    2
+        :doc/idoc {:status  "inactive"
+                   :profile {:age 40}}}])
+    (let [db (pd/db conn)]
+      (is (= #{[1]}
+             (pd/q '[:find ?e
+                     :in $
+                     :where
+                     [(idoc-match $ :doc/idoc {:status "active"})
+                      [[?e ?a ?v]]]]
+                   db)))
+      (is (= #{[1]}
+             (pd/q '[:find ?e
+                     :in $
+                     :where
+                     [(idoc-match $ :doc/idoc {:tags "b"})
+                      [[?e ?a ?v]]]]
+                   db)))
+      (is (= #{[2]}
+             (pd/q '[:find ?e
+                     :in $ ?q
+                     :where
+                     [(idoc-match $ :doc/idoc ?q) [[?e ?a ?v]]]]
+                   db
+                   '(> [:profile :age] 35))))
+      (is (= #{[1]}
+             (pd/q '[:find ?e
+                     :in $ ?q
+                     :where
+                     [(idoc-match $ ?q {:domains ["profiles"]})
+                      [[?e ?a ?v]]]]
+                   db
+                   {:status "active"}))))
+    (pd/close conn)
+    (u/delete-files dir)))
+
 (deftest entity-test
   (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
         conn (pd/get-conn dir
