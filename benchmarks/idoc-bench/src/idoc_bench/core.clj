@@ -13,6 +13,8 @@
    [clojure.string :as str]
    [datalevin.constants :as c]
    [datalevin.core :as d]
+   [datalevin.idoc :as idoc]
+   [datalevin.query :as dq]
    [datalevin.util :as u]
    [jsonista.core :as json]
    [next.jdbc :as jdbc]
@@ -64,6 +66,7 @@
    :threads     1
    :batch-size  1000
    :idoc-ratio  20
+   :idoc-trace? false
    :hotset      1.0
    :seed        42
    :dir         nil
@@ -139,11 +142,31 @@
       (assoc-in [:stats :score] (double (.nextDouble r)))
       (assoc-in [:stats :last_seen] (+ base-ts (.nextInt r 2000000)))))
 
+(defn- update-doc-patch
+  [doc ^Random r]
+  (let [score     (double (.nextDouble r))
+        last-seen (+ base-ts (.nextInt r 2000000))
+        doc'      (-> doc
+                      (assoc-in [:stats :score] score)
+                      (assoc-in [:stats :last_seen] last-seen))]
+    [doc' [[:set [:stats :score] score]
+           [:set [:stats :last_seen] last-seen]]]))
+
 (defn- rmw-doc
   [doc ^Random r]
   (-> doc
       (update-in [:stats :score] (fnil #(+ % 0.01) 0.0))
       (assoc-in [:stats :last_seen] (+ base-ts (.nextInt r 2000000)))))
+
+(defn- rmw-doc-patch
+  [doc ^Random r]
+  (let [score     (double ((fnil #(+ % 0.01) 0.0) (get-in doc [:stats :score])))
+        last-seen (+ base-ts (.nextInt r 2000000))
+        doc'      (-> doc
+                      (assoc-in [:stats :score] score)
+                      (assoc-in [:stats :last_seen] last-seen))]
+    [doc' [[:set [:stats :score] score]
+           [:set [:stats :last_seen] last-seen]]]))
 
 (defn- rand-id
   [^Random r records hotset]
@@ -208,8 +231,71 @@
   [a b]
   (merge-with (fn [x y]
                 {:count     (+ (:count x) (:count y))
-                 :nanos-sum (+ (:nanos-sum x) (:nanos-sum y))})
+                  :nanos-sum (+ (:nanos-sum x) (:nanos-sum y))})
               a b))
+
+(def ^:private empty-idoc-trace
+  {:count          0
+   :cand-sum       0
+   :verify-sum     0
+   :doc-fetch-sum  0
+   :match-sum      0
+   :elapsed-ns-sum 0
+   :exact-count    0})
+
+(defn- trace-key
+  [spec event]
+  (if-let [domain (:domain event)]
+    [(:type spec) domain]
+    (:type spec)))
+
+(defn- accumulate-idoc-trace
+  [m event]
+  (let [m (or m empty-idoc-trace)
+        cand-count   (long (or (:candidate-count event) 0))
+        verify-count (long (or (:verify-count event) 0))
+        doc-fetches  (long (or (:doc-fetch-count event) 0))
+        match-count  (long (or (:match-count event) 0))
+        elapsed-ns   (long (or (:elapsed-ns event) 0))
+        exact?       (boolean (:exact? event))]
+    (-> m
+        (update :count inc)
+        (update :cand-sum + cand-count)
+        (update :verify-sum + verify-count)
+        (update :doc-fetch-sum + doc-fetches)
+        (update :match-sum + match-count)
+        (update :elapsed-ns-sum + elapsed-ns)
+        (update :exact-count + (if exact? 1 0)))))
+
+(defn- update-idoc-trace!
+  [trace spec event]
+  (when (and trace (= (:event event) :idoc-match-domain))
+    (let [k (trace-key spec event)]
+      (swap! trace update k accumulate-idoc-trace event))))
+
+(defn- print-idoc-trace
+  [trace]
+  (when (and trace (seq @trace))
+    (println)
+    (println "idoc trace")
+    (println "type\tcount\tavg-cand\tavg-verify\tavg-docs\tavg-match\tavg-ms\texact%")
+    (doseq [[k {:keys [count cand-sum verify-sum doc-fetch-sum
+                       match-sum elapsed-ns-sum exact-count]}]
+            (sort-by key @trace)]
+      (let [avg     (fn [sum] (if (pos? count) (/ sum (double count)) 0.0))
+            avg-ms  (if (pos? count) (/ elapsed-ns-sum (* count 1e6)) 0.0)
+            exact-p (if (pos? count) (* 100.0 (/ exact-count count)) 0.0)
+            kstr    (if (vector? k)
+                      (str (name (first k)) "/" (second k))
+                      (name k))]
+        (println (str kstr
+                      "\t" count
+                      "\t" (format "%.1f" (avg cand-sum))
+                      "\t" (format "%.1f" (avg verify-sum))
+                      "\t" (format "%.1f" (avg doc-fetch-sum))
+                      "\t" (format "%.1f" (avg match-sum))
+                      "\t" (format "%.4f" (double avg-ms))
+                      "\t" (format "%.1f" (double exact-p))))))))
 
 (defn- print-summary
   [stats total-ops elapsed-ms]
@@ -399,13 +485,18 @@
 
 (defn- datalevin-handlers
   [opts docs]
-  (let [{:keys [records hotset batch-size env-flags keep-db?]} opts
-        dir (or (:dir opts)
-                (str (u/tmp-dir (str "idoc-bench-" (UUID/randomUUID)))))
-        conn (d/create-conn
-               dir
-               schema
-               {:kv-opts {:flags (into c/default-env-flags env-flags)}})]
+  (let [{:keys [records hotset batch-size env-flags keep-db? idoc-trace?]} opts
+
+        dir    (or (:dir opts)
+                   (str (u/tmp-dir (str "idoc-bench-" (UUID/randomUUID)))))
+        conn   (d/create-conn
+                 dir
+                 schema
+                 {:kv-opts {:flags (into c/default-env-flags env-flags)}})
+        trace  (when idoc-trace? (atom {}))
+        tracer (fn [spec]
+                 (when trace
+                   (fn [event] (update-idoc-trace! trace spec event))))]
     {:system       :datalevin
      :label        dir
      :load!        (fn []
@@ -419,25 +510,30 @@
                            db (d/db conn)]
                        (:mem/doc (d/entity db id))))
      :op-update    (fn [{:keys [conn]} r]
-                     (let [id   (rand-id r records hotset)
-                           idx  (dec id)
-                           doc  (nth @docs idx)
-                           doc' (update-doc doc r)]
+                     (let [id         (rand-id r records hotset)
+                           idx        (dec id)
+                           doc        (nth @docs idx)
+                           [doc' ops] (update-doc-patch doc r)]
                        (swap! docs assoc idx doc')
-                       (d/transact! conn [{:db/id id :mem/doc doc'}])))
+                       (d/transact! conn [[:db.fn/patchIdoc id :mem/doc ops]])))
      :op-rmw       (fn [{:keys [conn]} r]
-                     (let [id   (rand-id r records hotset)
-                           db   (d/db conn)
-                           doc  (:mem/doc (d/entity db id))
-                           doc' (rmw-doc doc r)]
+                     (let [id         (rand-id r records hotset)
+                           db         (d/db conn)
+                           doc        (:mem/doc (d/entity db id))
+                           [doc' ops] (rmw-doc-patch doc r)]
                        (swap! docs assoc (dec id) doc')
-                       (d/transact! conn [{:db/id id :mem/doc doc'}])))
+                       (d/transact! conn [[:db.fn/patchIdoc id :mem/doc ops]])))
      :op-idoc      (fn [{:keys [conn]} r]
                      (let [spec (rand-query-spec r)
                            q    (spec->idoc-query spec)
                            db   (d/db conn)]
-                       (count (d/q q-idoc db q))))
+                       (binding [dq/*cache?* false]
+                         (if trace
+                           (binding [idoc/*trace* (tracer spec)]
+                             (count (d/q q-idoc db q)))
+                           (count (d/q q-idoc db q))))))
      :close!       (fn [] (d/close conn))
+     :trace-report (when trace #(print-idoc-trace trace))
      :cleanup!     (fn []
                      (when-not keep-db?
                        (when-not (u/windows?)
@@ -447,33 +543,33 @@
   [opts docs]
   (let [{:keys [records hotset batch-size keep-db? pg-url pg-user
                 pg-password pg-table]} opts
-        ds (jdbc/get-datasource
+        ds                             (jdbc/get-datasource
              (cond-> {:jdbcUrl pg-url}
                pg-user (assoc :user pg-user)
                pg-password (assoc :password pg-password)))
-        init! (fn []
+        init!                          (fn []
                 (jdbc/execute! ds [(str "DROP TABLE IF EXISTS " pg-table)])
                 (jdbc/execute! ds [(str "CREATE TABLE " pg-table
                                         " (id BIGINT PRIMARY KEY, doc JSONB NOT NULL)")]))
-        load! (fn []
+        load!                          (fn []
                 (jdbc/with-transaction [tx ds]
                   (doseq [batch (partition-all
                                   batch-size
                                   (map-indexed
-                                   (fn [idx doc]
-                                     {:id  (inc idx)
-                                      :doc (pg-jsonb (encode-json doc))})
-                                   @docs))]
+                                    (fn [idx doc]
+                                      {:id  (inc idx)
+                                       :doc (pg-jsonb (encode-json doc))})
+                                    @docs))]
                     (sql/insert-multi! tx (keyword pg-table) batch)))
                 (println "Building indexes ...")
                 (pg-create-indexes! ds pg-table)
                 (println "Running ANALYZE ...")
                 (pg-analyze! ds pg-table))
-        op-count (fn [conn spec]
+        op-count                       (fn [conn spec]
                    (let [[sql params] (pg-idoc-query pg-table spec)]
                      (sql-count conn sql params)))
-        read-doc (fn [conn id] (sql-read-doc conn pg-table id))
-        update-doc! (fn [conn id doc]
+        read-doc                       (fn [conn id] (sql-read-doc conn pg-table id))
+        update-doc!                    (fn [conn id doc]
                       (jdbc/execute! conn
                                      [(str "UPDATE " pg-table " SET doc = ? WHERE id = ?")
                                       (pg-jsonb (encode-json doc))
@@ -709,12 +805,22 @@
               (try
                 (let [stats (run-thread handlers (assoc opts :ops n-ops) tid)]
                   (swap! results conj stats))
+                (catch Throwable t
+                  (binding [*out* *err*]
+                    (println "idoc-bench worker failed"
+                             {:tid tid
+                              :ops n-ops
+                              :workload (:workload opts)
+                              :system (:system opts)}))
+                  (.printStackTrace t))
                 (finally
                   (.countDown latch))))))
         (.await latch)
         (let [elapsed-ms (- (System/currentTimeMillis) start-ms)
               stats      (reduce merge-stats {} @results)]
-          (print-summary stats ops elapsed-ms)))
+          (print-summary stats ops elapsed-ms)
+          (when-let [report (:trace-report handlers)]
+            (report))))
       (finally
         ((:close! handlers))
         ((:cleanup! handlers))))))
@@ -743,6 +849,7 @@
                               (nnext more))
         "--idoc"       (recur (assoc opts :idoc-ratio (Long/parseLong (second more)))
                               (nnext more))
+        "--idoc-trace" (recur (assoc opts :idoc-trace? true) (next more))
         "--hotset"     (recur (assoc opts :hotset (Double/parseDouble (second more)))
                               (nnext more))
         "--dir"        (recur (assoc opts :dir (second more))
@@ -780,6 +887,7 @@
   (println "  --threads N        Number of worker threads (default 1)")
   (println "  --batch N          Load batch size (default 1000)")
   (println "  --idoc N           Weight for idoc queries (default 20)")
+  (println "  --idoc-trace       Trace idoc candidate sizes and match stats")
   (println "  --hotset P         Hotset fraction (0-1, default 1.0)")
   (println "  --dir PATH         Datalevin DB directory (default /tmp/idoc-bench-<uuid>)")
   (println "  --sqlite-path PATH SQLite DB file path")

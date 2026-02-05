@@ -1,10 +1,19 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Datalog] `:db.fn/patchIdoc` transaction function to directly update values in
+  idoc.
+
+### Improved
+- [Datalog] `idoc-match` query function performance optimization.
+
 ## 0.10.4 (2026-02-03)
 
 ### Added
-- [Datalog] Document database feature supports storage and query of EDN, JSON
-  and Markdown documents
+- [Datalog] Document database feature (idoc) supports storage and query of EDN,
+  JSON and Markdown documents
   [#169](https://github.com/juji-io/datalevin/issues/169). Details in
   [doc](https://github.com/datalevin/datalevin/blob/master/doc/idoc.md)
 

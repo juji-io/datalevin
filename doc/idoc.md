@@ -11,7 +11,7 @@ queries in a single Datalog query.
 
 Another common use of path indexed documents is to have flexibility in data
 modeling, as the document format can evolve independently without touching the
-schema.
+overall schema.
 
 ## Usage
 
@@ -58,6 +58,51 @@ are parsed with `clojure.edn/read-string` and must yield a map.
 
 `:doc/md` uses Markdown parsing (see Implementation below), producing a nested
 map; the parsed map is stored in the datom and indexed.
+
+### Patch idoc values
+
+For `:db.type/idoc` attributes that have cardinality one, transacting a new idoc
+value would replace existing one, and the system would intelligently identify
+and update the changed paths/values only.
+
+If you have small updates in idoc and you do not want to transact the updated
+document as a whole,  `:db.fn/patchIdoc` is a built-in transaction function that
+updates nested values in an idoc document without rewriting the full document in
+user code:
+
+```clojure
+(d/transact! conn
+  [[:db.fn/patchIdoc 1 :doc/edn
+    [[:set    [:profile :age] 31]
+     [:unset  [:profile :middle]]
+     [:update [:tags] :conj "c"]]]])
+```
+
+For cardinality many idoc attributes, provide the old value to identify which
+document to patch:
+
+```clojure
+(d/transact! conn
+  [[:db.fn/patchIdoc 1 :doc/many {:profile {:age 35}}
+    [[:set [:profile :age] 40]]]])
+```
+
+Patch ops:
+
+* `:set`    — set value at path
+* `:unset`  — remove map key or vector element at path
+* `:update` — update value at path using one of:
+  `:conj` (vector), `:merge`/`:assoc`/`:dissoc` (map), `:inc`/`:dec` (number)
+
+Paths are vectors of keyword/string keys and integer indices. Wildcards (`:?`,
+`:*`) are not allowed. Integer segments address a specific vector element; idoc
+indexing still matches arrays by value (any element).
+
+`patchIdoc` works on idoc attributes with cardinality one. For cardinality many,
+an old value must be provided (see example above).
+
+Entity id (`e`) accepts a numeric id, lookup ref (`[unique-attr value]`), or
+keyword ident. Tempids are not supported for `patchIdoc`.
 
 ### Document requirements
 
@@ -222,5 +267,3 @@ when the path traverses arrays.
   matched during query.
 * **JSON nulls**: JSON `null` values are normalized to `:json/null` at ingest.
   Querying for null requires `(nil?)`.
-
-## Notes

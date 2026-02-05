@@ -366,6 +366,165 @@
     (sut/close conn)
     (when-not (u/windows?) (u/delete-files dir))))
 
+(deftest idoc-patch-test
+  (let [dir  (u/tmp-dir (str "idoc-patch-test-" (UUID/randomUUID)))
+        conn (sut/create-conn
+               dir
+               base-schema
+               {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        doc  {:status  "active"
+              :profile {:age 30 :name "Alice"}
+              :tags    ["a"]
+              :orders  [{:product "A" :qty 10}
+                        {:product "B" :qty 20}]}]
+    (sut/transact! conn [{:db/id 1 :doc/edn doc}])
+    (sut/transact! conn
+                   [[:db.fn/patchIdoc 1 :doc/edn
+                     [[:set [:profile :age] 31]
+                      [:update [:tags] :conj "b"]]]])
+    (let [db (sut/db conn)]
+      (testing "patch set + update reflected in queries"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 31}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 30}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:tags "b"})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/transact! conn
+                   [[:db.fn/patchIdoc 1 :doc/edn
+                     [[:set [:orders 1 :product] "C"]]]])
+    (let [db (sut/db conn)]
+      (testing "patch path with vector index updates idoc index"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:orders {:product "C"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:orders {:product "B"}})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/transact! conn
+                   [[:db.fn/patchIdoc 1 :doc/edn
+                     [[:update [:profile] :assoc :title "dev"]
+                      [:update [:profile] :merge {:country "US"}]
+                      [:update [:profile] :dissoc :name]
+                      [:update [:profile :age] :inc]]]])
+    (let [db (sut/db conn)]
+      (testing "patch update ops reflected in queries"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:title "dev"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:country "US"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:name "Alice"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 32}})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/transact! conn
+                   [[:db.fn/patchIdoc 1 :doc/edn
+                     [[:unset [:profile :title]]
+                      [:update [:profile :age] :dec]]]])
+    (let [db (sut/db conn)]
+      (testing "patch unset + dec reflected in queries"
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:title "dev"}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/edn {:profile {:age 31}})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))
+
+(deftest idoc-patch-many-test
+  (let [dir     (u/tmp-dir (str "idoc-patch-many-test-" (UUID/randomUUID)))
+        schema  (assoc base-schema
+                  :doc/many {:db/valueType  :db.type/idoc
+                             :db/cardinality :db.cardinality/many
+                             :db/domain     "many-docs"})
+        conn    (sut/create-conn
+                  dir
+                  schema
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})
+        doc-a   {:profile {:age 30 :name "A"}}
+        doc-b   {:profile {:age 35 :name "B"}}]
+    (sut/transact! conn [{:db/id 1 :doc/many [doc-a doc-b]}])
+    (sut/transact! conn
+                   [[:db.fn/patchIdoc 1 :doc/many doc-b
+                     [[:set [:profile :age] 40]]]])
+    (let [db (sut/db conn)]
+      (testing "patch replaces targeted value in cardinality many"
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/many {:profile {:age 40}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/many {:profile {:age 35}})
+                         [[?e ?a ?v]]]]
+                      db)))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $
+                        :where
+                        [(idoc-match $ :doc/many {:profile {:age 30}})
+                         [[?e ?a ?v]]]]
+                      db)))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))
+
 (deftest idoc-giant-value-test
   (let [dir      (u/tmp-dir (str "idoc-giant-test-" (UUID/randomUUID)))
         conn     (sut/create-conn

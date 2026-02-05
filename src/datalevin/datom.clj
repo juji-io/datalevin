@@ -25,7 +25,9 @@
   (datom-tx [this])
   (datom-added [this]))
 
-(deftype Datom [^long e a v ^long tx ^:unsynchronized-mutable ^int _hash]
+(deftype Datom [^long e a v ^long tx
+                ^:unsynchronized-mutable ^int _hash
+                ^:unsynchronized-mutable ^clojure.lang.IPersistentMap _meta]
   IDatom
   (datom-tx [d] (if (pos? tx) tx (- tx)))
   (datom-added [d] (pos? tx))
@@ -41,6 +43,13 @@
 
   clojure.lang.IHashEq
   (hasheq [d] (.hashCode d))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [this meta]
+    (Datom. e a v tx _hash meta))
 
   clojure.lang.Seqable
   (seq [d] (seq-datom d))
@@ -65,9 +74,10 @@
   (assoc [d k v] (assoc-datom d k v)))
 
 (defn ^Datom datom
-  ([e a v] (Datom. e a v tx0 0))
-  ([e a v tx] (Datom. e a v tx 0))
-  ([e a v tx added] (Datom. e a v (if added tx (- ^long tx)) 0)))
+  ([e a v] (Datom. e a v tx0 0 nil))
+  ([e a v tx] (Datom. e a v tx 0 nil))
+  ([e a v tx added]
+   (Datom. e a v (if added tx (- ^long tx)) 0 nil)))
 
 (defn delete
   "create a datom that means deleting it"
@@ -133,13 +143,16 @@
 (defn- ^Datom empty-datom [] (datom 0 nil nil 0 0))
 
 (defn- ^Datom assoc-datom [^Datom d k v]
-  (case k
-    :e     (datom v (.-a d) (.-v d) (datom-tx d) (datom-added d))
-    :a     (datom (.-e d) v (.-v d) (datom-tx d) (datom-added d))
-    :v     (datom (.-e d) (.-a d) v (datom-tx d) (datom-added d))
-    :tx    (datom (.-e d) (.-a d) (.-v d) v (datom-added d))
-    :added (datom (.-e d) (.-a d) (.-v d) (datom-tx d) v)
-    (throw (IllegalArgumentException. (str "invalid key for #datalevin/Datom: " k)))))
+  (let [m  (meta d)
+        d' (case k
+             :e     (datom v (.-a d) (.-v d) (datom-tx d) (datom-added d))
+             :a     (datom (.-e d) v (.-v d) (datom-tx d) (datom-added d))
+             :v     (datom (.-e d) (.-a d) v (datom-tx d) (datom-added d))
+             :tx    (datom (.-e d) (.-a d) (.-v d) v (datom-added d))
+             :added (datom (.-e d) (.-a d) (.-v d) (datom-tx d) v)
+             (throw (IllegalArgumentException.
+                      (str "invalid key for #datalevin/Datom: " k))))]
+    (if m (with-meta d' m) d')))
 
 ;; printing and reading
 

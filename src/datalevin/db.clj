@@ -1150,7 +1150,9 @@
         e         (entid-strict db e)
         v         (if (ref? db a) (entid-strict db v) v)
         v'        (correct-value store a v)
-        new-datom (datom e a v' tx)
+        meta*     (meta ent)
+        new-datom (cond-> (datom e a v' tx)
+                    meta* (with-meta meta*))
         multival? (multival? db a)
         ^Datom old-datom
         (if multival?
@@ -1228,6 +1230,7 @@
   #{:db.fn/call
     :db.fn/cas
     :db/cas
+    :db.fn/patchIdoc
     :db/add
     :db/retract
     :db.fn/retractAttribute
@@ -1393,6 +1396,58 @@
                          (recur (transact-add report [:db/add e a nv]) entities)
                          (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
                                 {:error :transact/cas, :old (first datoms), :expected ov, :new nv })))))
+
+                 (identical? op :db.fn/patchIdoc)
+                 (let [argc (count entity)]
+                   (when-not (or (= argc 4) (= argc 5))
+                     (raise "Bad arity for :db.fn/patchIdoc, expected 4 or 5 items: "
+                            entity
+                            {:error :transact/syntax, :operation op, :tx-data entity}))
+                   (let [[_ e a x y] entity
+                         [old-v ops] (if (= argc 5) [x y] [nil x])
+                         e           (entid-strict db e)
+                         _           (validate-attr a entity)
+                         props       (schema a)
+                         _           (when-not (identical? (s/value-type props) :db.type/idoc)
+                                       (raise "Attribute is not an idoc type: " a
+                                              {:attribute a}))
+                         many?       (multival? db a)
+                         _           (when (and many? (nil? old-v))
+                                       (raise "Idoc patch requires old value for cardinality many attribute: "
+                                              a {:attribute a}))
+                         _           (when (and (not many?) (some? old-v))
+                                       (raise "Idoc patch old value is only supported for cardinality many attribute: "
+                                              a {:attribute a}))
+                         ops         (or ops [])]
+                     (if (empty? ops)
+                       (recur report entities)
+                       (if many?
+                         (let [old-v'    (correct-value store a old-v)
+                               old-datom (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                                                          (datom e a old-v' tx0)
+                                                          (datom e a old-v' txmax)))
+                                             (first (fetch (:store db)
+                                                           (datom e a old-v'))))]
+                           (when-not old-datom
+                             (raise "Idoc patch old value not found: " old-v
+                                    {:attribute a :value old-v}))
+                           (let [old-doc             (.-v ^Datom old-datom)
+                                 {:keys [doc paths]} (idoc/apply-patch old-doc ops)]
+                             (if (= old-doc doc)
+                               (recur report entities)
+                               (let [ent (with-meta [:db/add e a doc]
+                                           {:idoc/patch {:paths paths}})]
+                                 (recur (transact-add report ent)
+                                        (cons [:db/retract e a old-doc] entities))))))
+                         (let [old-datom           (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                                                                    (datom e a nil tx0)
+                                                                    (datom e a nil txmax)))
+                                                       (ea-first-datom store e a))
+                               old-doc             (when old-datom (.-v ^Datom old-datom))
+                               {:keys [doc paths]} (idoc/apply-patch (or old-doc {}) ops)
+                               ent                 (with-meta [:db/add e a doc]
+                                                     {:idoc/patch {:paths paths}})]
+                           (recur (transact-add report ent) entities))))))
 
                  (tx-id? e)
                  (recur (allocate-eid tx-time report e (current-tx report))
@@ -1564,8 +1619,7 @@
 
              :else
              (raise "Bad entity type at " entity ", expected map, vector, or datom"
-                    {:error :transact/syntax, :tx-data entity})
-             ))
+                    {:error :transact/syntax, :tx-data entity})))
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
        (load-datoms pstore (:tx-data rp))

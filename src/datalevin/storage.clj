@@ -1185,17 +1185,25 @@
                 new-ref new-d
                 old-doc (peek old-d)
                 new-doc (peek new-d)
-                res     (idoc/update-doc index old-ref old-doc new-ref new-doc)]
+                patch   (some-> (meta (first a)) :idoc/patch)
+                res     (if patch
+                          (idoc/patch-doc index old-ref old-doc new-ref new-doc
+                                          patch)
+                          (idoc/update-doc index old-ref old-doc new-ref new-doc))]
             (when (= res :doc-missing)
               (idoc/remove-doc index old-ref old-doc)
               (idoc/add-doc index new-ref new-doc false)))
           (do
-            (doseq [op a
-                    :let [d (nth op 1)]]
-              (idoc/add-doc index d (peek d) false))
-            (doseq [op d
-                    :let [d (nth op 1)]]
-              (idoc/remove-doc index d (peek d)))))))
+            (let [adds (mapv (fn [op]
+                               (let [d (nth op 1)]
+                                 [d (peek d)]))
+                             a)
+                  rems (mapv (fn [op]
+                               (let [d (nth op 1)]
+                                 [d (peek d)]))
+                             d)]
+              (idoc/add-docs index adds false)
+              (idoc/remove-docs index rems))))))
     (doseq [res others
             :let [op     (peek res)
                   d      (nth op 1)
@@ -1370,10 +1378,12 @@
                    (if giant? [:g [max-gt v]] [:a [e aid v]])]))
     (when (identical? vt :db.type/idoc)
       (let [domain (or (props :db/domain) (u/keyword->string attr))]
-        (.add id-ds [domain
-                     (if giant?
-                       [:g [max-gt v]]
-                       [:a [e aid v]])])))
+        (let [op    (if giant?
+                      [:g [max-gt v]]
+                      [:a [e aid v]])
+              patch (some-> (meta d) :idoc/patch)
+              op    (if patch (with-meta op {:idoc/patch patch}) op)]
+          (.add id-ds [domain op]))))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v

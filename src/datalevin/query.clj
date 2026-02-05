@@ -362,6 +362,26 @@
 (defprotocol IBinding
   ^Relation (in->rel [binding value]))
 
+(defn- bindtuple-attrs
+  "Build attr -> index map for a tuple binding. Returns nil when binding
+  contains unsupported elements or duplicate variables."
+  [^BindTuple binding]
+  (loop [i 0, bs (:bindings binding), attrs {}]
+    (if (seq bs)
+      (let [b (first bs)]
+        (cond
+          (instance? BindScalar b)
+          (let [sym (get-in b [:variable :symbol])]
+            (if (contains? attrs sym)
+              nil
+              (recur (inc i) (next bs) (assoc attrs sym i))))
+
+          (instance? BindIgnore b)
+          (recur (inc i) (next bs) attrs)
+
+          :else nil))
+      attrs)))
+
 (extend-protocol IBinding
   BindIgnore
   (in->rel [_ _]
@@ -375,12 +395,36 @@
   BindColl
   (in->rel [binding coll]
     (cond
+      (instance? Relation coll) coll
+
       (not (u/seqable? coll))
       (raise "Cannot bind value " coll " to collection " (dp/source binding)
              {:error :query/binding, :value coll, :binding (dp/source binding)})
 
       (empty? coll)
       (empty-rel binding)
+
+      (and (instance? java.util.List coll)
+           (instance? BindTuple (:binding binding)))
+      (if-let [attrs (bindtuple-attrs (:binding binding))]
+        (let [^List tuples coll
+              size        (.size tuples)]
+          (if (zero? size)
+            (empty-rel binding)
+            (let [t0 (.get tuples 0)]
+              (if (u/array? t0)
+                (let [^objects t0 t0
+                      needed     (count (:bindings (:binding binding)))]
+                  (when (< (alength t0) needed)
+                    (raise "Not enough elements in a collection " coll
+                           " to bind tuple " (dp/source binding)
+                           {:error   :query/binding
+                            :value   coll
+                            :binding (dp/source binding)}))
+                  (r/relation! attrs tuples))
+                (transduce (map #(in->rel (:binding binding) %))
+                           r/sum-rel coll)))))
+        (transduce (map #(in->rel (:binding binding) %)) r/sum-rel coll))
 
       :else
       (transduce (map #(in->rel (:binding binding) %)) r/sum-rel coll)))
