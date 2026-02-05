@@ -2362,7 +2362,7 @@
   (wrap-error
     (let [[db-name query opts] args
           db                   (get-db server db-name writing?)
-          data                 (dbq/fulltext db query opts)]
+          data                 (dbq/fulltext-datoms db query opts)]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))

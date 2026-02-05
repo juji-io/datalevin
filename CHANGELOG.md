@@ -7,7 +7,10 @@
   idoc.
 
 ### Improved
-- [Datalog] `idoc-match` query function performance optimization.
+- [Datalog] Optimize performance of `idoc-match`, `vec-neighbors` and `fulltext`
+  query function by returning tuples.
+- [Datalog] Rewrite unused variables so that the query engine does not waste
+  resources to resolve them.
 
 ## 0.10.4 (2026-02-03)
 

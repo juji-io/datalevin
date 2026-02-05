@@ -25,7 +25,7 @@
    [datalevin.vector :as v]
    [datalevin.entity :as de]
    [datalevin.remote :as r]
-   [datalevin.util :as u :refer [raise]]
+   [datalevin.util :as u :refer [raise long-inc]]
    [datalevin.interface :refer [search schema search-vec attrs]])
   (:import
    [java.nio.charset StandardCharsets]
@@ -161,18 +161,22 @@
   or-fn)
 
 (defn- fulltext*
-  [store lmdb engines query opts domain]
+  [^FastList res aid->attr lmdb engines query opts domain]
   (let [engine (engines domain)]
-    (sequence
-      (map (fn [d]
-             (if (clojure.core/= :g (nth d 0))
-               (st/gt->datom lmdb (peek d))
-               (st/e-aid-v->datom store d))))
-      (search engine query opts))))
+    (doseq [d (search engine query opts)]
+      (.add res
+            (if (clojure.core/= :g (nth d 0))
+              (let [datom (st/gt->datom lmdb (peek d))]
+                (object-array [(dd/datom-e datom)
+                               (dd/datom-a datom)
+                               (dd/datom-v datom)]))
+              (object-array [(nth d 0)
+                             (aid->attr (nth d 1))
+                             (peek d)]))))))
 
 (defn fulltext
-  "Function that does fulltext search. Returns matching datoms in the form
-  of [e a v] for convenient vector destructuring.
+  "Function that does fulltext search. Returns matching tuples of
+  (e a v) for convenient destructuring.
 
   The last argument of the 4 arity function is the search option map.
   See [[datalevin.core.search]].
@@ -197,6 +201,7 @@
    (let [^Store store (.-store db)
          lmdb         (.-lmdb store)
          engines      (.-search-engines store)
+         aid->attr    (attrs store)
          attr?        (keyword? arg1)
          domains      (if attr?
                         [(u/keyword->string arg1)]
@@ -207,10 +212,10 @@
        (when-not (-> store schema arg1 :db.fulltext/autoDomain)
          (raise ":db.fulltext/autoDomain is not true for " arg1
                 {})))
-     (sequence
-       (comp (mapcat #(fulltext* store lmdb engines query opts %))
-          dd/datom->vec-xf)
-       (if (seq domains) domains (keys engines))))))
+     (let [res (FastList.)]
+       (doseq [domain (if (seq domains) domains (keys engines))]
+         (fulltext* res aid->attr lmdb engines query opts domain))
+       res))))
 
 (defn fulltext-datoms
   ([db query]
@@ -219,31 +224,39 @@
    (let [store (.-store db)]
      (if (instance? DatalogStore store)
        (r/fulltext-datoms store query opts)
-       (fulltext db query opts)))))
+       (let [^FastList res (fulltext db query opts)]
+         (mapv (fn [^objects t] [(aget t 0) (aget t 1) (aget t 2)])
+               res))))))
 
 (defn- vec-neighbors*
-  [store lmdb indices query opts domain]
+  [^FastList res aid->attr lmdb indices query opts domain]
   (when-let [index (indices domain)]
     (let [display (or (:display opts)
                       (:display (.-search-opts ^datalevin.vector.VectorIndex index))
-                      :refs)]
-      (sequence
-        (map (fn [d]
-               (if (clojure.core/= :refs+dists display)
-                 (let [[vec-ref dist] d
-                       datom          (if (clojure.core/= :g (nth vec-ref 0))
-                                        (st/gt->datom lmdb (peek vec-ref))
-                                        (st/e-aid-v->datom store vec-ref))]
-                   (conj (dd/datom-eav datom) dist))
-                 (let [datom (if (clojure.core/= :g (nth d 0))
-                               (st/gt->datom lmdb (peek d))
-                               (st/e-aid-v->datom store d))]
-                   (dd/datom-eav datom)))))
-        (search-vec index query opts)))))
+                      :refs)
+          emit    (fn [d]
+                    (if (clojure.core/= :g (nth d 0))
+                      (let [datom (st/gt->datom lmdb (peek d))]
+                        (object-array [(dd/datom-e datom)
+                                       (dd/datom-a datom)
+                                       (dd/datom-v datom)]))
+                      (object-array [(nth d 0)
+                                     (aid->attr (nth d 1))
+                                     (peek d)])))]
+      (doseq [d (search-vec index query opts)]
+        (.add res
+              (if (clojure.core/= :refs+dists display)
+                (let [[vec-ref dist] d
+                      ^objects tuple (emit vec-ref)]
+                  (object-array [(aget tuple 0)
+                                 (aget tuple 1)
+                                 (aget tuple 2)
+                                 dist]))
+                (emit d)))))))
 
 (defn vec-neighbors
-  "Function that does vector similarity search. Returns matching datoms in the
-  form of [e a v] for convenient vector destructuring.
+  "Function that does vector similarity search. Returns matching tuples of
+  (e a v) for convenient destructuring.
 
   The last argument of the 4 arity function is the search option map.
   See [[datalevin.core.search-vec]].
@@ -262,22 +275,24 @@
   ([db query]
    (vec-neighbors db query nil))
   ([db arg1 arg2]
-  (vec-neighbors db arg1 arg2 nil))
+   (vec-neighbors db arg1 arg2 nil))
   ([^DB db arg1 arg2 arg3]
    (let [^Store store (.-store db)
          lmdb         (.-lmdb store)
          indices      (.-vector-indices store)
+         aid->attr    (attrs store)
          attr?        (keyword? arg1)
          domains      (if attr?
                         [(v/attr-domain arg1)]
                         (:domains arg2))
          query        (if attr? arg2 arg1)
          opts         (if attr? arg3 arg2)]
-     (sequence
-       (mapcat #(vec-neighbors* store lmdb indices query opts %))
-       (if (and (sequential? domains) (seq domains))
-         domains
-         (raise "Need a vector search domain." {}))))))
+     (let [res (FastList.)]
+       (doseq [domain (if (and (sequential? domains) (seq domains))
+                        domains
+                        (raise "Need a vector search domain." {}))]
+         (vec-neighbors* res aid->attr lmdb indices query opts domain))
+       res))))
 
 (defn- idoc-domain
   [store attr]
@@ -337,27 +352,27 @@
               (cond
                 exact?
                 (do
-                  (vswap! match-count clojure.core/inc)
+                  (vswap! match-count long-inc)
                   (.add res (emit doc-ref)))
 
                 verify?
                 (if (clojure.core/contains? verify doc-id)
                   (do
-                    (vswap! doc-fetches clojure.core/inc)
+                    (vswap! doc-fetches long-inc)
                     (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
                       (when (idoc/matches-doc? index doc query)
-                        (vswap! match-count clojure.core/inc)
+                        (vswap! match-count long-inc)
                         (.add res (emit doc-ref)))))
                   (do
-                    (vswap! match-count clojure.core/inc)
+                    (vswap! match-count long-inc)
                     (.add res (emit doc-ref))))
 
                 :else
                 (do
-                  (vswap! doc-fetches clojure.core/inc)
+                  (vswap! doc-fetches long-inc)
                   (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
                     (when (idoc/matches-doc? index doc query)
-                      (vswap! match-count clojure.core/inc)
+                      (vswap! match-count long-inc)
                       (.add res (emit doc-ref)))))))))
         (idoc/*trace* {:event           :idoc-match-domain
                        :domain          domain

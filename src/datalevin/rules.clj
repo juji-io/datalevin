@@ -54,6 +54,20 @@
       (into [src] clause)
       (cons src clause))))
 
+(defn- sourceable-clause?
+  "Return true if a clause can be prefixed with a source.
+   Predicate and function clauses should not be source-prefixed since
+   the parser does not treat them as source-aware."
+  [clause]
+  (not (or (dp/parse-pred clause)
+           (dp/parse-fn clause))))
+
+(defn- ensure-src-where
+  [src clause]
+  (if (and src (sourceable-clause? clause))
+    (ensure-src src clause)
+    clause))
+
 ;; stratification
 
 (defprotocol INode
@@ -1587,7 +1601,7 @@
                   local-map  (zipmap local-vars
                                      (mapv #(gensym (name %)) local-vars))
                   full-map   (merge mapping local-map)
-                  new-body   (mapv #(ensure-src src %)
+                  new-body   (mapv #(ensure-src-where src %)
                                    (walk/postwalk-replace
                                      full-map body-clauses))]
               (expand-clauses context to-rm rules deps new-body)))

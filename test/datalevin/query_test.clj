@@ -12,6 +12,7 @@
    [datalevin.query :as sut]
    [datalevin.constants :as c]
    [datalevin.interpret :as i]
+   [datalevin.parser :as dp]
    [datalevin.util :as u])
   (:import
    [java.util UUID]))
@@ -1198,6 +1199,50 @@
 
       (d/close conn)
       (u/delete-files dir))))
+
+(deftest rewrite-unused-vars-test
+  (let [dir (u/tmp-dir (str "rewrite-unused-vars-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir)
+                (d/db-with [{:db/id 1 :name "Ivan" :age 15 :aka "iv"}
+                            {:db/id 2 :name "Petr" :age 37 :aka "pi"}
+                            {:db/id 3 :name "Oleg" :age 37}]))]
+    (testing "unused pattern vars are rewritten to placeholders"
+      (let [query        '[:find ?e
+                           :where
+                           [?e :name "Ivan"]
+                           [?e :aka ?unused]]
+            parsed       (dp/parse-query query)
+            replacements (#'sut/unused-var-replacements parsed)
+            placeholder  (get replacements '?unused)]
+        (is (contains? replacements '?unused))
+        (is (clojure.string/starts-with? (name placeholder)
+                                         "?placeholder__unused"))
+        (is (not (.contains (str (:opt-clauses (d/explain {:run? false} query db)))
+                            "?unused")))
+        (is (= (d/q query db)
+               (d/q '[:find ?e
+                      :where
+                      [?e :name "Ivan"]
+                      [?e :aka _]] db)))))
+
+    (testing "unused function binding vars are rewritten to _"
+      (let [query        '[:find ?e
+                           :where
+                           [?e :age ?a]
+                           [(+ ?a 1) ?unused]]
+            parsed       (dp/parse-query query)
+            replacements (#'sut/unused-var-replacements parsed)]
+        (is (= '_ (get replacements '?unused)))
+        (is (not (.contains (str (:late-clauses (d/explain {:run? false} query db)))
+                            "?unused")))
+        (is (= (d/q query db)
+               (d/q '[:find ?e
+                      :where
+                      [?e :age ?a]
+                      [(+ ?a 1) _]] db)))))
+
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest issue-304-305-test
   (let [dir  (u/tmp-dir (str "issue-304-" (UUID/randomUUID)))

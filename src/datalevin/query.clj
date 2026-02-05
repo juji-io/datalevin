@@ -46,7 +46,7 @@
    [datalevin.storage Store]
    [datalevin.parser And BindColl BindIgnore BindScalar BindTuple Constant
     DefaultSrc FindColl FindRel FindScalar FindTuple Function Or PlainSymbol
-    RulesVar SrcVar Variable Pattern Predicate]
+    RulesVar SrcVar Variable Pattern Predicate Not RuleExpr]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *query-cache* (LRUCache. c/query-result-cache-size))
@@ -328,24 +328,6 @@
 
 (defrecord Clause [attr val var range count pred])
 
-(defn- quoted-form? [form]
-  (and (seq? form)
-       (symbol? (first form))
-       (#{'quote 'clojure.core/quote} (first form))
-       (= 2 (count form))))
-
-(defn collect-vars [clause]
-  (let [vars (volatile! #{})]
-    (letfn [(walk [form]
-              (cond
-                (quoted-form? form) nil
-                (qu/free-var? form) (vswap! vars conj form)
-                (map? form)         (doseq [[k v] form] (walk k) (walk v))
-                (coll? form)        (doseq [x form] (walk x))
-                :else               nil))]
-      (walk clause)
-      @vars)))
-
 (defn solve-rule
   [context clause]
   (let [[rule-name & args] clause]
@@ -467,7 +449,7 @@
   (some #(when ((:attrs %) sym) %) (:rels context)))
 
 (defn substitute-constant [context pattern-el]
-  (when (qu/free-var? pattern-el)
+  (when (qu/binding-var? pattern-el)
     (when-some [rel (rel-with-attr context pattern-el)]
       (let [tuples (:tuples rel)]
         (when-some [tuple (first tuples)]
@@ -498,7 +480,7 @@
    Returns nil if not bound, or a set of values if bound to multiple values.
    Uses :rels-bound-cache volatile for lazy caching within a clause resolution."
   [context var]
-  (when (qu/free-var? var)
+  (when (qu/binding-var? var)
     (if-some [cache (:rels-bound-cache context)]
       ;; Use cached value or compute and cache
       (let [cached @cache]
@@ -602,15 +584,15 @@
   [context db pattern]
   (let [[e a v]           pattern
         ;; Check if entity is bound to multiple values
-        entity-values     (when (and (qu/free-var? e) (keyword? a))
+        entity-values     (when (and (qu/binding-var? e) (keyword? a))
                             (bound-values context e))
         use-entity-multi? (and entity-values
                                (<= (.size ^HashSet entity-values)
                                    multi-lookup-threshold))
         ;; Check if value is bound to multiple values (and entity is NOT bound)
         value-values      (when (and (not use-entity-multi?)
-                                     (qu/free-var? e)
-                                     (qu/free-var? v)
+                                     (qu/binding-var? e)
+                                     (qu/binding-var? v)
                                      (keyword? a))
                             (bound-values context v))
         use-value-multi?  (and value-values
@@ -621,10 +603,11 @@
       (let [resolved-pattern (resolve-pattern-lookup-refs db pattern)
             entity-pairs     (resolve-entity-pairs db entity-values)
             v-resolved       (nth resolved-pattern 2 nil)
-            v-is-var?        (or (nil? v-resolved)
-                                 (qu/free-var? v-resolved)
-                                 (= v-resolved '_))
-            attrs            (if (and (qu/free-var? v) (not= v '_) (not= v e))
+            v-is-var?        (and (or (nil? v-resolved)
+                                      (qu/free-var? v-resolved)
+                                      (= v-resolved '_))
+                                  (not (qu/placeholder? v-resolved)))
+            attrs            (if (and (qu/binding-var? v) (not= v e))
                                {e 0, v 1}
                                {e 0})]
         (r/relation! attrs
@@ -632,7 +615,7 @@
                                                   entity-pairs v-is-var?)))
 
       use-value-multi?
-      (let [e-is-var? (and (qu/free-var? e) (not= e '_))
+      (let [e-is-var? (qu/binding-var? e)
             attrs     (if e-is-var?
                         {e 0, v 1}
                         {v 0})]
@@ -648,7 +631,8 @@
                            i    (volatile! 0)]
                        (mapv (fn [p sp]
                                (when (nil? sp)
-                                 (vswap! idxs assoc p @i)
+                                 (when (qu/binding-var? p)
+                                   (vswap! idxs assoc p @i))
                                  (vswap! i u/long-inc)))
                              pattern search-pattern)
                        @idxs)
@@ -669,7 +653,7 @@
 (defn lookup-pattern-coll
   [coll pattern]
   (r/relation! (into {}
-                     (filter (fn [[s _]] (qu/free-var? s)))
+                     (filter (fn [[s _]] (qu/binding-var? s)))
                      (map vector pattern (range)))
                (u/map-fl to-array
                          (filterv #(matches-pattern? pattern %) coll))))
@@ -810,7 +794,7 @@
 (defn filter-by-pred
   [context clause]
   (let [[[f & args]]         clause
-        attrs                (collect-vars args)
+        attrs                (qu/collect-vars args)
         [context production] (rel-prod-by-attrs context attrs)
 
         new-rel (let [tuple-pred (-call-fn context production f args)]
@@ -821,7 +805,7 @@
   [context clause]
   (let [[[f & args] out]     clause
         binding              (dp/parse-binding out)
-        attrs                (collect-vars args)
+        attrs                (qu/collect-vars args)
         [context production] (rel-prod-by-attrs context attrs)
         ;; Check if scalar output variable is already bound in production
         out-var              (when (instance? BindScalar binding)
@@ -857,10 +841,10 @@
   [source pattern]
   (let [[e a v] pattern]
     (cond-> #{}
-      (qu/free-var? e)      (conj e)
+      (qu/binding-var? e)   (conj e)
       (and
-        (qu/free-var? v)
-        (not (qu/free-var? a))
+        (qu/binding-var? v)
+        (not (qu/binding-var? a))
         (db/ref? source a)) (conj v))))
 
 (defn limit-rel
@@ -885,7 +869,7 @@
 
 (defn check-free-same
   [bound branches form]
-  (let [free (mapv #(set/difference (collect-vars %) bound) branches)]
+  (let [free (mapv #(set/difference (qu/collect-vars %) bound) branches)]
     (when-not (apply = free)
       (raise "All clauses in 'or' must use same set of free vars, had " free
              " in " form
@@ -896,7 +880,7 @@
   (let [free (into #{} (remove bound) vars)]
     (doseq [branch branches]
       (when-some [missing (not-empty
-                            (set/difference free (collect-vars branch)))]
+                            (set/difference free (qu/collect-vars branch)))]
         (raise "All clauses in 'or' must use same set of free vars, had "
                missing " not bound in " branch
                {:error :query/where :form branch :vars missing})))))
@@ -925,10 +909,7 @@
     :else ;; (predicate? pattern)
     (pattern form)))
 
-(defn placeholder? [sym]
-  (and (symbol? sym) (str/starts-with? (name sym) "?placeholder")))
-
-(defn- clause-vars [clause] (into #{} (filter qu/free-var?) (nfirst clause)))
+(defn- clause-vars [clause] (into #{} (filter qu/binding-var?) (nfirst clause)))
 
 (defn -resolve-clause
   ([context clause]
@@ -971,7 +952,7 @@
 
      '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
      (let [[_ [req-vars & vars] & branches] clause
-           req-vars                         (into #{} (filter qu/free-var?) req-vars)
+           req-vars                         (into #{} (filter qu/binding-var?) req-vars)
            bound                            (bound-vars context)]
        (check-bound bound req-vars orig-clause)
        (check-free-subset bound vars branches)
@@ -979,7 +960,7 @@
 
      '[or-join [*] *] ;; (or-join [vars] ...)
      (let [[_ vars & branches] clause
-           vars                (into #{} (filter qu/free-var?) vars)
+           vars                (into #{} (filter qu/binding-var?) vars)
            _                   (check-free-subset (bound-vars context) vars
                                                   branches)
            join-context        (limit-context context vars)]
@@ -992,7 +973,7 @@
                                      (if (seq rels)
                                        (reduce j/hash-join rels)
                                        []))))
-                         r/sum-rel-dedupe branches)))
+                          r/sum-rel-dedupe branches)))
 
      '[and *] ;; (and ...)
      (let [[_ & clauses] clause]
@@ -1001,7 +982,7 @@
      '[not *] ;; (not ...)
      (let [[_ & clauses] clause
            bound         (bound-vars context)
-           negation-vars (collect-vars clauses)
+           negation-vars (qu/collect-vars clauses)
            _             (when (empty? (u/intersection bound negation-vars))
                            (raise "Insufficient bindings: none of "
                                   negation-vars " is bound in " orig-clause
@@ -1016,7 +997,7 @@
 
      '[not-join [*] *] ;; (not-join [vars] ...)
      (let [[_ vars & clauses] clause
-           vars               (into #{} (filter qu/free-var?) vars)
+           vars               (into #{} (filter qu/binding-var?) vars)
            bound              (bound-vars context)
            _                  (check-bound bound vars orig-clause)
            context1           (assoc context :rels
@@ -1148,9 +1129,9 @@
                           val (nth inputs i)]
                       (when (and (instance? BindScalar qin)
                                  (instance? Variable v)
-                                 ;; keep list inputs as variables so function
-                                 ;; calls don't eagerly evaluate them
-                                 (not (list? val))
+                                 ;; keep sequential inputs as variables so
+                                 ;; function calls don't eagerly evaluate them
+                                 (not (sequential? val))
                                  (not (some #(= s %) finds))
                                  (not (some #(or-join-var? % s) owheres)))
                         [i s])))
@@ -1186,6 +1167,136 @@
                        (mapv #(:source (meta %)) ins) ", got: " cv
                        {:error :query/inputs :expected ins :got inputs})
       :else     (plugin-inputs* parsed-q inputs))))
+
+(defn- var-symbol
+  [v]
+  (when (instance? Variable v)
+    (:symbol v)))
+
+(defn- collect-var-usage
+  [qwhere]
+  (let [counts    (volatile! {})
+        kinds     (volatile! {})
+        protected (volatile! #{})]
+    (letfn [(note-var! [sym kind]
+              (when (qu/binding-var? sym)
+                (vswap! counts update sym (fnil inc 0))
+                (vswap! kinds update sym (fnil conj #{}) kind)))
+            (protect-var! [sym]
+              (when (qu/free-var? sym)
+                (vswap! protected conj sym)))
+            (note-var [v kind]
+              (when-let [sym (var-symbol v)]
+                (note-var! sym kind)))
+            (protect-var [v]
+              (when-let [sym (var-symbol v)]
+                (protect-var! sym)))
+            (protect-vars-in-form [form]
+              (doseq [sym (qu/collect-vars form)]
+                (protect-var! sym)))
+            (protect-arg-vars [arg]
+              (when (instance? Constant arg)
+                (protect-vars-in-form (:value arg))))
+            (walk-binding [binding]
+              (cond
+                (instance? BindScalar binding)
+                (note-var (:variable binding) :binding)
+
+                (instance? BindTuple binding)
+                (doseq [b (:bindings binding)]
+                  (walk-binding b))
+
+                (instance? BindColl binding)
+                (walk-binding (:binding binding))
+
+                :else nil))
+            (walk-clause [clause]
+              (cond
+                (instance? Pattern clause)
+                (doseq [el (:pattern clause)]
+                  (note-var el :pattern))
+
+                (instance? Function clause)
+                (do
+                  (protect-var (:fn clause))
+                  (doseq [arg (:args clause)]
+                    (protect-var arg)
+                    (protect-arg-vars arg))
+                  (walk-binding (:binding clause)))
+
+                (instance? Predicate clause)
+                (do
+                  (protect-var (:fn clause))
+                  (doseq [arg (:args clause)]
+                    (protect-var arg)
+                    (protect-arg-vars arg)))
+
+                (instance? RuleExpr clause)
+                (doseq [arg (:args clause)]
+                  (protect-var arg))
+
+                (instance? And clause)
+                (doseq [c (:clauses clause)]
+                  (walk-clause c))
+
+                (instance? Or clause)
+                (doseq [c (:clauses clause)]
+                  (protect-vars-in-form c)
+                  (walk-clause c))
+
+                (instance? Not clause)
+                (doseq [c (:clauses clause)]
+                  (protect-vars-in-form c)
+                  (walk-clause c))
+
+                :else nil))]
+      (doseq [c qwhere] (walk-clause c))
+      {:counts @counts :kinds @kinds :protected @protected})))
+
+(defn- unused-var-replacements
+  [parsed-q]
+  (let [find-vars (set (dp/find-vars (:qfind parsed-q)))
+        with-vars (set (map :symbol (or (:qwith parsed-q) [])))
+        in-vars   (set (map :symbol (dp/collect-vars-distinct (:qin parsed-q))))
+        used      (set/union find-vars with-vars in-vars)
+        {:keys [counts kinds protected]}
+        (collect-var-usage (:qwhere parsed-q))]
+    (into {}
+          (keep (fn [[sym n]]
+                  (when (and (= 1 n)
+                             (not (contains? used sym))
+                             (not (contains? protected sym)))
+                    (let [kind (get kinds sym)]
+                      [sym (if (contains? kind :binding)
+                             '_
+                             (qu/placeholder-sym sym))]))))
+          counts)))
+
+(defn- replace-unused-vars-form
+  [form replacements]
+  (letfn [(walk [form]
+            (cond
+              (qu/quoted-form? form) form
+              (symbol? form)         (get replacements form form)
+              (map? form)            (into (empty form)
+                                           (map (fn [[k v]]
+                                                  [(walk k) (walk v)]))
+                                           form)
+              (seq? form)            (apply list (map walk form))
+              (coll? form)           (into (empty form) (map walk) form)
+              :else                  form))]
+    (walk form)))
+
+(defn- rewrite-unused-vars
+  [{:keys [parsed-q] :as context}]
+  (let [replacements (unused-var-replacements parsed-q)]
+    (if (empty? replacements)
+      context
+      (let [qorig-where  (mapv #(replace-unused-vars-form % replacements)
+                               (:qorig-where parsed-q))
+            qwhere       (dp/parse-where qorig-where)]
+        (assoc context :parsed-q
+               (assoc parsed-q :qorig-where qorig-where :qwhere qwhere))))))
 
 (defn- optimizable?
   "only optimize attribute-known patterns referring to Datalevin source"
@@ -1317,11 +1428,11 @@
   "Check if an or-join can be optimized as a link step in the query graph.
    An or-join is optimizable when:
    1. It's an or-join clause (not plain or)
-   2. Has exactly ONE bound join var (from input or patterns) - per D2
+   2. Has exactly ONE bound join var (from input or patterns)
    3. Has at least one unbound join var (to be derived)
-   4. Bound var is not rule-derived (would create dependency issue) - per D5
+   4. Bound var is not rule-derived (would create dependency issue)
    5. Bound var is a graph node (pattern entity var)
-   6. All branches reference same source - per D3
+   6. All branches reference same source
    7. All branches are valid patterns
 
    Returns the clause if optimizable, nil otherwise."
@@ -1365,7 +1476,7 @@
                                  (and (instance? Variable v)
                                       (input-bound-vars (:symbol v)))))))))
                 (map #(get-in % [:pattern 0 :symbol]))
-                (filter qu/free-var?))
+                (filter qu/binding-var?))
               patterns)
         ref-connected
         (reduce
@@ -1375,7 +1486,7 @@
                   v-var (when (<= 3 (count pat))
                           (let [v (nth pat 2)]
                             (when (instance? Variable v) (:symbol v))))]
-              (if (and (qu/free-var? e-var) (qu/free-var? v-var))
+              (if (and (qu/binding-var? e-var) (qu/binding-var? v-var))
                 (-> m
                     (update e-var (fnil conj #{}) v-var)
                     (update v-var (fnil conj #{}) e-var))
@@ -1403,14 +1514,14 @@
                                           (when (instance? Variable v)
                                             (:symbol v))))]
                             (cond-> []
-                              (qu/free-var? e-var) (conj e-var)
-                              (qu/free-var? v-var) (conj v-var)))))
-                (filter qu/free-var?))
+                              (qu/binding-var? e-var) (conj e-var)
+                              (qu/binding-var? v-var) (conj v-var)))))
+                (filter qu/binding-var?))
               patterns)
         all-entity-vars      (into #{}
                                    (comp
                                      (map #(get-in % [:pattern 0 :symbol]))
-                                     (filter qu/free-var?))
+                                     (filter qu/binding-var?))
                                    patterns)
         unreachable-entities (set/difference all-entity-vars reachable)
         unreachable-vars     (set/difference all-pattern-vars reachable)
@@ -1419,7 +1530,7 @@
           (fn [derived clause]
             (if (or (parsed-rule-expr? clause) (rule-clause? rules clause))
               (let [args                (get-rule-args clause)
-                    rule-vars           (filterv qu/free-var? args)
+                    rule-vars           (filterv qu/binding-var? args)
                     has-reachable?      (some reachable rule-vars)
                     unreachable-in-rule (filter unreachable-entities rule-vars)]
                 (if (and has-reachable? (seq unreachable-in-rule))
@@ -1474,7 +1585,7 @@
   [clause rule-derived-vars]
   (when (and rule-derived-vars (instance? Pattern clause))
     (let [e-var (get-in clause [:pattern 0 :symbol])]
-      (and (qu/free-var? e-var)
+      (and (qu/binding-var? e-var)
            (contains? rule-derived-vars e-var)))))
 
 (defn- split-clauses
@@ -1496,7 +1607,7 @@
                                   (comp
                                     (filter #(instance? Pattern %))
                                     (map #(get-in % [:pattern 0 :symbol]))
-                                    (filter qu/free-var?))
+                                    (filter qu/binding-var?))
                                   qwhere)
 
         ;; Find optimizable or-joins
@@ -1528,26 +1639,12 @@
            :late-clauses (u/remove-idxs (set/union ptn-idxs or-join-idxs)
                                         clauses))))
 
-(defn- get-v [pattern]
-  (when (< 2 (count pattern))
-    (let [v (peek pattern)]
-      (if (= v '_)
-        (gensym "?placeholder")
-        v))))
-
-(defn- replace-blanks
-  "Replace all _ (blank) placeholders in a pattern with unique gensym'd variables.
-   This ensures that _ in different patterns (or different positions) are not
-   incorrectly unified."
-  [pattern]
-  (mapv (fn [el] (if (= el '_) (gensym "?blank") el)) pattern))
-
 (defn- make-node
   [[e patterns]]
   [e (reduce (fn [m pattern]
                (let [attr   (second pattern)
                      clause (map->Clause {:attr attr})]
-                 (if-let [v (get-v pattern)]
+                 (if-let [v (qu/get-v pattern)]
                    (if (qu/free-var? v)
                      (update m :free conjv (assoc clause :var v))
                      (update m :bound conjv (assoc clause :val v)))
@@ -1592,7 +1689,7 @@
 
 (defn- make-nodes
   [[src patterns]]
-  [src (let [patterns' (mapv replace-blanks patterns)
+  [src (let [patterns' (mapv qu/replace-blanks patterns)
              graph     (into {} (map make-node) (group-by first patterns'))]
          (if (< 1 (count graph))
            (-> graph link-refs link-eqs)
@@ -1687,7 +1784,7 @@
         pattern-entity-vars (into #{}
                                   (comp (filter vector?)
                                      (map first)  ;; entity position
-                                     (filter qu/free-var?))
+                                     (filter qu/binding-var?))
                                   opt-clauses)
         will-be-bound       (into input-bound pattern-entity-vars)
 
@@ -1725,7 +1822,7 @@
   [where gseq]
   (when (instance? Predicate where)
     (let [{:keys [args]} where
-          syms           (collect-vars args)]
+          syms           (qu/collect-vars args)]
       (when (= (count syms) 1)
         (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
@@ -2183,7 +2280,7 @@
         {:keys [attr var val range pred] :as clause} (get-in node mpath)
 
         know-e? (int? e)
-        no-var? (or (not var) (placeholder? var))
+        no-var? (or (not var) (qu/placeholder? var))
 
         init (cond-> (map->InitStep
                        {:attr attr :vars [e] :out [e]
@@ -2222,7 +2319,7 @@
               skips   (cond-> (set (sequence
                                      (comp (map (fn [a v]
                                                (when (or (= v '_)
-                                                         (placeholder? v))
+                                                         (qu/placeholder? v))
                                                  a)))
                                         (remove nil?))
                                      attrs vars))
@@ -3596,6 +3693,7 @@
               (resolve-ins inputs)
               (resolve-redudants)
               (rules/rewrite)
+              (rewrite-unused-vars)
               (-q true)
               (collect all-vars))
           result
@@ -3670,6 +3768,7 @@
             (resolve-ins inputs)
             (resolve-redudants)
             (rules/rewrite)
+            (rewrite-unused-vars)
             (-q false)
             (result-explain))))))
 
