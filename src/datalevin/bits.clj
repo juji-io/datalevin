@@ -25,7 +25,7 @@
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
    [java.lang String]
-   [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
+   [org.roaringbitmap RoaringBitmap RoaringBitmapWriter  FastAggregation]
    [org.roaringbitmap.longlong Roaring64Bitmap]
    [datalevin.utl BitOps]))
 
@@ -130,6 +130,8 @@
      (doseq [^int i ints] (.add writer i))
      (.get writer))))
 
+(defn bitmap? [x] (instance? RoaringBitmap x))
+
 (defn bitmap-del
   "Delete an int from the bitmap"
   [^RoaringBitmap bm i]
@@ -141,6 +143,36 @@
   [^RoaringBitmap bm i]
   (.add bm ^int i)
   bm)
+
+(defn bitmap-and
+  [a b]
+  (cond
+    (nil? a) b
+    (nil? b) a
+    :else    (.and ^RoaringBitmap a ^RoaringBitmap b)))
+
+(defn bitmaps-and
+  [bitmaps]
+  (when-not (empty? bitmaps)
+    (FastAggregation/and
+      ^"[Lorg.roaringbitmap.RoaringBitmap;"
+      (into-array RoaringBitmap bitmaps))))
+
+(defn bitmaps-or
+  [bitmaps]
+  (when-not (empty? bitmaps)
+    (FastAggregation/or
+      ^"[Lorg.roaringbitmap.RoaringBitmap;"
+      (into-array RoaringBitmap bitmaps))))
+
+(defn bitmap-or
+  [a b]
+  (cond
+    (nil? a) nil
+    (nil? b) nil
+    :else    (.or ^RoaringBitmap a ^RoaringBitmap b)))
+
+(defn bitmap-empty? [bm] (or (nil? bm) (.isEmpty ^RoaringBitmap bm)))
 
 (defn- get-bitmap
   [^ByteBuffer bf]

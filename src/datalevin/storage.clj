@@ -1164,7 +1164,7 @@
   [idoc-indices id-ds]
   (let [updates (volatile! {})
         others  (FastList.)]
-    (doseq [res id-ds
+    (doseq [res  id-ds
             :let [op     (peek res)
                   d      (nth op 1)
                   domain (nth res 0)
@@ -1176,11 +1176,11 @@
         (:g :r)
         (.add others res)))
     (doseq [[domain ops] @updates
-            :let [index (idoc-indices domain)]]
+            :let         [index (idoc-indices domain)]]
       (doseq [[_ {:keys [a d]}] ops]
         (if (and (= 1 (count a)) (= 1 (count d)))
-          (let [old-d  (nth (first d) 1)
-                new-d  (nth (first a) 1)
+          (let [old-d   (nth (first d) 1)
+                new-d   (nth (first a) 1)
                 old-ref old-d
                 new-ref new-d
                 old-doc (peek old-d)
@@ -1193,18 +1193,17 @@
             (when (= res :doc-missing)
               (idoc/remove-doc index old-ref old-doc)
               (idoc/add-doc index new-ref new-doc false)))
-          (do
-            (let [adds (mapv (fn [op]
-                               (let [d (nth op 1)]
-                                 [d (peek d)]))
-                             a)
-                  rems (mapv (fn [op]
-                               (let [d (nth op 1)]
-                                 [d (peek d)]))
-                             d)]
-              (idoc/add-docs index adds false)
-              (idoc/remove-docs index rems))))))
-    (doseq [res others
+          (let [adds (mapv (fn [op]
+                             (let [d (nth op 1)]
+                               [d (peek d)]))
+                           a)
+                rems (mapv (fn [op]
+                             (let [d (nth op 1)]
+                               [d (peek d)]))
+                           d)]
+            (idoc/add-docs index adds false)
+            (idoc/remove-docs index rems)))))
+    (doseq [res  others
             :let [op     (peek res)
                   d      (nth op 1)
                   domain (nth res 0)

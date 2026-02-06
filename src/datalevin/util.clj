@@ -686,9 +686,13 @@
 (defn map+
   "parallel map using worker-thread-pool"
   ([f coll]
-   (let [pool ^ExecutorService (get-worker-thread-pool)
-         futs (.invokeAll pool (mapv (fn [e] #(f e)) coll))]
-     (mapv #(.get ^Future %) futs)))
+   (let [n (count coll)]
+     (cond
+       (= 1 n) [(f (first coll))]
+       (= 2 n) [(f (first coll)) (f (last coll))]
+       :else   (let [pool ^ExecutorService (get-worker-thread-pool)
+                     futs (.invokeAll pool (mapv (fn [e] #(f e)) coll))]
+                 (mapv #(.get ^Future %) futs)))))
   ([f c1 c2]
    (let [pool ^ExecutorService (get-worker-thread-pool)
          futs (.invokeAll pool (mapv (fn [e1 e2] #(f e1 e2)) c1 c2))]

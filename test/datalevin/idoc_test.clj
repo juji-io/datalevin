@@ -554,3 +554,55 @@
                       {:bio big2})))))
     (sut/close conn)
     (when-not (u/windows?) (u/delete-files dir))))
+
+(deftest idoc-string-key-wildcard-test
+  (let [dir  (u/tmp-dir (str "idoc-string-key-test-" (UUID/randomUUID)))
+        conn (sut/create-conn
+               dir
+               base-schema
+               {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (sut/transact!
+      conn
+      [{:db/id 1 :doc/edn {:facts {"city" "SF" "team" "blue"}}}
+       {:db/id 2 :doc/edn {:facts {"city" "NYC" "team" "red"}}}
+       {:db/id 3 :doc/edn {:facts {"city" "SF" "team" "green"}}}])
+    (let [db (sut/db conn)]
+      (testing "single-segment wildcard :? matches string keys"
+        (is (= #{[1] [3]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:facts {:? "SF"}})))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:facts {:? "blue"}})))
+        (is (= #{[2]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:facts {:? "red"}}))))
+      (testing "exact string key matches still work"
+        (is (= #{[1] [3]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:facts {"city" "SF"}})))
+        (is (= #{[1]}
+               (sut/q '[:find ?e
+                        :in $ ?q
+                        :where
+                        [(idoc-match $ :doc/edn ?q) [[?e ?a ?v]]]]
+                      db
+                      {:facts {"team" "blue"}})))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))

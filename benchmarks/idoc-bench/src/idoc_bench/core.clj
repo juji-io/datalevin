@@ -21,8 +21,9 @@
    [next.jdbc.result-set :as rs]
    [next.jdbc.sql :as sql])
   (:import
+   [com.mongodb ExplainVerbosity]
    [com.mongodb.client MongoClients]
-   [com.mongodb.client.model Filters]
+   [com.mongodb.client.model Filters Projections]
    [java.util ArrayList Random UUID]
    [java.util.concurrent CountDownLatch]
    [org.bson Document]
@@ -39,16 +40,44 @@
 
 (def tags
   ["urgent" "todo" "followup" "meeting" "project" "customer" "issue"
-   "feature" "blocker" "idea" "note" "action"])
+   "feature" "blocker" "idea" "note" "action" "bug" "enhancement" "question"
+   "help" "wontfix" "duplicate" "invalid" "documentation" "security" "test"
+   "refactor" "performance" "ux" "backend" "frontend" "mobile" "api" "database"])
 
-(def langs ["en" "es" "fr" "de" "zh"])
-(def personas ["developer" "manager" "founder" "analyst" "support"])
-(def topics ["roadmap" "billing" "onboarding" "incident" "design" "infra"])
-(def sources ["chat" "email" "call" "doc" "note"])
-(def cities ["SF" "NYC" "LA" "SEA" "LON" "BER" "PAR" "TOK"])
-(def teams ["red" "blue" "green" "yellow"])
-(def entities ["acme" "globex" "initech" "umbrella" "stark" "wayne"])
-(def kinds ["chat" "email" "note" "task"])
+(def langs
+  ["en" "es" "fr" "de" "zh" "ja" "ko" "pt" "ru" "it" "nl" "pl" "sv" "da"
+   "no" "fi" "cs" "hu" "ro" "tr" "ar" "he" "th" "vi" "id" "ms" "hi" "bn"])
+
+(def personas
+  ["developer" "manager" "founder" "analyst" "support" "designer" "architect"
+   "qa" "devops" "sre" "pm" "cto" "ceo" "intern" "contractor" "consultant"])
+
+(def topics
+  ["roadmap" "billing" "onboarding" "incident" "design" "infra" "security"
+   "performance" "migration" "integration" "deployment" "testing" "review"
+   "planning" "retrospective" "standup" "demo" "release" "hotfix" "rollback"])
+
+(def sources
+  ["chat" "email" "call" "doc" "note" "slack" "teams" "zoom" "jira" "github"
+   "confluence" "notion" "linear" "asana" "trello" "discord" "webhook" "api"])
+
+(def cities
+  ["SF" "NYC" "LA" "SEA" "LON" "BER" "PAR" "TOK" "SYD" "SIN" "HKG" "DUB"
+   "AMS" "TOR" "VAN" "CHI" "BOS" "ATL" "MIA" "DEN" "PHX" "DAL" "HOU" "PDX"
+   "AUS" "MSP" "DET" "PHL" "SLC" "STL" "ORL" "TPA" "CLT" "RDU" "IND" "CLE"])
+
+(def teams
+  ["red" "blue" "green" "yellow" "purple" "orange" "pink" "cyan" "alpha"
+   "beta" "gamma" "delta" "epsilon" "zeta" "eta" "theta" "iota" "kappa"])
+
+(def entities
+  ["acme" "globex" "initech" "umbrella" "stark" "wayne" "oscorp" "lexcorp"
+   "cyberdyne" "weyland" "tyrell" "massive" "abstergo" "aperture" "black-mesa"
+   "vault-tec" "capsule" "waystar" "hooli" "pied-piper" "raviga" "endframe"])
+
+(def kinds
+  ["chat" "email" "note" "task" "ticket" "alert" "notification" "reminder"
+   "event" "meeting" "call" "message" "comment" "review" "approval" "request"])
 
 (def base-ts 1700000000000)
 
@@ -60,18 +89,19 @@
 (def default-opts
   {:system      :datalevin
    :workload    :C
-   :records     100000
-   :ops         100000
-   :warmup      2000
+   :records     10000
+   :ops         10000
+   :warmup      1000
    :threads     1
    :batch-size  1000
-   :idoc-ratio  20
+   :idoc-ratio  30
    :idoc-trace? false
    :hotset      1.0
    :seed        42
    :dir         nil
+   :dtlv-uri    nil
    :keep-db?    false
-   :env-flags   [:nosync :nolock]
+   :env-flags   nil
    :pg-url      "jdbc:postgresql://localhost:5432/postgres"
    :pg-user     nil
    :pg-password nil
@@ -181,7 +211,9 @@
   [^Random r]
   (case (rand-choice r query-types)
     :nested {:type :nested :value (rand-choice r langs)}
-    :range {:type :range :lo 0.3 :hi 0.8}
+    :range (let [lo (double (* 0.1 (.nextInt r 8)))      ;; 0.0 to 0.7
+                 hi (double (+ lo 0.1 (* 0.1 (.nextInt r 3))))] ;; lo+0.1 to lo+0.3
+             {:type :range :lo lo :hi (min hi 1.0)})
     :wildcard-one {:type :wildcard-one :value (rand-choice r cities)}
     :wildcard-depth {:type :wildcard-depth :value (rand-choice r entities)}
     :array {:type :array :value (rand-choice r tags)}))
@@ -333,11 +365,10 @@
     (instance? PGobject v) (.getValue ^PGobject v)
     :else (str v)))
 
-(defn- sql-count
+(defn- sql-query
   [conn sql params]
-  (let [row (jdbc/execute-one! conn (into [sql] params)
-                              {:builder-fn rs/as-unqualified-lower-maps})]
-    (:cnt row)))
+  (jdbc/execute! conn (into [sql] params)
+                 {:builder-fn rs/as-unqualified-lower-maps}))
 
 (defn- sql-read-doc
   [conn table id]
@@ -351,36 +382,38 @@
 (defn- pg-idoc-query
   [table spec]
   (case (:type spec)
-    :nested [(str "SELECT count(1) AS cnt FROM " table
-                  " WHERE doc->'profile'->>'lang' = ?")
-             [(:value spec)]]
-    :range [(str "SELECT count(1) AS cnt FROM " table
+    :nested [(str "SELECT id FROM " table
+                  " WHERE doc @> ?::jsonb")
+             [(encode-json {:profile {:lang (:value spec)}})]]
+    :range [(str "SELECT id FROM " table
                  " WHERE (doc->'stats'->>'score')::double precision"
                  " BETWEEN ? AND ?")
             [(:lo spec) (:hi spec)]]
-    :wildcard-one [(str "SELECT count(1) AS cnt FROM " table
-                        " WHERE EXISTS (SELECT 1 FROM jsonb_each_text(doc->'facts') kv"
-                        " WHERE kv.value = ?)")
-                   [(:value spec)]]
-    :wildcard-depth [(str "SELECT count(1) AS cnt FROM " table
-                          " WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(doc->'events') e"
-                          " WHERE e->'entity'->>'name' = ?)")
-                     [(:value spec)]]
-    :array [(str "SELECT count(1) AS cnt FROM " table
-                 " WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(doc->'events') e,"
-                 " jsonb_array_elements_text(e->'tags') t WHERE t = ?)")
-            [(:value spec)]]))
+    :wildcard-one [(str "SELECT id FROM " table
+                        " WHERE doc @> ?::jsonb OR doc @> ?::jsonb")
+                   [(encode-json {:facts {:city (:value spec)}})
+                    (encode-json {:facts {:team (:value spec)}})]]
+    :wildcard-depth [(str "SELECT id FROM " table
+                          " WHERE doc @> ?::jsonb")
+                     [(encode-json {:events [{:entity {:name (:value spec)}}]})]]
+    :array [(str "SELECT id FROM " table
+                 " WHERE doc @> ?::jsonb")
+            [(encode-json {:events [{:tags [(:value spec)]}]})]]))
 
 (defn- pg-create-indexes!
   [ds table]
+  ;; GIN index for jsonb containment queries
+  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_doc_gin_idx"
+                          " ON " table " USING GIN (doc jsonb_path_ops)")])
+  ;; B-tree indexes for specific paths (for fair comparison)
   (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_profile_lang_idx"
                           " ON " table " ((doc->'profile'->>'lang'))")])
   (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_stats_score_idx"
                           " ON " table " (((doc->'stats'->>'score')::double precision))")])
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_gin_idx"
-                          " ON " table " USING GIN ((doc->'facts'))")])
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_events_gin_idx"
-                          " ON " table " USING GIN ((doc->'events'))")]))
+  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_city_idx"
+                          " ON " table " ((doc->'facts'->>'city'))")])
+  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_team_idx"
+                          " ON " table " ((doc->'facts'->>'team'))")]))
 
 (defn- pg-analyze!
   [ds table]
@@ -389,22 +422,22 @@
 (defn- sqlite-idoc-query
   [table spec]
   (case (:type spec)
-    :nested [(str "SELECT count(1) AS cnt FROM " table
+    :nested [(str "SELECT id FROM " table
                   " WHERE json_extract(doc, '$.profile.lang') = ?")
              [(:value spec)]]
-    :range [(str "SELECT count(1) AS cnt FROM " table
+    :range [(str "SELECT id FROM " table
                  " WHERE CAST(json_extract(doc, '$.stats.score') AS REAL)"
                  " BETWEEN ? AND ?")
             [(:lo spec) (:hi spec)]]
-    :wildcard-one [(str "SELECT count(1) AS cnt FROM " table
-                        " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.facts')"
-                        " WHERE json_each.value = ?)")
-                   [(:value spec)]]
-    :wildcard-depth [(str "SELECT count(1) AS cnt FROM " table
+    :wildcard-one [(str "SELECT id FROM " table
+                        " WHERE json_extract(doc, '$.facts.city') = ?"
+                        " OR json_extract(doc, '$.facts.team') = ?")
+                   [(:value spec) (:value spec)]]
+    :wildcard-depth [(str "SELECT id FROM " table
                           " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
                           " WHERE json_extract(e.value, '$.entity.name') = ?)")
                      [(:value spec)]]
-    :array [(str "SELECT count(1) AS cnt FROM " table
+    :array [(str "SELECT id FROM " table
                  " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
                  " JOIN json_each(e.value, '$.tags') t"
                  " WHERE t.value = ?)")
@@ -425,6 +458,28 @@
 (defn- sqlite-analyze!
   [conn]
   (jdbc/execute! conn ["ANALYZE idoc_bench_docs"]))
+
+(defn- pg-update-stats!
+  [conn table id score last-seen]
+  (jdbc/execute! conn
+                 [(str "UPDATE " table
+                       " SET doc = jsonb_set("
+                       "jsonb_set(doc, '{stats,score}', to_jsonb(?::double precision), true),"
+                       "'{stats,last_seen}', to_jsonb(?::bigint), true)"
+                       " WHERE id = ?")
+                  score
+                  last-seen
+                  id]))
+
+(defn- sqlite-update-stats!
+  [conn id score last-seen]
+  (jdbc/execute! conn
+                 ["UPDATE idoc_bench_docs"
+                  " SET doc = json_set(doc, '$.stats.score', ?, '$.stats.last_seen', ?)"
+                  " WHERE id = ?"
+                  score
+                  last-seen
+                  id]))
 
 (defn- mongo-filter
   [spec]
@@ -462,9 +517,11 @@
   (when-let [doc (.first (.find coll (Filters/eq "_id" (long id))))]
     (dissoc (bson->clj doc) :_id)))
 
-(defn- mongo-write-doc!
-  [coll id doc]
-  (.replaceOne coll (Filters/eq "_id" (long id)) (mongo-doc id doc)))
+(defn- mongo-update-stats!
+  [coll id score last-seen]
+  (let [updates (Document. {"$set" (Document. {"stats.score" score
+                                               "stats.last_seen" last-seen})})]
+    (.updateOne coll (Filters/eq "_id" (long id)) updates)))
 
 (defn- mongo-create-indexes!
   [coll]
@@ -483,22 +540,63 @@
     (jdbc/execute! conn ["PRAGMA busy_timeout=5000;"])
     conn))
 
+(defn- pg-explain-query
+  "Run EXPLAIN ANALYZE and return [results exec-time-nanos]."
+  [conn sql params]
+  (let [explain-sql (str "EXPLAIN ANALYZE " sql)
+        rows        (jdbc/execute! conn (into [explain-sql] params)
+                                   {:builder-fn rs/as-unqualified-lower-maps})
+        ;; Parse "Execution Time: X.XXX ms" from the last rows
+        exec-ms     (some (fn [row]
+                            (let [plan (or (get row (keyword "query plan"))
+                                           (get row :query-plan)
+                                           (first (vals row)))]
+                              (when-let [[_ ms] (re-find #"Execution Time:\s+([\d.]+)\s+ms" (str plan))]
+                                (Double/parseDouble ms))))
+                          (reverse rows))]
+    [nil (long (* (or exec-ms 0.0) 1e6))]))
+
+(defn- mongo-explain-query
+  "Run find with explain and return [results exec-time-nanos]."
+  [coll filter]
+  (let [explain-doc (.first (.find coll filter))
+        ;; Run the actual query with explain
+        find-iterable (.find coll filter)
+        explain       (.explain find-iterable ExplainVerbosity/EXECUTION_STATS)
+        exec-stats    (.get explain "executionStats")
+        exec-ms       (when exec-stats (.get exec-stats "executionTimeMillis"))]
+    ;; Consume the results
+    (doall (map #(.getLong ^Document % "_id") find-iterable))
+    [nil (long (* (or exec-ms 0) 1e6))]))
+
 (defn- datalevin-handlers
   [opts docs]
-  (let [{:keys [records hotset batch-size env-flags keep-db? idoc-trace?]} opts
+  (let [{:keys [records hotset batch-size env-flags keep-db? idoc-trace?
+                dtlv-uri]} opts
 
-        dir    (or (:dir opts)
-                   (str (u/tmp-dir (str "idoc-bench-" (UUID/randomUUID)))))
-        conn   (d/create-conn
-                 dir
-                 schema
-                 {:kv-opts {:flags (into c/default-env-flags env-flags)}})
+        dir    (when-not dtlv-uri
+                 (or (:dir opts)
+                     (str (u/tmp-dir (str "idoc-bench-" (UUID/randomUUID))))))
+        db-uri (when dtlv-uri
+                 (let [;; Insert credentials if not present
+                       uri (if (re-find #"://[^@]+@" dtlv-uri)
+                             dtlv-uri
+                             (clojure.string/replace-first
+                               dtlv-uri #"://" "://datalevin:datalevin@"))]
+                   (str uri "/idoc-bench-" (UUID/randomUUID))))
+        conn   (if db-uri
+                 (d/get-conn db-uri schema)
+                 (d/create-conn
+                   dir
+                   schema
+                   {:kv-opts {:flags (into c/default-env-flags env-flags)}}))
+        label  (or db-uri dir)
         trace  (when idoc-trace? (atom {}))
         tracer (fn [spec]
                  (when trace
                    (fn [event] (update-idoc-trace! trace spec event))))]
     {:system       :datalevin
-     :label        dir
+     :label        label
      :load!        (fn []
                      (load-docs-datalevin! conn @docs batch-size)
                      (println "Running analyze ...")
@@ -526,16 +624,21 @@
      :op-idoc      (fn [{:keys [conn]} r]
                      (let [spec (rand-query-spec r)
                            q    (spec->idoc-query spec)
-                           db   (d/db conn)]
-                       (binding [dq/*cache?* false]
-                         (if trace
-                           (binding [idoc/*trace* (tracer spec)]
-                             (count (d/q q-idoc db q)))
-                           (count (d/q q-idoc db q))))))
+                           db   (d/db conn)
+                           ;; Use explain to get db-reported execution time
+                           res  (if trace
+                                  (binding [idoc/*trace* (tracer spec)]
+                                    (d/explain {:run? true} q-idoc db q))
+                                  (d/explain {:run? true} q-idoc db q))
+                           ;; Times are strings like "0.123" in ms
+                           prep-ms (Double/parseDouble (:prepare-time res))
+                           exec-ms (Double/parseDouble (:execution-time res))
+                           total-ms (+ prep-ms exec-ms)]
+                       [(:result res) (long (* total-ms 1e6))]))
      :close!       (fn [] (d/close conn))
      :trace-report (when trace #(print-idoc-trace trace))
      :cleanup!     (fn []
-                     (when-not keep-db?
+                     (when (and (not keep-db?) dir)
                        (when-not (u/windows?)
                          (u/delete-files dir))))}))
 
@@ -565,15 +668,14 @@
                 (pg-create-indexes! ds pg-table)
                 (println "Running ANALYZE ...")
                 (pg-analyze! ds pg-table))
-        op-count                       (fn [conn spec]
+        op-query                       (fn [conn spec]
                    (let [[sql params] (pg-idoc-query pg-table spec)]
-                     (sql-count conn sql params)))
+                     (pg-explain-query conn sql params)))
         read-doc                       (fn [conn id] (sql-read-doc conn pg-table id))
         update-doc!                    (fn [conn id doc]
-                      (jdbc/execute! conn
-                                     [(str "UPDATE " pg-table " SET doc = ? WHERE id = ?")
-                                      (pg-jsonb (encode-json doc))
-                                      id]))]
+                                          (let [score     (get-in doc [:stats :score])
+                                                last-seen (get-in doc [:stats :last_seen])]
+                                            (pg-update-stats! conn pg-table id score last-seen)))]
     {:system       :postgres
      :label        (str pg-url " (" pg-table ")")
      :load!        (fn []
@@ -598,7 +700,7 @@
                        (swap! docs assoc (dec id) doc')
                        (update-doc! conn id doc')))
      :op-idoc      (fn [{:keys [conn]} r]
-                     (op-count conn (rand-query-spec r)))
+                     (op-query conn (rand-query-spec r)))
      :close!       (fn [] nil)
      :cleanup!     (fn []
                      (when-not keep-db?
@@ -639,15 +741,14 @@
                     (sqlite-analyze! conn)
                     (finally
                       (.close conn)))))
-        op-count (fn [conn spec]
+        op-query (fn [conn spec]
                    (let [[sql params] (sqlite-idoc-query "idoc_bench_docs" spec)]
-                     (sql-count conn sql params)))
+                     (sql-query conn sql params)))
         read-doc (fn [conn id] (sql-read-doc conn "idoc_bench_docs" id))
         update-doc! (fn [conn id doc]
-                      (jdbc/execute! conn
-                                     [(str "UPDATE idoc_bench_docs SET doc = ? WHERE id = ?")
-                                      (encode-json doc)
-                                      id]))]
+                      (let [score     (get-in doc [:stats :score])
+                            last-seen (get-in doc [:stats :last_seen])]
+                        (sqlite-update-stats! conn id score last-seen)))]
     {:system       :sqlite
      :label        db-path
      :load!        (fn []
@@ -672,7 +773,7 @@
                        (swap! docs assoc (dec id) doc')
                        (update-doc! conn id doc')))
      :op-idoc      (fn [{:keys [conn]} r]
-                     (op-count conn (rand-query-spec r)))
+                     (op-query conn (rand-query-spec r)))
      :close!       (fn [] nil)
      :cleanup!     (fn []
                      (when-not keep-db?
@@ -711,15 +812,20 @@
                            doc  (nth @docs idx)
                            doc' (update-doc doc r)]
                        (swap! docs assoc idx doc')
-                       (mongo-write-doc! coll id doc')))
+                       (mongo-update-stats! coll id
+                                            (get-in doc' [:stats :score])
+                                            (get-in doc' [:stats :last_seen]))))
      :op-rmw       (fn [{:keys [coll]} r]
                      (let [id   (rand-id r records hotset)
                            doc  (mongo-read-doc coll id)
                            doc' (rmw-doc doc r)]
                        (swap! docs assoc (dec id) doc')
-                       (mongo-write-doc! coll id doc')))
+                       (mongo-update-stats! coll id
+                                            (get-in doc' [:stats :score])
+                                            (get-in doc' [:stats :last_seen]))))
      :op-idoc      (fn [{:keys [coll]} r]
-                     (.countDocuments coll (mongo-filter (rand-query-spec r))))
+                     ;; Use explain to get db-reported execution time
+                     (mongo-explain-query coll (mongo-filter (rand-query-spec r))))
      :close!       (fn [] nil)
      :cleanup!     (fn []
                      (if keep-db?
@@ -748,14 +854,17 @@
              stats {}]
         (if (< i (:ops opts))
           (let [op    (selector r)
-                start (System/nanoTime)]
-            (case op
-              :read   ((:op-read handlers) ctx r)
-              :update ((:op-update handlers) ctx r)
-              :rmw    ((:op-rmw handlers) ctx r)
-              :idoc   ((:op-idoc handlers) ctx r))
-            (let [elapsed (- (System/nanoTime) start)]
-              (recur (inc i) (update-stat stats op elapsed))))
+                start (System/nanoTime)
+                ;; op-idoc may return [result exec-nanos] for db-reported timing
+                result (case op
+                         :read   ((:op-read handlers) ctx r)
+                         :update ((:op-update handlers) ctx r)
+                         :rmw    ((:op-rmw handlers) ctx r)
+                         :idoc   ((:op-idoc handlers) ctx r))
+                elapsed (if (and (= op :idoc) (vector? result) (number? (second result)))
+                          (second result)
+                          (- (System/nanoTime) start))]
+            (recur (inc i) (update-stat stats op elapsed)))
           stats))
       (finally
         ((:close-thread handlers) ctx)))))
@@ -854,6 +963,8 @@
                               (nnext more))
         "--dir"        (recur (assoc opts :dir (second more))
                               (nnext more))
+        "--dtlv-uri"   (recur (assoc opts :dtlv-uri (second more))
+                              (nnext more))
         "--sqlite-path" (recur (assoc opts :sqlite-path (second more))
                                (nnext more))
         "--pg-url"     (recur (assoc opts :pg-url (second more))
@@ -881,15 +992,16 @@
   (println "idoc-bench options:")
   (println "  --system datalevin|postgres|sqlite|mongo|all  (default datalevin)")
   (println "  --workload A|C|F   Workload type (default C)")
-  (println "  --records N        Number of documents (default 100000)")
-  (println "  --ops N            Number of operations (default 100000)")
-  (println "  --warmup N         Warmup ops (default 2000)")
+  (println "  --records N        Number of documents (default 10000)")
+  (println "  --ops N            Number of operations (default 10000)")
+  (println "  --warmup N         Warmup ops (default 1000)")
   (println "  --threads N        Number of worker threads (default 1)")
   (println "  --batch N          Load batch size (default 1000)")
-  (println "  --idoc N           Weight for idoc queries (default 20)")
+  (println "  --idoc N           Weight for idoc queries (default 30)")
   (println "  --idoc-trace       Trace idoc candidate sizes and match stats")
   (println "  --hotset P         Hotset fraction (0-1, default 1.0)")
   (println "  --dir PATH         Datalevin DB directory (default /tmp/idoc-bench-<uuid>)")
+  (println "  --dtlv-uri URI     Datalevin server URI (e.g. dtlv://host:port)")
   (println "  --sqlite-path PATH SQLite DB file path")
   (println "  --pg-url URL       Postgres JDBC URL")
   (println "  --pg-user USER     Postgres user")

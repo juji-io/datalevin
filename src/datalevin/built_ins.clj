@@ -28,6 +28,7 @@
    [datalevin.util :as u :refer [raise long-inc]]
    [datalevin.interface :refer [search schema search-vec attrs]])
   (:import
+   [java.util List]
    [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM LRUCache]
    [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
@@ -160,19 +161,51 @@
   e.g. [(or (= ?g \"f\"\") (like ?n \"A%\"\"))]"
   or-fn)
 
+(defn- make-emit-fn
+  "Create an emit function that produces tuples with only the needed indices.
+   If needed is nil, produces full [e a v] tuples."
+  [lmdb aid->attr ^ints needed]
+  (if needed
+    (let [n (alength needed)]
+      (fn [doc-ref]
+        (let [^objects arr (object-array n)
+              [e a v]      (if (and (vector? doc-ref)
+                                    (clojure.core/= :g (first doc-ref)))
+                             (let [d (st/gt->datom lmdb (second doc-ref))]
+                               [(dd/datom-e d) (dd/datom-a d) (dd/datom-v d)])
+                             [(nth doc-ref 0)
+                              (aid->attr (nth doc-ref 1))
+                              (peek doc-ref)])]
+          (dotimes [j n]
+            (aset arr j (case (aget needed j)
+                          0 e
+                          1 a
+                          2 v)))
+          arr)))
+    (fn [doc-ref]
+      (if (and (vector? doc-ref)
+               (clojure.core/= :g (first doc-ref)))
+        (let [d (st/gt->datom lmdb (second doc-ref))]
+          (object-array [(dd/datom-e d)
+                         (dd/datom-a d)
+                         (dd/datom-v d)]))
+        (object-array [(nth doc-ref 0)
+                       (aid->attr (nth doc-ref 1))
+                       (peek doc-ref)])))))
+
 (defn- fulltext*
-  [^FastList res aid->attr lmdb engines query opts domain]
-  (let [engine (engines domain)]
+  [^FastList res aid->attr lmdb engines query opts domain ^ints needed]
+  (let [engine (engines domain)
+        emit   (make-emit-fn lmdb aid->attr needed)]
     (doseq [d (search engine query opts)]
-      (.add res
-            (if (clojure.core/= :g (nth d 0))
-              (let [datom (st/gt->datom lmdb (peek d))]
-                (object-array [(dd/datom-e datom)
-                               (dd/datom-a datom)
-                               (dd/datom-v datom)]))
-              (object-array [(nth d 0)
-                             (aid->attr (nth d 1))
-                             (peek d)]))))))
+      (.add res (emit d)))))
+
+(defn- extract-needed
+  [arg3 arg2 arg1]
+  (clojure.core/or
+    (some-> arg3 clojure.core/meta :tuple-needed)
+    (some-> arg2 clojure.core/meta :tuple-needed)
+    (some-> arg1 clojure.core/meta :tuple-needed)))
 
 (defn fulltext
   "Function that does fulltext search. Returns matching tuples of
@@ -207,14 +240,15 @@
                         [(u/keyword->string arg1)]
                         (:domains arg2))
          query        (if attr? arg2 arg1)
-         opts         (if attr? arg3 arg2)]
+         opts         (if attr? arg3 arg2)
+         needed       (extract-needed arg3 arg2 arg1)]
      (when attr?
        (when-not (-> store schema arg1 :db.fulltext/autoDomain)
          (raise ":db.fulltext/autoDomain is not true for " arg1
                 {})))
      (let [res (FastList.)]
        (doseq [domain (if (seq domains) domains (keys engines))]
-         (fulltext* res aid->attr lmdb engines query opts domain))
+         (fulltext* res aid->attr lmdb engines query opts domain needed))
        res))))
 
 (defn fulltext-datoms
@@ -229,30 +263,46 @@
                res))))))
 
 (defn- vec-neighbors*
-  [^FastList res aid->attr lmdb indices query opts domain]
+  [^FastList res aid->attr lmdb indices query opts domain ^ints needed]
   (when-let [index (indices domain)]
-    (let [display (or (:display opts)
-                      (:display (.-search-opts ^datalevin.vector.VectorIndex index))
-                      :refs)
-          emit    (fn [d]
-                    (if (clojure.core/= :g (nth d 0))
-                      (let [datom (st/gt->datom lmdb (peek d))]
-                        (object-array [(dd/datom-e datom)
-                                       (dd/datom-a datom)
-                                       (dd/datom-v datom)]))
-                      (object-array [(nth d 0)
-                                     (aid->attr (nth d 1))
-                                     (peek d)])))]
-      (doseq [d (search-vec index query opts)]
-        (.add res
-              (if (clojure.core/= :refs+dists display)
-                (let [[vec-ref dist] d
-                      ^objects tuple (emit vec-ref)]
-                  (object-array [(aget tuple 0)
-                                 (aget tuple 1)
-                                 (aget tuple 2)
-                                 dist]))
-                (emit d)))))))
+    (let [display    (or (:display opts)
+                         (:display (.-search-opts ^datalevin.vector.VectorIndex index))
+                         :refs)
+          refs+dists (clojure.core/= :refs+dists display)
+          emit       (make-emit-fn lmdb aid->attr needed)]
+      (if refs+dists
+        ;; For refs+dists, we have 4 elements: e(0), a(1), v(2), dist(3)
+        (if needed
+          (let [n (alength needed)]
+            (doseq [d (search-vec index query opts)]
+              (let [[vec-ref dist]  d
+                    [e a v]         (if (and (vector? vec-ref)
+                                             (clojure.core/= :g (first vec-ref)))
+                                      (let [datom (st/gt->datom lmdb (peek vec-ref))]
+                                        [(dd/datom-e datom)
+                                         (dd/datom-a datom)
+                                         (dd/datom-v datom)])
+                                      [(nth vec-ref 0)
+                                       (aid->attr (nth vec-ref 1))
+                                       (peek vec-ref)])
+                    ^objects arr    (object-array n)]
+                (dotimes [j n]
+                  (aset arr j (case (aget needed j)
+                                0 e
+                                1 a
+                                2 v
+                                3 dist)))
+                (.add res arr))))
+          (doseq [d (search-vec index query opts)]
+            (let [[vec-ref dist] d
+                  ^objects tuple (emit vec-ref)]
+              (.add res (object-array [(aget tuple 0)
+                                       (aget tuple 1)
+                                       (aget tuple 2)
+                                       dist])))))
+        ;; Regular 3-element tuples
+        (doseq [d (search-vec index query opts)]
+          (.add res (emit d)))))))
 
 (defn vec-neighbors
   "Function that does vector similarity search. Returns matching tuples of
@@ -286,13 +336,14 @@
                         [(v/attr-domain arg1)]
                         (:domains arg2))
          query        (if attr? arg2 arg1)
-         opts         (if attr? arg3 arg2)]
-     (let [res (FastList.)]
-       (doseq [domain (if (and (sequential? domains) (seq domains))
-                        domains
-                        (raise "Need a vector search domain." {}))]
-         (vec-neighbors* res aid->attr lmdb indices query opts domain))
-       res))))
+         opts         (if attr? arg3 arg2)
+         needed       (extract-needed arg3 arg2 arg1)
+         res          (FastList.)]
+     (doseq [domain (if (and (sequential? domains) (seq domains))
+                      domains
+                      (raise "Need a vector search domain." {}))]
+       (vec-neighbors* res aid->attr lmdb indices query opts domain needed))
+     res)))
 
 (defn- idoc-domain
   [store attr]
@@ -302,78 +353,74 @@
     (or (:db/domain props) (u/keyword->string attr))))
 
 (defn- idoc-match-domain
-  [^Store store index query domain]
+  [^Store store index query domain ^ints needed]
   (let [{:keys [ids exact? verify]} (idoc/candidate-ids* index query)
-        doc-refs                    (.-doc-refs ^IdocIndex index)
-        lmdb                        (.-lmdb store)
-        aid->attr                   (attrs store)
-        verify?                     (and (clojure.core/not exact?) (seq verify))
-        emit
-        (fn [doc-ref]
-          (if (and (vector? doc-ref)
-                   (clojure.core/= :g (first doc-ref)))
-            (let [d (st/gt->datom lmdb (second doc-ref))]
-              (object-array [(dd/datom-e d)
-                             (dd/datom-a d)
-                             (dd/datom-v d)]))
-            (object-array [(nth doc-ref 0)
-                           (aid->attr (nth doc-ref 1))
-                           (peek doc-ref)])))]
+
+        doc-refs  (.-doc-refs ^IdocIndex index)
+        lmdb      (.-lmdb store)
+        aid->attr (attrs store)
+        verify?   (and (clojure.core/not exact?)
+                       (clojure.core/not (idoc/ids-empty? verify)))
+        emit      (make-emit-fn lmdb aid->attr needed)]
     (if (clojure.core/nil? idoc/*trace*)
       (let [res (FastList.)]
-        (doseq [doc-id ids]
-          (let [doc-ref (.get ^IntObjectHashMap doc-refs (int doc-id))]
-            (when doc-ref
-              (cond
-                exact?
-                (.add res (emit doc-ref))
+        (idoc/ids-iterate
+          ids
+          (fn [doc-id]
+            (let [doc-ref (.get ^IntObjectHashMap doc-refs (int doc-id))]
+              (when doc-ref
+                (cond
+                  exact?
+                  (.add res (emit doc-ref))
 
-                verify?
-                (if (clojure.core/contains? verify doc-id)
+                  verify?
+                  (if (idoc/ids-contains? verify doc-id)
+                    (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
+                      (when (idoc/matches-doc? index doc query)
+                        (.add res (emit doc-ref))))
+                    (.add res (emit doc-ref)))
+
+                  :else
                   (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
                     (when (idoc/matches-doc? index doc query)
-                      (.add res (emit doc-ref))))
-                  (.add res (emit doc-ref)))
-
-                :else
-                (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
-                  (when (idoc/matches-doc? index doc query)
-                    (.add res (emit doc-ref))))))))
+                      (.add res (emit doc-ref)))))))))
         res)
       (let [start        (System/nanoTime)
-            cand-count   (clojure.core/count ids)
-            verify-count (if verify (clojure.core/count verify) 0)
+            cand-count   (idoc/ids-count ids)
+            verify-count (idoc/ids-count verify)
             doc-fetches  (volatile! 0)
             match-count  (volatile! 0)
             res          (FastList.)]
-        (doseq [doc-id ids]
-          (let [doc-ref (.get ^IntObjectHashMap doc-refs (int doc-id))]
-            (when doc-ref
-              (cond
-                exact?
-                (do
-                  (vswap! match-count long-inc)
-                  (.add res (emit doc-ref)))
+        (idoc/ids-iterate
+          ids
+          (fn [doc-id]
+            (let [doc-ref (.get ^IntObjectHashMap doc-refs (int doc-id))]
+              (when doc-ref
+                (cond
+                  exact?
+                  (do
+                    (vswap! match-count long-inc)
+                    (.add res (emit doc-ref)))
 
-                verify?
-                (if (clojure.core/contains? verify doc-id)
+                  verify?
+                  (if (idoc/ids-contains? verify doc-id)
+                    (do
+                      (vswap! doc-fetches long-inc)
+                      (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
+                        (when (idoc/matches-doc? index doc query)
+                          (vswap! match-count long-inc)
+                          (.add res (emit doc-ref)))))
+                    (do
+                      (vswap! match-count long-inc)
+                      (.add res (emit doc-ref))))
+
+                  :else
                   (do
                     (vswap! doc-fetches long-inc)
                     (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
                       (when (idoc/matches-doc? index doc query)
                         (vswap! match-count long-inc)
-                        (.add res (emit doc-ref)))))
-                  (do
-                    (vswap! match-count long-inc)
-                    (.add res (emit doc-ref))))
-
-                :else
-                (do
-                  (vswap! doc-fetches long-inc)
-                  (let [doc (idoc/doc-ref->doc lmdb doc-ref)]
-                    (when (idoc/matches-doc? index doc query)
-                      (vswap! match-count long-inc)
-                      (.add res (emit doc-ref)))))))))
+                        (.add res (emit doc-ref))))))))))
         (idoc/*trace* {:event           :idoc-match-domain
                        :domain          domain
                        :candidate-count cand-count
@@ -410,6 +457,7 @@
                         (:domains arg2))
          query        (if attr? arg2 arg1)
          opts         (if attr? arg3 arg2)
+         needed       (extract-needed arg3 arg2 arg1)
          domains      (or (when (map? opts) (:domains opts))
                           domains0
                           (keys indices))
@@ -418,7 +466,8 @@
        (raise "Idoc domain not found: " missing {:domains missing}))
      (let [res (FastList.)]
        (doseq [domain (if (seq domains) domains [])]
-         (let [tuples (idoc-match-domain store (indices domain) query domain)]
+         (let [^List tuples (idoc-match-domain store (indices domain) query
+                                               domain needed)]
            (when (and tuples (clojure.core/pos? (.size tuples)))
              (.addAll res tuples))))
        res))))

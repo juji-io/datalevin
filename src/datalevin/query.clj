@@ -364,6 +364,43 @@
           :else nil))
       attrs)))
 
+(defn- tuple-needed-indices
+  "Returns an int array of indices that are needed (not BindIgnore) from a
+   BindTuple. Returns nil if all indices are needed."
+  [^BindTuple binding]
+  (let [bs     (:bindings binding)
+        n      (count bs)
+        needed (int-array (keep-indexed
+                            (fn [i b] (when-not (instance? BindIgnore b) i))
+                            bs))]
+    (when (< (alength needed) n)
+      needed)))
+
+(defn- compact-bindtuple-attrs
+  "Build attr -> compact index map for a tuple binding when using needed indices.
+   Maps each non-ignored variable to its position in the compact tuple."
+  [^BindTuple binding]
+  (loop [i 0, compact-i 0, bs (:bindings binding), attrs {}]
+    (if (seq bs)
+      (let [b (first bs)]
+        (cond
+          (instance? BindScalar b)
+          (let [sym (get-in b [:variable :symbol])]
+            (if (contains? attrs sym)
+              nil
+              (recur (inc i) (inc compact-i) (next bs) (assoc attrs sym compact-i))))
+
+          (instance? BindIgnore b)
+          (recur (inc i) compact-i (next bs) attrs)
+
+          :else nil))
+      attrs)))
+
+(def ^:private tuple-producing-fns
+  "Set of function symbols that produce tuples and can benefit from
+   knowing which indices are needed."
+  #{'fulltext 'idoc-match 'vec-neighbors})
+
 (extend-protocol IBinding
   BindIgnore
   (in->rel [_ _]
@@ -801,10 +838,43 @@
                   (update production :tuples #(r/select-tuples tuple-pred %)))]
     (update context :rels conj new-rel)))
 
+(defn- attach-needed-meta
+  "Attach :tuple-needed metadata to the last argument or append a metadata map.
+   Returns the modified args vector."
+  [args ^ints needed]
+  (let [v        (vec args)
+        n        (count v)
+        last-arg (when (pos? n) (peek v))
+        meta-map (with-meta {} {:tuple-needed needed})]
+    (cond
+      (zero? n)
+      [meta-map]
+
+      ;; nil can't hold metadata, but we can replace it with a map
+      (nil? last-arg)
+      (assoc v (dec n) meta-map)
+
+      ;; If last arg can hold metadata, attach it there
+      (instance? clojure.lang.IObj last-arg)
+      (assoc v (dec n) (with-meta last-arg {:tuple-needed needed}))
+
+      ;; Otherwise append a new map with the metadata
+      :else
+      (conj v meta-map))))
+
 (defn bind-by-fn
   [context clause]
   (let [[[f & args] out]     clause
         binding              (dp/parse-binding out)
+        ;; Check if this is a tuple-producing function with ignored bindings
+        tuple-bind?          (and (instance? BindColl binding)
+                                  (instance? BindTuple (:binding binding)))
+        needed               (when (and tuple-bind?
+                                        (contains? tuple-producing-fns f))
+                               (tuple-needed-indices (:binding binding)))
+        args'                (if needed
+                               (attach-needed-meta args needed)
+                               args)
         attrs                (qu/collect-vars args)
         [context production] (rel-prod-by-attrs context attrs)
         ;; Check if scalar output variable is already bound in production
@@ -814,7 +884,7 @@
         new-rel
         (if out-idx
           ;; Output variable already bound - filter tuples where values match
-          (let [tuple-fn (-call-fn context production f args)]
+          (let [tuple-fn (-call-fn context production f args')]
             (clojure.core/update
               production :tuples
               #(r/select-tuples
@@ -824,14 +894,23 @@
                           (= (aget tuple (int out-idx)) val))))
                  %)))
           ;; Output variable not bound - create new binding
-          (let [tuple-fn (-call-fn context production f args)
+          (let [tuple-fn (-call-fn context production f args')
                 rels     (for [tuple (:tuples production)
                                :let  [val (tuple-fn tuple)]
                                :when (not (nil? val))]
-                           (r/prod-rel
-                             (r/relation! (:attrs production)
-                                          (doto (FastList.) (.add tuple)))
-                             (in->rel binding val)))]
+                           (if needed
+                             ;; Compact tuples - use compact attrs
+                             (r/prod-rel
+                               (r/relation! (:attrs production)
+                                            (doto (FastList.) (.add tuple)))
+                               (r/relation!
+                                 (compact-bindtuple-attrs (:binding binding))
+                                 val))
+                             ;; Regular path
+                             (r/prod-rel
+                               (r/relation! (:attrs production)
+                                            (doto (FastList.) (.add tuple)))
+                               (in->rel binding val))))]
             (if (empty? rels)
               (r/prod-rel production (empty-rel binding))
               (reduce r/sum-rel rels))))]

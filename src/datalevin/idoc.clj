@@ -11,7 +11,6 @@
   "Indexed document parsing and validation utilities."
   (:require
    [clojure.edn :as edn]
-   [clojure.set :as set]
    [clojure.string :as str]
    [datalevin.bits :as b]
    [datalevin.constants :as c]
@@ -19,16 +18,17 @@
    [datalevin.interface :as i
     :refer [open-dbi open-list-dbi get-value visit transact-kv]]
    [datalevin.lmdb :as l]
-   [datalevin.util :as u :refer [raise]]
+   [datalevin.util :as u :refer [raise map+]]
    [jsonista.core :as json]
    [nextjournal.markdown :as md])
   (:import
-   [java.util IdentityHashMap HashSet HashMap Collections ArrayList Map$Entry]
+   [java.util IdentityHashMap HashSet HashMap Collections List Map$Entry Set]
    [java.util.concurrent ConcurrentHashMap]
    [java.util.concurrent.atomic AtomicBoolean AtomicInteger AtomicLong]
    [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.math BigDecimal BigInteger]))
+   [java.math BigDecimal BigInteger]
+   [org.roaringbitmap RoaringBitmap]))
 
 (def ^:private default-format :edn)
 
@@ -435,8 +435,9 @@
                     (assoc m seg (step (get m seg) rest (conj ctx seg))))
 
                   :else
-                  (raise "Idoc patch path segment must be keyword, string, or integer"
-                         {:path path :segment seg})))))]
+                  (raise
+                    "Idoc patch path segment must be keyword, string, or integer"
+                    {:path path :segment seg})))))]
     (step doc path [])))
 
 (defn- update-in-idoc
@@ -471,8 +472,9 @@
                     (assoc m seg (step (get m seg) rest (conj ctx seg))))
 
                   :else
-                  (raise "Idoc patch path segment must be keyword, string, or integer"
-                         {:path path :segment seg})))))]
+                  (raise
+                    "Idoc patch path segment must be keyword, string, or integer"
+                    {:path path :segment seg})))))]
     (step doc path [])))
 
 (defn- unset-in-idoc
@@ -515,8 +517,9 @@
                       (dissoc m seg)))
 
                   :else
-                  (raise "Idoc patch path segment must be keyword, string, or integer"
-                         {:path path :segment seg})))))]
+                  (raise
+                    "Idoc patch path segment must be keyword, string, or integer"
+                    {:path path :segment seg})))))]
     (step doc path [])))
 
 (defn apply-patch
@@ -586,7 +589,8 @@
                        (< ^long idx1 len)
                        (= (nth path (int idx1)) \:))
                 (let [start (+ ^long idx 2)
-                      next  (long (or (str/index-of path "/:" start) len))
+                      ;; Stop at any "/" (both "/:" for keywords and "/" for strings)
+                      next  (long (or (str/index-of path "/" start) len))
                       seg   (subs path (int start) (int next))]
                   (recur next (conj out (keyword seg))))
                 (let [start idx1
@@ -766,6 +770,13 @@
                                   :val-size c/+short-id-bytes+})
     [doc-ref-dbi doc-index-dbi path-dict-dbi]))
 
+(deftype PathTrieNode [^ConcurrentHashMap children
+                       ^AtomicInteger pid])
+
+(defn- new-path-trie
+  []
+  (->PathTrieNode (ConcurrentHashMap.) (AtomicInteger. 0)))
+
 (deftype IdocIndex [lmdb
                     domain
                     format
@@ -778,6 +789,7 @@
                     path-cache
                     path-seg-cache
                     pattern-cache
+                    path-trie
                     ^AtomicBoolean paths-loaded
                     paths-lock
                     range-cache
@@ -791,6 +803,7 @@
         path-cache                   (ConcurrentHashMap.)
         path-seg-cache               (ConcurrentHashMap.)
         pattern-cache                (ConcurrentHashMap.)
+        path-trie                    (new-path-trie)
         paths-loaded                 (AtomicBoolean. false)
         paths-lock                   (Object.)
         range-cache                  (ConcurrentHashMap.)
@@ -807,6 +820,7 @@
                  path-cache
                  path-seg-cache
                  pattern-cache
+                 path-trie
                  paths-loaded
                  paths-lock
                  range-cache
@@ -826,6 +840,7 @@
                (.-path-cache old)
                (.-path-seg-cache old)
                (.-pattern-cache old)
+               (.-path-trie old)
                (.-paths-loaded old)
                (.-paths-lock old)
                (.-range-cache old)
@@ -842,13 +857,29 @@
   ([^IdocIndex index path ^long pid] (cache-path! index path pid nil))
   ([^IdocIndex index path ^long pid segs]
    (let [^ConcurrentHashMap path-cache (.-path-cache index)
-         ^ConcurrentHashMap seg-cache  (.-path-seg-cache index)]
+         ^ConcurrentHashMap seg-cache  (.-path-seg-cache index)
+         segs'                         (or segs
+                                            (.get seg-cache pid)
+                                            (let [s (decode-path path)]
+                                              (.put seg-cache pid s)
+                                              s))
+         ^PathTrieNode root            (.-path-trie index)]
      (.put path-cache path pid)
-     (if segs
-       (.put seg-cache pid segs)
-       (when-not (.containsKey seg-cache pid)
-         (.put seg-cache pid (decode-path path)))))
-   pid))
+     (when segs'
+       (.put seg-cache pid segs')
+       (when root
+         (let [pid-int (int pid)]
+           (loop [^PathTrieNode node root
+                  segs segs']
+             (if (seq segs)
+               (let [seg (first segs)
+                     ^ConcurrentHashMap children (.-children node)
+                     child (or (.get children seg)
+                               (let [n (new-path-trie)]
+                                 (or (.putIfAbsent children seg n) n)))]
+                 (recur child (next segs)))
+               (.set ^AtomicInteger (.-pid node) pid-int))))))
+     pid)))
 
 (defn- load-path-cache!
   [^IdocIndex index]
@@ -858,8 +889,7 @@
         (when-not (.get loaded)
           (let [lmdb       (.-lmdb index)
                 path-dbi   (.-path-dict-dbi index)
-                ^ConcurrentHashMap seg-cache  (.-path-seg-cache index)
-                ^ConcurrentHashMap path-cache (.-path-cache index)]
+                ^ConcurrentHashMap seg-cache  (.-path-seg-cache index)]
             (visit lmdb path-dbi
                    (fn [kv]
                      (let [p    (b/read-buffer (l/k kv) :string)
@@ -868,7 +898,7 @@
                                     (let [s (decode-path p)]
                                       (.put seg-cache pid s)
                                       s))]
-                       (.put path-cache p pid)))
+                       (cache-path! index p pid segs)))
                    [:all-back]))
           (.set loaded true))))))
 
@@ -937,24 +967,23 @@
          (when-not (and check-exist?
                         (get-value lmdb doc-ref-dbi doc-ref :data :int))
            (let [doc-id (.incrementAndGet ^AtomicInteger (.-max-doc index))]
-             ;; TODO: if doc-ref ever exceeds LMDB key size, fall back to a :g ref.
              (.add txs (l/kv-tx :put doc-ref-dbi doc-ref doc-id :data :int))
              (.put ^IntObjectHashMap doc-refs (int doc-id) doc-ref)
              (doseq [[path values] (doc->path-values-mutable doc)
                      :let          [pid (ensure-path-id index path txs)]]
-               (doseq [v values
+               (doseq [v    values
                        :let [idx (indexable-key pid v)
-                             ^ArrayList ids (or (.get idx->ids idx)
-                                                (let [ids (ArrayList.)]
-                                                  (.put idx->ids idx ids)
-                                                  ids))]]
+                             ^List ids (or (.get idx->ids idx)
+                                           (let [ids (FastList.)]
+                                             (.put idx->ids idx ids)
+                                             ids))]]
                  (.add ids doc-id))))))
-      (doseq [[idx ids] idx->ids]
-        (.add txs (l/kv-tx :put-list index-dbi idx ids :avg :int)))
-      (when-not (.isEmpty txs)
-        (transact-kv lmdb txs)
-        (invalidate-range-cache! index))
-      :docs-added))))
+       (doseq [[idx ids] idx->ids]
+         (.add txs (l/kv-tx :put-list index-dbi idx ids :avg :int)))
+       (when-not (.isEmpty txs)
+         (transact-kv lmdb txs)
+         (invalidate-range-cache! index))
+       :docs-added))))
 
 (defn remove-doc
   [^IdocIndex index doc-ref doc]
@@ -988,12 +1017,12 @@
           (doseq [[path values] (doc->path-values-mutable doc)
                   :let          [pid (get-path-id index path)]]
             (when pid
-              (doseq [v values
+              (doseq [v    values
                       :let [idx (indexable-key pid v)
-                            ^ArrayList ids (or (.get idx->ids idx)
-                                               (let [ids (ArrayList.)]
-                                                 (.put idx->ids idx ids)
-                                                 ids))]]
+                            ^List ids (or (.get idx->ids idx)
+                                          (let [ids (FastList.)]
+                                            (.put idx->ids idx ids)
+                                            ids))]]
                 (.add ids doc-id))))
           (.add txs (l/kv-tx :del doc-ref-dbi doc-ref :data))
           (.remove ^IntObjectHashMap doc-refs (int doc-id))))
@@ -1010,26 +1039,29 @@
                              old-ref :data :int)]
     (if (and (= old-ref new-ref) (= old-doc new-doc))
       :doc-updated
-      (let [txs         (FastList.)
-            lmdb        (.-lmdb index)
-            index-dbi   (.-doc-index-dbi index)
-            doc-ref-dbi (.-doc-ref-dbi index)
-            doc-refs    (.-doc-refs index)
-            ^java.util.Set empty-set (Collections/emptySet)
+      (let [txs               (FastList.)
+            lmdb              (.-lmdb index)
+            index-dbi         (.-doc-index-dbi index)
+            doc-ref-dbi       (.-doc-ref-dbi index)
+            doc-refs          (.-doc-refs index)
+            ^Set empty-set    (Collections/emptySet)
             [old-map new-map] (diff-path-values old-doc new-doc)]
         (when-not (= old-ref new-ref)
           (.add txs (l/kv-tx :del doc-ref-dbi old-ref :data))
           (.add txs (l/kv-tx :put doc-ref-dbi new-ref doc-id :data :int))
           (.put ^IntObjectHashMap doc-refs (int doc-id) new-ref))
         (doseq [[path old-vals] old-map
-                :let [^java.util.Set new-vals (or (.get ^HashMap new-map path) empty-set)]]
+                :let            [^Set new-vals (or (.get ^HashMap new-map path)
+                                                   empty-set)]]
           (when-let [pid (get-path-id index path)]
             (doseq [v old-vals]
               (when-not (.contains new-vals v)
                 (let [idx (indexable-key pid v)]
-                  (.add txs (l/kv-tx :del-list index-dbi idx [doc-id] :avg :int)))))))
+                  (.add txs (l/kv-tx :del-list index-dbi idx [doc-id]
+                                     :avg :int)))))))
         (doseq [[path new-vals] new-map
-                :let [^java.util.Set old-vals (or (.get ^HashMap old-map path) empty-set)]]
+                :let            [^Set old-vals (or (.get ^HashMap old-map path)
+                                                   empty-set)]]
           (let [pid (ensure-path-id index path txs)]
             (doseq [v new-vals]
               (when-not (.contains old-vals v)
@@ -1066,18 +1098,10 @@
                            {:segment seg :path segments}))
 
                   :else
-                  (raise "Idoc patch path segment must be keyword, string, or integer"
-                         {:segment seg :path segments})))))]
+                  (raise
+                    "Idoc patch path segment must be keyword, string, or integer"
+                    {:segment seg :path segments})))))]
     (step doc segments)))
-
-(defn- patch-path-values
-  [doc paths]
-  (reduce
-    (fn [acc {:keys [path]}]
-      (if-let [node (get-path-strict doc path)]
-        (merge-with set/union acc (doc->path-values node path))
-        acc))
-    {} paths))
 
 (defn patch-doc
   [^IdocIndex index old-ref old-doc new-ref new-doc {:keys [paths]}]
@@ -1085,28 +1109,31 @@
                              old-ref :data :int)]
     (if (and (= old-ref new-ref) (= old-doc new-doc))
       :doc-updated
-      (let [txs         (FastList.)
-            lmdb        (.-lmdb index)
-            index-dbi   (.-doc-index-dbi index)
-            doc-ref-dbi (.-doc-ref-dbi index)
-            doc-refs    (.-doc-refs index)
-            ^java.util.Set empty-set (Collections/emptySet)
-            paths       (or paths [])
-            old-map     (patch-path-values-mutable old-doc paths)
-            new-map     (patch-path-values-mutable new-doc paths)]
+      (let [txs            (FastList.)
+            lmdb           (.-lmdb index)
+            index-dbi      (.-doc-index-dbi index)
+            doc-ref-dbi    (.-doc-ref-dbi index)
+            doc-refs       (.-doc-refs index)
+            ^Set empty-set (Collections/emptySet)
+            paths          (or paths [])
+            old-map        (patch-path-values-mutable old-doc paths)
+            new-map        (patch-path-values-mutable new-doc paths)]
         (when-not (= old-ref new-ref)
           (.add txs (l/kv-tx :del doc-ref-dbi old-ref :data))
           (.add txs (l/kv-tx :put doc-ref-dbi new-ref doc-id :data :int))
           (.put ^IntObjectHashMap doc-refs (int doc-id) new-ref))
         (doseq [[path old-vals] old-map
-                :let [^java.util.Set new-vals (or (.get ^HashMap new-map path) empty-set)]]
+                :let            [^Set new-vals (or (.get ^HashMap new-map path)
+                                                   empty-set)]]
           (when-let [pid (get-path-id index path)]
             (doseq [v old-vals]
               (when-not (.contains new-vals v)
                 (let [idx (indexable-key pid v)]
-                  (.add txs (l/kv-tx :del-list index-dbi idx [doc-id] :avg :int)))))))
+                  (.add txs (l/kv-tx :del-list index-dbi idx [doc-id]
+                                     :avg :int)))))))
         (doseq [[path new-vals] new-map
-                :let [^java.util.Set old-vals (or (.get ^HashMap old-map path) empty-set)]]
+                :let            [^Set old-vals (or (.get ^HashMap old-map path)
+                                                   empty-set)]]
           (let [pid (ensure-path-id index path txs)]
             (doseq [v new-vals]
               (when-not (.contains old-vals v)
@@ -1361,14 +1388,14 @@
   [^long path-id vt v]
   (b/indexable 0 (int path-id) v vt c/g0))
 
-
 (defn- ids-for-eq-path-id
   [^IdocIndex index ^long pid value]
-  (let [idx (indexable-key pid value)]
-    (if-let [res (i/get-list (.-lmdb index) (.-doc-index-dbi index)
-                             idx :avg :int)]
-      (set res)
-      #{})))
+  (let [idx (indexable-key pid value)
+        bm  (RoaringBitmap.)]
+    (i/visit-list (.-lmdb index) (.-doc-index-dbi index)
+                  (fn [v] (.add bm (int v)))
+                  idx :avg :int false)
+    bm))
 
 (defn- matching-path-ids
   [^IdocIndex index path]
@@ -1377,25 +1404,73 @@
       cached
       (do
         (load-path-cache! index)
-        (let [^ConcurrentHashMap seg-cache (.-path-seg-cache index)
-              ids                          (transient [])]
-          (doseq [^Map$Entry entry (.entrySet seg-cache)]
-            (let [pid  (long (.getKey entry))
-                  segs (.getValue entry)]
-              (when (match-path? path segs)
-                (conj! ids pid))))
-          (let [res (persistent! ids)]
-            (.put pattern-cache path res)
-            res))))))
+        (let [^PathTrieNode root (.-path-trie index)
+              res
+              (if root
+                (let [plen                  (count path)
+                      ^IdentityHashMap seen (IdentityHashMap.)
+                      acc                   (transient [])]
+                  (letfn [(mark! [^PathTrieNode node ^long idx]
+                            (let [^booleans visited
+                                  (or (.get seen node)
+                                      (let [arr (boolean-array
+                                                  (int (inc plen)))]
+                                        (.put seen node arr)
+                                        arr))]
+                              (if (aget visited idx)
+                                false
+                                (do (aset visited idx true) true))))
+                          (step [^PathTrieNode node ^long idx]
+                            (when (mark! node idx)
+                              (if (== idx plen)
+                                (let [pid (.get ^AtomicInteger (.-pid node))]
+                                  (when (pos? pid)
+                                    (conj! acc pid)))
+                                (let [seg (nth path idx)]
+                                  (cond
+                                    (= seg :*)
+                                    (do
+                                      (step node (inc idx))
+                                      (doseq [child (.values
+                                                      ^ConcurrentHashMap
+                                                      (.-children node))]
+                                        (step child idx)))
+
+                                    (= seg :?)
+                                    (doseq [child (.values
+                                                    ^ConcurrentHashMap
+                                                    (.-children node))]
+                                      (step child (inc idx)))
+
+                                    :else
+                                    (when-let [child (.get
+                                                       ^ConcurrentHashMap
+                                                       (.-children node) seg)]
+                                      (step child (inc idx))))))))]
+                    (step root 0)
+                    (persistent! acc)))
+                (let [^ConcurrentHashMap seg-cache
+                      (.-path-seg-cache index)
+                      ids (transient [])]
+                  (doseq [^Map$Entry entry (.entrySet seg-cache)]
+                    (let [pid  (long (.getKey entry))
+                          segs (.getValue entry)]
+                      (when (match-path? path segs)
+                        (conj! ids pid))))
+                  (persistent! ids)))]
+          (.put pattern-cache path res)
+          res)))))
 
 (defn- ids-for-eq
   [^IdocIndex index path value]
   (if (path-wildcards? path)
-    (transduce (map #(ids-for-eq-path-id index % value))
-               set/union #{} (matching-path-ids index path))
+    (or (b/bitmaps-or
+          (map+ #(ids-for-eq-path-id index % value)
+                (matching-path-ids index path)))
+        (RoaringBitmap.))
     (if-let [pid (get-path-id index (encode-path path))]
       (ids-for-eq-path-id index pid value)
-      #{})))
+      (RoaringBitmap.))))
 
 (defn- ids-for-range-path-id
   [^IdocIndex index ^long pid lo hi]
@@ -1408,23 +1483,23 @@
       (raise "Range predicates do not support :data values" {:value (or lo hi)}))
     (let [^ConcurrentHashMap range-cache (.-range-cache index)
           ^AtomicLong index-version      (.-index-version index)
-          version                       (.get index-version)
-          min-key                       (indexable-key* pid vt c/v0)
-          max-key                       (indexable-key* pid vt c/vmax)
-          low                           (if lo (indexable-key* pid vt lo-v) min-key)
-          high                          (if hi (indexable-key* pid vt hi-v) max-key)
-          cache-key                     [(b/pr-indexable low) (b/pr-indexable high)]]
+
+          version   (.get index-version)
+          min-key   (indexable-key* pid vt c/v0)
+          max-key   (indexable-key* pid vt c/vmax)
+          low       (if lo (indexable-key* pid vt lo-v) min-key)
+          high      (if hi (indexable-key* pid vt hi-v) max-key)
+          cache-key [(b/pr-indexable low) (b/pr-indexable high)]]
       (letfn [(compute []
-                (let [ids     (HashSet.)
-                      visitor (fn [kv] (.add ids (b/read-buffer (l/v kv) :int)))
-                      res     (do
-                                (i/visit-list-key-range
-                                  (.-lmdb index) (.-doc-index-dbi index) visitor
-                                  [:closed low high] :avg :int)
-                                (if (.isEmpty ids) #{} (set ids)))]
+                (let [ids     (RoaringBitmap.)
+                      visitor (fn [kv]
+                                (.add ids ^int (b/read-buffer (l/v kv) :int)))]
+                  (i/visit-list-key-range
+                    (.-lmdb index) (.-doc-index-dbi index) visitor
+                    [:closed low high] :avg :int)
                   (when (= version (.get index-version))
-                    (.put range-cache cache-key [version res]))
-                  res))]
+                    (.put range-cache cache-key [version ids]))
+                  ids))]
         (if-let [cached (.get range-cache cache-key)]
           (let [[cached-version cached-ids] cached]
             (if (= cached-version version)
@@ -1435,11 +1510,13 @@
 (defn- ids-for-range
   [^IdocIndex index path lo hi]
   (if (path-wildcards? path)
-    (transduce (map #(ids-for-range-path-id index % lo hi))
-               set/union #{} (matching-path-ids index path))
+    (or (b/bitmaps-or
+          (map+ #(ids-for-range-path-id index % lo hi)
+                (matching-path-ids index path)))
+        (RoaringBitmap.))
     (if-let [pid (get-path-id index (encode-path path))]
       (ids-for-range-path-id index pid lo hi)
-      #{})))
+      (RoaringBitmap.))))
 
 (defn- parse-predicate
   [expr ctx-path]
@@ -1510,54 +1587,43 @@
     (when bounds
       (let [{:keys [lo hi]} bounds
             lo-ids          (when (some? lo) (ids-for-eq index path lo))
-            hi-ids          (when (some? hi) (ids-for-eq index path hi))
-            ids             (cond
-                              (and lo-ids hi-ids) (set/union lo-ids hi-ids)
-                              lo-ids lo-ids
-                              hi-ids hi-ids
-                              :else #{})]
-        ids))))
+            hi-ids          (when (some? hi) (ids-for-eq index path hi))]
+        (cond
+          (and lo-ids hi-ids) (.or ^RoaringBitmap lo-ids ^RoaringBitmap hi-ids)
+          lo-ids              lo-ids
+          hi-ids              hi-ids
+          :else               (RoaringBitmap.))))))
 
-(defn- intersect-ids
-  [a b]
-  (cond
-    (nil? a) b
-    (nil? b) a
-    :else (set/intersection a b)))
-
-(defn- union-ids
-  [a b]
-  (cond
-    (nil? a) nil
-    (nil? b) nil
-    :else (set/union a b)))
-
+;; TODO need to be a field in index
 (defn- all-doc-ids
   [^IdocIndex index]
-  (let [^IntObjectHashMap m (.-doc-refs index)]
-    (set (.toArray (.keySet m)))))
+  (let [^IntObjectHashMap m (.-doc-refs index)
+        bm                  (RoaringBitmap.)]
+    (doseq [id (.toArray (.keySet m))]
+      (b/bitmap-add bm (int id)))
+    bm))
 
 (defn- ids-for-expr
   [^IdocIndex index format expr ctx-path]
   (cond
     (map? expr)
-    (reduce
-      (fn [acc [k v]]
-        (let [k'   (normalize-seg format k)
-              path (conj (or ctx-path []) k')
-              ids  (ids-for-expr index format v path)]
-          (intersect-ids acc ids)))
-      nil expr)
+    (when-not (empty? expr) ;; empty query matches all documents
+      (b/bitmaps-and
+        (map+ (fn [[k v]]
+                (let [k'   (normalize-seg format k)
+                      path (conj (or ctx-path []) k')]
+                  (ids-for-expr index format v path)))
+              expr)))
 
     (vector? expr)
     (let [[op & rest] expr]
       (case op
-        :and (reduce (fn [acc e]
-                       (intersect-ids acc (ids-for-expr index format e ctx-path)))
-                     nil rest)
-        :or  (reduce (fn [acc e]
-                       (union-ids acc (ids-for-expr index format e ctx-path)))
-                     #{} rest)
+        :and (when-not (empty? rest)
+               (b/bitmaps-and
+                 (map+ #(ids-for-expr index format % ctx-path) rest)))
+        :or  (when-not (empty? rest)
+               (b/bitmaps-or
+                 (map+ #(ids-for-expr index format % ctx-path) rest)))
         :not nil
         (raise "Unknown idoc logical operator" {:op op})))
 
@@ -1617,16 +1683,16 @@
 
 (defn candidate-ids*
   [^IdocIndex index expr]
-  (let [format (.-format index)
-        ids    (ids-for-expr index format expr nil)
+  (let [format  (.-format index)
+        ids     (ids-for-expr index format expr nil)
         strict? (and (sequential? expr)
                      (not (vector? expr))
                      (#{:> :<} (keyword (first expr))))
-        verify (when strict?
-                 (strict-predicate-verify-ids index format expr nil))
-        exact? (if strict?
-                 (and (some? ids) (empty? verify))
-                 (and (some? ids) (exact-expr? expr)))]
+        verify  (when strict?
+                  (strict-predicate-verify-ids index format expr nil))
+        exact?  (if strict?
+                  (and (some? ids) (b/bitmap-empty? verify))
+                  (and (some? ids) (exact-expr? expr)))]
     (if (nil? ids)
       {:ids (all-doc-ids index) :exact? false}
       {:ids ids :exact? exact? :verify verify})))
@@ -1638,3 +1704,35 @@
 (defn matches-doc?
   [^IdocIndex index doc expr]
   (doc-matches* (.-format index) doc expr nil))
+
+(defn ids-count
+  [ids]
+  (cond
+    (nil? ids)      0
+    (b/bitmap? ids) (.getCardinality ^RoaringBitmap ids)
+    :else           (count ids)))
+
+(defn ids-empty?
+  [ids]
+  (cond
+    (nil? ids)      true
+    (b/bitmap? ids) (.isEmpty ^RoaringBitmap ids)
+    :else           (empty? ids)))
+
+(defn ids-contains?
+  [ids v]
+  (cond
+    (nil? ids)      false
+    (b/bitmap? ids) (.contains ^RoaringBitmap ids (int v))
+    :else           (contains? ids v)))
+
+(defn ids-iterate
+  [ids f]
+  (if (b/bitmap? ids)
+    (let [iter (.getIntIterator ^RoaringBitmap ids)]
+      (loop []
+        (when (.hasNext iter)
+          (f (.next iter))
+          (recur))))
+    (doseq [id ids]
+      (f id))))

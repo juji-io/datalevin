@@ -8,8 +8,12 @@
          org.mongodb/mongodb-driver-sync {:mvn/version "4.11.1"}}
 
  :aliases {:bench {:jvm-opts   ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--enable-native-access=ALL-UNNAMED"
-                               "-Dclojure.compiler.direct-linking=true"]
-                    :main-opts  ["-m" "idoc-bench.core"]
-                    :ns-default idoc-bench.core}}}
+                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "--enable-native-access=ALL-UNNAMED"
+                                "-Dclojure.compiler.direct-linking=true"]
+                   :main-opts  ["-m" "idoc-bench.core"]
+                   :ns-default idoc-bench.core}
+           :server {:jvm-opts  ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                "--enable-native-access=ALL-UNNAMED"]
+                    :main-opts ["-m" "idoc-bench.server"]}}}
