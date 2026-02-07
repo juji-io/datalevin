@@ -43,6 +43,10 @@ public class LRUCache {
         return target;
     }
 
+    public void setTarget(long target) {
+        this.target = target;
+    }
+
     public Object get(Object key) {
         if (disabled == true) return null;
         return map.get(key);
@@ -55,6 +59,12 @@ public class LRUCache {
 
     public Object remove(Object key) {
         return map.remove(key);
+    }
+
+    public Set<Object> keys() {
+        synchronized(map) {
+            return new HashSet<Object>(map.keySet());
+        }
     }
 
     public void clear() {

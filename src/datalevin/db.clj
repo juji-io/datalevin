@@ -118,6 +118,14 @@
    (.put ^ConcurrentHashMap caches (dir store)
          (LRUCache. (:cache-limit (opts store)) target))))
 
+(defn- ensure-cache
+  [store target]
+  (if-some [^LRUCache cache (.get ^ConcurrentHashMap caches (dir store))]
+    (if (< ^long (.target cache) ^long target)
+      (refresh-cache store target)
+      (.setTarget cache target))
+    (refresh-cache store target)))
+
 (defn cache-disabled?
   [store]
   (.isDisabled ^LRUCache (.get ^ConcurrentHashMap caches (dir store))))
@@ -138,6 +146,10 @@
   [store k v]
   (.put ^LRUCache (.get ^ConcurrentHashMap caches (dir store)) k v))
 
+(defn remove-cache
+  [store]
+  (.remove ^ConcurrentHashMap caches (dir store)))
+
 (defmacro wrap-cache
   [store pattern body]
   `(let [cache# (.get ^ConcurrentHashMap caches (dir ~store))]
@@ -146,6 +158,159 @@
        (let [res# ~body]
          (.put ^LRUCache cache# ~pattern res#)
          res#))))
+
+(defn- tx-touch-summary
+  [tx-data]
+  (reduce
+    (fn [acc ^Datom datom]
+      (let [e (.-e datom)
+            a (.-a datom)
+            v (.-v datom)]
+        (-> acc
+            (update :eids conj e)
+            (update :attrs conj a)
+            (update :values conj v)
+            (update-in [:values-by-attr a] (fnil conj #{}) v))))
+    {:eids #{} :attrs #{} :values #{} :values-by-attr {}}
+    tx-data))
+
+(defn- tx-affects-pattern?
+  [{:keys [eids attrs values values-by-attr]} e a v]
+  (and (or (nil? e) (contains? eids e))
+       (or (nil? a) (contains? attrs a))
+       (or (nil? v)
+           (if (nil? a)
+             (contains? values v)
+             (contains? (get values-by-attr a #{}) v)))))
+
+(defn- index-components->pattern
+  [index c1 c2 c3]
+  (case index
+    :eav [c1 c2 c3]
+    :ave [c3 c1 c2]
+    nil))
+
+(defn- tx-affects-attrs-v?
+  [{:keys [attrs]} attrs-v]
+  (boolean
+    (some
+      (fn [av]
+        (if (sequential? av)
+          (contains? attrs (first av))
+          (contains? attrs av)))
+      attrs-v)))
+
+(defn- tx-affects-cache-key?
+  [touches k]
+  (if (and (vector? k) (keyword? (first k)))
+    (let [{:keys [attrs]} touches
+          tag             (first k)]
+      (case tag
+        :init-tuples
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :sample-init-tuples
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :e-sample
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :default-ratio
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :eav-scan-v
+        (let [[_ _ _ attrs-v] k]
+          (tx-affects-attrs-v? touches attrs-v))
+
+        :val-eq-scan-e
+        (let [[_ _ _ a] k]
+          (contains? attrs a))
+
+        :val-eq-filter-e
+        (let [[_ _ _ a] k]
+          (contains? attrs a))
+
+        :search
+        (let [[_ e a v] k]
+          (tx-affects-pattern? touches e a v))
+
+        :search-tuples
+        (let [[_ e a v] k]
+          (tx-affects-pattern? touches e a v))
+
+        :first
+        (let [[_ e a v] k]
+          (tx-affects-pattern? touches e a v))
+
+        :count
+        (let [[_ e a v] k]
+          (tx-affects-pattern? touches e a v))
+
+        :populated?
+        (let [[_ index c1 c2 c3] k]
+          (if-some [[e a v] (index-components->pattern index c1 c2 c3)]
+            (tx-affects-pattern? touches e a v)
+            true))
+
+        :datoms
+        (let [[_ index c1 c2 c3] k]
+          (if-some [[e a v] (index-components->pattern index c1 c2 c3)]
+            (tx-affects-pattern? touches e a v)
+            true))
+
+        :e-datoms
+        (let [[_ e] k]
+          (tx-affects-pattern? touches e nil nil))
+
+        :av-datoms
+        (let [[_ a v] k]
+          (tx-affects-pattern? touches nil a v))
+
+        :range-datoms
+        true
+
+        :seek
+        (let [[_ index c1 c2 c3] k]
+          (if-some [[e a _] (index-components->pattern index c1 c2 c3)]
+            (tx-affects-pattern? touches e a nil)
+            true))
+
+        :rseek
+        (let [[_ index c1 c2 c3] k]
+          (if-some [[e a _] (index-components->pattern index c1 c2 c3)]
+            (tx-affects-pattern? touches e a nil)
+            true))
+
+        :cardinality
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :index-range
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        :index-range-size
+        (let [[_ a] k]
+          (contains? attrs a))
+
+        true))
+    true))
+
+(defn- invalidate-cache
+  [store tx-data target]
+  (if-some [^LRUCache cache (.get ^ConcurrentHashMap caches (dir store))]
+    (do
+      (when (seq tx-data)
+        (let [touches (tx-touch-summary tx-data)]
+          (doseq [k (.keys cache)
+                  :when (tx-affects-cache-key? touches k)]
+            (.remove cache k))))
+      (.setTarget cache target))
+    (refresh-cache store target)))
 
 (defrecord-updatable DB [^IStore store
                          ^long max-eid
@@ -446,7 +611,8 @@
     (let [store  (.-store ^DB x)
           target (last-modified store)
           cache  (.get ^ConcurrentHashMap caches (dir store))]
-      (when (< ^long (.target ^LRUCache cache) ^long target)
+      (when (or (nil? cache)
+                (< ^long (.target ^LRUCache cache) ^long target))
         (refresh-cache store target)))
     true))
 
@@ -585,7 +751,7 @@
               :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
               :pull-patterns (LRUCache. 64)})]
     (swap! dbs assoc (db-name store) db)
-    (refresh-cache store (System/currentTimeMillis))
+    (ensure-cache store (last-modified store))
     (start-sampling store)
     db))
 
@@ -677,7 +843,7 @@
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
     (stop-sampling store)
-    (.remove ^ConcurrentHashMap caches (dir store))
+    (remove-cache store)
     (swap! dbs dissoc (db-name store))
     (close store)
     nil))
@@ -1623,7 +1789,7 @@
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
        (load-datoms pstore (:tx-data rp))
-       (refresh-cache pstore (System/currentTimeMillis)))
+       (invalidate-cache pstore (:tx-data rp) (last-modified pstore)))
      rp)))
 
 (defn- remote-tx-result
@@ -1692,6 +1858,8 @@
       (try
         (let [res                                    (r/tx-data store initial-es simulated?)
               [tx-data tempids max-eid new-attributes] (remote-tx-result res)]
+          (when-not simulated?
+            (invalidate-cache store tx-data (last-modified store)))
           (cond-> (assoc initial-report
                          :db-after (-> (new-db store)
                                        (assoc :max-eid max-eid)

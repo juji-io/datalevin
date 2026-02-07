@@ -1,12 +1,3 @@
-;;
-;; Copyright (c) Nikita Prokopov, Huahai Yang. All rights reserved.
-;; The use and distribution terms for this software are covered by the
-;; Eclipse Public License 2.0 (https://opensource.org/license/epl-2-0)
-;; which can be found in the file LICENSE at the root of this distribution.
-;; By using this software in any fashion, you are agreeing to be bound by
-;; the terms of this license.
-;; You must not remove this notice, or any other, from this software.
-;;
 (ns idoc-bench.core
   "YCSB-style benchmark with idoc query workload."
   (:require
@@ -14,7 +5,6 @@
    [datalevin.constants :as c]
    [datalevin.core :as d]
    [datalevin.idoc :as idoc]
-   [datalevin.query :as dq]
    [datalevin.util :as u]
    [jsonista.core :as json]
    [next.jdbc :as jdbc]
@@ -23,7 +13,7 @@
   (:import
    [com.mongodb ExplainVerbosity]
    [com.mongodb.client MongoClients]
-   [com.mongodb.client.model Filters Projections]
+   [com.mongodb.client.model Filters]
    [java.util ArrayList Random UUID]
    [java.util.concurrent CountDownLatch]
    [org.bson Document]
@@ -382,38 +372,44 @@
 (defn- pg-idoc-query
   [table spec]
   (case (:type spec)
-    :nested [(str "SELECT id FROM " table
-                  " WHERE doc @> ?::jsonb")
-             [(encode-json {:profile {:lang (:value spec)}})]]
-    :range [(str "SELECT id FROM " table
-                 " WHERE (doc->'stats'->>'score')::double precision"
-                 " BETWEEN ? AND ?")
-            [(:lo spec) (:hi spec)]]
+    :nested       [(str "SELECT id FROM " table
+                        " WHERE doc @> ?::jsonb")
+                   [(encode-json {:profile {:lang (:value spec)}})]]
+    :range        [(str "SELECT id FROM " table
+                        " WHERE (doc->'stats'->>'score')::double precision"
+                        " BETWEEN ? AND ?")
+                   [(:lo spec) (:hi spec)]]
     :wildcard-one [(str "SELECT id FROM " table
                         " WHERE doc @> ?::jsonb OR doc @> ?::jsonb")
                    [(encode-json {:facts {:city (:value spec)}})
                     (encode-json {:facts {:team (:value spec)}})]]
-    :wildcard-depth [(str "SELECT id FROM " table
-                          " WHERE doc @> ?::jsonb")
-                     [(encode-json {:events [{:entity {:name (:value spec)}}]})]]
-    :array [(str "SELECT id FROM " table
-                 " WHERE doc @> ?::jsonb")
-            [(encode-json {:events [{:tags [(:value spec)]}]})]]))
+    :wildcard-depth
+    [(str "SELECT id FROM " table
+          " WHERE doc @> ?::jsonb")
+     [(encode-json {:events [{:entity {:name (:value spec)}}]})]]
+    :array        [(str "SELECT id FROM " table
+                        " WHERE doc @> ?::jsonb")
+                   [(encode-json {:events [{:tags [(:value spec)]}]})]]))
 
 (defn- pg-create-indexes!
   [ds table]
   ;; GIN index for jsonb containment queries
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_doc_gin_idx"
-                          " ON " table " USING GIN (doc jsonb_path_ops)")])
-  ;; B-tree indexes for specific paths (for fair comparison)
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_profile_lang_idx"
-                          " ON " table " ((doc->'profile'->>'lang'))")])
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_stats_score_idx"
-                          " ON " table " (((doc->'stats'->>'score')::double precision))")])
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_city_idx"
-                          " ON " table " ((doc->'facts'->>'city'))")])
-  (jdbc/execute! ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_team_idx"
-                          " ON " table " ((doc->'facts'->>'team'))")]))
+  (jdbc/execute!
+    ds [(str "CREATE INDEX IF NOT EXISTS " table "_doc_gin_idx"
+             " ON " table " USING GIN (doc jsonb_path_ops)")])
+  ;; B-tree indexes for specific paths
+  (jdbc/execute!
+    ds [(str "CREATE INDEX IF NOT EXISTS " table "_profile_lang_idx"
+             " ON " table " ((doc->'profile'->>'lang'))")])
+  (jdbc/execute!
+    ds [(str "CREATE INDEX IF NOT EXISTS " table "_stats_score_idx"
+             " ON " table " (((doc->'stats'->>'score')::double precision))")])
+  (jdbc/execute!
+    ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_city_idx"
+             " ON " table " ((doc->'facts'->>'city'))")])
+  (jdbc/execute!
+    ds [(str "CREATE INDEX IF NOT EXISTS " table "_facts_team_idx"
+             " ON " table " ((doc->'facts'->>'team'))")]))
 
 (defn- pg-analyze!
   [ds table]
@@ -422,38 +418,44 @@
 (defn- sqlite-idoc-query
   [table spec]
   (case (:type spec)
-    :nested [(str "SELECT id FROM " table
-                  " WHERE json_extract(doc, '$.profile.lang') = ?")
-             [(:value spec)]]
-    :range [(str "SELECT id FROM " table
-                 " WHERE CAST(json_extract(doc, '$.stats.score') AS REAL)"
-                 " BETWEEN ? AND ?")
-            [(:lo spec) (:hi spec)]]
+    :nested       [(str "SELECT id FROM " table
+                        " WHERE json_extract(doc, '$.profile.lang') = ?")
+                   [(:value spec)]]
+    :range        [(str "SELECT id FROM " table
+                        " WHERE CAST(json_extract(doc, '$.stats.score') AS REAL)"
+                        " BETWEEN ? AND ?")
+                   [(:lo spec) (:hi spec)]]
     :wildcard-one [(str "SELECT id FROM " table
                         " WHERE json_extract(doc, '$.facts.city') = ?"
                         " OR json_extract(doc, '$.facts.team') = ?")
                    [(:value spec) (:value spec)]]
-    :wildcard-depth [(str "SELECT id FROM " table
-                          " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
-                          " WHERE json_extract(e.value, '$.entity.name') = ?)")
-                     [(:value spec)]]
-    :array [(str "SELECT id FROM " table
-                 " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
-                 " JOIN json_each(e.value, '$.tags') t"
-                 " WHERE t.value = ?)")
-            [(:value spec)]]))
+    :wildcard-depth
+    [(str "SELECT id FROM " table
+          " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
+          " WHERE json_extract(e.value, '$.entity.name') = ?)")
+     [(:value spec)]]
+    :array
+    [(str "SELECT id FROM " table
+          " WHERE EXISTS (SELECT 1 FROM json_each(doc, '$.events') e"
+          " JOIN json_each(e.value, '$.tags') t"
+          " WHERE t.value = ?)")
+     [(:value spec)]]))
 
 (defn- sqlite-create-indexes!
   [conn]
-  (jdbc/execute! conn [(str "CREATE INDEX IF NOT EXISTS idoc_profile_lang_idx"
-                            " ON idoc_bench_docs (json_extract(doc, '$.profile.lang'))")])
-  (jdbc/execute! conn [(str "CREATE INDEX IF NOT EXISTS idoc_stats_score_idx"
-                            " ON idoc_bench_docs"
-                            " (CAST(json_extract(doc, '$.stats.score') AS REAL))")])
-  (jdbc/execute! conn [(str "CREATE INDEX IF NOT EXISTS idoc_facts_city_idx"
-                            " ON idoc_bench_docs (json_extract(doc, '$.facts.city'))")])
-  (jdbc/execute! conn [(str "CREATE INDEX IF NOT EXISTS idoc_facts_team_idx"
-                            " ON idoc_bench_docs (json_extract(doc, '$.facts.team'))")]))
+  (jdbc/execute!
+    conn [(str "CREATE INDEX IF NOT EXISTS idoc_profile_lang_idx"
+               " ON idoc_bench_docs (json_extract(doc, '$.profile.lang'))")])
+  (jdbc/execute!
+    conn [(str "CREATE INDEX IF NOT EXISTS idoc_stats_score_idx"
+               " ON idoc_bench_docs"
+               " (CAST(json_extract(doc, '$.stats.score') AS REAL))")])
+  (jdbc/execute!
+    conn [(str "CREATE INDEX IF NOT EXISTS idoc_facts_city_idx"
+               " ON idoc_bench_docs (json_extract(doc, '$.facts.city'))")])
+  (jdbc/execute!
+    conn [(str "CREATE INDEX IF NOT EXISTS idoc_facts_team_idx"
+               " ON idoc_bench_docs (json_extract(doc, '$.facts.team'))")]))
 
 (defn- sqlite-analyze!
   [conn]
@@ -461,38 +463,40 @@
 
 (defn- pg-update-stats!
   [conn table id score last-seen]
-  (jdbc/execute! conn
-                 [(str "UPDATE " table
-                       " SET doc = jsonb_set("
-                       "jsonb_set(doc, '{stats,score}', to_jsonb(?::double precision), true),"
-                       "'{stats,last_seen}', to_jsonb(?::bigint), true)"
-                       " WHERE id = ?")
-                  score
-                  last-seen
-                  id]))
+  (jdbc/execute!
+    conn
+    [(str "UPDATE " table
+          " SET doc = jsonb_set("
+          "jsonb_set(doc, '{stats,score}', to_jsonb(?::double precision), true),"
+          "'{stats,last_seen}', to_jsonb(?::bigint), true)"
+          " WHERE id = ?")
+     score
+     last-seen
+     id]))
 
 (defn- sqlite-update-stats!
   [conn id score last-seen]
-  (jdbc/execute! conn
-                 ["UPDATE idoc_bench_docs"
-                  " SET doc = json_set(doc, '$.stats.score', ?, '$.stats.last_seen', ?)"
-                  " WHERE id = ?"
-                  score
-                  last-seen
-                  id]))
+  (jdbc/execute!
+    conn
+    ["UPDATE idoc_bench_docs"
+     " SET doc = json_set(doc, '$.stats.score', ?, '$.stats.last_seen', ?)"
+     " WHERE id = ?"
+     score
+     last-seen
+     id]))
 
 (defn- mongo-filter
   [spec]
   (case (:type spec)
-    :nested (Filters/eq "profile.lang" (:value spec))
-    :range (Filters/and (list
+    :nested         (Filters/eq "profile.lang" (:value spec))
+    :range          (Filters/and (list
                           (Filters/gte "stats.score" (:lo spec))
                           (Filters/lte "stats.score" (:hi spec))))
-    :wildcard-one (Filters/or (list
+    :wildcard-one   (Filters/or (list
                                 (Filters/eq "facts.city" (:value spec))
                                 (Filters/eq "facts.team" (:value spec))))
     :wildcard-depth (Filters/eq "events.entity.name" (:value spec))
-    :array (Filters/eq "events.tags" (:value spec))))
+    :array          (Filters/eq "events.tags" (:value spec))))
 
 (defn- mongo-doc
   [id doc]
@@ -541,26 +545,30 @@
     conn))
 
 (defn- pg-explain-query
-  "Run EXPLAIN ANALYZE and return [results exec-time-nanos]."
+  "Run EXPLAIN ANALYZE and return [results total-time-nanos].
+   Total time = Planning Time + Execution Time (excludes network roundtrip)."
   [conn sql params]
   (let [explain-sql (str "EXPLAIN ANALYZE " sql)
         rows        (jdbc/execute! conn (into [explain-sql] params)
                                    {:builder-fn rs/as-unqualified-lower-maps})
-        ;; Parse "Execution Time: X.XXX ms" from the last rows
-        exec-ms     (some (fn [row]
-                            (let [plan (or (get row (keyword "query plan"))
-                                           (get row :query-plan)
-                                           (first (vals row)))]
-                              (when-let [[_ ms] (re-find #"Execution Time:\s+([\d.]+)\s+ms" (str plan))]
-                                (Double/parseDouble ms))))
-                          (reverse rows))]
-    [nil (long (* (or exec-ms 0.0) 1e6))]))
+        ;; Parse both Planning Time and Execution Time from the output
+        extract-time (fn [pattern]
+                       (some (fn [row]
+                               (let [plan (or (get row (keyword "query plan"))
+                                              (get row :query-plan)
+                                              (first (vals row)))]
+                                 (when-let [[_ ms] (re-find pattern (str plan))]
+                                   (Double/parseDouble ms))))
+                             (reverse rows)))
+        planning-ms (or (extract-time #"Planning Time:\s+([\d.]+)\s+ms") 0.0)
+        exec-ms     (or (extract-time #"Execution Time:\s+([\d.]+)\s+ms") 0.0)
+        total-ms    (+ planning-ms exec-ms)]
+    [nil (long (* total-ms 1e6))]))
 
 (defn- mongo-explain-query
   "Run find with explain and return [results exec-time-nanos]."
   [coll filter]
-  (let [explain-doc (.first (.find coll filter))
-        ;; Run the actual query with explain
+  (let [;; Run the actual query with explain
         find-iterable (.find coll filter)
         explain       (.explain find-iterable ExplainVerbosity/EXECUTION_STATS)
         exec-stats    (.get explain "executionStats")
@@ -622,19 +630,16 @@
                        (swap! docs assoc (dec id) doc')
                        (d/transact! conn [[:db.fn/patchIdoc id :mem/doc ops]])))
      :op-idoc      (fn [{:keys [conn]} r]
-                     (let [spec (rand-query-spec r)
-                           q    (spec->idoc-query spec)
-                           db   (d/db conn)
-                           ;; Use explain to get db-reported execution time
-                           res  (if trace
-                                  (binding [idoc/*trace* (tracer spec)]
-                                    (d/explain {:run? true} q-idoc db q))
-                                  (d/explain {:run? true} q-idoc db q))
-                           ;; Times are strings like "0.123" in ms
-                           prep-ms (Double/parseDouble (:prepare-time res))
-                           exec-ms (Double/parseDouble (:execution-time res))
-                           total-ms (+ prep-ms exec-ms)]
-                       [(:result res) (long (* total-ms 1e6))]))
+                     (let [spec    (rand-query-spec r)
+                           q       (spec->idoc-query spec)
+                           db      (d/db conn)
+                           start   (System/nanoTime)
+                           res     (if trace
+                                     (binding [idoc/*trace* (tracer spec)]
+                                     (d/q q-idoc db q))
+                                   (d/q q-idoc db q))
+                           elapsed (- (System/nanoTime) start)]
+                       [res elapsed]))
      :close!       (fn [] (d/close conn))
      :trace-report (when trace #(print-idoc-trace trace))
      :cleanup!     (fn []
@@ -646,36 +651,38 @@
   [opts docs]
   (let [{:keys [records hotset batch-size keep-db? pg-url pg-user
                 pg-password pg-table]} opts
-        ds                             (jdbc/get-datasource
-             (cond-> {:jdbcUrl pg-url}
-               pg-user (assoc :user pg-user)
-               pg-password (assoc :password pg-password)))
-        init!                          (fn []
-                (jdbc/execute! ds [(str "DROP TABLE IF EXISTS " pg-table)])
-                (jdbc/execute! ds [(str "CREATE TABLE " pg-table
-                                        " (id BIGINT PRIMARY KEY, doc JSONB NOT NULL)")]))
-        load!                          (fn []
-                (jdbc/with-transaction [tx ds]
-                  (doseq [batch (partition-all
-                                  batch-size
-                                  (map-indexed
-                                    (fn [idx doc]
-                                      {:id  (inc idx)
-                                       :doc (pg-jsonb (encode-json doc))})
-                                    @docs))]
-                    (sql/insert-multi! tx (keyword pg-table) batch)))
-                (println "Building indexes ...")
-                (pg-create-indexes! ds pg-table)
-                (println "Running ANALYZE ...")
-                (pg-analyze! ds pg-table))
-        op-query                       (fn [conn spec]
+
+        ds       (jdbc/get-datasource
+                   (cond-> {:jdbcUrl pg-url}
+                     pg-user     (assoc :user pg-user)
+                     pg-password (assoc :password pg-password)))
+        init!    (fn []
+                   (jdbc/execute! ds [(str "DROP TABLE IF EXISTS " pg-table)])
+                   (jdbc/execute! ds [(str "CREATE TABLE " pg-table
+                                           " (id BIGINT PRIMARY KEY, doc JSONB NOT NULL)")]))
+        load!    (fn []
+                   (jdbc/with-transaction [tx ds]
+                     (doseq [batch (partition-all
+                                     batch-size
+                                     (map-indexed
+                                       (fn [idx doc]
+                                         {:id  (inc idx)
+                                          :doc (pg-jsonb (encode-json doc))})
+                                       @docs))]
+                       (sql/insert-multi! tx (keyword pg-table) batch)))
+                   (println "Building indexes ...")
+                   (pg-create-indexes! ds pg-table)
+                   (println "Running ANALYZE ...")
+                   (pg-analyze! ds pg-table))
+        op-query (fn [conn spec]
                    (let [[sql params] (pg-idoc-query pg-table spec)]
                      (pg-explain-query conn sql params)))
-        read-doc                       (fn [conn id] (sql-read-doc conn pg-table id))
-        update-doc!                    (fn [conn id doc]
-                                          (let [score     (get-in doc [:stats :score])
-                                                last-seen (get-in doc [:stats :last_seen])]
-                                            (pg-update-stats! conn pg-table id score last-seen)))]
+        read-doc (fn [conn id] (sql-read-doc conn pg-table id))
+        update-doc!
+        (fn [conn id doc]
+          (let [score     (get-in doc [:stats :score])
+                last-seen (get-in doc [:stats :last_seen])]
+            (pg-update-stats! conn pg-table id score last-seen)))]
     {:system       :postgres
      :label        (str pg-url " (" pg-table ")")
      :load!        (fn []
@@ -704,51 +711,60 @@
      :close!       (fn [] nil)
      :cleanup!     (fn []
                      (when-not keep-db?
-                       (jdbc/execute! ds [(str "DROP TABLE IF EXISTS " pg-table)])))}))
+                       (jdbc/execute!
+                         ds [(str "DROP TABLE IF EXISTS " pg-table)])))}))
 
 (defn- sqlite-handlers
   [opts docs]
   (let [{:keys [records hotset batch-size keep-db? sqlite-path]} opts
-        default-dir (str (u/tmp-dir (str "idoc-bench-sqlite-" (UUID/randomUUID))))
-        db-path (or sqlite-path (str default-dir "/idoc-bench.sqlite"))
+
+        default-dir  (str (u/tmp-dir
+                            (str "idoc-bench-sqlite-" (UUID/randomUUID))))
+        db-path      (or sqlite-path (str default-dir "/idoc-bench.sqlite"))
         cleanup-dir? (nil? sqlite-path)
-        _ (when-let [parent (.getParent (java.io.File. db-path))]
-            (u/file parent))
-        ds (jdbc/get-datasource {:jdbcUrl (str "jdbc:sqlite:" db-path)})
-        init! (fn []
-                (let [conn (sqlite-conn ds)]
-                  (try
-                    (jdbc/execute! conn [(str "DROP TABLE IF EXISTS idoc_bench_docs")])
-                    (jdbc/execute! conn [(str "CREATE TABLE idoc_bench_docs"
-                                              " (id INTEGER PRIMARY KEY, doc TEXT NOT NULL)")])
-                    (finally
-                      (.close conn)))))
-        load! (fn []
-                (jdbc/with-transaction [tx ds]
-                  (doseq [batch (partition-all
-                                  batch-size
-                                  (map-indexed
-                                   (fn [idx doc]
-                                     {:id  (inc idx)
-                                      :doc (encode-json doc)})
-                                   @docs))]
-                    (sql/insert-multi! tx :idoc_bench_docs batch)))
-                (let [conn (sqlite-conn ds)]
-                  (try
-                    (println "Building indexes ...")
-                    (sqlite-create-indexes! conn)
-                    (println "Running ANALYZE ...")
-                    (sqlite-analyze! conn)
-                    (finally
-                      (.close conn)))))
-        op-query (fn [conn spec]
-                   (let [[sql params] (sqlite-idoc-query "idoc_bench_docs" spec)]
-                     (sql-query conn sql params)))
-        read-doc (fn [conn id] (sql-read-doc conn "idoc_bench_docs" id))
-        update-doc! (fn [conn id doc]
-                      (let [score     (get-in doc [:stats :score])
-                            last-seen (get-in doc [:stats :last_seen])]
-                        (sqlite-update-stats! conn id score last-seen)))]
+        _            (when-let [parent (.getParent (java.io.File. db-path))]
+                       (u/file parent))
+        ds           (jdbc/get-datasource
+                       {:jdbcUrl (str "jdbc:sqlite:" db-path)})
+        init!
+        (fn []
+          (let [conn (sqlite-conn ds)]
+            (try
+              (jdbc/execute! conn [(str "DROP TABLE IF EXISTS idoc_bench_docs")])
+              (jdbc/execute!
+                conn [(str "CREATE TABLE idoc_bench_docs"
+                           " (id INTEGER PRIMARY KEY, doc TEXT NOT NULL)")])
+              (finally
+                (.close conn)))))
+        load!
+        (fn []
+          (jdbc/with-transaction [tx ds]
+            (doseq [batch (partition-all
+                            batch-size
+                            (map-indexed
+                              (fn [idx doc]
+                                {:id  (inc idx)
+                                 :doc (encode-json doc)})
+                              @docs))]
+              (sql/insert-multi! tx :idoc_bench_docs batch)))
+          (let [conn (sqlite-conn ds)]
+            (try
+              (println "Building indexes ...")
+              (sqlite-create-indexes! conn)
+              (println "Running ANALYZE ...")
+              (sqlite-analyze! conn)
+              (finally
+                (.close conn)))))
+        op-query
+        (fn [conn spec]
+          (let [[sql params] (sqlite-idoc-query "idoc_bench_docs" spec)]
+            (sql-query conn sql params)))
+        read-doc     (fn [conn id] (sql-read-doc conn "idoc_bench_docs" id))
+        update-doc!
+        (fn [conn id doc]
+          (let [score     (get-in doc [:stats :score])
+                last-seen (get-in doc [:stats :last_seen])]
+            (sqlite-update-stats! conn id score last-seen)))]
     {:system       :sqlite
      :label        db-path
      :load!        (fn []
@@ -787,20 +803,22 @@
   [opts docs]
   (let [{:keys [records hotset batch-size keep-db? mongo-uri mongo-db mongo-coll]}
         opts
-        client (MongoClients/create mongo-uri)
+
+        client   (MongoClients/create mongo-uri)
         database (.getDatabase client mongo-db)
-        coll (.getCollection database mongo-coll)]
+        coll     (.getCollection database mongo-coll)]
     {:system       :mongo
      :label        (str mongo-uri " (" mongo-db "/" mongo-coll ")")
-     :load!        (fn []
-                     (.drop coll)
-                     (doseq [batch (partition-all batch-size (map-indexed
-                                                              (fn [idx doc]
-                                                                (mongo-doc (inc idx) doc))
-                                                              @docs))]
-                       (.insertMany coll (ArrayList. batch)))
-                     (println "Building indexes ...")
-                     (mongo-create-indexes! coll))
+     :load!
+     (fn []
+       (.drop coll)
+       (doseq [batch (partition-all batch-size (map-indexed
+                                                 (fn [idx doc]
+                                                   (mongo-doc (inc idx) doc))
+                                                 @docs))]
+         (.insertMany coll (ArrayList. batch)))
+       (println "Building indexes ...")
+       (mongo-create-indexes! coll))
      :make-thread  (fn [_] {:coll coll})
      :close-thread (fn [_] nil)
      :op-read      (fn [{:keys [coll]} r]
@@ -823,9 +841,10 @@
                        (mongo-update-stats! coll id
                                             (get-in doc' [:stats :score])
                                             (get-in doc' [:stats :last_seen]))))
-     :op-idoc      (fn [{:keys [coll]} r]
-                     ;; Use explain to get db-reported execution time
-                     (mongo-explain-query coll (mongo-filter (rand-query-spec r))))
+     :op-idoc
+     (fn [{:keys [coll]} r]
+       ;; Use explain to get db-reported execution time
+       (mongo-explain-query coll (mongo-filter (rand-query-spec r))))
      :close!       (fn [] nil)
      :cleanup!     (fn []
                      (if keep-db?
@@ -838,9 +857,9 @@
   [system opts docs]
   (case system
     :datalevin (datalevin-handlers opts docs)
-    :postgres (postgres-handlers opts docs)
-    :sqlite (sqlite-handlers opts docs)
-    :mongo (mongo-handlers opts docs)
+    :postgres  (postgres-handlers opts docs)
+    :sqlite    (sqlite-handlers opts docs)
+    :mongo     (mongo-handlers opts docs)
     (throw (ex-info "Unsupported system" {:system system}))))
 
 (defn- run-thread
@@ -850,18 +869,20 @@
                                                     (:idoc-ratio opts)))
         ctx      ((:make-thread handlers) tid)]
     (try
-      (loop [i 0
+      (loop [i     0
              stats {}]
         (if (< i (:ops opts))
-          (let [op    (selector r)
-                start (System/nanoTime)
+          (let [op      (selector r)
+                start   (System/nanoTime)
                 ;; op-idoc may return [result exec-nanos] for db-reported timing
-                result (case op
-                         :read   ((:op-read handlers) ctx r)
-                         :update ((:op-update handlers) ctx r)
-                         :rmw    ((:op-rmw handlers) ctx r)
-                         :idoc   ((:op-idoc handlers) ctx r))
-                elapsed (if (and (= op :idoc) (vector? result) (number? (second result)))
+                result  (case op
+                          :read   ((:op-read handlers) ctx r)
+                          :update ((:op-update handlers) ctx r)
+                          :rmw    ((:op-rmw handlers) ctx r)
+                          :idoc   ((:op-idoc handlers) ctx r))
+                elapsed (if (and (= op :idoc)
+                                 (vector? result)
+                                 (number? (second result)))
                           (second result)
                           (- (System/nanoTime) start))]
             (recur (inc i) (update-stat stats op elapsed)))
@@ -985,7 +1006,10 @@
         "--seed"       (recur (assoc opts :seed (Long/parseLong (second more)))
                               (nnext more))
         "--help"       (recur (assoc opts :help? true) (next more))
-        (recur opts (next more)))
+        (do
+          (when (str/starts-with? arg "--")
+            (println "WARNING: Unrecognized option:" arg))
+          (recur opts (next more))))
       opts)))
 
 (defn- usage []

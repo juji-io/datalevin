@@ -44,3 +44,11 @@
     (.put l :d 5)
     (is (nil? (.get l :b)));; :b get evicted because :a is accessed more recently
     (is (= (.get l :d) 5))))
+
+(deftest test-keys-and-target
+  (let [l (LRUCache. 4 1)]
+    (.put l :a 1)
+    (.put l :b 2)
+    (is (= #{:a :b} (set (.keys l))))
+    (.setTarget l 42)
+    (is (= 42 (.target l)))))

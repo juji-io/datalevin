@@ -3197,7 +3197,7 @@
 (defn grid [&opts]
   (doseq [p [0.4]
           v [500]
-          f [65536 32768 12384 ]]
+          f [12384]]
     (let [start (System/currentTimeMillis)]
       (doseq [q queries]
         (let [query (-> q (#(ns-resolve 'datalevin-bench.core %)) var-get)]
