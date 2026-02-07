@@ -34,7 +34,7 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.interface
-    :refer [av-size]])
+    :refer [av-size dir db-name]])
   (:import
    [java.util Arrays List Collection Comparator HashSet HashMap]
    [java.util.concurrent ConcurrentHashMap ExecutorService Executors Future
@@ -3801,14 +3801,103 @@
   [qualified-fns]
   (into #{} (map #(some-> % resolve deref)) qualified-fns))
 
+(defn- query-cache-deps
+  "Extract conservative dependencies for query-result cache invalidation.
+
+  If dependency analysis is uncertain, return {:all? true} so the entry is
+  invalidated on any transaction."
+  [parsed-q]
+  (letfn [(keyword-constant [term]
+            (when (instance? Constant term)
+              (let [v (:value ^Constant term)]
+                (when (keyword? v) v))))
+          (merge-deps [x y]
+            (if (or (:all? x) (:all? y))
+              {:all? true}
+              {:all? false
+               :attrs (into (:attrs x #{}) (:attrs y #{}))}))
+          (pattern-deps [parsed-q]
+            (let [patterns (dp/collect #(instance? Pattern %) (:qwhere parsed-q))]
+              (loop [ps      patterns
+                     attrs   (transient #{})
+                     all?    false]
+                (cond
+                  all?
+                  {:all? true}
+
+                  (empty? ps)
+                  {:all? false :attrs (persistent! attrs)}
+
+                  :else
+                  (let [^Pattern p   (first ps)
+                        attr-term (nth (:pattern p) 1 nil)]
+                    (cond
+                      (instance? Constant attr-term)
+                      (recur (rest ps) (conj! attrs (:value ^Constant attr-term))
+                             false)
+
+                      ;; Variable / placeholder in attribute position means query may
+                      ;; touch arbitrary attributes.
+                      :else
+                      (recur nil attrs true)))))))
+          (tuple-fn-deps [parsed-q]
+            (let [fns (dp/collect #(instance? Function %) (:qwhere parsed-q))]
+              (reduce
+                (fn [acc ^Function f]
+                  (let [fname (some-> (:fn f) :symbol)
+                        args  (:args f)]
+                    (if (contains? tuple-producing-fns fname)
+                      (if-let [a (keyword-constant (nth args 1 nil))]
+                        (merge-deps acc {:all? false :attrs #{a}})
+                        ;; No explicit attribute (or non-constant) means a
+                        ;; domain-wide / DB-wide tuple-producing search.
+                        {:all? true})
+                      acc)))
+                {:all? false :attrs #{}}
+                fns)))]
+    (let [find-elements (dp/find-elements (:qfind parsed-q))]
+      (if (some dp/pull? find-elements)
+        {:all? true}
+        (merge-deps (pattern-deps parsed-q) (tuple-fn-deps parsed-q))))))
+
+(defn- store-write-context-token
+  [store]
+  (if (instance? Store store)
+    (let [lmdb      (.-lmdb ^Store store)
+          tx-holder (l/write-txn lmdb)
+          tx        @tx-holder
+          writing?  (l/writing? lmdb)]
+      (when tx
+        ;; Bind query-cache entries to a concrete write-txn context so values
+        ;; produced during an open write session cannot leak into the steady
+        ;; state after commit/abort. Include read/write role to keep reader and
+        ;; writer snapshots isolated while the write-txn is active.
+        [(if writing? :write :read)
+         (System/identityHashCode tx-holder)
+         (System/identityHashCode tx)]))
+    (let [tx-holder (l/write-txn store)]
+      (when (l/writing? store)
+        [(System/identityHashCode tx-holder) 0]))))
+
+(defn- cache-input-token
+  [input]
+  (if (db/-searchable? input)
+    (let [store (.-store ^DB input)]
+      [:db-input
+       (db-name store)
+       (dir store)
+       (store-write-context-token store)])
+    input))
+
 (defn- q-result
   [parsed-q inputs]
   (if *cache?*
     (if-let [store (some #(when (db/-searchable? %) (.-store^DB %)) inputs)]
-      (let [k [(-> (update parsed-q :qwhere-qualified-fns
-                           resolve-qualified-fns)
-                   (dissoc :limit :offset))
-               inputs]]
+      (let [parsed-q' (-> (update parsed-q :qwhere-qualified-fns
+                                  resolve-qualified-fns)
+                          (dissoc :limit :offset))
+            deps      (query-cache-deps parsed-q')
+            k         [:query-result deps parsed-q' (mapv cache-input-token inputs)]]
         (if-let [cached (db/cache-get store k)]
           cached
           (let [res (q* parsed-q inputs)]

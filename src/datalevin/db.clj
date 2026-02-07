@@ -297,6 +297,13 @@
         (let [[_ a] k]
           (contains? attrs a))
 
+        :query-result
+        (let [[_ deps] k]
+          (if (map? deps)
+            (or (:all? deps)
+                (boolean (some attrs (:attrs deps))))
+            true))
+
         true))
     true))
 
