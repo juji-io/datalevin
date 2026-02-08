@@ -36,9 +36,10 @@ MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
 on the preferred platforms.
 
 There is a default builtin user `datalevin` with a default password `datalevin`.
-This is a system account that can do everything on the server. It
-is recommended that the default password should be reset immediately after
-installation:
+This is a system account that can do everything on the server. The default
+password can be changed by passing in a `DATALEVIN_DEFAULT_PASSWORD` environment
+variable when starting the server. Another option is to set it on the REPL or in
+code:
 
 1. Start the server, maybe as a sudo user, to access the default data root directory
 ```console
