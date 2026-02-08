@@ -10,12 +10,11 @@
 (ns ^:no-doc datalevin.async
   "Asynchronous work mechanism that does adaptive batch processing - the higher
   the load, the bigger the batch"
-  (:require
-   [datalevin.util :as u])
   (:import
    [java.util.concurrent.atomic AtomicBoolean]
    [java.util.concurrent Executors ExecutorService LinkedBlockingQueue
-    ConcurrentLinkedQueue ConcurrentHashMap Callable TimeUnit]
+    ConcurrentLinkedQueue ConcurrentHashMap Callable TimeUnit
+    ThreadPoolExecutor ArrayBlockingQueue ThreadPoolExecutor$CallerRunsPolicy]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (defprotocol IAsyncWork
@@ -145,7 +144,9 @@
   (stop [_]
     (.set running false)
     (.shutdownNow dispatcher)
-    (.awaitTermination dispatcher 5 TimeUnit/MILLISECONDS))
+    (.awaitTermination dispatcher 100 TimeUnit/MILLISECONDS)
+    (.shutdownNow workers)
+    (.awaitTermination workers 100 TimeUnit/MILLISECONDS))
   (exec [_ work]
     (let [k  (work-key work)
           cb (callback work)]
@@ -160,10 +161,18 @@
         (.offer event-queue k)
         (->AsyncResult p)))))
 
+(defn- async-worker-pool
+  []
+  (let [threads (.availableProcessors (Runtime/getRuntime))]
+    (ThreadPoolExecutor.
+      threads threads 0 TimeUnit/MILLISECONDS
+      (ArrayBlockingQueue. (* 4 threads))
+      (ThreadPoolExecutor$CallerRunsPolicy.))))
+
 (defn- new-async-executor
   []
   (->AsyncExecutor (Executors/newSingleThreadExecutor)
-                   (u/get-worker-thread-pool)
+                   (async-worker-pool)
                    (LinkedBlockingQueue.)
                    (ConcurrentHashMap.)
                    (AtomicBoolean. false)))

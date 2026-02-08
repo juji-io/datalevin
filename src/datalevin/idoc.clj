@@ -747,15 +747,17 @@
 
 (defn- init-doc-refs
   [lmdb doc-ref-dbi]
-  (let [doc-refs (IntObjectHashMap.)
-        max-id   (volatile! 0)
-        load     (fn [kv]
-                   (let [ref (b/read-buffer (l/k kv) :data)
-                         did (b/read-buffer (l/v kv) :int)]
-                     (when (< ^int @max-id ^int did) (vreset! max-id did))
-                     (.put doc-refs (int did) ref)))]
+  (let [doc-refs    (IntObjectHashMap.)
+        all-doc-ids (RoaringBitmap.)
+        max-id      (volatile! 0)
+        load        (fn [kv]
+                      (let [ref (b/read-buffer (l/k kv) :data)
+                            did (b/read-buffer (l/v kv) :int)]
+                        (when (< ^int @max-id ^int did) (vreset! max-id did))
+                        (.put doc-refs (int did) ref)
+                        (b/bitmap-add all-doc-ids (int did))))]
     (visit lmdb doc-ref-dbi load [:all-back])
-    [@max-id doc-refs]))
+    [@max-id doc-refs all-doc-ids]))
 
 (defn- open-dbis
   [lmdb domain]
@@ -784,6 +786,7 @@
                     doc-index-dbi
                     path-dict-dbi
                     doc-refs
+                    ^RoaringBitmap all-doc-ids
                     ^AtomicInteger max-doc
                     ^AtomicInteger max-path
                     path-cache
@@ -798,16 +801,16 @@
 (defn new-idoc-index
   [lmdb {:keys [domain format] :as _opts}]
   (let [[doc-ref-dbi doc-index-dbi path-dict-dbi] (open-dbis lmdb domain)
-        max-path                     (init-paths lmdb path-dict-dbi)
-        [max-doc doc-refs]           (init-doc-refs lmdb doc-ref-dbi)
-        path-cache                   (ConcurrentHashMap.)
-        path-seg-cache               (ConcurrentHashMap.)
-        pattern-cache                (ConcurrentHashMap.)
-        path-trie                    (new-path-trie)
-        paths-loaded                 (AtomicBoolean. false)
-        paths-lock                   (Object.)
-        range-cache                  (ConcurrentHashMap.)
-        index-version                (AtomicLong. 0)]
+        max-path                          (init-paths lmdb path-dict-dbi)
+        [max-doc doc-refs all-doc-ids]    (init-doc-refs lmdb doc-ref-dbi)
+        path-cache                        (ConcurrentHashMap.)
+        path-seg-cache                    (ConcurrentHashMap.)
+        pattern-cache                     (ConcurrentHashMap.)
+        path-trie                         (new-path-trie)
+        paths-loaded                      (AtomicBoolean. false)
+        paths-lock                        (Object.)
+        range-cache                       (ConcurrentHashMap.)
+        index-version                     (AtomicLong. 0)]
     (->IdocIndex lmdb
                  domain
                  format
@@ -815,6 +818,7 @@
                  doc-index-dbi
                  path-dict-dbi
                  doc-refs
+                 all-doc-ids
                  (AtomicInteger. max-doc)
                  (AtomicInteger. max-path)
                  path-cache
@@ -835,6 +839,7 @@
                (.-doc-index-dbi old)
                (.-path-dict-dbi old)
                (.-doc-refs old)
+               (.-all-doc-ids old)
                (.-max-doc old)
                (.-max-path old)
                (.-path-cache old)
@@ -944,6 +949,7 @@
        ;; TODO: if doc-ref ever exceeds LMDB key size, fall back to a :g ref.
        (.add txs (l/kv-tx :put doc-ref-dbi doc-ref doc-id :data :int))
        (.put ^IntObjectHashMap (.-doc-refs index) (int doc-id) doc-ref)
+       (b/bitmap-add (.-all-doc-ids index) (int doc-id))
        (doseq [[path values] (doc->path-values-mutable doc)
                :let          [pid (ensure-path-id index path txs)]]
          (doseq [v    values
@@ -969,6 +975,7 @@
            (let [doc-id (.incrementAndGet ^AtomicInteger (.-max-doc index))]
              (.add txs (l/kv-tx :put doc-ref-dbi doc-ref doc-id :data :int))
              (.put ^IntObjectHashMap doc-refs (int doc-id) doc-ref)
+             (b/bitmap-add (.-all-doc-ids index) (int doc-id))
              (doseq [[path values] (doc->path-values-mutable doc)
                      :let          [pid (ensure-path-id index path txs)]]
                (doseq [v    values
@@ -999,6 +1006,7 @@
             (.add txs (l/kv-tx :del-list index-dbi idx [doc-id] :avg :int)))))
       (.add txs (l/kv-tx :del (.-doc-ref-dbi index) doc-ref :data))
       (.remove ^IntObjectHashMap (.-doc-refs index) (int doc-id))
+      (b/bitmap-del (.-all-doc-ids index) (int doc-id))
       (transact-kv (.-lmdb index) txs)
       (invalidate-range-cache! index)
       :doc-removed)))
@@ -1025,7 +1033,8 @@
                                             ids))]]
                 (.add ids doc-id))))
           (.add txs (l/kv-tx :del doc-ref-dbi doc-ref :data))
-          (.remove ^IntObjectHashMap doc-refs (int doc-id))))
+          (.remove ^IntObjectHashMap doc-refs (int doc-id))
+          (b/bitmap-del (.-all-doc-ids index) (int doc-id))))
       (doseq [[idx ids] idx->ids]
         (.add txs (l/kv-tx :del-list index-dbi idx ids :avg :int)))
       (when-not (.isEmpty txs)
@@ -1594,14 +1603,9 @@
           hi-ids              hi-ids
           :else               (RoaringBitmap.))))))
 
-;; TODO need to be a field in index
 (defn- all-doc-ids
   [^IdocIndex index]
-  (let [^IntObjectHashMap m (.-doc-refs index)
-        bm                  (RoaringBitmap.)]
-    (doseq [id (.toArray (.keySet m))]
-      (b/bitmap-add bm (int id)))
-    bm))
+  (.clone ^RoaringBitmap (.-all-doc-ids index)))
 
 (defn- ids-for-expr
   [^IdocIndex index format expr ctx-path]

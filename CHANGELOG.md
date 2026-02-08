@@ -11,7 +11,7 @@
   transaction.
 - [Datalog] Rewrite unused variables so that the query engine does not waste
   resources to resolve them.
-- [Datalog] Enhance speed of `idoc-match` by using bitmaps for doc id
+- [Datalog] Enhance speed of `idoc-match` by using bitmaps for doc id set
   operations.
 - [Datalog] Optimize performance of `idoc-match`, `vec-neighbors` and `fulltext`
   query function by returning tuples that only contain needed values.
