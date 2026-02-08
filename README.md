@@ -71,7 +71,11 @@ fork](https://github.com/huahaiy/dlmdb) of
 [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), known
 for its high read performance. With built-in support for asynchronous
 transaction, Datalevin can also handle [write intensive
-workload](benchmarks/write-bench), as well as storing large documents.
+workload](benchmarks/write-bench).
+
+Datalevin can store large document (< 2 GiB) and automatically build index by
+paths for JSON, EDN and Markdown documents, so it can be used as a document
+database, similar to MongoDB or PostgreSQL JSONB column.
 
 Datalevin supports [vector database](doc/vector.md) features by integrating an
 efficient SIMD accelerated vector indexing and search
@@ -339,8 +343,10 @@ reach as soon as we can. We may adjust the priorities based on feedback.
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
   vector database; counted and prefix compressed KV storage; auto upgrade
   migration; new rule engine.~~[Done 2026/01/22]
-* 1.0.0 ~~As a document database with automatic path indexing;~~ TTL; JSON API; library for Java, Python, and JavaScript; WAL mode; transaction log access API; read-only replicas; high availability.
-* 1.1.0 extensible storage/query for arbitrary data; data compression.
+* 1.0.0 ~~As a document database with automatic path indexing;~~  WAL mode;
+  transaction log access API; read-only replicas; high availability; JSON API;
+  library for Java, Python, and JavaScript;
+* 1.1.0 TTL; extensible storage/query for arbitrary data; data compression.
 * 2.0.0 Incremental view maintenance.
 * 3.0.0 Extended rule syntax to handle complex analytical workload capable of
   implementing ML algorithms in DB.

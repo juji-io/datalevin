@@ -3,6 +3,9 @@
 ## WIP
 
 ### Added
+- [Server] When server starts, it checks a `DATALEVIN_DEFAULT_PASSWORD`
+  environment variable to set the default password for the `datalevin` root user
+  [#351](https://github.com/juji-io/datalevin/issues/351).
 - [Datalog] `:db.fn/patchIdoc` transaction function to directly update values in
   idoc.
 

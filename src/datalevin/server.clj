@@ -1019,13 +1019,20 @@
 
 (defn- session-lmdb [sys-conn] (.-lmdb ^Store (.-store ^DB (d/db sys-conn))))
 
+(defn get-default-password
+  "Return the initial admin password, checking DATALEVIN_DEFAULT_PASSWORD
+  environment variable first, falling back to the built-in default."
+  []
+  (or (System/getenv "DATALEVIN_DEFAULT_PASSWORD")
+      c/default-password))
+
 (defn- init-sys-db
-  [root]
+  [root password]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
                              server-schema)]
     (when (= 0 (i/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
-      (let [s   (salt)
-            h   (password-hashing c/default-password s)
+      (let [s (salt)
+            h (password-hashing password s)
             txs [{:db/id        -1
                   :user/name    c/default-username
                   :user/pw-hash h
@@ -2619,7 +2626,7 @@
     (let [^ServerSocketChannel server-socket (open-port port)
           ^Selector selector                 (Selector/open)
           running                            (AtomicBoolean. false)
-          sys-conn                           (init-sys-db root)
+          sys-conn                           (init-sys-db root (get-default-password))
           clients                            (load-sessions sys-conn)
           dbs                                (ConcurrentHashMap.)]
       (reopen-dbs root clients dbs)
