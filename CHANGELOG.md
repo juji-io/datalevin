@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.10.5 (2026-02-08)
 
 ### Added
 - [Server] When server starts, it checks a `DATALEVIN_DEFAULT_PASSWORD`
