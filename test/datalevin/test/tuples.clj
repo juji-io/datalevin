@@ -35,7 +35,7 @@
            (:db/attrTuples (db/-rschema db))))
 
     (is (thrown-msg?
-          ":t2 :db/tupleAttrs can’t depend on another tuple attribute: :t1"
+          ":t2 :db/tupleAttrs can\u2019t depend on another tuple attribute: :t1"
           (d/empty-db dir1 {:t1 {:db/tupleAttrs [:a :b]}
                             :t2 {:db/tupleAttrs [:c :d :e :t1]}})))
 

@@ -453,6 +453,10 @@
 
 ;; datalog db
 
+(def ^{:dynamic true :no-doc true
+       :doc     "When true, use the prepare/apply transaction path"}
+  *use-prepare-path* false)
+
 (def ^{:dynamic true
        :doc     "Batch size (# of datoms) when filling Datalog DB"}
   *fill-db-batch-size* 1048576)

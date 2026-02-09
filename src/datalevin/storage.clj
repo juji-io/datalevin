@@ -25,6 +25,10 @@
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [datalevin.async :as a]
+   [datalevin.index :as idx
+    :refer [value-type datom->indexable index->dbi index->ktype index->vtype
+            index->k index->v gt->datom retrieved->v]]
+   [datalevin.prepare :as prepare]
    [datalevin.interface
     :refer [transact-kv get-range get-first get-value visit-list-sample
             visit-list-key-range near-list env-dir close-kv closed-kv?
@@ -157,70 +161,9 @@
   (or (get-value lmdb c/meta :max-tx :attr :long)
       c/tx0))
 
-(defn  value-type
-  [props]
-  (if-let [vt (:db/valueType props)]
-    (if (identical? vt :db.type/tuple)
-      (if-let [tts (props :db/tupleTypes)]
-        tts
-        (if-let [tt (props :db/tupleType)] [tt] :data))
-      vt)
-    :data))
-
-(defn- datom->indexable
-  [schema ^Datom d high?]
-  (let [e  (if-some [e (.-e d)] e (if high? c/emax c/e0))
-        vm (if high? c/vmax c/v0)
-        gm (if high? c/gmax c/g0)]
-    (if-let [a (.-a d)]
-      (if-let [p (schema a)]
-        (if-some [v (.-v d)]
-          (b/indexable e (p :db/aid) v (value-type p) gm)
-          (b/indexable e (p :db/aid) vm (value-type p) gm))
-        (b/indexable e c/a0 c/v0 nil gm))
-      (let [am (if high? c/amax c/a0)]
-        (if-some [v (.-v d)]
-          (if (or (integer? v)
-                  (identical? v :db.value/sysMax)
-                  (identical? v :db.value/sysMin))
-            (if e
-              (b/indexable e am v :db.type/ref gm)
-              (b/indexable (if high? c/emax c/e0) am v :db.type/ref gm))
-            (u/raise
-              "When v is known but a is unknown, v must be a :db.type/ref"
-              {:v v}))
-          (b/indexable e am vm :db.type/sysMin gm))))))
-
-(defonce index->dbi {:eav c/eav :ave c/ave})
-
-(defonce index->ktype {:eav :id :ave :avg})
-
-(defonce index->vtype {:eav :avg :ave :id})
-
-(defn- index->k
-  [index schema ^Datom datom high?]
-  (case index
-    :eav (or (.-e datom) (if high? c/emax c/e0))
-    :ave (datom->indexable schema datom high?)))
-
-(defn- index->v
-  [index schema ^Datom datom high?]
-  (case index
-    :eav (datom->indexable schema datom high?)
-    :ave (or (.-e datom) (if high? c/emax c/e0))))
-
-(defn gt->datom [lmdb gt] (get-value lmdb c/giants gt :id :data))
-
 (defn e-aid-v->datom
   [store e-aid-v]
   (d/datom (nth e-aid-v 0) ((attrs store) (nth e-aid-v 1)) (peek e-aid-v)))
-
-(defn- retrieved->v
-  [lmdb ^Retrieved r]
-  (let [g (.-g r)]
-    (if (= g c/normal)
-      (.-v r)
-      (d/datom-v (gt->datom lmdb g)))))
 
 (defn- retrieved->attr [attrs ^Retrieved r] (attrs (.-a r)))
 
@@ -1280,62 +1223,18 @@
 
 (defn- check-cardinality
   [^Store store attr old new]
-  (when (and (identical? old :db.cardinality/many)
-             (identical? new :db.cardinality/one))
-    (let [low-datom  (d/datom c/e0 attr c/v0)
-          high-datom (d/datom c/emax attr c/vmax)]
-      (when (populated? store :ave low-datom high-datom)
-        (u/raise "Cardinality change is not allowed when data exist"
-                 {:attribute attr})))))
+  (prepare/validate-cardinality-change store attr old new))
 
 (defn- check-value-type
   [^Store store attr old new]
-  (when (not= old new)
-    (when ((schema store) attr)
-      (let [low-datom  (d/datom c/e0 attr c/v0)
-            high-datom (d/datom c/emax attr c/vmax)]
-        (when (populated? store :ave low-datom high-datom)
-          (u/raise "Value type change is not allowed when data exist"
-                   {:attribute attr}))))))
-
-(defn- violate-unique?
-  [^Store store low-datom high-datom]
-  (let [prev-v   (volatile! nil)
-        violate? (volatile! false)
-        lmdb     (.-lmdb store)
-        schema   (schema store)
-        visitor  (fn [kv]
-                   (let [avg ^Retrieved (b/read-buffer (lmdb/k kv) :avg)
-                         v   (retrieved->v lmdb avg)]
-                     (if (= @prev-v v)
-                       (do (vreset! violate? true)
-                           :datalevin/terminate-visit)
-                       (vreset! prev-v v))))]
-    (visit-list-range
-      lmdb c/ave visitor
-      [:closed (index->k :ave schema low-datom false)
-       (index->k :ave schema high-datom true)] :avg
-      [:closed c/e0 c/emax] :id)
-    @violate?))
+  (prepare/validate-value-type-change store attr old new))
 
 (defn- check-unique
   [store attr old new]
-  (when (and (not old) new)
-    (let [low-datom  (d/datom c/e0 attr c/v0)
-          high-datom (d/datom c/emax attr c/vmax)]
-      (when (populated? store :ave low-datom high-datom)
-        (when (violate-unique? store low-datom high-datom)
-          (u/raise "Attribute uniqueness change is inconsistent with data"
-                   {:attribute attr}))))))
+  (prepare/validate-uniqueness-change store (.-lmdb ^Store store) attr old new))
 
 (defn- check [store attr old new]
-  (doseq [[k v] new
-          :let  [v' (old k)]]
-    (case k
-      :db/cardinality (check-cardinality store attr v' v)
-      :db/valueType   (check-value-type store attr v' v)
-      :db/unique      (check-unique store attr v' v)
-      :pass-through)))
+  (prepare/validate-schema-mutation store (.-lmdb ^Store store) attr old new))
 
 (defn- collect-fulltext
   [^FastList ft-ds attr props v op]
@@ -1351,10 +1250,7 @@
   (let [schema (schema store)
         opts   (opts store)
         attr   (.-a d)
-        _      (or (not (opts :closed-schema?))
-                   (schema attr)
-                   (u/raise "Attribute is not defined in schema when
-`:closed-schema?` is true: " attr {:attr attr :value (.-v d)}))
+        _      (prepare/validate-closed-schema schema opts attr (.-v d))
         e      (.-e d)
         v      (.-v d)
         props  (or (schema attr)

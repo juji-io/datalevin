@@ -20,6 +20,8 @@
     :refer [case-tree raise defrecord-updatable conjv conjs concatv cond+]]
    [datalevin.idoc :as idoc]
    [datalevin.storage :as s]
+   [datalevin.index :as idx]
+   [datalevin.prepare :as prepare]
    [datalevin.bits :as b]
    [datalevin.remote :as r]
    [datalevin.relation :as rel]
@@ -661,86 +663,8 @@
 
 ;; ----------------------------------------------------------------------------
 
-(defn- validate-schema-key [a k v expected]
-  (when-not (or (nil? v) (contains? expected v))
-    (throw (ex-info (str "Bad attribute specification for "
-                         (pr-str {a {k v}}) ", expected one of " expected)
-                    {:error     :schema/validation
-                     :attribute a
-                     :key       k
-                     :value     v}))))
-
-(def tuple-props #{:db/tupleAttrs :db/tupleTypes :db/tupleType})
-
 (defn- validate-schema [schema]
-  (doseq [[a kv] schema]
-    (let [comp? (:db/isComponent kv false)]
-      (validate-schema-key a :db/isComponent (:db/isComponent kv) #{true false})
-      (when (and comp? (not (identical? (:db/valueType kv) :db.type/ref)))
-        (raise "Bad attribute specification for " a
-               ": {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
-               {:error     :schema/validation
-                :attribute a
-                :key       :db/isComponent})))
-    (validate-schema-key a :db/unique (:db/unique kv)
-                         #{:db.unique/value :db.unique/identity})
-    (validate-schema-key a :db/valueType (:db/valueType kv)
-                         c/datalog-value-types)
-    (validate-schema-key a :db/cardinality (:db/cardinality kv)
-                         #{:db.cardinality/one :db.cardinality/many})
-    (validate-schema-key a :db/fulltext (:db/fulltext kv)
-                         #{true false})
-
-    ;; tuple should have one of tuple-props
-    (when (and (identical? :db.type/tuple (:db/valueType kv))
-               (not (some tuple-props (keys kv))))
-      (raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs, :db/tupleTypes, or :db/tupleType"
-             {:error     :schema/validation
-              :attribute a
-              :key       :db/valueType}))
-
-    ;; :db/tupleAttrs is a non-empty sequential coll
-    (when (contains? kv :db/tupleAttrs)
-      (let [ex-data {:error     :schema/validation
-                     :attribute a
-                     :key       :db/tupleAttrs}]
-        (when (identical? :db.cardinality/many (:db/cardinality kv))
-          (raise a " has :db/tupleAttrs, must be :db.cardinality/one" ex-data))
-
-        (let [attrs (:db/tupleAttrs kv)]
-          (when-not (sequential? attrs)
-            (raise a " :db/tupleAttrs must be a sequential collection, got: " attrs ex-data))
-
-          (when (empty? attrs)
-            (raise a " :db/tupleAttrs can’t be empty" ex-data))
-
-          (doseq [attr attrs
-                  :let [ex-data (assoc ex-data :value attr)]]
-            (when (contains? (schema attr) :db/tupleAttrs)
-              (raise a " :db/tupleAttrs can’t depend on another tuple attribute: " attr ex-data))
-
-            (when (identical? :db.cardinality/many (:db/cardinality (schema attr)))
-              (raise a " :db/tupleAttrs can’t depend on :db.cardinality/many attribute: " attr ex-data))))))
-
-    (when (contains? kv :db/tupleType)
-      (let [ex-data {:error     :schema/validation
-                     :attribute a
-                     :key       :db/tupleType}
-            attr    (:db/tupleType kv)]
-        (when-not (c/datalog-value-types attr)
-          (raise a " :db/tupleType must be a single value type, got: " attr ex-data))
-        (when (identical? attr :db.type/tuple)
-          (raise a " :db/tupleType cannot be :db.type/tuple" ex-data))))
-
-    (when (contains? kv :db/tupleTypes)
-      (let [ex-data {:error     :schema/validation
-                     :attribute a
-                     :key       :db/tupleTypes}
-            attrs   (:db/tupleTypes kv)]
-        (when-not (and (sequential? attrs) (< 1 (count attrs))
-                       (every? c/datalog-value-types attrs)
-                       (not (some #(identical? :db.type/tuple %) attrs)))
-          (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data))))))
+  (prepare/validate-schema schema))
 
 (defn- open-store
   [dir schema opts]
@@ -778,66 +702,27 @@
 
 (defn- validate-type
   [store a v]
-  (let [opts   (opts store)
-        schema (schema store)
-        vt     (s/value-type (schema a))]
-    (or (not (opts :validate-data?))
-        (b/valid-data? v vt)
-        (raise "Invalid data, expecting" vt " got " v {:input v}))
-    vt))
+  (prepare/validate-type store a v))
 
-(defn coerce-inst
-  [v]
-  (cond
-    (inst? v)    v
-    (integer? v) (Date. (long v))
-    :else        (raise "Expect java.util.Date" {:input v})))
+(def coerce-inst prepare/coerce-inst)
 
-(defn coerce-uuid
-  [v]
-  (cond
-    (uuid? v)   v
-    (string? v) (if-let [u (parse-uuid v)]
-                  u
-                  (raise "Unable to parse string to UUID" {:input v}))
-    :else       (raise "Expect java.util.UUID" {:input v})))
+(def coerce-uuid prepare/coerce-uuid)
 
 (defn- type-coercion
   [vt v]
-  (case vt
-    :db.type/string              (str v)
-    :db.type/bigint              (biginteger v)
-    :db.type/bigdec              (bigdec v)
-    (:db.type/long :db.type/ref) (long v)
-    :db.type/float               (float v)
-    :db.type/double              (double v)
-    (:db.type/bytes :bytes)      (if (bytes? v) v (byte-array v))
-    (:db.type/keyword :keyword)  (keyword v)
-    (:db.type/symbol :symbol)    (symbol v)
-    (:db.type/boolean :boolean)  (boolean v)
-    (:db.type/instant :instant)  (coerce-inst v)
-    (:db.type/uuid :uuid)        (coerce-uuid v)
-    :db.type/tuple               (vec v)
-    v))
+  (prepare/type-coercion vt v))
 
 (defn- correct-datom*
   [^Datom datom v]
-  (d/datom (.-e datom) (.-a datom) v
-           (d/datom-tx datom) (d/datom-added datom)))
-
-(declare correct-value)
+  (prepare/correct-datom* datom v))
 
 (defn- correct-datom
   [store ^Datom datom]
-  (correct-datom* datom (correct-value store (.-a datom) (.-v datom))))
+  (prepare/correct-datom store datom))
 
 (defn- correct-value
   [store a v]
-  (let [props ((schema store) a)
-        vt    (s/value-type props)]
-    (if (identical? vt :db.type/idoc)
-      (idoc/parse-value a props (opts store) v)
-      (type-coercion (validate-type store a v) v))))
+  (prepare/correct-value store a v))
 
 (defn- pour
   [store datoms]
@@ -1052,29 +937,22 @@
     entity))
 
 (defn- validate-datom [^DB db ^Datom datom]
-  (let [a (.-a datom)
-        v (.-v datom)]
-    (when (and (-is-attr? db a :db/unique) (datom-added datom))
-      (when-some [found (or (not (.isEmpty
-                                   (.subSet ^TreeSortedSet (:avet db)
-                                            (d/datom e0 a v tx0)
-                                            (d/datom emax a v txmax))))
-                            (-populated? db :ave a v nil))]
-        (raise "Cannot add " datom " because of unique constraint: " found
-               {:error     :transact/unique
-                :attribute a
-                :datom     datom})))
-    v))
+  (let [a       (.-a datom)
+        v       (.-v datom)
+        unique? (-is-attr? db a :db/unique)
+        found?  (fn []
+                  (or (not (.isEmpty
+                             (.subSet ^TreeSortedSet (:avet db)
+                                      (d/datom e0 a v tx0)
+                                      (d/datom emax a v txmax))))
+                      (-populated? db :ave a v nil)))]
+    (prepare/validate-datom-unique unique? datom found?)))
 
 (defn- validate-attr [attr at]
-  (when-not (keyword? attr)
-    (raise "Bad entity attribute " attr " at " at ", expected keyword"
-           {:error :transact/syntax, :attribute attr, :context at})))
+  (prepare/validate-attr attr at))
 
 (defn- validate-val [v at]
-  (when (nil? v)
-    (raise "Cannot store nil as a value at " at
-           {:error :transact/syntax, :value v, :context at})))
+  (prepare/validate-val v at))
 
 (defn- current-tx
   {:inline (fn [report] `(-> ~report :db-before :max-tx long inc))}
@@ -1242,32 +1120,7 @@
   "Throws if not all upserts point to the same entity.
    Returns single eid that all upserts point to, or null."
   [entity upserts]
-  (let [upsert-ids (reduce-kv
-                     (fn [m a v->e]
-                       (reduce-kv
-                         (fn [m v e]
-                           (assoc m e [a v]))
-                         m v->e))
-                     {} upserts)]
-    (if (<= 2 (count upsert-ids))
-      (let [[e1 [a1 v1]] (first upsert-ids)
-            [e2 [a2 v2]] (second upsert-ids)]
-        (raise "Conflicting upserts: " [a1 v1] " resolves to " e1 ", but " [a2 v2] " resolves to " e2
-               {:error     :transact/upsert
-                :assertion [e1 a1 v1]
-                :conflict  [e2 a2 v2]}))
-      (let [[upsert-id [a v]] (first upsert-ids)
-            eid               (:db/id entity)]
-        (when (and
-                (some? upsert-id)
-                (some? eid)
-                (not (tempid? eid))
-                (not= upsert-id eid))
-          (raise "Conflicting upsert: " [a v] " resolves to " upsert-id ", but entity already has :db/id " eid
-                 {:error     :transact/upsert
-                  :assertion [upsert-id a v]
-                  :conflict  {:db/id eid}}))
-        upsert-id))))
+  (prepare/validate-upserts entity upserts tempid?))
 
 ;; multivals/reverse can be specified as coll or as a single value, trying to guess
 (defn- maybe-wrap-multival [db a vs]
@@ -1447,8 +1300,16 @@
          store           (.-store db)
          schema          (schema store)
          rp
-         (loop [report initial-report'
-                es     initial-es']
+         (if (and c/*use-prepare-path*
+                  (some? (prepare/prepare-tx
+                           (prepare/make-prepare-ctx db (when (instance? Store (.-store ^DB db))
+                                                     (.-lmdb ^Store (.-store ^DB db))))
+                           initial-es' tx-time)))
+           ;; New path (future): use PreparedTx result
+           (throw (ex-info "prepare path not yet implemented" {}))
+           ;; Legacy path: existing loop
+           (loop [report initial-report'
+                  es     initial-es']
            (cond+
              (empty? es)
              (let [new-attrs (::new-attributes report)]
@@ -1581,7 +1442,7 @@
                          e           (entid-strict db e)
                          _           (validate-attr a entity)
                          props       (schema a)
-                         _           (when-not (identical? (s/value-type props) :db.type/idoc)
+                         _           (when-not (identical? (idx/value-type props) :db.type/idoc)
                                        (raise "Attribute is not an idoc type: " a
                                               {:attribute a}))
                          many?       (multival? db a)
@@ -1792,7 +1653,7 @@
 
              :else
              (raise "Bad entity type at " entity ", expected map, vector, or datom"
-                    {:error :transact/syntax, :tx-data entity})))
+                    {:error :transact/syntax, :tx-data entity}))))
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
        (load-datoms pstore (:tx-data rp))

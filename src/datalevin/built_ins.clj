@@ -21,6 +21,7 @@
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as st]
+   [datalevin.index :as idx]
    [datalevin.idoc :as idoc]
    [datalevin.vector :as v]
    [datalevin.entity :as de]
@@ -171,7 +172,7 @@
         (let [^objects arr (object-array n)
               [e a v]      (if (and (vector? doc-ref)
                                     (clojure.core/= :g (first doc-ref)))
-                             (let [d (st/gt->datom lmdb (second doc-ref))]
+                             (let [d (idx/gt->datom lmdb (second doc-ref))]
                                [(dd/datom-e d) (dd/datom-a d) (dd/datom-v d)])
                              [(nth doc-ref 0)
                               (aid->attr (nth doc-ref 1))
@@ -185,7 +186,7 @@
     (fn [doc-ref]
       (if (and (vector? doc-ref)
                (clojure.core/= :g (first doc-ref)))
-        (let [d (st/gt->datom lmdb (second doc-ref))]
+        (let [d (idx/gt->datom lmdb (second doc-ref))]
           (object-array [(dd/datom-e d)
                          (dd/datom-a d)
                          (dd/datom-v d)]))
@@ -278,7 +279,7 @@
               (let [[vec-ref dist]  d
                     [e a v]         (if (and (vector? vec-ref)
                                              (clojure.core/= :g (first vec-ref)))
-                                      (let [datom (st/gt->datom lmdb (peek vec-ref))]
+                                      (let [datom (idx/gt->datom lmdb (peek vec-ref))]
                                         [(dd/datom-e datom)
                                          (dd/datom-a datom)
                                          (dd/datom-v datom)])

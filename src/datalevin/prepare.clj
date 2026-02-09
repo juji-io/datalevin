@@ -1,0 +1,420 @@
+;;
+;; Copyright (c) Huahai Yang. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://opensource.org/license/epl-2-0)
+;; which can be found in the file LICENSE at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+;;
+(ns ^:no-doc datalevin.prepare
+  "Prepare/validate phase of transaction processing.
+   All validation runs before WAL commit."
+  (:require
+   [datalevin.interface :as i
+    :refer [schema rschema opts attrs populated? visit-list-range]]
+   [datalevin.index :as idx]
+   [datalevin.datom :as d]
+   [datalevin.constants :as c]
+   [datalevin.util :as u]
+   [datalevin.bits :as b]
+   [datalevin.lmdb :as lmdb])
+  (:import
+   [datalevin.bits Retrieved]
+   [datalevin.datom Datom]
+   [java.util Date]))
+
+;; ---- Records ----
+
+(defrecord PrepareCtx
+  [schema        ; map: attr keyword -> props map
+   rschema       ; reverse schema (property -> attrs)
+   opts          ; store options map (:closed-schema?, :auto-entity-time?, etc.)
+   store         ; the Store (for point lookups during resolve phase)
+   db            ; DB snapshot (db-before, for index lookups)
+   lmdb          ; the LMDB instance (for index lookups)
+   attrs         ; aid -> attr mapping
+   attr-cache])  ; precomputed per-attr flags cache (ref?, multival?, tuple?, etc.)
+
+(defrecord PreparedTx
+  [tx-data        ; vector of resolved Datom objects (canonical order)
+   tempids        ; map: tempid -> resolved eid
+   new-attributes ; vector of attrs added in this tx
+   tx-redundant   ; vector of redundant (no-op) datoms
+   side-index-ops ; map: {:ft [...] :vec [...] :idoc [...] :gt [...]}
+   touch-summary  ; set of touched attr keywords (for cache invalidation)
+   stats])        ; optional: per-stage timing/counters map
+
+;; ---- Constructor ----
+
+(defn make-prepare-ctx
+  "Build a PrepareCtx from a DB snapshot."
+  [db lmdb]
+  (let [store (:store db)]
+    (->PrepareCtx (schema store)
+                  (rschema store)
+                  (opts store)
+                  store
+                  db
+                  lmdb
+                  (attrs store)
+                  nil)))
+
+;; ---- Stage boundary function shells ----
+;; Each stage accepts a context map and returns it unchanged (pass-through).
+;; Stages will be filled in subsequent steps.
+
+(defn normalize
+  "Expand/normalize entities and tx forms.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+(defn resolve-ids
+  "Resolve tempids/upserts/refs to fixed point.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+(defn apply-op-semantics
+  "Apply :db/add, retract, CAS, patchIdoc, etc.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+(defn plan-delta
+  "Plan datom delta with cardinality/uniqueness rules.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+(defn build-side-index-ops
+  "Build side-index overlay deltas, allocate IDs.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+(defn finalize
+  "Check-value-tempids, deterministic ordering, produce PreparedTx.
+   Currently a pass-through shell."
+  [ctx entities]
+  entities)
+
+;; ---- Top-level entry point ----
+
+(defn prepare-tx
+  "Run the full prepare pipeline. Returns a PreparedTx.
+   Currently a pass-through shell; stages will be filled in
+   subsequent steps."
+  [ctx entities tx-time]
+  nil)
+
+;; ---- Storage / schema validators ----
+;; Extracted from storage.clj
+
+(defn validate-closed-schema
+  "Validate that attribute is defined in schema when :closed-schema? is true."
+  [schema opts attr value]
+  (when (and (opts :closed-schema?) (not (schema attr)))
+    (u/raise "Attribute is not defined in schema when
+`:closed-schema?` is true: " attr {:attr attr :value value})))
+
+(defn validate-cardinality-change
+  "Validate cardinality change from many to one."
+  [store attr old new]
+  (when (and (identical? old :db.cardinality/many)
+             (identical? new :db.cardinality/one))
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (u/raise "Cardinality change is not allowed when data exist"
+                 {:attribute attr})))))
+
+(defn validate-value-type-change
+  "Validate value type change when data exist."
+  [store attr old new]
+  (when (not= old new)
+    (when ((schema store) attr)
+      (let [low-datom  (d/datom c/e0 attr c/v0)
+            high-datom (d/datom c/emax attr c/vmax)]
+        (when (populated? store :ave low-datom high-datom)
+          (u/raise "Value type change is not allowed when data exist"
+                   {:attribute attr}))))))
+
+(defn violate-unique?
+  "Check if adding uniqueness to an attribute would violate existing data."
+  [lmdb idx-schema low-datom high-datom]
+  (let [prev-v   (volatile! nil)
+        violate? (volatile! false)
+        visitor  (fn [kv]
+                   (let [avg ^Retrieved (b/read-buffer (lmdb/k kv) :avg)
+                         v   (idx/retrieved->v lmdb avg)]
+                     (if (= @prev-v v)
+                       (do (vreset! violate? true)
+                           :datalevin/terminate-visit)
+                       (vreset! prev-v v))))]
+    (visit-list-range
+      lmdb c/ave visitor
+      [:closed (idx/index->k :ave idx-schema low-datom false)
+       (idx/index->k :ave idx-schema high-datom true)] :avg
+      [:closed c/e0 c/emax] :id)
+    @violate?))
+
+(defn validate-uniqueness-change
+  "Validate uniqueness change is consistent with existing data."
+  [store lmdb attr old new]
+  (when (and (not old) new)
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (when (violate-unique? lmdb (schema store) low-datom high-datom)
+          (u/raise "Attribute uniqueness change is inconsistent with data"
+                   {:attribute attr}))))))
+
+(defn validate-schema-mutation
+  "Validate schema attribute changes (cardinality, value type, uniqueness)."
+  [store lmdb attr old-props new-props]
+  (doseq [[k v] new-props
+          :let  [v' (old-props k)]]
+    (case k
+      :db/cardinality (validate-cardinality-change store attr v' v)
+      :db/valueType   (validate-value-type-change store attr v' v)
+      :db/unique      (validate-uniqueness-change store lmdb attr v' v)
+      :pass-through)))
+
+(defn validate-option-mutation
+  "Validate option key/value before commit."
+  [ctx key value]
+  nil)
+
+;; ---- Key size validation ----
+
+(defn validate-key-size
+  "Validate that a key does not exceed the LMDB max key size (511 bytes).
+   For KV API use — Datalog keys use the giant mechanism and never overflow."
+  [key key-type]
+  (when (and key (not (#{:long :id :int} key-type)))
+    (when (> ^long (b/measure-size key) c/+max-key-size+)
+      (u/raise "Key cannot be larger than 511 bytes" {:input key}))))
+
+;; ---- DB validators ----
+;; Extracted from db.clj
+
+(defn validate-schema-key
+  "Validate a single schema key-value pair against expected values."
+  [a k v expected]
+  (when-not (or (nil? v) (contains? expected v))
+    (throw (ex-info (str "Bad attribute specification for "
+                         (pr-str {a {k v}}) ", expected one of " expected)
+                    {:error     :schema/validation
+                     :attribute a
+                     :key       k
+                     :value     v}))))
+
+(def tuple-props #{:db/tupleAttrs :db/tupleTypes :db/tupleType})
+
+(defn validate-schema
+  "Validate full schema structure."
+  [schema]
+  (doseq [[a kv] schema]
+    (let [comp? (:db/isComponent kv false)]
+      (validate-schema-key a :db/isComponent (:db/isComponent kv) #{true false})
+      (when (and comp? (not (identical? (:db/valueType kv) :db.type/ref)))
+        (u/raise "Bad attribute specification for " a
+                 ": {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
+                 {:error     :schema/validation
+                  :attribute a
+                  :key       :db/isComponent})))
+    (validate-schema-key a :db/unique (:db/unique kv)
+                         #{:db.unique/value :db.unique/identity})
+    (validate-schema-key a :db/valueType (:db/valueType kv)
+                         c/datalog-value-types)
+    (validate-schema-key a :db/cardinality (:db/cardinality kv)
+                         #{:db.cardinality/one :db.cardinality/many})
+    (validate-schema-key a :db/fulltext (:db/fulltext kv)
+                         #{true false})
+
+    ;; tuple should have one of tuple-props
+    (when (and (identical? :db.type/tuple (:db/valueType kv))
+               (not (some tuple-props (keys kv))))
+      (u/raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs, :db/tupleTypes, or :db/tupleType"
+             {:error     :schema/validation
+              :attribute a
+              :key       :db/valueType}))
+
+    ;; :db/tupleAttrs is a non-empty sequential coll
+    (when (contains? kv :db/tupleAttrs)
+      (let [ex-data {:error     :schema/validation
+                     :attribute a
+                     :key       :db/tupleAttrs}]
+        (when (identical? :db.cardinality/many (:db/cardinality kv))
+          (u/raise a " has :db/tupleAttrs, must be :db.cardinality/one" ex-data))
+
+        (let [attrs (:db/tupleAttrs kv)]
+          (when-not (sequential? attrs)
+            (u/raise a " :db/tupleAttrs must be a sequential collection, got: " attrs ex-data))
+
+          (when (empty? attrs)
+            (u/raise a " :db/tupleAttrs can\u2019t be empty" ex-data))
+
+          (doseq [attr attrs
+                  :let [ex-data (assoc ex-data :value attr)]]
+            (when (contains? (schema attr) :db/tupleAttrs)
+              (u/raise a " :db/tupleAttrs can\u2019t depend on another tuple attribute: " attr ex-data))
+
+            (when (identical? :db.cardinality/many (:db/cardinality (schema attr)))
+              (u/raise a " :db/tupleAttrs can\u2019t depend on :db.cardinality/many attribute: " attr ex-data))))))
+
+    (when (contains? kv :db/tupleType)
+      (let [ex-data {:error     :schema/validation
+                     :attribute a
+                     :key       :db/tupleType}
+            attr    (:db/tupleType kv)]
+        (when-not (c/datalog-value-types attr)
+          (u/raise a " :db/tupleType must be a single value type, got: " attr ex-data))
+        (when (identical? attr :db.type/tuple)
+          (u/raise a " :db/tupleType cannot be :db.type/tuple" ex-data))))
+
+    (when (contains? kv :db/tupleTypes)
+      (let [ex-data {:error     :schema/validation
+                     :attribute a
+                     :key       :db/tupleTypes}
+            attrs   (:db/tupleTypes kv)]
+        (when-not (and (sequential? attrs) (< 1 (count attrs))
+                       (every? c/datalog-value-types attrs)
+                       (not (some #(identical? :db.type/tuple %) attrs)))
+          (u/raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data))))))
+
+(defn validate-attr
+  "Validate that an attribute is a keyword."
+  [attr at]
+  (when-not (keyword? attr)
+    (u/raise "Bad entity attribute " attr " at " at ", expected keyword"
+             {:error :transact/syntax, :attribute attr, :context at})))
+
+(defn validate-val
+  "Validate that a value is not nil."
+  [v at]
+  (when (nil? v)
+    (u/raise "Cannot store nil as a value at " at
+             {:error :transact/syntax, :value v, :context at})))
+
+(defn validate-datom-unique
+  "Validate unique constraint on a datom. Called from db.clj's validate-datom
+   with pre-resolved unique? and found? predicates to avoid circular dependency."
+  [unique? ^Datom datom found?]
+  (let [a (.-a datom)
+        v (.-v datom)]
+    (when (and unique? (d/datom-added datom))
+      (when-some [found (found?)]
+        (u/raise "Cannot add " datom " because of unique constraint: " found
+                 {:error     :transact/unique
+                  :attribute a
+                  :datom     datom})))
+    v))
+
+(defn validate-upserts
+  "Throws if not all upserts point to the same entity.
+   Returns single eid that all upserts point to, or null.
+   tempid-fn? is a predicate that checks if a value is a tempid."
+  [entity upserts tempid-fn?]
+  (let [upsert-ids (reduce-kv
+                     (fn [m a v->e]
+                       (reduce-kv
+                         (fn [m v e]
+                           (assoc m e [a v]))
+                         m v->e))
+                     {} upserts)]
+    (if (<= 2 (count upsert-ids))
+      (let [[e1 [a1 v1]] (first upsert-ids)
+            [e2 [a2 v2]] (second upsert-ids)]
+        (u/raise "Conflicting upserts: " [a1 v1] " resolves to " e1 ", but " [a2 v2] " resolves to " e2
+               {:error     :transact/upsert
+                :assertion [e1 a1 v1]
+                :conflict  [e2 a2 v2]}))
+      (let [[upsert-id [a v]] (first upsert-ids)
+            eid               (:db/id entity)]
+        (when (and
+                (some? upsert-id)
+                (some? eid)
+                (not (tempid-fn? eid))
+                (not= upsert-id eid))
+          (u/raise "Conflicting upsert: " [a v] " resolves to " upsert-id ", but entity already has :db/id " eid
+                 {:error     :transact/upsert
+                  :assertion [upsert-id a v]
+                  :conflict  {:db/id eid}}))
+        upsert-id))))
+
+;; ---- Type validation and coercion ----
+;; Extracted from db.clj
+
+(defn validate-type
+  "Validate that data matches declared value type when :validate-data? is set.
+   Returns the value type."
+  [store a v]
+  (let [st-opts   (opts store)
+        st-schema (schema store)
+        vt        (idx/value-type (st-schema a))]
+    (or (not (st-opts :validate-data?))
+        (b/valid-data? v vt)
+        (u/raise "Invalid data, expecting" vt " got " v {:input v}))
+    vt))
+
+(defn coerce-inst
+  "Coerce a value to java.util.Date."
+  [v]
+  (cond
+    (inst? v)    v
+    (integer? v) (Date. (long v))
+    :else        (u/raise "Expect java.util.Date" {:input v})))
+
+(defn coerce-uuid
+  "Coerce a value to java.util.UUID."
+  [v]
+  (cond
+    (uuid? v)   v
+    (string? v) (if-let [u (parse-uuid v)]
+                  u
+                  (u/raise "Unable to parse string to UUID" {:input v}))
+    :else       (u/raise "Expect java.util.UUID" {:input v})))
+
+(defn type-coercion
+  "Coerce a value to the appropriate type based on value type."
+  [vt v]
+  (case vt
+    :db.type/string              (str v)
+    :db.type/bigint              (biginteger v)
+    :db.type/bigdec              (bigdec v)
+    (:db.type/long :db.type/ref) (long v)
+    :db.type/float               (float v)
+    :db.type/double              (double v)
+    (:db.type/bytes :bytes)      (if (bytes? v) v (byte-array v))
+    (:db.type/keyword :keyword)  (keyword v)
+    (:db.type/symbol :symbol)    (symbol v)
+    (:db.type/boolean :boolean)  (boolean v)
+    (:db.type/instant :instant)  (coerce-inst v)
+    (:db.type/uuid :uuid)        (coerce-uuid v)
+    :db.type/tuple               (vec v)
+    v))
+
+(defn correct-datom*
+  "Reconstruct datom with corrected value."
+  [^Datom datom v]
+  (d/datom (.-e datom) (.-a datom) v
+           (d/datom-tx datom) (d/datom-added datom)))
+
+(declare correct-value)
+
+(defn correct-datom
+  "Correct value in datom via type validation and coercion."
+  [store ^Datom datom]
+  (correct-datom* datom (correct-value store (.-a datom) (.-v datom))))
+
+(defn correct-value
+  "Validate type and coerce value for an attribute."
+  [store a v]
+  (let [props ((schema store) a)
+        vt    (idx/value-type props)]
+    (if (identical? vt :db.type/idoc)
+      ((requiring-resolve 'datalevin.idoc/parse-value) a props (opts store) v)
+      (type-coercion (validate-type store a v) v))))
