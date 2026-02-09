@@ -20,7 +20,7 @@
    [datalevin.buffer :as bf]
    [datalevin.async :as a]
    [datalevin.migrate :as m]
-   [datalevin.prepare :as p]
+   [datalevin.validate :as vld]
    [datalevin.scan :as scan]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
@@ -640,7 +640,7 @@
   (let [validate? (.-validate-data? dbi)]
     (doseq [t txs]
       (let [tx (l/->kv-tx-data t kt vt)]
-        (p/validate-kv-tx-data tx validate?)
+        (vld/validate-kv-tx-data tx validate?)
         (put-tx dbi txn tx)))))
 
 (defn- transact*
@@ -651,7 +651,7 @@
           ^DBI dbi     (or (.get dbis dbi-name)
                            (raise dbi-name " is not open" {}))
           validate?    (.-validate-data? dbi)]
-      (p/validate-kv-tx-data tx validate?)
+      (vld/validate-kv-tx-data tx validate?)
       (put-tx dbi txn tx))))
 
 (defn- list-count*

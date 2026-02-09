@@ -28,7 +28,7 @@
    [datalevin.index :as idx
     :refer [value-type datom->indexable index->dbi index->ktype index->vtype
             index->k index->v gt->datom retrieved->v]]
-   [datalevin.prepare :as prepare]
+   [datalevin.validate :as vld]
    [datalevin.interface
     :refer [transact-kv get-range get-first get-value visit-list-sample
             visit-list-key-range near-list env-dir close-kv closed-kv?
@@ -442,7 +442,7 @@
   (opts [_] opts)
 
   (assoc-opt [_ k v]
-    (prepare/validate-option-mutation k v)
+    (vld/validate-option-mutation k v)
     (let [new-opts (assoc opts k v)]
       (set! opts new-opts)
       (transact-opts lmdb new-opts)))
@@ -479,7 +479,7 @@
   (rschema [_] rschema)
 
   (set-schema [this new-schema]
-    (when new-schema (prepare/validate-schema new-schema))
+    (when new-schema (vld/validate-schema new-schema))
     (doseq [[attr new] new-schema
             :let       [old (schema attr)]
             :when      old]
@@ -522,7 +522,7 @@
       p))
 
   (del-attr [this attr]
-    (prepare/validate-attr-deletable
+    (vld/validate-attr-deletable
       (.populated?
         this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
     (let [aid ((schema attr) :db/aid)]
@@ -1223,20 +1223,8 @@
   (combine [_] nil)
   (callback [_] nil))
 
-(defn- check-cardinality
-  [^Store store attr old new]
-  (prepare/validate-cardinality-change store attr old new))
-
-(defn- check-value-type
-  [^Store store attr old new]
-  (prepare/validate-value-type-change store attr old new))
-
-(defn- check-unique
-  [store attr old new]
-  (prepare/validate-uniqueness-change store (.-lmdb ^Store store) attr old new))
-
 (defn- check [store attr old new]
-  (prepare/validate-schema-mutation store (.-lmdb ^Store store) attr old new))
+  (vld/validate-schema-mutation store (.-lmdb ^Store store) attr old new))
 
 (defn- collect-fulltext
   [^FastList ft-ds attr props v op]
@@ -1252,7 +1240,7 @@
   (let [schema (schema store)
         opts   (opts store)
         attr   (.-a d)
-        _      (prepare/validate-closed-schema schema opts attr (.-v d))
+        _      (vld/validate-closed-schema schema opts attr (.-v d))
         e      (.-e d)
         v      (.-v d)
         props  (or (schema attr)

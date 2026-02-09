@@ -17,11 +17,12 @@
    [datalevin.constants :as c :refer [e0 tx0 emax txmax v0 vmax]]
    [datalevin.datom :as d :refer [datom datom-added datom?]]
    [datalevin.util :as u
-    :refer [case-tree raise defrecord-updatable conjv conjs concatv cond+]]
+    :refer [case-tree defrecord-updatable conjv conjs concatv cond+]]
    [datalevin.idoc :as idoc]
    [datalevin.storage :as s]
    [datalevin.index :as idx]
    [datalevin.prepare :as prepare]
+   [datalevin.validate :as vld]
    [datalevin.remote :as r]
    [datalevin.relation :as rel]
    [datalevin.inline :refer [update assoc]]
@@ -589,7 +590,7 @@
     [db attr start end]
     (wrap-cache
         store [:index-range attr start end]
-      (do (validate-attr attr (list '-index-range 'db attr start end))
+      (do (vld/validate-attr attr (list '-index-range 'db attr start end))
           (slice store :ave (resolve-datom db nil attr start e0 v0)
                  (resolve-datom db nil attr end emax vmax)))))
 
@@ -662,9 +663,6 @@
 
 ;; ----------------------------------------------------------------------------
 
-(defn- validate-schema [schema]
-  (prepare/validate-schema schema))
-
 (defn- open-store
   [dir schema opts]
   (if (r/dtlv-uri? dir)
@@ -696,12 +694,8 @@
   ([dir schema] (empty-db dir schema nil))
   ([dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
-   (validate-schema schema)
+   (vld/validate-schema schema)
    (new-db (open-store dir schema opts))))
-
-(defn- validate-type
-  [store a v]
-  (prepare/validate-type store a v))
 
 (def coerce-inst prepare/coerce-inst)
 
@@ -755,10 +749,8 @@
   ([datoms dir schema] (init-db datoms dir schema nil))
   ([datoms dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
-   (when-some [not-datom (first (drop-while datom? datoms))]
-     (raise "init-db expects list of Datoms, got " (type not-datom)
-            {:error :init-db}))
-   (validate-schema schema)
+   (vld/validate-datom-list datoms)
+   (vld/validate-schema schema)
    (let [^Store store (open-store dir schema opts)]
      (quick-fill store datoms)
      (new-db store))))
@@ -771,7 +763,7 @@
 
 (defn- resolve-datom
   [db e a v default-e default-v]
-  (when a (validate-attr a (list 'resolve-datom 'db e a v default-e default-v)))
+  (when a (vld/validate-attr a (list 'resolve-datom 'db e a v default-e default-v)))
   (let [v? (some? v)]
     (datom
       (or (entid-some db e) default-e)  ;; e
@@ -827,9 +819,9 @@
     (let [[attr value] eid]
       (cond
         (not= (count eid) 2)
-        (prepare/validate-lookup-ref-shape eid)
+        (vld/validate-lookup-ref-shape eid)
         (not (-is-attr? db attr :db/unique))
-        (prepare/validate-lookup-ref-unique false eid)
+        (vld/validate-lookup-ref-unique false eid)
         (nil? value)
         nil
         :else
@@ -845,11 +837,11 @@
         (av-first-e (:store db) :db/ident eid))
 
     :else
-    (prepare/validate-entity-id-syntax eid)))
+    (vld/validate-entity-id-syntax eid)))
 
 (defn entid-strict [db eid]
   (let [result (entid db eid)]
-    (prepare/validate-entity-id-exists result eid)
+    (vld/validate-entity-id-exists result eid)
     result))
 
 (defn entid-some [db eid]
@@ -860,7 +852,7 @@
   ^Boolean [attr]
   (if (keyword? attr)
     (= \_ (nth (name attr) 0))
-    (do (prepare/validate-reverse-ref-attr attr)
+    (do (vld/validate-reverse-ref-attr attr)
         false)))
 
 (defn reverse-ref [attr]
@@ -941,13 +933,7 @@
                                       (d/datom e0 a v tx0)
                                       (d/datom emax a v txmax))))
                       (-populated? db :ave a v nil)))]
-    (prepare/validate-datom-unique unique? datom found?)))
-
-(defn- validate-attr [attr at]
-  (prepare/validate-attr attr at))
-
-(defn- validate-val [v at]
-  (prepare/validate-val v at))
+    (vld/validate-datom-unique unique? datom found?)))
 
 (defn- current-tx
   {:inline (fn [report] `(-> ~report :db-before :max-tx long inc))}
@@ -1089,8 +1075,8 @@
                     [[] {}] vs))]
       (reduce-kv
         (fn [[entity' upserts] a v]
-          (validate-attr a entity)
-          (validate-val v entity)
+          (vld/validate-attr a entity)
+          (vld/validate-val v entity)
           (cond
             (not (contains? idents a))
             [(assoc entity' a v) upserts]
@@ -1115,7 +1101,7 @@
   "Throws if not all upserts point to the same entity.
    Returns single eid that all upserts point to, or null."
   [entity upserts]
-  (prepare/validate-upserts entity upserts tempid?))
+  (vld/validate-upserts entity upserts tempid?))
 
 ;; multivals/reverse can be specified as coll or as a single value, trying to guess
 (defn- maybe-wrap-multival [db a vs]
@@ -1148,7 +1134,7 @@
           :let   [reverse?   (reverse-ref? a)
                   straight-a (if reverse? (reverse-ref a) a)
                   _          (when reverse?
-                               (prepare/validate-reverse-ref-type (ref? db straight-a) a eid vs))]
+                               (vld/validate-reverse-ref-type (ref? db straight-a) a eid vs))]
           v      (maybe-wrap-multival db a vs)]
       (if (and (ref? db straight-a) (map? v)) ;; another entity specified as nested map
         (assoc v (reverse-ref a) eid)
@@ -1157,8 +1143,8 @@
           [:db/add eid straight-a v])))))
 
 (defn- transact-add [report [_ e a v tx :as ent]]
-  (validate-attr a ent)
-  (validate-val  v ent)
+  (vld/validate-attr a ent)
+  (vld/validate-val v ent)
   (let [tx        (or tx (current-tx report))
         db        (:db-after report)
         store     (.-store ^DB db)
@@ -1218,7 +1204,7 @@
                             tempids))
             unused      (reduce reduce-fn all-tempids tx-data)
             unused      (reduce reduce-fn unused (::tx-redundant report))]
-        (prepare/validate-value-tempids (vals (persistent! unused)))
+        (vld/validate-value-tempids (vals (persistent! unused)))
         (-> report
             (dissoc ::value-tempids ::tx-redundant)
             (assoc :tx-data tx-data)))
@@ -1231,7 +1217,7 @@
 (defn- retry-with-tempid
   [initial-report report es tempid upserted-eid tx-time]
   (let [eid (get (::upserted-tempids initial-report) tempid)]
-    (prepare/validate-upsert-retry-conflict eid tempid upserted-eid)
+    (vld/validate-upsert-retry-conflict eid tempid upserted-eid)
     ;; try to re-run from the beginning
     ;; but remembering that `tempid` will resolve to `upserted-eid`
     (let [tempids' (-> (:tempids report)
@@ -1311,14 +1297,14 @@
                             (d/datom e0 op nil tx0)
                             (d/datom emax op nil txmax))))
                   (entid db op))]
-    (prepare/validate-custom-tx-fn-entity ident op entity)
+    (vld/validate-custom-tx-fn-entity ident op entity)
     (let [fun  (or (:v (sf (.subSet
                               ^TreeSortedSet (:eavt db)
                               (d/datom ident :db/fn nil tx0)
                               (d/datom ident :db/fn nil txmax))))
                    (ea-first-v store ident :db/fn))
           args (next entity)]
-      (prepare/validate-custom-tx-fn-value fun op entity)
+      (vld/validate-custom-tx-fn-value fun op entity)
       (concat (apply fun db args) entities))))
 
 (defn- handle-cas
@@ -1326,10 +1312,10 @@
   [report db store entity entities]
   (let [[_ e a ov nv] entity
         e             (entid-strict db e)
-        _             (validate-attr a entity)
+        _             (vld/validate-attr a entity)
         ov            (if (ref? db a) (entid-strict db ov) ov)
         nv            (if (ref? db a) (entid-strict db nv) nv)
-        _             (validate-val nv entity)
+        _             (vld/validate-val nv entity)
         datoms        (clojure.set/union
                         (.subSet ^TreeSortedSet (:eavt db)
                                  (datom e a nil tx0)
@@ -1337,23 +1323,23 @@
                         (slice (:store db) :eav
                                (datom e a c/v0)
                                (datom e a c/vmax)))]
-    (prepare/validate-cas-value (multival? db a) e a ov nv datoms)
+    (vld/validate-cas-value (multival? db a) e a ov nv datoms)
     [(transact-add report [:db/add e a nv]) entities]))
 
 (defn- handle-patch-idoc
   "Handle :db.fn/patchIdoc. Returns [report' entities']."
   [report db store schema entity entities]
   (let [argc (count entity)]
-    (prepare/validate-patch-idoc-arity argc entity (first entity))
+    (vld/validate-patch-idoc-arity argc entity (first entity))
     (let [[_ e a x y] entity
           [old-v ops] (if (= argc 5) [x y] [nil x])
           e           (entid-strict db e)
-          _           (validate-attr a entity)
+          _           (vld/validate-attr a entity)
           props       (schema a)
-          _           (prepare/validate-patch-idoc-type
+          _           (vld/validate-patch-idoc-type
                         (idx/value-type props) a)
           many?       (multival? db a)
-          _           (prepare/validate-patch-idoc-cardinality
+          _           (vld/validate-patch-idoc-cardinality
                         many? old-v a)
           ops         (or ops [])]
       (if (empty? ops)
@@ -1365,7 +1351,7 @@
                                            (datom e a old-v' txmax)))
                               (first (fetch (:store db)
                                             (datom e a old-v'))))]
-            (prepare/validate-patch-idoc-old-value old-datom old-v a)
+            (vld/validate-patch-idoc-old-value old-datom old-v a)
             (let [old-doc             (.-v ^Datom old-datom)
                   {:keys [doc paths]} (idoc/apply-patch old-doc ops)]
               (if (= old-doc doc)
@@ -1421,7 +1407,7 @@
         tempids (get (::reverse-tempids report) e)
         tempid  (u/find #(not (contains? (::upserted-tempids report) %))
                         tempids)]
-    (prepare/validate-upsert-conflict tempid e upserted-eid entity)
+    (vld/validate-upsert-conflict tempid e upserted-eid entity)
     (retry-with-tempid initial-report report initial-es tempid
                        upserted-eid tx-time)))
 
@@ -1430,7 +1416,7 @@
   [db store schema entity report entities]
   (let [[op e a v] entity
         tuple-attrs (get-in schema [a :db/tupleAttrs])]
-    (prepare/validate-tuple-direct-write
+    (vld/validate-tuple-direct-write
       (and
         (every? some? v)
         (= (count tuple-attrs) (count v))
@@ -1487,8 +1473,8 @@
   (let [[op e a v] entity]
     (if-some [e (entid db e)]
       (let [v (if (ref? db a) (entid-strict db v) v)]
-        (validate-attr a entity)
-        (validate-val v entity)
+        (vld/validate-attr a entity)
+        (vld/validate-val v entity)
         (if-some [old-datom (or (sf (.subSet
                                       ^TreeSortedSet (:eavt db)
                                       (datom e a v tx0)
@@ -1503,7 +1489,7 @@
   [report db store entity entities]
   (let [[op e a v] entity]
     (if-some [e (entid db e)]
-      (let [_      (validate-attr a entity)
+      (let [_      (vld/validate-attr a entity)
             datoms (concatv
                      (slice (:store db) :eav
                             (datom e a c/v0)
@@ -1573,7 +1559,7 @@
 
       ;; trash => error
       :else
-      (prepare/validate-map-entity-id-syntax old-eid))))
+      (vld/validate-map-entity-id-syntax old-eid))))
 
 (defn- handle-sequential-entity
   "Handle sequential entity. Returns [report' entities'] or calls retry/raises."
@@ -1587,7 +1573,7 @@
       [report (handle-custom-tx-fn db store entity entities)]
 
       (and (tempid? e) (not (identical? op :db/add)))
-      (prepare/validate-tempid-op true op entity)
+      (vld/validate-tempid-op true op entity)
 
       (or (identical? op :db.fn/cas) (identical? op :db/cas))
       (handle-cas report db store entity entities)
@@ -1660,7 +1646,7 @@
       (handle-retract-entity report db store entity entities)
 
       :else
-      (prepare/validate-tx-op op entity))))
+      (vld/validate-tx-op op entity))))
 
 (defn- execute-tx-loop
   "Execute the transaction processing loop. Returns a finalized report."
@@ -1716,7 +1702,7 @@
         (recur report entities)
 
         :else
-        (prepare/validate-tx-entity-type entity)))))
+        (vld/validate-tx-entity-type entity)))))
 
 (defn- local-transact-tx-data
   ([initial-report initial-es tx-time]
@@ -1786,7 +1772,7 @@
     []
 
     :else
-    (prepare/validate-tx-entity-type entity)))
+    (vld/validate-tx-entity-type entity)))
 
 (defn- prepare-entities
   [^DB db entities tx-time]
@@ -1833,7 +1819,7 @@
 (defn tx-data->simulated-report
   [db tx-data]
   {:pre [(db? db)]}
-  (prepare/validate-tx-data-shape tx-data)
+  (vld/validate-tx-data-shape tx-data)
   (let [initial-report (map->TxReport
                          {:db-before db
                           :db-after  db
