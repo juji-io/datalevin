@@ -1148,9 +1148,7 @@
           :let   [reverse?   (reverse-ref? a)
                   straight-a (if reverse? (reverse-ref a) a)
                   _          (when (and reverse? (not (ref? db straight-a)))
-                               (raise "Bad attribute " a ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
-                                      {:error   :transact/syntax, :attribute a,
-                                       :context {:db/id eid, a vs}}))]
+                               (prepare/validate-reverse-ref-type a eid vs))]
           v      (maybe-wrap-multival db a vs)]
       (if (and (ref? db straight-a) (map? v)) ;; another entity specified as nested map
         (assoc v (reverse-ref a) eid)
@@ -1365,8 +1363,7 @@
 
                  ;; trash => error
                  :else
-                 (raise "Expected number, string or lookup ref for :db/id, got " old-eid
-                        { :error :entity-id/syntax, :entity entity })))
+                 (prepare/validate-map-entity-id-syntax old-eid)))
 
              (sequential? entity)
              (let [[op e a v] entity]
@@ -1673,8 +1670,7 @@
     []
 
     :else
-    (raise "Bad entity at " entity ", expected map, vector, datom or entity"
-           {:error :transact/syntax, :tx-data entity})))
+    (prepare/validate-tx-entity-type entity)))
 
 (defn- prepare-entities
   [^DB db entities tx-time]

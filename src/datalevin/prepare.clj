@@ -584,6 +584,12 @@
   (u/raise "Expected number or lookup ref for entity id, got " eid
            {:error :entity-id/syntax, :entity-id eid}))
 
+(defn validate-map-entity-id-syntax
+  "Validate :db/id in a map entity: must be a number, string, or lookup ref."
+  [eid]
+  (u/raise "Expected number, string or lookup ref for :db/id, got " eid
+           {:error :entity-id/syntax, :entity-id eid}))
+
 (defn validate-entity-id-exists
   "Validate that an entity id resolves to an existing entity."
   [eid]
@@ -597,6 +603,13 @@
   (when-not (keyword? attr)
     (u/raise "Bad entity attribute: " attr ", expected keyword"
              {:error :transact/syntax, :attribute attr})))
+
+(defn validate-reverse-ref-type
+  "Validate that a reverse attribute has :db/valueType :db.type/ref in schema."
+  [a eid vs]
+  (u/raise "Bad attribute " a ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
+           {:error   :transact/syntax, :attribute a,
+            :context {:db/id eid, a vs}}))
 
 ;; ---- Finalize-phase consistency validators ----
 ;; Extracted from db.clj check-value-tempids, retry-with-tempid,
