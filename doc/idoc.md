@@ -27,12 +27,14 @@ optional idoc format and a domain name:
 
 ```clojure
 (def schema
-  {:doc/edn  {:db/valueType  :db.type/idoc
-              :db/domain     "profiles"}
-   :doc/json {:db/valueType  :db.type/idoc
-              :db/idocFormat :json}
-   :doc/md   {:db/valueType  :db.type/idoc
-              :db/idocFormat :markdown}})
+  {:doc/edn  {:db/valueType   :db.type/idoc
+              :db/domain      "profiles"}
+   :doc/json {:db/valueType   :db.type/idoc
+              :db/idocFormat  :json}
+   :doc/md   {:db/valueType   :db.type/idoc
+              :db/idocFormat  :markdown}
+   :doc/many {:db/valueType   :db.type/idoc
+              :db/cardinality :db.cardinality/many}})
 ```
 
 ### Transact idoc values
@@ -53,7 +55,8 @@ are parsed with `clojure.edn/read-string` and must yield a map.
               :profile {:age 30 :name "Alice"}
               :tags    ["a" "b" "b"]}
     :doc/json "{\"name\":\"Alice\",\"middle\":null,\"age\":30}"
-    :doc/md   "# User Profile\n## Getting Started!\nName: Alice\nAge: 30"}])
+    :doc/md   "# User Profile\n## Getting Started!\nName: Alice\nAge: 30"
+    :doc/many {:profile {:age 35 :name "A"}}}])
 ```
 
 `:doc/md` uses Markdown parsing (see Implementation below), producing a nested

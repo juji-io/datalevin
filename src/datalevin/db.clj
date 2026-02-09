@@ -1275,6 +1275,399 @@
             (transient entities) tuples+values)))
       [] (::queued-tuples report))))
 
+(defn- finalize-report
+  "Finalize the transaction report when all entities are processed."
+  [report]
+  (let [new-attrs (::new-attributes report)]
+    (cond-> (-> report
+                check-value-tempids
+                (dissoc ::upserted-tempids)
+                (dissoc ::reverse-tempids)
+                (dissoc ::new-attributes)
+                (update :tempids #(u/removem auto-tempid? %))
+                (update :tempids assoc :db/current-tx (current-tx report))
+                (update :db-after update :max-tx u/long-inc))
+      (seq new-attrs) (assoc :new-attributes new-attrs))))
+
+(defn- handle-flush-tuples
+  "Handle the ::flush-tuples sentinel. Returns [report' entities']."
+  [report entities]
+  (if (contains? report ::queued-tuples)
+    [(dissoc report ::queued-tuples)
+     (concat (flush-tuples report) entities)]
+    [report entities]))
+
+(defn- handle-fn-call
+  "Handle :db.fn/call entity. Returns expanded entities."
+  [db entity]
+  (let [[_ f & args] entity]
+    (apply f db args)))
+
+(defn- handle-custom-tx-fn
+  "Handle custom keyword transaction function. Returns expanded entities."
+  [db store entity entities]
+  (let [op (first entity)]
+    (if-some [ident (or (:e (sf (.subSet
+                                  ^TreeSortedSet (:avet db)
+                                  (d/datom e0 op nil tx0)
+                                  (d/datom emax op nil txmax))))
+                        (entid db op))]
+      (let [fun  (or (:v (sf (.subSet
+                                ^TreeSortedSet (:eavt db)
+                                (d/datom ident :db/fn nil tx0)
+                                (d/datom ident :db/fn nil txmax))))
+                     (ea-first-v store ident :db/fn))
+            args (next entity)]
+        (if (fn? fun)
+          (concat (apply fun db args) entities)
+          (raise "Entity " op " expected to have :db/fn attribute with fn? value"
+                 {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
+      (raise "Can\u2019t find entity for transaction fn " op
+             {:error :transact/syntax, :operation :db.fn/call, :tx-data entity}))))
+
+(defn- handle-cas
+  "Handle :db.fn/cas / :db/cas. Returns [report' entities']."
+  [report db store entity entities]
+  (let [[_ e a ov nv] entity
+        e             (entid-strict db e)
+        _             (validate-attr a entity)
+        ov            (if (ref? db a) (entid-strict db ov) ov)
+        nv            (if (ref? db a) (entid-strict db nv) nv)
+        _             (validate-val nv entity)
+        datoms        (clojure.set/union
+                        (.subSet ^TreeSortedSet (:eavt db)
+                                 (datom e a nil tx0)
+                                 (datom e a nil txmax))
+                        (slice (:store db) :eav
+                               (datom e a c/v0)
+                               (datom e a c/vmax)))]
+    (prepare/validate-cas-value (multival? db a) e a ov nv datoms)
+    [(transact-add report [:db/add e a nv]) entities]))
+
+(defn- handle-patch-idoc
+  "Handle :db.fn/patchIdoc. Returns [report' entities']."
+  [report db store schema entity entities]
+  (let [argc (count entity)]
+    (prepare/validate-patch-idoc-arity argc entity (first entity))
+    (let [[_ e a x y] entity
+          [old-v ops] (if (= argc 5) [x y] [nil x])
+          e           (entid-strict db e)
+          _           (validate-attr a entity)
+          props       (schema a)
+          _           (prepare/validate-patch-idoc-type
+                        (idx/value-type props) a)
+          many?       (multival? db a)
+          _           (prepare/validate-patch-idoc-cardinality
+                        many? old-v a)
+          ops         (or ops [])]
+      (if (empty? ops)
+        [report entities]
+        (if many?
+          (let [old-v'    (correct-value store a old-v)
+                old-datom (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                                           (datom e a old-v' tx0)
+                                           (datom e a old-v' txmax)))
+                              (first (fetch (:store db)
+                                            (datom e a old-v'))))]
+            (when-not old-datom
+              (raise "Idoc patch old value not found: " old-v
+                     {:attribute a :value old-v}))
+            (let [old-doc             (.-v ^Datom old-datom)
+                  {:keys [doc paths]} (idoc/apply-patch old-doc ops)]
+              (if (= old-doc doc)
+                [report entities]
+                (let [ent (with-meta [:db/add e a doc]
+                            {:idoc/patch {:paths paths}})]
+                  [(transact-add report ent)
+                   (cons [:db/retract e a old-doc] entities)]))))
+          (let [old-datom           (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                                                      (datom e a nil tx0)
+                                                      (datom e a nil txmax)))
+                                        (ea-first-datom store e a))
+                old-doc             (when old-datom (.-v ^Datom old-datom))
+                {:keys [doc paths]} (idoc/apply-patch (or old-doc {}) ops)
+                ent                 (with-meta [:db/add e a doc]
+                                      {:idoc/patch {:paths paths}})]
+            [(transact-add report ent) entities]))))))
+
+(defn- handle-ref-tempid-value
+  "Handle ref attr with tempid value. Returns [report' es'] where es' is for recur."
+  [report db tempids entity entities es tx-time]
+  (let [[op e a v] entity]
+    (if-some [resolved (get tempids v)]
+      [(update report ::value-tempids assoc resolved v)
+       (cons [op e a resolved] entities)]
+      (let [resolved (next-eid db)]
+        [(-> (allocate-eid tx-time report v resolved)
+             (update ::value-tempids assoc resolved v))
+         es]))))
+
+(defn- handle-tempid-entity
+  "Handle tempid in entity position with possible upsert. Returns [report' entities'] or calls retry."
+  [initial-report report db store tempids entity entities initial-es tx-time]
+  (let [[op e a v] entity
+        upserted-eid  (when (-is-attr? db a :db.unique/identity)
+                        (or (:e (sf (.subSet
+                                      ^TreeSortedSet (:avet db)
+                                      (d/datom e0 a v tx0)
+                                      (d/datom emax a v txmax))))
+                            (av-first-e store a v)))
+        allocated-eid (get tempids e)]
+    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
+      (retry-with-tempid initial-report report initial-es e upserted-eid
+                         tx-time)
+      (let [eid (or upserted-eid allocated-eid (next-eid db))]
+        [(allocate-eid tx-time report e eid)
+         (cons [op eid a v] entities)]))))
+
+(defn- handle-reverse-tempid-upsert
+  "Handle reverse-tempid upsert detection. Returns [report' entities'] or calls retry."
+  [initial-report report db store entity entities initial-es tx-time upserted-eid]
+  (let [[op e a v] entity
+        tempids (get (::reverse-tempids report) e)
+        tempid  (u/find #(not (contains? (::upserted-tempids report) %))
+                        tempids)]
+    (if tempid
+      (retry-with-tempid initial-report report initial-es tempid
+                         upserted-eid tx-time)
+      (prepare/validate-upsert-conflict e upserted-eid entity))))
+
+(defn- handle-tuple-attr
+  "Handle tuple-attr guard. Returns [report entities] if values match, else raises."
+  [db store schema entity report entities]
+  (let [[op e a v] entity
+        tuple-attrs (get-in schema [a :db/tupleAttrs])]
+    (if (and
+          (every? some? v)
+          (= (count tuple-attrs) (count v))
+          (every?
+            (fn [[tuple-attr tuple-value]]
+              (let [db-value
+                    (or (:v (sf
+                              (.subSet
+                                ^TreeSortedSet (:eavt db)
+                                (d/datom e tuple-attr nil tx0)
+                                (d/datom e tuple-attr nil txmax))))
+                        (ea-first-v store e tuple-attr))]
+                (= tuple-value db-value)))
+            (mapv vector tuple-attrs v)))
+      [report entities]
+      (prepare/validate-tuple-direct-write entity))))
+
+(defn- handle-tuple-ref-tempids
+  "Handle tuple-type ref tempid resolution. Returns [report' entities']."
+  [report db tempids entity entities vs tx-time]
+  (let [[op e a v] entity
+        [report' v']
+        (loop [report' report
+               vs      vs
+               v'      []]
+          (if-let [[[tuple-type v] & vs] vs]
+            (if (and (identical? tuple-type :db.type/ref)
+                     (tempid? v))
+              (if-some [resolved (get tempids v)]
+                (recur report' vs (conj v' resolved))
+                (let [resolved (next-eid db)
+                      report'  (-> (allocate-eid tx-time report' v resolved)
+                                   (update ::value-tempids assoc resolved v))]
+                  (recur report' vs (conj v' resolved))))
+              (recur report' vs (conj v' v)))
+            [report' v']))]
+    [report' (cons [op e a v'] entities)]))
+
+(defn- handle-tuple-ref-idents
+  "Handle tuple-type ident (keyword) resolution. Returns resolved entity."
+  [db entity vs]
+  (let [[op e a v] entity
+        v' (mapv (fn [[tuple-type v]]
+                   (if (and (identical? tuple-type :db.type/ref)
+                            (keyword? v))
+                     (entid-strict db v)
+                     v))
+                 vs)]
+    [op e a v']))
+
+(defn- handle-retract-value
+  "Handle :db/retract with value. Returns report'."
+  [report db store entity entities]
+  (let [[op e a v] entity]
+    (if-some [e (entid db e)]
+      (let [v (if (ref? db a) (entid-strict db v) v)]
+        (validate-attr a entity)
+        (validate-val v entity)
+        (if-some [old-datom (or (sf (.subSet
+                                      ^TreeSortedSet (:eavt db)
+                                      (datom e a v tx0)
+                                      (datom e a v txmax)))
+                                (-first db [e a v]))]
+          [(transact-retract-datom report old-datom) entities]
+          [report entities]))
+      [report entities])))
+
+(defn- handle-retract-attribute
+  "Handle :db.fn/retractAttribute / :db/retract without value. Returns [report' entities']."
+  [report db store entity entities]
+  (let [[op e a v] entity]
+    (if-some [e (entid db e)]
+      (let [_      (validate-attr a entity)
+            datoms (concatv
+                     (slice (:store db) :eav
+                            (datom e a c/v0)
+                            (datom e a c/vmax))
+                     (.subSet ^TreeSortedSet (:eavt db)
+                              (datom e a nil tx0)
+                              (datom e a nil txmax)))]
+        [(reduce transact-retract-datom report datoms)
+         (concat (retract-components db datoms) entities)])
+      [report entities])))
+
+(defn- handle-retract-entity
+  "Handle :db.fn/retractEntity / :db/retractEntity. Returns [report' entities']."
+  [report db store entity entities]
+  (let [[op e a v] entity]
+    (if-some [e (entid db e)]
+      (let [e-datoms (concatv
+                       (e-datoms (:store db) e)
+                       (.subSet ^TreeSortedSet (:eavt db)
+                                (datom e nil nil tx0)
+                                (datom e nil nil txmax)))
+            v-datoms (v-datoms (:store db) e)]
+        [(reduce transact-retract-datom report
+                 (concat e-datoms v-datoms))
+         (concat (retract-components db e-datoms) entities)])
+      [report entities])))
+
+(defn- handle-map-entity
+  "Handle map entity. Returns [report' entities'] or calls retry/raises."
+  [initial-report report db entity entities initial-es tx-time]
+  (let [old-eid (:db/id entity)]
+    (cond+
+      ;; :db/current-tx  => tx
+      (tx-id? old-eid)
+      (let [id (current-tx report)]
+        [(allocate-eid tx-time report old-eid id)
+         (cons (assoc entity :db/id id) entities)])
+
+      ;; lookup-ref => resolved | error
+      (sequential? old-eid)
+      (let [id (entid-strict db old-eid)]
+        [report (cons (assoc entity :db/id id) entities)])
+
+      ;; upserted => explode | error
+      :let [[entity' upserts] (resolve-upserts db entity)
+            upserted-eid      (validate-upserts entity' upserts)]
+
+      (some? upserted-eid)
+      (let [tempids (:tempids report)]
+        (if (and (tempid? old-eid)
+                 (contains? tempids old-eid)
+                 (not= upserted-eid (get tempids old-eid)))
+          (retry-with-tempid initial-report report initial-es old-eid
+                             upserted-eid tx-time)
+          [(-> (allocate-eid tx-time report old-eid upserted-eid)
+               (update ::tx-redundant conjv
+                       (datom upserted-eid nil nil tx0)))
+           (concat (explode db (assoc entity' :db/id upserted-eid))
+                   entities)]))
+
+      ;; resolved | allocated-tempid | tempid | nil => explode
+      (or (number? old-eid)
+          (nil?    old-eid)
+          (string? old-eid)
+          (auto-tempid? old-eid))
+      [report (concat (explode db entity) entities)]
+
+      ;; trash => error
+      :else
+      (prepare/validate-map-entity-id-syntax old-eid))))
+
+(defn- handle-sequential-entity
+  "Handle sequential entity. Returns [report' entities'] or calls retry/raises."
+  [initial-report report db store schema tempids entity entities initial-es tx-time]
+  (let [[op e a v] entity]
+    (cond+
+      (identical? op :db.fn/call)
+      [report (concat (handle-fn-call db entity) entities)]
+
+      (and (keyword? op) (not (builtin-fn? op)))
+      [report (handle-custom-tx-fn db store entity entities)]
+
+      (and (tempid? e) (not (identical? op :db/add)))
+      (prepare/validate-tempid-op true op entity)
+
+      (or (identical? op :db.fn/cas) (identical? op :db/cas))
+      (handle-cas report db store entity entities)
+
+      (identical? op :db.fn/patchIdoc)
+      (handle-patch-idoc report db store schema entity entities)
+
+      (tx-id? e)
+      [(allocate-eid tx-time report e (current-tx report))
+       (cons [op (current-tx report) a v] entities)]
+
+      (and (ref? db a) (tx-id? v))
+      [(allocate-eid tx-time report v (current-tx report))
+       (cons [op e a (current-tx report)] entities)]
+
+      (and (ref? db a) (tempid? v))
+      (handle-ref-tempid-value report db tempids entity entities
+                               (cons entity entities) tx-time)
+
+      (and (ref? db a) (sequential? v))
+      (let [resolved (entid-strict db v)]
+        [report (cons [op e a resolved] entities)])
+
+      (tempid? e)
+      (handle-tempid-entity initial-report report db store tempids
+                            entity entities initial-es tx-time)
+
+      :let [upserted-eid (when (and (-is-attr? db a :db.unique/identity)
+                                     (contains? (::reverse-tempids report) e)
+                                     e)
+                            (av-first-e store a v))]
+
+      (and upserted-eid (not= e upserted-eid))
+      (handle-reverse-tempid-upsert initial-report report db store
+                                    entity entities initial-es tx-time
+                                    upserted-eid)
+
+      (and (tuple-attr? db a) (not (::internal (meta entity))))
+      (handle-tuple-attr db store schema entity report entities)
+
+      :let [tuple-types (when (and (or (tuple-type? db a)
+                                       (tuple-types? db a))
+                                   (not (::internal (meta entity))))
+                           (or (get-in schema [a :db/tupleTypes])
+                               (repeat (get-in schema [a :db/tupleType]))))
+            vs (when tuple-types
+                 (partition 2 (interleave tuple-types v)))]
+
+      (some #(and (identical? (first %) :db.type/ref)
+                  (tempid? (second %))) vs)
+      (handle-tuple-ref-tempids report db tempids entity entities vs tx-time)
+
+      ;; resolve idents (keywords) in tuple refs
+      (some #(and (identical? (first %) :db.type/ref)
+                  (keyword? (second %))) vs)
+      [report (cons (handle-tuple-ref-idents db entity vs) entities)]
+
+      (identical? op :db/add)
+      [(transact-add report entity) entities]
+
+      (and (identical? op :db/retract) (some? v))
+      (handle-retract-value report db store entity entities)
+
+      (or (identical? op :db.fn/retractAttribute)
+          (identical? op :db/retract))
+      (handle-retract-attribute report db store entity entities)
+
+      (or (identical? op :db.fn/retractEntity)
+          (identical? op :db/retractEntity))
+      (handle-retract-entity report db store entity entities)
+
+      :else
+      (prepare/validate-tx-op op entity))))
+
 (defn- local-transact-tx-data
   ([initial-report initial-es tx-time]
    (local-transact-tx-data initial-report initial-es tx-time false))
@@ -1302,315 +1695,33 @@
                   es     initial-es']
            (cond+
              (empty? es)
-             (let [new-attrs (::new-attributes report)]
-               (cond-> (-> report
-                           check-value-tempids
-                           (dissoc ::upserted-tempids)
-                           (dissoc ::reverse-tempids)
-                           (dissoc ::new-attributes)
-                           (update :tempids #(u/removem auto-tempid? %))
-                           (update :tempids assoc :db/current-tx (current-tx report))
-                           (update :db-after update :max-tx u/long-inc))
-                 (seq new-attrs) (assoc :new-attributes new-attrs)))
+             (finalize-report report)
 
              :let [[entity & entities] es]
 
              (identical? ::flush-tuples entity)
-             (if (contains? report ::queued-tuples)
-               (recur (dissoc report ::queued-tuples)
-                      (concat (flush-tuples report) entities))
-               (recur report entities))
+             (let [[r' es'] (handle-flush-tuples report entities)]
+               (recur r' es'))
 
              :let [^DB db      (:db-after report)
                    tempids (:tempids report)]
 
              (map? entity)
-             (let [old-eid (:db/id entity)]
-               (cond+
-                 ;; :db/current-tx  => tx
-                 (tx-id? old-eid)
-                 (let [id (current-tx report)]
-                   (recur (allocate-eid tx-time report old-eid id)
-                          (cons (assoc entity :db/id id) entities)))
-
-                 ;; lookup-ref => resolved | error
-                 (sequential? old-eid)
-                 (let [id (entid-strict db old-eid)]
-                   (recur report (cons (assoc entity :db/id id) entities)))
-
-                 ;; upserted => explode | error
-                 :let [[entity' upserts] (resolve-upserts db entity)
-                       upserted-eid      (validate-upserts entity' upserts)]
-
-                 (some? upserted-eid)
-                 (if (and (tempid? old-eid)
-                          (contains? tempids old-eid)
-                          (not= upserted-eid (get tempids old-eid)))
-                   (retry-with-tempid initial-report report initial-es old-eid
-                                      upserted-eid tx-time)
-                   (recur (-> (allocate-eid tx-time report old-eid upserted-eid)
-                              (update ::tx-redundant conjv
-                                      (datom upserted-eid nil nil tx0)))
-                          (concat (explode db (assoc entity' :db/id upserted-eid))
-                                  entities)))
-
-                 ;; resolved | allocated-tempid | tempid | nil => explode
-                 (or (number? old-eid)
-                     (nil?    old-eid)
-                     (string? old-eid)
-                     (auto-tempid? old-eid))
-                 (recur report (concat (explode db entity) entities))
-
-                 ;; trash => error
-                 :else
-                 (prepare/validate-map-entity-id-syntax old-eid)))
+             (let [result (handle-map-entity initial-report report db entity
+                                             entities initial-es tx-time)]
+               (if (map? result)
+                 result
+                 (let [[r' es'] result]
+                   (recur r' es'))))
 
              (sequential? entity)
-             (let [[op e a v] entity]
-               (cond+
-                 (identical? op :db.fn/call)
-                 (let [[_ f & args] entity]
-                   (recur report (concat (apply f db args) entities)))
-
-                 (and (keyword? op) (not (builtin-fn? op)))
-                 (if-some [ident (or (:e (sf (.subSet
-                                               ^TreeSortedSet (:avet db)
-                                               (d/datom e0 op nil tx0)
-                                               (d/datom emax op nil txmax))))
-                                     (entid db op))]
-                   (let [fun  (or (:v (sf (.subSet
-                                            ^TreeSortedSet (:eavt db)
-                                            (d/datom ident :db/fn nil tx0)
-                                            (d/datom ident :db/fn nil txmax))))
-                                  (ea-first-v store ident :db/fn))
-                         args (next entity)]
-                     (if (fn? fun)
-                       (recur report (concat (apply fun db args) entities))
-                       (raise "Entity " op " expected to have :db/fn attribute with fn? value"
-                              {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
-                   (raise "Can’t find entity for transaction fn " op
-                          {:error :transact/syntax, :operation :db.fn/call, :tx-data entity}))
-
-                 (and (tempid? e) (not (identical? op :db/add)))
-                 (prepare/validate-tempid-op true op entity)
-
-                 (or (identical? op :db.fn/cas) (identical? op :db/cas))
-                 (let [[_ e a ov nv] entity
-                       e             (entid-strict db e)
-                       _             (validate-attr a entity)
-                       ov            (if (ref? db a) (entid-strict db ov) ov)
-                       nv            (if (ref? db a) (entid-strict db nv) nv)
-                       _             (validate-val nv entity)
-                       datoms        (clojure.set/union
-                                       (.subSet ^TreeSortedSet (:eavt db)
-                                                (datom e a nil tx0)
-                                                (datom e a nil txmax))
-                                       (slice (:store db) :eav
-                                              (datom e a c/v0)
-                                              (datom e a c/vmax)))]
-                   (do (prepare/validate-cas-value (multival? db a) e a ov nv datoms)
-                       (recur (transact-add report [:db/add e a nv]) entities)))
-
-                 (identical? op :db.fn/patchIdoc)
-                 (let [argc (count entity)]
-                   (prepare/validate-patch-idoc-arity argc entity op)
-                   (let [[_ e a x y] entity
-                         [old-v ops] (if (= argc 5) [x y] [nil x])
-                         e           (entid-strict db e)
-                         _           (validate-attr a entity)
-                         props       (schema a)
-                         _           (prepare/validate-patch-idoc-type
-                                       (idx/value-type props) a)
-                         many?       (multival? db a)
-                         _           (prepare/validate-patch-idoc-cardinality
-                                       many? old-v a)
-                         ops         (or ops [])]
-                     (if (empty? ops)
-                       (recur report entities)
-                       (if many?
-                         (let [old-v'    (correct-value store a old-v)
-                               old-datom (or (sf (.subSet ^TreeSortedSet (:eavt db)
-                                                          (datom e a old-v' tx0)
-                                                          (datom e a old-v' txmax)))
-                                             (first (fetch (:store db)
-                                                           (datom e a old-v'))))]
-                           (when-not old-datom
-                             (raise "Idoc patch old value not found: " old-v
-                                    {:attribute a :value old-v}))
-                           (let [old-doc             (.-v ^Datom old-datom)
-                                 {:keys [doc paths]} (idoc/apply-patch old-doc ops)]
-                             (if (= old-doc doc)
-                               (recur report entities)
-                               (let [ent (with-meta [:db/add e a doc]
-                                           {:idoc/patch {:paths paths}})]
-                                 (recur (transact-add report ent)
-                                        (cons [:db/retract e a old-doc] entities))))))
-                         (let [old-datom           (or (sf (.subSet ^TreeSortedSet (:eavt db)
-                                                                    (datom e a nil tx0)
-                                                                    (datom e a nil txmax)))
-                                                       (ea-first-datom store e a))
-                               old-doc             (when old-datom (.-v ^Datom old-datom))
-                               {:keys [doc paths]} (idoc/apply-patch (or old-doc {}) ops)
-                               ent                 (with-meta [:db/add e a doc]
-                                                     {:idoc/patch {:paths paths}})]
-                           (recur (transact-add report ent) entities))))))
-
-                 (tx-id? e)
-                 (recur (allocate-eid tx-time report e (current-tx report))
-                        (cons [op (current-tx report) a v] entities))
-
-                 (and (ref? db a) (tx-id? v))
-                 (recur (allocate-eid tx-time report v (current-tx report))
-                        (cons [op e a (current-tx report)] entities))
-
-                 (and (ref? db a) (tempid? v))
-                 (if-some [resolved (get tempids v)]
-                   (recur (update report ::value-tempids assoc resolved v)
-                          (cons [op e a resolved] entities))
-                   (let [resolved (next-eid db)]
-                     (recur (-> (allocate-eid tx-time report v resolved)
-                                (update ::value-tempids assoc resolved v))
-                            es)))
-
-                 (and (ref? db a) (sequential? v))
-                 (let [resolved (entid-strict db v)]
-                   (recur report (cons [op e a resolved] entities)))
-
-                 (tempid? e)
-                 (let [upserted-eid  (when (-is-attr? db a :db.unique/identity)
-                                       (or (:e (sf (.subSet
-                                                     ^TreeSortedSet (:avet db)
-                                                     (d/datom e0 a v tx0)
-                                                     (d/datom emax a v txmax))))
-                                           (av-first-e store a v)))
-                       allocated-eid (get tempids e)]
-                   (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
-                     (retry-with-tempid initial-report report initial-es e upserted-eid
-                                        tx-time)
-                     (let [eid (or upserted-eid allocated-eid (next-eid db))]
-                       (recur (allocate-eid tx-time report e eid)
-                              (cons [op eid a v] entities)))))
-
-                 :let [upserted-eid (when (and (-is-attr? db a :db.unique/identity)
-                                               (contains? (::reverse-tempids report) e)
-                                               e)
-                                      (av-first-e store a v))]
-
-                 (and upserted-eid (not= e upserted-eid))
-                 (let [tempids (get (::reverse-tempids report) e)
-                       tempid  (u/find #(not (contains? (::upserted-tempids report) %))
-                                       tempids)]
-                   (if tempid
-                     (retry-with-tempid initial-report report initial-es tempid
-                                        upserted-eid tx-time)
-                     (prepare/validate-upsert-conflict e upserted-eid entity)))
-
-                 (and (tuple-attr? db a) (not (::internal (meta entity))))
-                 ;; allow transacting in tuples if they fully match already existing values
-                 (let [tuple-attrs (get-in schema [a :db/tupleAttrs])]
-                   (if (and
-                         (every? some? v)
-                         (= (count tuple-attrs) (count v))
-                         (every?
-                           (fn [[tuple-attr tuple-value]]
-                             (let [db-value
-                                   (or (:v (sf
-                                             (.subSet
-                                               ^TreeSortedSet (:eavt db)
-                                               (d/datom e tuple-attr nil tx0)
-                                               (d/datom e tuple-attr nil txmax))))
-                                       (ea-first-v store e tuple-attr))]
-                               (= tuple-value db-value)))
-                           (mapv vector tuple-attrs v)))
-                     (recur report entities)
-                     (prepare/validate-tuple-direct-write entity)))
-
-                 :let [tuple-types (when (and (or (tuple-type? db a)
-                                                  (tuple-types? db a))
-                                              (not (::internal (meta entity))))
-                                     (or (get-in schema [a :db/tupleTypes])
-                                         (repeat (get-in schema [a :db/tupleType]))))
-                       vs (when tuple-types
-                            (partition 2 (interleave tuple-types v)))]
-
-                 (some #(and (identical? (first %) :db.type/ref)
-                             (tempid? (second %))) vs)
-                 (let [[report' v']
-                       (loop [report' report
-                              vs      vs
-                              v'      []]
-                         (if-let [[[tuple-type v] & vs] vs]
-                           (if (and (identical? tuple-type :db.type/ref)
-                                    (tempid? v))
-                             (if-some [resolved (get tempids v)]
-                               (recur report' vs (conj v' resolved))
-                               (let [resolved (next-eid db)
-                                     report'  (-> (allocate-eid tx-time report' v resolved)
-                                                  (update ::value-tempids assoc resolved v))]
-                                 (recur report' vs (conj v' resolved))))
-                             (recur report' vs (conj v' v)))
-                           [report' v']))]
-                   (recur report' (cons [op e a v'] entities)))
-
-                 ;; resolve idents (keywords) in tuple refs
-                 (some #(and (identical? (first %) :db.type/ref)
-                             (keyword? (second %))) vs)
-                 (let [v' (mapv (fn [[tuple-type v]]
-                                  (if (and (identical? tuple-type :db.type/ref)
-                                           (keyword? v))
-                                    (entid-strict db v)
-                                    v))
-                                vs)]
-                   (recur report (cons [op e a v'] entities)))
-
-                 (identical? op :db/add)
-                 (recur (transact-add report entity) entities)
-
-                 (and (identical? op :db/retract) (some? v))
-                 (if-some [e (entid db e)]
-                   (let [v (if (ref? db a) (entid-strict db v) v)]
-                     (validate-attr a entity)
-                     (validate-val v entity)
-                     (if-some [old-datom (or (sf (.subSet
-                                                   ^TreeSortedSet (:eavt db)
-                                                   (datom e a v tx0)
-                                                   (datom e a v txmax)))
-                                             (-first db [e a v]))]
-                       (recur (transact-retract-datom report old-datom) entities)
-                       (recur report entities)))
-                   (recur report entities))
-
-                 (or (identical? op :db.fn/retractAttribute)
-                     (identical? op :db/retract))
-                 (if-some [e (entid db e)]
-                   (let [_      (validate-attr a entity)
-                         datoms (concatv
-                                  (slice (:store db) :eav
-                                         (datom e a c/v0)
-                                         (datom e a c/vmax))
-                                  (.subSet ^TreeSortedSet (:eavt db)
-                                           (datom e a nil tx0)
-                                           (datom e a nil txmax)))]
-                     (recur (reduce transact-retract-datom report datoms)
-                            (concat (retract-components db datoms) entities)))
-                   (recur report entities))
-
-                 (or (identical? op :db.fn/retractEntity)
-                     (identical? op :db/retractEntity))
-                 (if-some [e (entid db e)]
-                   (let [e-datoms (concatv
-                                    (e-datoms (:store db) e)
-                                    (.subSet ^TreeSortedSet (:eavt db)
-                                             (datom e nil nil tx0)
-                                             (datom e nil nil txmax)))
-                         v-datoms (v-datoms (:store db) e)]
-                     (recur (reduce transact-retract-datom report
-                                    (concat e-datoms v-datoms))
-                            (concat (retract-components db e-datoms) entities)))
-                   (recur report entities))
-
-                 :else
-                 (prepare/validate-tx-op op entity)))
+             (let [result (handle-sequential-entity
+                            initial-report report db store schema tempids
+                            entity entities initial-es tx-time)]
+               (if (map? result)
+                 result
+                 (let [[r' es'] result]
+                   (recur r' es'))))
 
              (datom? entity)
              (let [[e a v tx added] entity]
