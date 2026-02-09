@@ -606,3 +606,32 @@
                       {:facts {"team" "blue"}})))))
     (sut/close conn)
     (when-not (u/windows?) (u/delete-files dir))))
+
+(deftest idoc-fulltext-combo-test
+  (let [dir  (u/tmp-dir (str "idoc-fulltext-test-" (UUID/randomUUID)))
+        conn (sut/create-conn
+               dir
+               {:doc/md {:db/valueType           :db.type/idoc
+                         :db/idocFormat          :markdown
+                         :db/fulltext            true
+                         :db.fulltext/autoDomain true}}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync :nolock)}})]
+    (sut/transact!
+      conn
+      [{:db/id  1
+        :doc/md "# something\nOfficia laboris id laborum."}])
+    (let [db (sut/db conn)]
+      (testing "attribute-specific fulltext search"
+        (is (some?
+              (sut/q '[:find ?v .
+                        :in $ ?q
+                        :where [(fulltext $ :doc/md ?q) [[?e ?a ?v]]]]
+                     db "Officia"))))
+      (testing "db-scoped fulltext search"
+        (is (some?
+              (sut/q '[:find ?v .
+                        :in $ ?q
+                        :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                     db "Officia")))))
+    (sut/close conn)
+    (when-not (u/windows?) (u/delete-files dir))))

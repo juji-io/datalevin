@@ -24,9 +24,10 @@
       (is (nil? (:attr-cache ctx)))))
 
   (testing "PreparedTx record can be constructed directly"
-    (let [ptx (prepare/->PreparedTx [] {} [] [] {} #{} nil)]
+    (let [ptx (prepare/->PreparedTx [] nil {} [] [] {} #{} nil)]
       (is (instance? datalevin.prepare.PreparedTx ptx))
       (is (= [] (:tx-data ptx)))
+      (is (nil? (:db-after ptx)))
       (is (= {} (:tempids ptx))))))
 
 (deftest test-make-prepare-ctx
@@ -52,8 +53,8 @@
           (d/close conn)
           (u/delete-files dir))))))
 
-(deftest test-prepare-tx-returns-nil
-  (testing "prepare-tx stub returns nil"
+(deftest test-prepare-tx-returns-prepared-tx
+  (testing "prepare-tx calls execute-fn and returns PreparedTx"
     (let [dir  (u/tmp-dir (str "prepare-tx-" (UUID/randomUUID)))
           conn (d/create-conn dir {:name {:db/valueType :db.type/string}}
                               {:kv-opts
@@ -61,8 +62,22 @@
       (try
         (let [db   (d/db conn)
               lmdb (.-lmdb ^Store (:store db))
-              ctx  (prepare/make-prepare-ctx db lmdb)]
-          (is (nil? (prepare/prepare-tx ctx [{:name "test"}] 1))))
+              ctx  (prepare/make-prepare-ctx db lmdb)
+              fake-report {:tx-data [{:fake "datom"}]
+                           :db-after db
+                           :tempids {-1 1}
+                           :new-attributes [:name]}
+              ptx  (prepare/prepare-tx ctx [{:name "test"}] 1
+                     (fn [es t] fake-report))]
+          (is (instance? datalevin.prepare.PreparedTx ptx))
+          (is (= [{:fake "datom"}] (:tx-data ptx)))
+          (is (= db (:db-after ptx)))
+          (is (= {-1 1} (:tempids ptx)))
+          (is (= [:name] (:new-attributes ptx)))
+          (is (nil? (:tx-redundant ptx)))
+          (is (nil? (:side-index-ops ptx)))
+          (is (nil? (:touch-summary ptx)))
+          (is (nil? (:stats ptx))))
         (finally
           (d/close conn)
           (u/delete-files dir))))))
@@ -94,7 +109,7 @@
           (u/delete-files dir))))))
 
 (deftest test-transact-with-prepare-path-true
-  (testing "transact! falls through to legacy path with *use-prepare-path* true (stub returns nil)"
+  (testing "transact! succeeds through prepare path"
     (let [dir  (u/tmp-dir (str "prepare-true-" (UUID/randomUUID)))
           conn (d/create-conn dir {:name {:db/valueType :db.type/string}}
                               {:kv-opts
@@ -107,6 +122,47 @@
         (finally
           (d/close conn)
           (u/delete-files dir))))))
+
+(deftest test-prepare-path-differential
+  (testing "prepare path and legacy path produce identical results"
+    (let [dir-legacy  (u/tmp-dir (str "diff-legacy-" (UUID/randomUUID)))
+          dir-prepare (u/tmp-dir (str "diff-prepare-" (UUID/randomUUID)))
+          schema      {:name  {:db/valueType :db.type/string
+                               :db/unique    :db.unique/identity}
+                       :age   {:db/valueType :db.type/long}
+                       :alias {:db/valueType   :db.type/string
+                               :db/cardinality :db.cardinality/many}}
+          opts        {:kv-opts {:flags (conj c/default-env-flags :nosync)}}
+          conn-l      (d/create-conn dir-legacy schema opts)
+          conn-p      (d/create-conn dir-prepare schema opts)
+          tx-data     [{:name "Alice" :age 30 :alias ["A" "Ali"]}
+                       {:name "Bob" :age 25}
+                       [:db/add -1 :name "Carol"]
+                       [:db/add -1 :age 28]]]
+      (try
+        (let [report-l (binding [c/*use-prepare-path* false]
+                         (d/transact! conn-l tx-data))
+              report-p (binding [c/*use-prepare-path* true]
+                         (d/transact! conn-p tx-data))]
+          ;; tx-data should have same count and same datoms (by a/v, ignoring tx)
+          (is (= (count (:tx-data report-l))
+                 (count (:tx-data report-p))))
+          ;; tempids should map the same logical tempids
+          (is (= (dissoc (:tempids report-l) :db/current-tx)
+                 (dissoc (:tempids report-p) :db/current-tx)))
+          ;; new-attributes should be identical
+          (is (= (:new-attributes report-l)
+                 (:new-attributes report-p)))
+          ;; query results should match
+          (is (= (d/q '[:find ?n ?a :where [?e :name ?n] [?e :age ?a]]
+                      (d/db conn-l))
+                 (d/q '[:find ?n ?a :where [?e :name ?n] [?e :age ?a]]
+                      (d/db conn-p)))))
+        (finally
+          (d/close conn-l)
+          (d/close conn-p)
+          (u/delete-files dir-legacy)
+          (u/delete-files dir-prepare))))))
 
 ;; ---- Storage / schema validators ----
 

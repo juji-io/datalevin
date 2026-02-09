@@ -39,6 +39,7 @@
 
 (defrecord PreparedTx
   [tx-data        ; vector of resolved Datom objects (canonical order)
+   db-after       ; DB snapshot after applying all datoms (with updated indexes)
    tempids        ; map: tempid -> resolved eid
    new-attributes ; vector of attrs added in this tx
    tx-redundant   ; vector of redundant (no-op) datoms
@@ -105,10 +106,18 @@
 
 (defn prepare-tx
   "Run the full prepare pipeline. Returns a PreparedTx.
-   Currently a pass-through shell; stages will be filled in
-   subsequent steps."
-  [ctx entities tx-time]
-  nil)
+   execute-fn: (fn [entities tx-time] -> report) runs the transaction loop."
+  [ctx entities tx-time execute-fn]
+  (let [report (execute-fn entities tx-time)]
+    (->PreparedTx
+      (:tx-data report)
+      (:db-after report)
+      (:tempids report)
+      (:new-attributes report)
+      nil   ; tx-redundant not needed externally
+      nil   ; side-index-ops (future)
+      nil   ; touch-summary (future)
+      nil)))
 
 ;; ---- Storage / schema validators ----
 ;; Extracted from storage.clj
@@ -543,11 +552,33 @@
     (u/raise "Idoc patch old value is only supported for cardinality many attribute: "
              a {:attribute a})))
 
+(defn validate-patch-idoc-old-value
+  "Validate that old value exists for cardinality-many idoc patch."
+  [old-datom old-v a]
+  (when-not old-datom
+    (u/raise "Idoc patch old value not found: " old-v
+             {:attribute a :value old-v})))
+
+(defn validate-custom-tx-fn-value
+  "Validate that a resolved entity has a fn? :db/fn attribute."
+  [fun op entity]
+  (when-not (fn? fun)
+    (u/raise "Entity " op " expected to have :db/fn attribute with fn? value"
+             {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
+
+(defn validate-custom-tx-fn-entity
+  "Validate that an entity exists for a custom transaction function."
+  [ident op entity]
+  (when-not ident
+    (u/raise "Can\u2019t find entity for transaction fn " op
+             {:error :transact/syntax, :operation :db.fn/call, :tx-data entity})))
+
 (defn validate-tuple-direct-write
   "Validate that tuple attrs cannot be modified directly."
-  [entity]
-  (u/raise "Can\u2019t modify tuple attrs directly: " entity
-           {:error :transact/syntax, :tx-data entity}))
+  [match? entity]
+  (when-not match?
+    (u/raise "Can\u2019t modify tuple attrs directly: " entity
+             {:error :transact/syntax, :tx-data entity})))
 
 (defn validate-tx-op
   "Validate that the operation is a known transaction operation."
@@ -592,10 +623,11 @@
 
 (defn validate-entity-id-exists
   "Validate that an entity id resolves to an existing entity."
-  [eid]
-  (u/raise "Nothing found for entity id " eid
-           {:error     :entity-id/missing
-            :entity-id eid}))
+  [result eid]
+  (when-not result
+    (u/raise "Nothing found for entity id " eid
+             {:error     :entity-id/missing
+              :entity-id eid})))
 
 (defn validate-reverse-ref-attr
   "Validate that a reverse-ref attribute is a keyword."
@@ -606,10 +638,11 @@
 
 (defn validate-reverse-ref-type
   "Validate that a reverse attribute has :db/valueType :db.type/ref in schema."
-  [a eid vs]
-  (u/raise "Bad attribute " a ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
-           {:error   :transact/syntax, :attribute a,
-            :context {:db/id eid, a vs}}))
+  [ref? a eid vs]
+  (when-not ref?
+    (u/raise "Bad attribute " a ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
+             {:error   :transact/syntax, :attribute a,
+              :context {:db/id eid, a vs}})))
 
 ;; ---- Finalize-phase consistency validators ----
 ;; Extracted from db.clj check-value-tempids, retry-with-tempid,
@@ -619,23 +652,26 @@
   "Validate that all tempids used as ref values were also used as entity ids.
    unused is a collection of tempid values that were never added as entities."
   [unused]
-  (u/raise "Tempids used only as value in transaction: " (sort unused)
-           {:error :transact/syntax, :tempids unused}))
+  (when (seq unused)
+    (u/raise "Tempids used only as value in transaction: " (sort unused)
+             {:error :transact/syntax, :tempids unused})))
 
 (defn validate-upsert-retry-conflict
   "Validate that a tempid does not conflict during upsert retry.
    Raised when a tempid resolves to two different eids across retries."
-  [tempid upserted-eid eid]
-  (u/raise "Conflicting upsert: " tempid " resolves"
-           " both to " upserted-eid " and " eid
-           {:error :transact/upsert}))
+  [eid tempid upserted-eid]
+  (when eid
+    (u/raise "Conflicting upsert: " tempid " resolves"
+             " both to " upserted-eid " and " eid
+             {:error :transact/upsert})))
 
 (defn validate-upsert-conflict
   "Validate that an upserted eid does not conflict with an existing resolution.
    Raised when no unprocessed tempid is available to retry."
-  [e upserted-eid entity]
-  (u/raise "Conflicting upsert: " e " resolves to " upserted-eid
-           " via " entity {:error :transact/upsert}))
+  [tempid e upserted-eid entity]
+  (when-not tempid
+    (u/raise "Conflicting upsert: " e " resolves to " upserted-eid
+             " via " entity {:error :transact/upsert})))
 
 (defn validate-tx-data-shape
   "Validate that tx-data is nil or a sequential collection."
