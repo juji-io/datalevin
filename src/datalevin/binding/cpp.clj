@@ -20,6 +20,7 @@
    [datalevin.buffer :as bf]
    [datalevin.async :as a]
    [datalevin.migrate :as m]
+   [datalevin.prepare :as p]
    [datalevin.scan :as scan]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
@@ -278,26 +279,16 @@
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
-    (or (not validate-data?)
-        (b/valid-data? x t)
-        (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
-      (if (nil? x)
-        (raise "Key cannot be nil" {})
-        (put-bufval kp x t (key-compressor lmdb) k-comp-bf))
+      (put-bufval kp x t (key-compressor lmdb) k-comp-bf)
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting r/w key buffer of "
                (.dbi-name this)": " e {:value x :type t}))))
   (put-val [this x t]
-    (or (not validate-data?)
-        (b/valid-data? x t)
-        (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
-      (if (nil? x)
-        (raise "Value cannot be nil" {})
-        (put-bufval vp x t (val-compressor lmdb) v-comp-bf))
+      (put-bufval vp x t (val-compressor lmdb) v-comp-bf)
       (catch BufferOverflowException _
         (let [size (val-size x)]
           (set! vp (new-bufval size))
@@ -642,13 +633,15 @@
                 (.put-key dbi (.-k tx) (.-kt tx))
                 (doseq [v vs]
                   (.put-val dbi v (.-vt tx))
-                  (.del dbi txn false)))
-    (raise "Unknown kv transact operator: " (.-op tx) {})))
+                  (.del dbi txn false)))))
 
 (defn- transact1*
   [txs ^DBI dbi txn kt vt]
-  (doseq [t txs]
-    (put-tx dbi txn (l/->kv-tx-data t kt vt))))
+  (let [validate? (.-validate-data? dbi)]
+    (doseq [t txs]
+      (let [tx (l/->kv-tx-data t kt vt)]
+        (p/validate-kv-tx-data tx validate?)
+        (put-tx dbi txn tx)))))
 
 (defn- transact*
   [txs ^HashMap dbis txn]
@@ -656,7 +649,9 @@
     (let [^KVTxData tx (l/->kv-tx-data t)
           dbi-name     (.-dbi-name tx)
           ^DBI dbi     (or (.get dbis dbi-name)
-                           (raise dbi-name " is not open" {}))]
+                           (raise dbi-name " is not open" {}))
+          validate?    (.-validate-data? dbi)]
+      (p/validate-kv-tx-data tx validate?)
       (put-tx dbi txn tx))))
 
 (defn- list-count*

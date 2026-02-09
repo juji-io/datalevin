@@ -442,6 +442,7 @@
   (opts [_] opts)
 
   (assoc-opt [_ k v]
+    (prepare/validate-option-mutation k v)
     (let [new-opts (assoc opts k v)]
       (set! opts new-opts)
       (transact-opts lmdb new-opts)))

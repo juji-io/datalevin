@@ -11,7 +11,8 @@
    [datalevin.interface :as i])
   (:import
    [java.util UUID Date]
-   [datalevin.storage Store]))
+   [datalevin.storage Store]
+   [datalevin.lmdb KVTxData]))
 
 (use-fixtures :each db-fixture)
 
@@ -264,6 +265,102 @@
       (is (thrown-with-msg? Exception #"511 bytes"
             (prepare/validate-key-size big-key :data))))))
 
+;; ---- KV validators ----
+
+(deftest test-validate-kv-op
+  (testing "valid ops pass without error"
+    (is (nil? (prepare/validate-kv-op :put)))
+    (is (nil? (prepare/validate-kv-op :del)))
+    (is (nil? (prepare/validate-kv-op :put-list)))
+    (is (nil? (prepare/validate-kv-op :del-list))))
+
+  (testing "unknown op raises"
+    (is (thrown-with-msg? Exception #"Unknown kv transact operator"
+          (prepare/validate-kv-op :bogus)))
+    (is (thrown-with-msg? Exception #"Unknown kv transact operator"
+          (prepare/validate-kv-op :update)))))
+
+(deftest test-validate-kv-key
+  (testing "valid key passes"
+    (is (nil? (prepare/validate-kv-key "hello" :data false)))
+    (is (nil? (prepare/validate-kv-key 42 :long false)))
+    (is (nil? (prepare/validate-kv-key "hello" :data true))))
+
+  (testing "nil key raises"
+    (is (thrown-with-msg? Exception #"Key cannot be nil"
+          (prepare/validate-kv-key nil :data false)))
+    (is (thrown-with-msg? Exception #"Key cannot be nil"
+          (prepare/validate-kv-key nil :data true))))
+
+  (testing "type mismatch raises when validate-data? is true"
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (prepare/validate-kv-key "hello" :long true))))
+
+  (testing "type mismatch ignored when validate-data? is false"
+    (is (nil? (prepare/validate-kv-key "hello" :long false)))))
+
+(deftest test-validate-kv-value
+  (testing "valid value passes"
+    (is (nil? (prepare/validate-kv-value "hello" :data false)))
+    (is (nil? (prepare/validate-kv-value 42 :long false)))
+    (is (nil? (prepare/validate-kv-value "hello" :data true))))
+
+  (testing "nil value raises"
+    (is (thrown-with-msg? Exception #"Value cannot be nil"
+          (prepare/validate-kv-value nil :data false)))
+    (is (thrown-with-msg? Exception #"Value cannot be nil"
+          (prepare/validate-kv-value nil :data true))))
+
+  (testing "type mismatch raises when validate-data? is true"
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (prepare/validate-kv-value "hello" :long true))))
+
+  (testing "type mismatch ignored when validate-data? is false"
+    (is (nil? (prepare/validate-kv-value "hello" :long false)))))
+
+(deftest test-validate-kv-tx-data
+  (testing "valid :put tx passes"
+    (let [tx (KVTxData. :put "test-dbi" "mykey" "myval" :data :data nil)]
+      (is (nil? (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "valid :del tx passes"
+    (let [tx (KVTxData. :del "test-dbi" "mykey" nil :data nil nil)]
+      (is (nil? (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "valid :put-list tx passes"
+    (let [tx (KVTxData. :put-list "test-dbi" "mykey" ["v1" "v2"] :data :data nil)]
+      (is (nil? (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "valid :del-list tx passes"
+    (let [tx (KVTxData. :del-list "test-dbi" "mykey" ["v1" "v2"] :data :data nil)]
+      (is (nil? (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "unknown op raises"
+    (let [tx (KVTxData. :bogus "test-dbi" "mykey" "myval" :data :data nil)]
+      (is (thrown-with-msg? Exception #"Unknown kv transact operator"
+            (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "nil key raises"
+    (let [tx (KVTxData. :put "test-dbi" nil "myval" :data :data nil)]
+      (is (thrown-with-msg? Exception #"Key cannot be nil"
+            (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "nil value in :put raises"
+    (let [tx (KVTxData. :put "test-dbi" "mykey" nil :data :data nil)]
+      (is (thrown-with-msg? Exception #"Value cannot be nil"
+            (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "oversized key raises"
+    (let [big-key (apply str (repeat 600 "x"))
+          tx      (KVTxData. :put "test-dbi" big-key "myval" :data :data nil)]
+      (is (thrown-with-msg? Exception #"511 bytes"
+            (prepare/validate-kv-tx-data tx false)))))
+
+  (testing "type mismatch raises when validate-data? is true"
+    (let [tx (KVTxData. :put "test-dbi" "mykey" "myval" :long :data nil)]
+      (is (thrown-with-msg? Exception #"Invalid data, expecting"
+            (prepare/validate-kv-tx-data tx true))))))
+
 ;; ---- DB validators ----
 
 (deftest test-validate-schema
@@ -387,6 +484,39 @@
     (is (= :data (idx/value-type {})))
     (is (= :data (idx/value-type nil)))))
 
-(deftest test-validate-option-mutation-stub
-  (testing "validate-option-mutation is a nil stub"
-    (is (nil? (prepare/validate-option-mutation nil :closed-schema? true)))))
+(deftest test-validate-option-mutation
+  (testing "boolean options accept true/false"
+    (is (nil? (prepare/validate-option-mutation :closed-schema? true)))
+    (is (nil? (prepare/validate-option-mutation :closed-schema? false)))
+    (is (nil? (prepare/validate-option-mutation :validate-data? true)))
+    (is (nil? (prepare/validate-option-mutation :auto-entity-time? false)))
+    (is (nil? (prepare/validate-option-mutation :background-sampling? true))))
+
+  (testing "boolean options reject non-booleans"
+    (is (thrown-with-msg? Exception #"expects a boolean"
+          (prepare/validate-option-mutation :closed-schema? "yes")))
+    (is (thrown-with-msg? Exception #"expects a boolean"
+          (prepare/validate-option-mutation :validate-data? 1))))
+
+  (testing ":cache-limit accepts non-negative integers"
+    (is (nil? (prepare/validate-option-mutation :cache-limit 0)))
+    (is (nil? (prepare/validate-option-mutation :cache-limit 512)))
+    (is (nil? (prepare/validate-option-mutation :cache-limit 1024))))
+
+  (testing ":cache-limit rejects non-integers and negatives"
+    (is (thrown-with-msg? Exception #"non-negative integer"
+          (prepare/validate-option-mutation :cache-limit -1)))
+    (is (thrown-with-msg? Exception #"non-negative integer"
+          (prepare/validate-option-mutation :cache-limit "big")))
+    (is (thrown-with-msg? Exception #"non-negative integer"
+          (prepare/validate-option-mutation :cache-limit 3.14))))
+
+  (testing ":db-name accepts strings"
+    (is (nil? (prepare/validate-option-mutation :db-name "my-db"))))
+
+  (testing ":db-name rejects non-strings"
+    (is (thrown-with-msg? Exception #"expects a string"
+          (prepare/validate-option-mutation :db-name 42))))
+
+  (testing "unknown options pass through without error"
+    (is (nil? (prepare/validate-option-mutation :some-custom-opt "anything")))))

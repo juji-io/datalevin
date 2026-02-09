@@ -22,6 +22,7 @@
   (:import
    [datalevin.bits Retrieved]
    [datalevin.datom Datom]
+   [datalevin.lmdb KVTxData]
    [java.util Date]))
 
 ;; ---- Records ----
@@ -182,20 +183,94 @@
       :db/unique      (validate-uniqueness-change store lmdb attr v' v)
       :pass-through)))
 
+(def ^:private boolean-opts
+  #{:validate-data? :auto-entity-time? :closed-schema? :background-sampling?})
+
 (defn validate-option-mutation
   "Validate option key/value before commit."
-  [ctx key value]
-  nil)
+  [k v]
+  (cond
+    (boolean-opts k)
+    (when-not (or (true? v) (false? v))
+      (u/raise "Option " k " expects a boolean, got " v
+               {:option k :value v}))
+
+    (= k :cache-limit)
+    (when-not (and (integer? v) (not (neg? ^long v)))
+      (u/raise "Option :cache-limit expects a non-negative integer, got " v
+               {:option k :value v}))
+
+    (= k :db-name)
+    (when-not (string? v)
+      (u/raise "Option :db-name expects a string, got " v
+               {:option k :value v}))))
 
 ;; ---- Key size validation ----
+
+(def ^:private size-exempt-key-types
+  "Key types that are either fixed-size or manage their own sizing internally.
+   Datalog keys use the giant mechanism and never overflow."
+  #{:long :id :int :short :byte :int-int :avg :attr :raw
+    :float :double :boolean :instant :uuid
+    :ints :bitmap :term-info :doc-info :pos-info :instant-pre-06})
 
 (defn validate-key-size
   "Validate that a key does not exceed the LMDB max key size (511 bytes).
    For KV API use — Datalog keys use the giant mechanism and never overflow."
   [key key-type]
-  (when (and key (not (#{:long :id :int} key-type)))
+  (when (and key (not (size-exempt-key-types key-type)))
     (when (> ^long (b/measure-size key) c/+max-key-size+)
       (u/raise "Key cannot be larger than 511 bytes" {:input key}))))
+
+;; ---- KV validation ----
+
+(def ^:private kv-ops #{:put :del :put-list :del-list})
+
+(defn validate-kv-op
+  "Validate that the KV operation is a known operator."
+  [op]
+  (when-not (kv-ops op)
+    (u/raise "Unknown kv transact operator: " op {})))
+
+(defn validate-kv-key
+  "Validate a KV key: must not be nil; optionally check data type."
+  [k kt validate-data?]
+  (when (nil? k)
+    (u/raise "Key cannot be nil" {}))
+  (when validate-data?
+    (when-not (b/valid-data? k kt)
+      (u/raise "Invalid data, expecting " kt " got " k {:input k}))))
+
+(defn validate-kv-value
+  "Validate a KV value: must not be nil; optionally check data type."
+  [v vt validate-data?]
+  (when (nil? v)
+    (u/raise "Value cannot be nil" {}))
+  (when validate-data?
+    (when-not (b/valid-data? v vt)
+      (u/raise "Invalid data, expecting " vt " got " v {:input v}))))
+
+(defn validate-kv-tx-data
+  "Validate a single KVTxData: op shape, key, value, and key size."
+  [^KVTxData tx validate-data?]
+  (let [op (.-op tx)
+        k  (.-k tx)
+        kt (.-kt tx)
+        v  (.-v tx)
+        vt (.-vt tx)]
+    (validate-kv-op op)
+    (validate-kv-key k kt validate-data?)
+    (validate-key-size k kt)
+    (case op
+      :put      (validate-kv-value v vt validate-data?)
+      :put-list (doseq [vi v]
+                  (validate-kv-value vi vt validate-data?))
+      :del-list (when validate-data?
+                  (doseq [vi v]
+                    (when-not (b/valid-data? vi vt)
+                      (u/raise "Invalid data, expecting " vt " got " vi
+                               {:input vi}))))
+      :del      nil)))
 
 ;; ---- DB validators ----
 ;; Extracted from db.clj
