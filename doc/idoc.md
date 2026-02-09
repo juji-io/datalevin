@@ -56,7 +56,7 @@ are parsed with `clojure.edn/read-string` and must yield a map.
               :tags    ["a" "b" "b"]}
     :doc/json "{\"name\":\"Alice\",\"middle\":null,\"age\":30}"
     :doc/md   "# User Profile\n## Getting Started!\nName: Alice\nAge: 30"
-    :doc/many {:profile {:age 35 :name "A"}}}])
+    :doc/many [{:profile {:age 30 :name "A"}} {:profile {:age 35 :name "B"}}]}])
 ```
 
 `:doc/md` uses Markdown parsing (see Implementation below), producing a nested
