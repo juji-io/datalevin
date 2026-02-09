@@ -828,11 +828,9 @@
     (let [[attr value] eid]
       (cond
         (not= (count eid) 2)
-        (raise "Lookup ref should contain 2 elements: " eid
-               {:error :lookup-ref/syntax, :entity-id eid})
+        (prepare/validate-lookup-ref-shape eid)
         (not (-is-attr? db attr :db/unique))
-        (raise "Lookup ref attribute should be marked as :db/unique: " eid
-               {:error :lookup-ref/unique, :entity-id eid})
+        (prepare/validate-lookup-ref-unique false eid)
         (nil? value)
         nil
         :else
@@ -848,14 +846,11 @@
         (av-first-e (:store db) :db/ident eid))
 
     :else
-    (raise "Expected number or lookup ref for entity id, got " eid
-           {:error :entity-id/syntax, :entity-id eid})))
+    (prepare/validate-entity-id-syntax eid)))
 
 (defn entid-strict [db eid]
   (or (entid db eid)
-      (raise "Nothing found for entity id " eid
-             {:error     :entity-id/missing
-              :entity-id eid})))
+      (prepare/validate-entity-id-exists eid)))
 
 (defn entid-some [db eid]
   (when eid
@@ -865,8 +860,8 @@
   ^Boolean [attr]
   (if (keyword? attr)
     (= \_ (nth (name attr) 0))
-    (raise "Bad entity attribute: " attr ", expected keyword"
-           {:error :transact/syntax, :attribute attr})))
+    (do (prepare/validate-reverse-ref-attr attr)
+        false)))
 
 (defn reverse-ref [attr]
   (if (reverse-ref? attr)
@@ -1229,8 +1224,7 @@
           (-> report
               (dissoc ::value-tempids ::tx-redundant)
               (assoc :tx-data tx-data))
-          (raise "Tempids used only as value in transaction: " (sort (vals (persistent! unused)))
-                 {:error :transact/syntax, :tempids unused})))
+          (prepare/validate-value-tempids (vals (persistent! unused)))))
       (-> report
           (dissoc ::value-tempids ::tx-redundant)
           (assoc :tx-data tx-data)))))
@@ -1240,9 +1234,7 @@
 (defn- retry-with-tempid
   [initial-report report es tempid upserted-eid tx-time]
   (if-some [eid (get (::upserted-tempids initial-report) tempid)]
-    (raise "Conflicting upsert: " tempid " resolves"
-           " both to " upserted-eid " and " eid
-           { :error :transact/upsert })
+    (prepare/validate-upsert-retry-conflict tempid upserted-eid eid)
     ;; try to re-run from the beginning
     ;; but remembering that `tempid` will resolve to `upserted-eid`
     (let [tempids' (-> (:tempids report)
@@ -1403,8 +1395,7 @@
                           {:error :transact/syntax, :operation :db.fn/call, :tx-data entity}))
 
                  (and (tempid? e) (not (identical? op :db/add)))
-                 (raise "Can't use tempid in '" entity "'. Tempids are allowed in :db/add only"
-                        { :error :transact/syntax, :op entity })
+                 (prepare/validate-tempid-op true op entity)
 
                  (or (identical? op :db.fn/cas) (identical? op :db/cas))
                  (let [[_ e a ov nv] entity
@@ -1420,38 +1411,22 @@
                                        (slice (:store db) :eav
                                               (datom e a c/v0)
                                               (datom e a c/vmax)))]
-                   (if (multival? db a)
-                     (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
-                       (recur (transact-add report [:db/add e a nv]) entities)
-                       (raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
-                              {:error :transact/cas, :old datoms, :expected ov, :new nv}))
-                     (let [v (:v (first datoms))]
-                       (if (= v ov)
-                         (recur (transact-add report [:db/add e a nv]) entities)
-                         (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
-                                {:error :transact/cas, :old (first datoms), :expected ov, :new nv })))))
+                   (do (prepare/validate-cas-value (multival? db a) e a ov nv datoms)
+                       (recur (transact-add report [:db/add e a nv]) entities)))
 
                  (identical? op :db.fn/patchIdoc)
                  (let [argc (count entity)]
-                   (when-not (or (= argc 4) (= argc 5))
-                     (raise "Bad arity for :db.fn/patchIdoc, expected 4 or 5 items: "
-                            entity
-                            {:error :transact/syntax, :operation op, :tx-data entity}))
+                   (prepare/validate-patch-idoc-arity argc entity op)
                    (let [[_ e a x y] entity
                          [old-v ops] (if (= argc 5) [x y] [nil x])
                          e           (entid-strict db e)
                          _           (validate-attr a entity)
                          props       (schema a)
-                         _           (when-not (identical? (idx/value-type props) :db.type/idoc)
-                                       (raise "Attribute is not an idoc type: " a
-                                              {:attribute a}))
+                         _           (prepare/validate-patch-idoc-type
+                                       (idx/value-type props) a)
                          many?       (multival? db a)
-                         _           (when (and many? (nil? old-v))
-                                       (raise "Idoc patch requires old value for cardinality many attribute: "
-                                              a {:attribute a}))
-                         _           (when (and (not many?) (some? old-v))
-                                       (raise "Idoc patch old value is only supported for cardinality many attribute: "
-                                              a {:attribute a}))
+                         _           (prepare/validate-patch-idoc-cardinality
+                                       many? old-v a)
                          ops         (or ops [])]
                      (if (empty? ops)
                        (recur report entities)
@@ -1531,8 +1506,7 @@
                    (if tempid
                      (retry-with-tempid initial-report report initial-es tempid
                                         upserted-eid tx-time)
-                     (raise "Conflicting upsert: " e " resolves to " upserted-eid
-                            " via " entity {:error :transact/upsert})))
+                     (prepare/validate-upsert-conflict e upserted-eid entity)))
 
                  (and (tuple-attr? db a) (not (::internal (meta entity))))
                  ;; allow transacting in tuples if they fully match already existing values
@@ -1552,8 +1526,7 @@
                                (= tuple-value db-value)))
                            (mapv vector tuple-attrs v)))
                      (recur report entities)
-                     (raise "Can’t modify tuple attrs directly: " entity
-                            {:error :transact/syntax, :tx-data entity})))
+                     (prepare/validate-tuple-direct-write entity)))
 
                  :let [tuple-types (when (and (or (tuple-type? db a)
                                                   (tuple-types? db a))
@@ -1640,7 +1613,7 @@
                    (recur report entities))
 
                  :else
-                 (raise "Unknown operation at " entity ", expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)" {:error :transact/syntax, :operation op, :tx-data entity})))
+                 (prepare/validate-tx-op op entity)))
 
              (datom? entity)
              (let [[e a v tx added] entity]
@@ -1652,8 +1625,7 @@
              (recur report entities)
 
              :else
-             (raise "Bad entity type at " entity ", expected map, vector, or datom"
-                    {:error :transact/syntax, :tx-data entity}))))
+             (prepare/validate-tx-entity-type entity))))
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
        (load-datoms pstore (:tx-data rp))
@@ -1749,10 +1721,7 @@
 (defn tx-data->simulated-report
   [db tx-data]
   {:pre [(db? db)]}
-  (when-not (or (nil? tx-data)
-                (sequential? tx-data))
-    (raise "Bad transaction data " tx-data ", expected sequential collection"
-           {:error :transact/syntax, :tx-data tx-data}))
+  (prepare/validate-tx-data-shape tx-data)
   (let [initial-report (map->TxReport
                          {:db-before db
                           :db-after  db

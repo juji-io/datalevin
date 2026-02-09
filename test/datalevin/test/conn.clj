@@ -82,6 +82,28 @@
       (d/close conn)
       (u/delete-files dir))))
 
+(deftest test-update-schema-validates-new-attrs
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        conn (d/create-conn dir)]
+    ;; :db/isComponent true requires :db/valueType :db.type/ref
+    (is (thrown-with-msg?
+          Exception #"isComponent.*should also have.*ref"
+          (d/update-schema conn {:bad/attr {:db/isComponent true
+                                            :db/valueType   :db.type/string}})))
+    ;; invalid :db/valueType
+    (is (thrown-with-msg?
+          Exception #"Bad attribute specification"
+          (d/update-schema conn {:bad/attr {:db/valueType :db.type/bogus}})))
+    ;; invalid :db/cardinality
+    (is (thrown-with-msg?
+          Exception #"Bad attribute specification"
+          (d/update-schema conn {:bad/attr {:db/cardinality :db.cardinality/bogus}})))
+    ;; valid schema still works
+    (d/update-schema conn {:good/attr {:db/valueType :db.type/string}})
+    (is (:good/attr (d/schema conn)))
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest test-ways-to-create-conn-1
   (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]

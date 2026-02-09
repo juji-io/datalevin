@@ -17,7 +17,8 @@
    [datalevin.async :as a]
    [datalevin.remote :as r]
    [datalevin.util :as u]
-   [datalevin.interface :as i])
+   [datalevin.interface :as i]
+   [datalevin.prepare :as prepare])
   (:import
    [datalevin.db DB]
    [datalevin.storage Store]
@@ -195,6 +196,7 @@
    (update-schema conn schema-update del-attrs nil))
   ([conn schema-update del-attrs rename-map]
    {:pre [(conn? conn)]}
+   (when schema-update (prepare/validate-schema schema-update))
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
      (i/set-schema store schema-update)

@@ -479,6 +479,7 @@
   (rschema [_] rschema)
 
   (set-schema [this new-schema]
+    (when new-schema (prepare/validate-schema new-schema))
     (doseq [[attr new] new-schema
             :let       [old (schema attr)]
             :when      old]
@@ -521,18 +522,18 @@
       p))
 
   (del-attr [this attr]
-    (if (.populated?
-          this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
-      (u/raise "Cannot delete attribute with datoms" {})
-      (let [aid ((schema attr) :db/aid)]
-        (transact-kv
-          lmdb [(lmdb/kv-tx :del c/schema attr :attr)
-                (lmdb/kv-tx :put c/meta :last-modified
-                            (System/currentTimeMillis) :attr :long)])
-        (set! schema (dissoc schema attr))
-        (set! rschema (schema->rschema schema))
-        (set! attrs (dissoc attrs aid))
-        attrs)))
+    (prepare/validate-attr-deletable
+      (.populated?
+        this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
+    (let [aid ((schema attr) :db/aid)]
+      (transact-kv
+        lmdb [(lmdb/kv-tx :del c/schema attr :attr)
+              (lmdb/kv-tx :put c/meta :last-modified
+                          (System/currentTimeMillis) :attr :long)])
+      (set! schema (dissoc schema attr))
+      (set! rschema (schema->rschema schema))
+      (set! attrs (dissoc attrs aid))
+      attrs))
 
   (rename-attr [_ attr new-attr]
     (let [props (schema attr)]
