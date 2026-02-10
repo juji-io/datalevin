@@ -34,7 +34,8 @@
             ea-first-datom head-filter e-first-datom av-first-datom head
             size size-filter e-size av-size a-size v-size
             datom-count populated? rslice cardinality default-ratio
-            av-range-size init-max-eid db-name start-sampling load-datoms
+            av-range-size init-max-eid db-name start-sampling
+            apply-prepared-datoms load-datoms
             stop-sampling close av-first-e ea-first-v v-datoms assoc-opt
             max-tx get-env-flags set-env-flags sync abort-transact-kv]])
   (:import
@@ -719,11 +720,18 @@
 
 (defn- pour
   [store datoms]
-  (doseq [batch (sequence (comp
-                            (map #(correct-datom store %))
-                            (partition-all c/*fill-db-batch-size*))
-                          datoms)]
-    (load-datoms store batch)))
+  (if (instance? Store store)
+    (binding [c/*trusted-apply* true]
+      (doseq [batch (sequence (comp
+                                (map #(correct-datom store %))
+                                (partition-all c/*fill-db-batch-size*))
+                              datoms)]
+        (apply-prepared-datoms store batch)))
+    (doseq [batch (sequence (comp
+                              (map #(correct-datom store %))
+                              (partition-all c/*fill-db-batch-size*))
+                            datoms)]
+      (load-datoms store batch))))
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
@@ -1727,7 +1735,26 @@
               (execute-tx-loop initial-report initial-es tx-time))
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
-       (load-datoms pstore (:tx-data rp))
+       (prepare/validate-prepared-datoms (schema pstore) (opts pstore)
+                                         (:tx-data rp))
+       (when (instance? Store pstore)
+         (prepare/validate-side-index-domains
+           (schema pstore) (:tx-data rp)
+           {:fulltext (set (keys (.-search-engines ^Store pstore)))
+            :vector   (set (keys (.-vector-indices ^Store pstore)))
+            :idoc     (set (keys (.-idoc-indices ^Store pstore)))}))
+       ;; Writer step 3: commit point (apply prepared datoms to storage).
+       ;; In Phase 2+ this becomes WAL append + sync; trusted apply is the
+       ;; current synchronous equivalent.  Failpoint hooks for steps 4-8
+       ;; (watermark publish, overlay publish, cache invalidation,
+       ;; watermark advance, meta checkpoint) will be wired here once the
+       ;; WAL writer/indexer paths are live.
+       (vld/check-failpoint :step-3 :before)
+       (if (instance? Store pstore)
+         (binding [c/*trusted-apply* true]
+           (apply-prepared-datoms pstore (:tx-data rp)))
+         (load-datoms pstore (:tx-data rp)))
+       (vld/check-failpoint :step-3 :after)
        (invalidate-cache pstore (:tx-data rp) (last-modified pstore)))
      rp)))
 
@@ -1841,5 +1868,6 @@
      (:cache-limit (opts store))))
   ([^DB db ^long n]
    (let [^Store store (.-store db)]
+     (prepare/validate-option-update :cache-limit n)
      (assoc-opt store :cache-limit n)
      (refresh-cache store (System/currentTimeMillis)))))

@@ -541,3 +541,23 @@
   (when-some [not-datom (first (drop-while d/datom? datoms))]
     (u/raise "init-db expects list of Datoms, got " (type not-datom)
              {:error :init-db})))
+
+;; ---- Mutation gateway validators ----
+
+(defn validate-trusted-apply
+  "Validate that the caller is in a trusted internal apply context.
+   Must be called inside (binding [c/*trusted-apply* true] ...).
+   Rejects external/public callers from reaching internal apply paths."
+  []
+  (when-not c/*trusted-apply*
+    (u/raise "Direct call to internal apply is not allowed; use the public transaction API"
+             {:error :access/unauthorized})))
+
+(defn check-failpoint
+  "Check if a failpoint is active for the given step and phase.
+   When matched, invokes the failpoint function (which typically throws).
+   No-op when c/*failpoint* is nil."
+  [step phase]
+  (when-some [{fp-step :step fp-phase :phase fp-fn :fn} c/*failpoint*]
+    (when (and (= fp-step step) (= fp-phase phase))
+      (fp-fn))))

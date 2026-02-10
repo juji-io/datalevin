@@ -14,6 +14,7 @@
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
    [datalevin.storage :as s]
+   [datalevin.prepare :as prepare]
    [datalevin.async :as a]
    [datalevin.remote :as r]
    [datalevin.util :as u]
@@ -58,26 +59,9 @@
       (nil? @conn)
       (i/closed? ^Store (.-store ^DB @conn))))
 
-(defmacro with-transaction
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of Datalog database operations. Works with synchronous
-  `transact!`.
+(def ^:dynamic *explicit-transaction?* false)
 
-  `conn` is a new identifier of the Datalog database connection with a new
-  read/write transaction attached, and `orig-conn` is the original database
-  connection.
-
-  `body` should refer to `conn`.
-
-  Example:
-
-          (with-transaction [cn conn]
-            (let [query  '[:find ?c .
-                           :in $ ?e
-                           :where [?e :counter ?c]]
-                  ^long now (q query @cn 1)]
-              (transact! cn [{:db/id 1 :counter (inc now)}])
-              (q query @cn 1))) "
+(defmacro ^:no-doc with-transaction*
   [[conn orig-conn] & body]
   `(locking ~orig-conn
      (let [db#  ^DB (deref ~orig-conn)
@@ -119,6 +103,30 @@
              (when-not old# (db/enable-cache new-s#))
              res1#))))))
 
+(defmacro with-transaction
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of Datalog database operations. Works with synchronous
+  `transact!`.
+
+  `conn` is a new identifier of the Datalog database connection with a new
+  read/write transaction attached, and `orig-conn` is the original database
+  connection.
+
+  `body` should refer to `conn`.
+
+  Example:
+
+          (with-transaction [cn conn]
+            (let [query  '[:find ?c .
+                           :in $ ?e
+                           :where [?e :counter ?c]]
+                  ^long now (q query @cn 1)]
+              (transact! cn [{:db/id 1 :counter (inc now)}])
+              (q query @cn 1))) "
+  [[conn orig-conn] & body]
+  `(binding [*explicit-transaction?* true]
+     (with-transaction* [~conn ~orig-conn] ~@body)))
+
 (defn with
   ([db tx-data] (with db tx-data {} false))
   ([db tx-data tx-meta] (with db tx-data tx-meta false))
@@ -131,10 +139,11 @@
   (:db-after (with db tx-data)))
 
 (defn- -transact! [conn tx-data tx-meta]
-  (let [report (with-transaction [c conn]
+  (let [report (with-transaction* [c conn]
                  (assert (conn? c))
                  (with @c tx-data tx-meta))]
-    (assoc report :db-after @conn)))
+    (cond-> (assoc report :db-after @conn)
+      *explicit-transaction?* (assoc :tx-provisional? true))))
 
 (defn transact!
   ([conn tx-data] (transact! conn tx-data nil))
@@ -196,12 +205,23 @@
    (update-schema conn schema-update del-attrs nil))
   ([conn schema-update del-attrs rename-map]
    {:pre [(conn? conn)]}
-   (when schema-update (vld/validate-schema schema-update))
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
+     (when schema-update
+       (if (instance? Store store)
+         (prepare/validate-schema-update
+           store (.-lmdb ^Store store) schema-update
+           {:fulltext (set (keys (.-search-engines ^Store store)))
+            :vector   (set (keys (.-vector-indices ^Store store)))
+            :idoc     (set (keys (.-idoc-indices ^Store store)))})
+         (vld/validate-schema schema-update)))
      (i/set-schema store schema-update)
-     (doseq [attr del-attrs] (i/del-attr store attr))
-     (doseq [[old new] rename-map] (i/rename-attr store old new))
+     (doseq [attr del-attrs]
+       (prepare/validate-del-attr store attr)
+       (i/del-attr store attr))
+     (doseq [[old new] rename-map]
+       (prepare/validate-rename-attr store old new)
+       (i/rename-attr store old new))
      (schema conn))))
 
 (defonce ^:private connections (atom {}))

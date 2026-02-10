@@ -318,7 +318,10 @@ values;")
   (del-attr [this attr]
     "Delete an attribute, throw if there is still datom related to it")
   (rename-attr [this attr new-attr] "Rename an attribute")
-  (load-datoms [this datoms] "Load datams into storage")
+  (load-datoms [this datoms]
+    "Public/untrusted datom load gateway")
+  (apply-prepared-datoms [this datoms]
+    "Trusted internal apply path for canonical/prepared datoms")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
     "Return true if there exists at least one datom in the given boundary (inclusive)")

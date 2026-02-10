@@ -10,7 +10,7 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [clojure.test :refer [deftest use-fixtures is are]]
+   [clojure.test :refer [deftest testing use-fixtures is are]]
    [clojure.walk :as w]
    [clojure.string :as s])
   (:import
@@ -20,7 +20,30 @@
    [datalevin.storage Store]
    [datalevin.datom Datom]))
 
+(defn trusted-apply-fixture [f]
+  (binding [c/*trusted-apply* true]
+    (f)))
+
 (use-fixtures :each db-fixture)
+(use-fixtures :once trusted-apply-fixture)
+
+(deftest trusted-apply-bypass-prevention-test
+  (let [dir   (u/tmp-dir (str "bypass-test-" (UUID/randomUUID)))
+        store (sut/open dir {} {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+    (try
+      (testing "load-datoms accepts untrusted callers via public gateway"
+        (binding [c/*trusted-apply* false]
+          (is (if/load-datoms store [(d/datom 1 :name "Alice")]))))
+      (testing "apply-prepared-datoms rejects untrusted callers"
+        (binding [c/*trusted-apply* false]
+          (is (thrown-with-msg? Exception #"internal apply is not allowed"
+                (if/apply-prepared-datoms store [(d/datom 2 :name "Bob")])))))
+      (testing "apply-prepared-datoms accepts trusted callers"
+        (binding [c/*trusted-apply* true]
+          (is (if/apply-prepared-datoms store [(d/datom 2 :name "Bob")]))))
+      (finally
+        (if/close store)
+        (u/delete-files dir)))))
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))

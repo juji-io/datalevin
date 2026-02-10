@@ -108,6 +108,8 @@
       (is (instance? datalevin.remote.DatalogStore store))
       (is (= c/implicit-schema (if/schema store)))
       (is (= c/e0 (if/init-max-eid store)))
+      (is (thrown? Exception
+                   (if/load-datoms store [[:db/add c/e0 :bad "payload"]])))
       (let [a  :a/b
             v  (UUID/randomUUID)
             d  (d/datom c/e0 a v)

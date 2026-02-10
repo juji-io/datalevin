@@ -109,3 +109,20 @@
     (is (= big (d/q query2 @conn 2)))
 
     (d/close conn)))
+
+(deftest provisional-report-test
+  (let [dir   "dtlv://datalevin:datalevin@localhost/provisional-report"
+        conn  (d/create-conn
+                dir {}
+                {:kv-opts              {:flags (conj c/default-env-flags :nosync)}
+                 :background-sampling? false})]
+    (d/transact! conn [{:db/id 1 :counter 0}])
+    (d/with-transaction [cn conn]
+      (let [report (d/transact! cn [{:db/id 1 :counter 1}])]
+        (is (true? (:tx-provisional? report)))
+        (is (= 1 (d/q query @cn 1)))
+        (is (= 0 (d/q query @conn 1)))))
+    (is (= 1 (d/q query @conn 1)))
+    (let [report (d/transact! conn [{:db/id 1 :counter 2}])]
+      (is (not (true? (:tx-provisional? report)))))
+    (d/close conn)))

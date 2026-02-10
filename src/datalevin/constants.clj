@@ -457,6 +457,26 @@
        :doc     "When true, use the prepare/apply transaction path"}
   *use-prepare-path* false)
 
+(def ^{:dynamic true :no-doc true
+       :doc     "When true, the current call is in a trusted internal apply
+                 context. Mutation functions that require prepared input
+                 (e.g. apply-prepared-datoms) check this gate to reject
+                 external callers.
+                 Only internal transaction paths should bind this to true."}
+  *trusted-apply* false)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Failpoint injection hook for writer step crash testing.
+                 When non-nil, must be a map with:
+                   :step   - keyword identifying the writer step
+                             (:step-3 through :step-8, :repair)
+                   :phase  - :before, :during, or :after
+                   :fn     - zero-arg function to invoke at the injection point
+                             (typically throws or calls System/exit)
+                 Reserved in Phase 1; actual hook call-sites land in Phase 2
+                 when WAL writer/indexer paths are implemented."}
+  *failpoint* nil)
+
 (def ^{:dynamic true
        :doc     "Batch size (# of datoms) when filling Datalog DB"}
   *fill-db-batch-size* 1048576)

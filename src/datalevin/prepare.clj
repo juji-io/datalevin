@@ -11,11 +11,12 @@
   "Prepare phase of transaction processing."
   (:require
    [datalevin.interface :as i
-    :refer [schema opts]]
+    :refer [schema opts populated?]]
+   [datalevin.constants :as c]
    [datalevin.index :as idx]
    [datalevin.datom :as d]
+   [datalevin.vector :as v]
    [datalevin.util :as u]
-   [datalevin.bits :as b]
    [datalevin.validate :as vld])
   (:import
    [datalevin.datom Datom]
@@ -97,6 +98,158 @@
    Currently a pass-through shell."
   [ctx entities]
   entities)
+
+;; ---- Prepare-time validators ----
+
+(defn validate-prepared-datoms
+  "Run logical datom validations before apply."
+  [schema opts datoms]
+  (doseq [^Datom datom datoms
+          :when (d/datom-added datom)]
+    (vld/validate-closed-schema schema opts (.-a datom) (.-v datom)))
+  datoms)
+
+(defn validate-load-datoms
+  "Validate public/untrusted `load-datoms` input before apply."
+  [store datoms]
+  (vld/validate-datom-list datoms)
+  (validate-prepared-datoms (schema store) (opts store) datoms)
+  datoms)
+
+(defn- fulltext-domains
+  [attr props]
+  (cond-> (vec (or (:db.fulltext/domains props) [c/default-domain]))
+    (:db.fulltext/autoDomain props) (conj (u/keyword->string attr))))
+
+(defn- vector-domains
+  [attr props]
+  (conj (vec (:db.vec/domains props)) (v/attr-domain attr)))
+
+(defn- idoc-domain
+  [attr props]
+  (or (:db/domain props) (u/keyword->string attr)))
+
+(defn validate-schema-side-index-domains
+  "Validate side-index domain applicability for schema mutation payload."
+  [new-schema available]
+  (let [{:keys [fulltext vector idoc]} available]
+    (doseq [[attr props] new-schema
+            :let [vt (idx/value-type props)]]
+      (when (:db/fulltext props)
+        (doseq [domain (fulltext-domains attr props)]
+          (when-not (contains? fulltext domain)
+            (u/raise "Fulltext domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :fulltext
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/vec)
+        (doseq [domain (vector-domains attr props)]
+          (when-not (contains? vector domain)
+            (u/raise "Vector domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :vector
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/idoc)
+        (let [domain (idoc-domain attr props)]
+          (when-not (contains? idoc domain)
+            (u/raise "Idoc domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :idoc
+                      :attribute attr
+                      :domain domain})))))))
+
+(defn validate-side-index-domains
+  "Validate side-index domain applicability for a prepared datom batch.
+   `available` is {:fulltext #{...} :vector #{...} :idoc #{...}}."
+  [schema datoms available]
+  (let [{:keys [fulltext vector idoc]} available]
+    (doseq [^Datom datom datoms
+            :let [attr  (.-a datom)
+                  props (schema attr)
+                  vt    (idx/value-type props)]
+            :when props]
+      (when (:db/fulltext props)
+        (doseq [domain (fulltext-domains attr props)]
+          (when-not (contains? fulltext domain)
+            (u/raise "Fulltext domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :fulltext
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/vec)
+        (doseq [domain (vector-domains attr props)]
+          (when-not (contains? vector domain)
+            (u/raise "Vector domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :vector
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/idoc)
+        (let [domain (idoc-domain attr props)]
+          (when-not (contains? idoc domain)
+            (u/raise "Idoc domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :idoc
+                      :attribute attr
+                      :domain domain}))))))
+  datoms)
+
+(defn validate-schema-update
+  "Validate schema update payload and mutation safety checks before apply."
+  ([store lmdb new-schema]
+   (validate-schema-update store lmdb new-schema nil))
+  ([store lmdb new-schema available]
+   (when new-schema
+     (vld/validate-schema new-schema)
+     (when available
+       (validate-schema-side-index-domains new-schema available))
+     (let [current-schema (schema store)]
+       (doseq [[attr new-props] new-schema
+               :let [old-props (current-schema attr)]
+               :when old-props]
+         (vld/validate-schema-mutation store lmdb attr old-props new-props))))
+   new-schema))
+
+(defn validate-option-update
+  "Validate option key/value before apply."
+  [k v]
+  (vld/validate-option-mutation k v)
+  [k v])
+
+(defn validate-swap-attr-update
+  "Validate swap-attr mutation safety checks before apply."
+  ([store lmdb attr old-props new-props]
+   (validate-swap-attr-update store lmdb attr old-props new-props nil))
+  ([store lmdb attr old-props new-props available]
+   (vld/validate-schema-mutation store lmdb attr old-props new-props)
+   (when available
+     (validate-schema-side-index-domains {attr new-props} available))
+   new-props))
+
+(defn validate-del-attr
+  "Validate `del-attr` safety checks before apply."
+  [store attr]
+  (vld/validate-attr-deletable
+    (populated? store :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
+  attr)
+
+(defn validate-rename-attr
+  "Validate `rename-attr` safety checks before apply."
+  [store attr new-attr]
+  (let [s (schema store)]
+    (when-not (s attr)
+      (u/raise "Cannot rename missing attribute: " attr
+               {:error :schema/rename
+                :attribute attr
+                :target new-attr}))
+    (when (and (not= attr new-attr) (s new-attr))
+      (u/raise "Cannot rename to existing attribute: " new-attr
+               {:error :schema/rename
+                :attribute attr
+                :target new-attr})))
+  [attr new-attr])
 
 ;; ---- Top-level entry point ----
 

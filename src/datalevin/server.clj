@@ -18,6 +18,7 @@
    [datalevin.buffer :as bf]
    [datalevin.query :as q]
    [datalevin.db :as db]
+   [datalevin.prepare :as prepare]
    [datalevin.lmdb :as l]
    [datalevin.protocol :as p]
    [datalevin.storage :as st]
@@ -1620,7 +1621,14 @@
 
 (defn- assoc-opt
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-dt-store-handler assoc-opt)))
+  (wrap-error
+    (let [db-name  (nth args 0)
+          k        (nth args 1)
+          v        (nth args 2)
+          dt-store ^Store (store server skey db-name writing?)]
+      (prepare/validate-option-update k v)
+      (write-message skey {:type   :command-complete
+                           :result (i/assoc-opt dt-store k v)}))))
 
 (defn- last-modified
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
@@ -1637,13 +1645,22 @@
 (defn- set-schema
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
-    (wrap-permission
-      ::alter ::database (db-eid (.-sys-conn server)
-                                 (store->db-name
-                                   server
-                                   (db-store server skey (nth args 0))))
-      "Don't have permission to alter the database"
-      (normal-dt-store-handler set-schema))))
+    (let [db-name   (nth args 0)
+          new-schema (nth args 1)
+          dt-store  ^Store (store server skey db-name writing?)]
+      (wrap-permission
+        ::alter ::database (db-eid (.-sys-conn server)
+                                   (store->db-name
+                                     server
+                                     (db-store server skey db-name)))
+        "Don't have permission to alter the database"
+        (prepare/validate-schema-update
+          dt-store (.-lmdb dt-store) new-schema
+          {:fulltext (set (keys (.-search-engines dt-store)))
+           :vector   (set (keys (.-vector-indices dt-store)))
+           :idoc     (set (keys (.-idoc-indices dt-store)))})
+        (write-message skey {:type   :command-complete
+                             :result (i/set-schema dt-store new-schema)})))))
 
 (defn- init-max-eid
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
@@ -1662,11 +1679,24 @@
 
 (defn- del-attr
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-dt-store-handler del-attr)))
+  (wrap-error
+    (let [db-name  (nth args 0)
+          attr     (nth args 1)
+          dt-store ^Store (store server skey db-name writing?)]
+      (prepare/validate-del-attr dt-store attr)
+      (write-message skey {:type   :command-complete
+                           :result (i/del-attr dt-store attr)}))))
 
 (defn- rename-attr
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-dt-store-handler rename-attr)))
+  (wrap-error
+    (let [db-name   (nth args 0)
+          attr      (nth args 1)
+          new-attr  (nth args 2)
+          dt-store  ^Store (store server skey db-name writing?)]
+      (prepare/validate-rename-attr dt-store attr new-attr)
+      (write-message skey {:type   :command-complete
+                           :result (i/rename-attr dt-store attr new-attr)}))))
 
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

@@ -698,3 +698,42 @@
           (vld/validate-datom-list [{:name "Alice"}])))
     (is (thrown-with-msg? Exception #"init-db expects list of Datoms"
           (vld/validate-datom-list [(d/datom 1 :name "Alice") "not-a-datom"])))))
+
+;; ---- Mutation gateway validators ----
+
+(deftest test-validate-trusted-apply
+  (testing "passes when *trusted-apply* is true"
+    (binding [c/*trusted-apply* true]
+      (is (nil? (vld/validate-trusted-apply)))))
+
+  (testing "raises when *trusted-apply* is false (default)"
+    (is (thrown-with-msg? Exception #"internal apply is not allowed"
+          (vld/validate-trusted-apply))))
+
+  (testing "raises when explicitly bound to false"
+    (binding [c/*trusted-apply* false]
+      (is (thrown-with-msg? Exception #"internal apply is not allowed"
+            (vld/validate-trusted-apply))))))
+
+(deftest test-check-failpoint
+  (testing "no-op when *failpoint* is nil"
+    (is (nil? (vld/check-failpoint :step-3 :before))))
+
+  (testing "no-op when step or phase don't match"
+    (binding [c/*failpoint* {:step :step-5 :phase :before
+                             :fn   #(throw (ex-info "boom" {}))}]
+      (is (nil? (vld/check-failpoint :step-3 :before)))
+      (is (nil? (vld/check-failpoint :step-5 :after)))))
+
+  (testing "invokes fn when step and phase match"
+    (let [called (atom false)]
+      (binding [c/*failpoint* {:step :step-3 :phase :before
+                               :fn   #(reset! called true)}]
+        (vld/check-failpoint :step-3 :before)
+        (is (true? @called)))))
+
+  (testing "propagates exception from failpoint fn"
+    (binding [c/*failpoint* {:step :step-3 :phase :after
+                             :fn   #(throw (ex-info "injected crash" {}))}]
+      (is (thrown-with-msg? Exception #"injected crash"
+            (vld/check-failpoint :step-3 :after))))))

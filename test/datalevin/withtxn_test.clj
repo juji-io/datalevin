@@ -122,3 +122,23 @@
 
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest with-transaction-provisional-report-test
+  (let [dir   (u/tmp-dir (str "with-tx-provisional-" (UUID/randomUUID)))
+        conn  (d/create-conn
+                dir {}
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+        query '[:find ?c .
+                :in $ ?e
+                :where [?e :counter ?c]]]
+    (d/transact! conn [{:db/id 1 :counter 0}])
+    (d/with-transaction [cn conn]
+      (let [report (d/transact! cn [{:db/id 1 :counter 1}])]
+        (is (true? (:tx-provisional? report)))
+        (is (= 1 (d/q query @cn 1)))
+        (is (= 0 (d/q query @conn 1)))))
+    (is (= 1 (d/q query @conn 1)))
+    (let [report (d/transact! conn [{:db/id 1 :counter 2}])]
+      (is (not (true? (:tx-provisional? report)))))
+    (d/close conn)
+    (u/delete-files dir)))

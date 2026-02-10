@@ -151,6 +151,10 @@
   (load-datoms [_ datoms]
     (load-datoms* client db-name datoms :raw false writing?))
 
+  (apply-prepared-datoms [_ _]
+    (u/raise "Trusted internal apply is unavailable on remote stores"
+             {:error :access/unauthorized}))
+
   (fetch [_ datom] (cl/normal-request client :fetch [db-name datom] writing?))
 
   (populated? [_ index low-datom high-datom]

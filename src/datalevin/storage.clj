@@ -20,6 +20,7 @@
    [datalevin.pipe :as p]
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.search :as s]
+   [datalevin.prepare :as prepare]
    [datalevin.idoc :as idoc]
    [datalevin.vector :as v]
    [datalevin.constants :as c]
@@ -414,8 +415,9 @@
       (when (= ^int aid ^int (b/read-buffer bf :int))
         (b/read-buffer (.rewind bf) :avg)))))
 
-(declare insert-datom delete-datom fulltext-index vector-index idoc-index check
-         transact-opts ->SamplingWork e-sample* default-ratio* analyze*)
+(declare apply-datoms* insert-datom delete-datom fulltext-index vector-index
+         idoc-index transact-opts ->SamplingWork e-sample*
+         default-ratio* analyze*)
 
 (deftype Store [lmdb
                 search-engines
@@ -442,7 +444,6 @@
   (opts [_] opts)
 
   (assoc-opt [_ k v]
-    (vld/validate-option-mutation k v)
     (let [new-opts (assoc opts k v)]
       (set! opts new-opts)
       (transact-opts lmdb new-opts)))
@@ -479,11 +480,6 @@
   (rschema [_] rschema)
 
   (set-schema [this new-schema]
-    (when new-schema (vld/validate-schema new-schema))
-    (doseq [[attr new] new-schema
-            :let       [old (schema attr)]
-            :when      old]
-      (check this attr old new))
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
@@ -514,17 +510,19 @@
               (and x y) (f o x y)
               x         (f o x)
               :else     (f o))]
-      (check this attr o p)
+      (when-not c/*trusted-apply*
+        (prepare/validate-swap-attr-update
+          this lmdb attr o p
+          {:fulltext (set (keys search-engines))
+           :vector   (set (keys vector-indices))
+           :idoc     (set (keys idoc-indices))}))
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema schema))
       (set! attrs (assoc attrs (p :db/aid) attr))
       p))
 
-  (del-attr [this attr]
-    (vld/validate-attr-deletable
-      (.populated?
-        this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
+  (del-attr [_ attr]
     (let [aid ((schema attr) :db/aid)]
       (transact-kv
         lmdb [(lmdb/kv-tx :del c/schema attr :attr)
@@ -551,29 +549,17 @@
     (entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
-    (let [txs    (FastList. (* 3 (count datoms)))
-          ;; fulltext [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
-          ;; or [:r d gt]
-          ft-ds  (FastList.)
-          ;; vector, same
-          vi-ds  (FastList.)
-          ;; idoc [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
-          ;; or [:r d [gt v]]
-          id-ds  (FastList.)
-          giants (HashMap.)]
-      (locking (lmdb/write-txn lmdb)
-        (doseq [datom datoms]
-          (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds vi-ds id-ds giants)
-            (delete-datom this datom txs ft-ds vi-ds id-ds giants)))
-        (.add txs (lmdb/kv-tx :put c/meta :max-tx
-                              (.advance-max-tx this) :attr :long))
-        (.add txs (lmdb/kv-tx :put c/meta :last-modified
-                              (System/currentTimeMillis) :attr :long))
-        (fulltext-index search-engines ft-ds)
-        (vector-index vector-indices vi-ds)
-        (idoc-index idoc-indices id-ds)
-        (transact-kv lmdb txs))))
+    (prepare/validate-load-datoms this datoms)
+    (prepare/validate-side-index-domains
+      schema datoms
+      {:fulltext (set (keys search-engines))
+       :vector   (set (keys vector-indices))
+       :idoc     (set (keys idoc-indices))})
+    (apply-datoms* this datoms))
+
+  (apply-prepared-datoms [this datoms]
+    (vld/validate-trusted-apply)
+    (apply-datoms* this datoms))
 
   (fetch [_ datom]
     (mapv #(retrieved->datom lmdb attrs %)
@@ -1157,6 +1143,36 @@
         :g (idoc/add-doc index [:g (nth d 0)] (peek d) false)
         :r (idoc/remove-doc index [:g (nth d 0)] (peek d))))))
 
+(defn- apply-datoms*
+  [^Store store datoms]
+  (let [lmdb                            (.-lmdb store)
+        search-engines                  (.-search-engines store)
+        vector-indices                  (.-vector-indices store)
+        idoc-indices                    (.-idoc-indices store)
+        txs                             (FastList. (* 3 (count datoms)))
+        ;; fulltext [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
+        ;; or [:r d gt]
+        ft-ds                           (FastList.)
+        ;; vector, same
+        vi-ds                           (FastList.)
+        ;; idoc [:a d [e aid v]], [:d d [e aid v]], [:g d [gt v]],
+        ;; or [:r d [gt v]]
+        id-ds                           (FastList.)
+        giants                          (HashMap.)]
+    (locking (lmdb/write-txn lmdb)
+      (doseq [datom datoms]
+        (if (d/datom-added datom)
+          (insert-datom store datom txs ft-ds vi-ds id-ds giants)
+          (delete-datom store datom txs ft-ds vi-ds id-ds giants)))
+      (.add txs (lmdb/kv-tx :put c/meta :max-tx
+                            (.advance-max-tx store) :attr :long))
+      (.add txs (lmdb/kv-tx :put c/meta :last-modified
+                            (System/currentTimeMillis) :attr :long))
+      (fulltext-index search-engines ft-ds)
+      (vector-index vector-indices vi-ds)
+      (idoc-index idoc-indices id-ds)
+      (transact-kv lmdb txs))))
+
 (defn e-sample*
   [^Store store a aid]
   (when-not (.closed? store)
@@ -1223,9 +1239,6 @@
   (combine [_] nil)
   (callback [_] nil))
 
-(defn- check [store attr old new]
-  (vld/validate-schema-mutation store (.-lmdb ^Store store) attr old new))
-
 (defn- collect-fulltext
   [^FastList ft-ds attr props v op]
   (when-not (str/blank? v)
@@ -1238,9 +1251,7 @@
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^FastList vi-ds
    ^FastList id-ds ^HashMap giants]
   (let [schema (schema store)
-        opts   (opts store)
         attr   (.-a d)
-        _      (vld/validate-closed-schema schema opts attr (.-v d))
         e      (.-e d)
         v      (.-v d)
         props  (or (schema attr)
