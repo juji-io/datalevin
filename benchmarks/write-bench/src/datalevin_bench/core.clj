@@ -45,63 +45,159 @@
         ","
         (format "%.2f" (double (/ (- @sync-time @prev-time) @sync-count)))))))
 
+(def prepare-stage-order
+  [:normalize
+   :resolve-ids
+   :apply-op-semantics
+   :delta-plan
+   :side-index-overlay-build
+   :finalize
+   :execute])
+
+(defn- empty-prepare-summary
+  []
+  {:tx-count 0
+   :stages   {}})
+
+(defn- add-measure
+  [stage-summary value total-k sample-k]
+  (if (number? value)
+    (-> stage-summary
+        (update total-k (fnil + 0) value)
+        (update sample-k (fnil inc 0)))
+    stage-summary))
+
+(defn- accumulate-stage
+  [stage-summary stage-stats]
+  (-> (or stage-summary {})
+      (add-measure (:elapsed-ns stage-stats) :elapsed-ns :elapsed-samples)
+      (add-measure (:input-count stage-stats) :input-count :input-samples)
+      (add-measure (:output-count stage-stats) :output-count :output-samples)
+      (add-measure (:tx-datoms stage-stats) :tx-datoms :tx-datoms-samples)
+      (add-measure (:tempids stage-stats) :tempids :tempids-samples)))
+
+(defn- accumulate-prepare-summary
+  [summary prepare-stats]
+  (reduce-kv
+    (fn [s stage stage-stats]
+      (update-in s [:stages stage] accumulate-stage stage-stats))
+    (update summary :tx-count inc)
+    prepare-stats))
+
+(defn- avg
+  [total samples]
+  (when (and (number? samples) (pos? samples))
+    (double (/ total samples))))
+
+(defn- print-prepare-summary
+  [summary]
+  (binding [*out* *err*]
+    (println "# Prepare stage summary")
+    (println "# stage,avg-ms,total-ms,samples,avg-input,avg-output,avg-tx-datoms,avg-tempids")
+    (doseq [stage prepare-stage-order
+            :let [s (get-in summary [:stages stage])]
+            :when s]
+      (let [elapsed-ms     (double (/ (or (:elapsed-ns s) 0) 1000000.0))
+            elapsed-samples (or (:elapsed-samples s) 0)
+            avg-ms         (or (avg elapsed-ms elapsed-samples) 0.0)
+            avg-input      (avg (:input-count s) (:input-samples s))
+            avg-output     (avg (:output-count s) (:output-samples s))
+            avg-tx-datoms  (avg (:tx-datoms s) (:tx-datoms-samples s))
+            avg-tempids    (avg (:tempids s) (:tempids-samples s))]
+        (println
+          (str stage
+               ","
+               (format "%.6f" avg-ms)
+               ","
+               (format "%.3f" elapsed-ms)
+               ","
+               elapsed-samples
+               ","
+               (if avg-input (format "%.2f" avg-input) "")
+               ","
+               (if avg-output (format "%.2f" avg-output) "")
+               ","
+               (if avg-tx-datoms (format "%.2f" avg-tx-datoms) "")
+               ","
+               (if avg-tempids (format "%.2f" avg-tempids) "")))))))
+
 (defn max-write-bench
-  [batch-size tx-fn add-fn async?]
-  (print-header)
-  (let [sem        (Semaphore. (* in-flight batch-size))
-        write-time (volatile! 0)
-        sync-count (volatile! 0)
-        inserted   (volatile! 0)
-        start-time (System/currentTimeMillis)
-        prev-time  (volatile! start-time)
-        sync-time  (volatile! start-time)
-        measure    (fn [_]
-                     (.release sem batch-size)
-                     (vreset! sync-time (System/currentTimeMillis))
-                     (vswap! sync-count inc)
-                     (vswap! inserted + batch-size))]
-    (loop [counter 0
-           fut     nil]
-      (let [written (* counter batch-size)]
-        (if (< written total)
-          (do
-            (.acquire sem batch-size)
-            (when (and (= 0 (mod written report))
-                       (not= 0 counter)
-                       (not= 0 @sync-count))
-              (when async? @fut)
-              (print-row (* counter batch-size) inserted write-time sync-count
-                         sync-time prev-time start-time)
-              (vreset! write-time 0)
-              (vreset! prev-time @sync-time)
-              (vreset! sync-count 0))
-            (let [txs    (when add-fn
-                           (reduce
-                             (fn [^FastList txs _]
-                               (add-fn txs)
-                               txs)
-                             (FastList. batch-size)
-                             (range 0 batch-size)))
-                  before (System/currentTimeMillis)
-                  fut    (tx-fn txs measure)]
-              (vswap! write-time + (- (System/currentTimeMillis) before))
-              (recur (inc counter) fut)))
-          (do
-            (when async? @fut)
-            (print-row written inserted write-time sync-count
-                       sync-time prev-time start-time)))))))
+  ([batch-size tx-fn add-fn async?]
+   (max-write-bench batch-size tx-fn add-fn async? nil))
+  ([batch-size tx-fn add-fn async? on-report]
+   (print-header)
+   (let [sem        (Semaphore. (* in-flight batch-size))
+         write-time (volatile! 0)
+         sync-count (volatile! 0)
+         inserted   (volatile! 0)
+         start-time (System/currentTimeMillis)
+         prev-time  (volatile! start-time)
+         sync-time  (volatile! start-time)
+         measure    (fn [res]
+                      (when on-report (on-report res))
+                      (.release sem batch-size)
+                      (vreset! sync-time (System/currentTimeMillis))
+                      (vswap! sync-count inc)
+                      (vswap! inserted + batch-size))]
+     (loop [counter 0
+            fut     nil]
+       (let [written (* counter batch-size)]
+         (if (< written total)
+           (do
+             (.acquire sem batch-size)
+             (when (and (= 0 (mod written report))
+                        (not= 0 counter)
+                        (not= 0 @sync-count))
+               (when async? @fut)
+               (print-row (* counter batch-size) inserted write-time sync-count
+                          sync-time prev-time start-time)
+               (vreset! write-time 0)
+               (vreset! prev-time @sync-time)
+               (vreset! sync-count 0))
+             (let [txs    (when add-fn
+                            (reduce
+                              (fn [^FastList txs _]
+                                (add-fn txs)
+                                txs)
+                              (FastList. batch-size)
+                              (range 0 batch-size)))
+                   before (System/currentTimeMillis)
+                   fut    (tx-fn txs measure)]
+               (vswap! write-time + (- (System/currentTimeMillis) before))
+               (recur (inc counter) fut)))
+           (do
+             (when async? @fut)
+             (print-row written inserted write-time sync-count
+                        sync-time prev-time start-time))))))))
 
 (def id (volatile! 0))
 
+(defn- path-under
+  [base leaf]
+  (if (and (string? base) (not (s/blank? base)))
+    (str (java.io.File. base leaf))
+    leaf))
+
+(defn- resolve-collect-prepare-stats?
+  [use-prepare-path? collect-prepare-stats?]
+  (if (some? collect-prepare-stats?)
+    (boolean collect-prepare-stats?)
+    (boolean use-prepare-path?)))
+
 (defn write
-  [{:keys [batch f]}]
+  [{:keys [base-dir batch f use-prepare-path? collect-prepare-stats?]}]
   (let [nf       (name f)
         kv?      (s/starts-with? nf "kv")
         dl?      (s/starts-with? nf "dl")
         sql?     (s/starts-with? nf "sql")
         async?   (s/ends-with? nf "async")
+        collect-prepare-stats? (resolve-collect-prepare-stats?
+                                 use-prepare-path?
+                                 collect-prepare-stats?)
+        kv-dir   (path-under base-dir (str f "-" batch))
+        sql-dir  (path-under base-dir (str "sqlite-" batch))
         kvdb     (when kv?
-                   (doto (d/open-kv (str f "-" batch)
+                   (doto (d/open-kv kv-dir
                                     {:mapsize 60000
                                      :flags   (-> c/default-env-flags
                                                   ;; (conj :writemap)
@@ -120,7 +216,7 @@
         kv-add   (fn [^FastList txs]
                    (.add txs [:put (vswap! id + 2) (str (random-uuid))]))
         conn     (when dl?
-                   (d/get-conn (str f "-" batch)
+                   (d/get-conn kv-dir
                                {:k {:db/valueType :db.type/long}
                                 :v {:db/valueType :db.type/string}}
                                {:kv-opts {:mapsize 60000
@@ -138,7 +234,7 @@
         sql-conn (when sql?
                    (let [conn (jdbc/get-connection
                                 {:dbtype "sqlite"
-                                 :dbname (str "sqlite-" batch)})]
+                                 :dbname sql-dir})]
                      (jdbc/execute! conn ["PRAGMA journal_mode=WAL;"])
                      (jdbc/execute! conn ["PRAGMA synchronous=FULL;"])
                      (jdbc/execute! conn ["PRAGMA synchronous=NORMAL;"])
@@ -158,8 +254,19 @@
         add-fn   (cond
                    kv?  kv-add
                    dl?  dl-add
-                   sql? sql-add)]
-    (max-write-bench batch tx-fn add-fn async?)
+                   sql? sql-add)
+        prepare-summary (when (and dl? collect-prepare-stats?)
+                          (atom (empty-prepare-summary)))
+        on-report (when (and dl? collect-prepare-stats?)
+                    (fn [res]
+                      (when-let [ps (and (map? res) (:prepare-stats res))]
+                        (swap! prepare-summary
+                               accumulate-prepare-summary ps))))]
+    (binding [c/*use-prepare-path*      (boolean use-prepare-path?)
+              c/*collect-prepare-stats* collect-prepare-stats?]
+      (max-write-bench batch tx-fn add-fn async? on-report))
+    (when (and prepare-summary (pos? (:tx-count @prepare-summary)))
+      (print-prepare-summary @prepare-summary))
     (when kvdb
       (let [written (d/entries kvdb max-write-dbi)]
         (when-not (= written total) (println "Write only" written)))
@@ -180,11 +287,14 @@
 (defn random-int [] (.nextInt random keyspace))
 
 (defn mixed
-  [{:keys [dir f]}]
+  [{:keys [dir f use-prepare-path? collect-prepare-stats?]}]
   (let [nf       (name f)
         kv?      (s/starts-with? nf "kv")
         dl?      (s/starts-with? nf "dl")
         sql?     (s/starts-with? nf "sql")
+        collect-prepare-stats? (resolve-collect-prepare-stats?
+                                 use-prepare-path?
+                                 collect-prepare-stats?)
         kvdb     (when kv?
                    (doto (d/open-kv dir
                                     {:mapsize 60000
@@ -251,8 +361,19 @@
         add-fn   (cond
                    kv?  kv-add
                    dl?  dl-add
-                   sql? sql-add)]
-    (max-write-bench 1 tx-fn add-fn false)
+                   sql? sql-add)
+        prepare-summary (when (and dl? collect-prepare-stats?)
+                          (atom (empty-prepare-summary)))
+        on-report (when (and dl? collect-prepare-stats?)
+                    (fn [res]
+                      (when-let [ps (and (map? res) (:prepare-stats res))]
+                        (swap! prepare-summary
+                               accumulate-prepare-summary ps))))]
+    (binding [c/*use-prepare-path*      (boolean use-prepare-path?)
+              c/*collect-prepare-stats* collect-prepare-stats?]
+      (max-write-bench 1 tx-fn add-fn false on-report))
+    (when (and prepare-summary (pos? (:tx-count @prepare-summary)))
+      (print-prepare-summary @prepare-summary))
     (when kvdb (d/close-kv kvdb))
     (when conn (d/close conn))
     (when sql-conn (.close sql-conn))))

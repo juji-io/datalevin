@@ -1197,6 +1197,8 @@
    'copy
    'stat
    'entries
+   'kv-wal-watermarks
+   'flush-kv-indexer!
    'open-transact-kv
    'close-transact-kv
    'abort-transact-kv
@@ -1751,7 +1753,9 @@
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (cond-> (select-keys rp [:tx-data :tempids])
                     (:new-attributes rp)
-                    (assoc :new-attributes (:new-attributes rp)))]
+                    (assoc :new-attributes (:new-attributes rp))
+                    (:prepare-stats rp)
+                    (assoc :prepare-stats (:prepare-stats rp)))]
           (if (< ct ^long c/+wire-datom-batch-size+)
             (write-message skey {:type :command-complete :result res})
             (let [{:keys [tx-data tempids]} res]
@@ -1980,6 +1984,20 @@
 (defn- entries
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler entries)))
+
+(defn- kv-wal-watermarks
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler kv-wal-watermarks)))
+
+(defn- flush-kv-indexer!
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (normal-kv-store-handler flush-kv-indexer!)))))
 
 (defn- get-lock
   [^Server server db-name]

@@ -1030,6 +1030,19 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries i/entries)
 
+(def ^{:arglists '([db])
+       :doc      "Return KV WAL watermarks as a map:
+  `:last-committed-wal-tx-id`, `:last-indexed-wal-tx-id`,
+  and `:last-committed-user-tx-id`."}
+  kv-wal-watermarks i/kv-wal-watermarks)
+
+(def ^{:arglists '([db]
+                   [db upto-wal-id])
+       :doc      "Replay KV WAL records through the local indexer path and return:
+  `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <boolean>}`.
+  When `upto-wal-id` is provided, replay is bounded by that WAL id."}
+  flush-kv-indexer! i/flush-kv-indexer!)
+
 (def ^{:arglists '([db txs]
                    [db dbi-name txs]
                    [db dbi-name txs k-type]

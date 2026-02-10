@@ -376,6 +376,15 @@
   (sync [_ force]
     (cl/normal-request client :sync [db-name force] writing?))
 
+  (kv-wal-watermarks [_]
+    (cl/normal-request client :kv-wal-watermarks [db-name] writing?))
+
+  (flush-kv-indexer! [_]
+    (cl/normal-request client :flush-kv-indexer! [db-name] writing?))
+  (flush-kv-indexer! [_ upto-wal-id]
+    (cl/normal-request
+      client :flush-kv-indexer! [db-name upto-wal-id] writing?))
+
   (open-transact-kv [db]
     (cl/normal-request client :open-transact-kv [db-name])
     (.mark-write db))

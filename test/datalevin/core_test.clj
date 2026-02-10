@@ -467,6 +467,36 @@
     (sut/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest kv-wal-admin-test
+  (let [dir  (u/tmp-dir (str "datalevin-kv-wal-admin-test-" (UUID/randomUUID)))
+        lmdb (sut/open-kv dir {:flags (conj c/default-env-flags :nosync)
+                               :kv-wal? true})]
+    (try
+      (sut/open-dbi lmdb "misc")
+      (sut/transact-kv lmdb [[:put "misc" 1 "x"]])
+      (sut/transact-kv lmdb [[:put "misc" 2 "y"]])
+
+      (is (= {:last-committed-wal-tx-id 2
+              :last-indexed-wal-tx-id 2
+              :last-committed-user-tx-id 2}
+             (sut/kv-wal-watermarks lmdb)))
+
+      (sut/transact-kv lmdb c/kv-info
+                       [[:put c/last-indexed-wal-tx-id 0]]
+                       :attr :long)
+
+      (is (= {:indexed-wal-tx-id 1
+              :committed-wal-tx-id 2
+              :drained? false}
+             (sut/flush-kv-indexer! lmdb 1)))
+      (is (= {:indexed-wal-tx-id 2
+              :committed-wal-tx-id 2
+              :drained? true}
+             (sut/flush-kv-indexer! lmdb)))
+      (finally
+        (sut/close-kv lmdb)
+        (u/delete-files dir)))))
+
 (deftest simulated-tx-test
   (let [dir  (u/tmp-dir (str "sim-tx-test-" (UUID/randomUUID)))
         conn (sut/create-conn

@@ -1730,6 +1730,8 @@
                                :db-after       (:db-after ptx)
                                :tx-data        (:tx-data ptx)
                                :tempids        (:tempids ptx))
+                  (:stats ptx)
+                  (assoc :prepare-stats (:stats ptx))
                   (seq (:new-attributes ptx))
                   (assoc :new-attributes (:new-attributes ptx))))
               (execute-tx-loop initial-report initial-es tx-time))
@@ -1761,12 +1763,13 @@
 (defn- remote-tx-result
   [res]
   (if (map? res)
-    (let [{:keys [tx-data tempids new-attributes]} res]
-      [tx-data (dissoc tempids :max-eid) (tempids :max-eid) new-attributes])
+    (let [{:keys [tx-data tempids new-attributes prepare-stats]} res]
+      [tx-data (dissoc tempids :max-eid) (tempids :max-eid)
+       new-attributes prepare-stats])
     (let [[tx-data tempids] (split-with datom? res)
           max-eid           (-> tempids last second)
           tempids           (into {} (butlast tempids))]
-      [tx-data tempids max-eid nil])))
+      [tx-data tempids max-eid nil nil])))
 
 ;; HACK to avoid circular dependency
 (def de-entity? (delay (resolve 'datalevin.entity/entity?)))
@@ -1821,8 +1824,9 @@
         tx-time (System/currentTimeMillis)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
-        (let [res                                    (r/tx-data store initial-es simulated?)
-              [tx-data tempids max-eid new-attributes] (remote-tx-result res)]
+        (let [res (r/tx-data store initial-es simulated?)
+              [tx-data tempids max-eid new-attributes prepare-stats]
+              (remote-tx-result res)]
           (when-not simulated?
             (invalidate-cache store tx-data (last-modified store)))
           (cond-> (assoc initial-report
@@ -1833,7 +1837,8 @@
                                            %)))
                          :tx-data tx-data
                          :tempids tempids)
-            (seq new-attributes) (assoc :new-attributes new-attributes)))
+            (seq new-attributes) (assoc :new-attributes new-attributes)
+            prepare-stats (assoc :prepare-stats prepare-stats)))
         (catch Exception e
           (if (:resized (ex-data e))
             (throw e)

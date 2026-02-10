@@ -64,8 +64,9 @@
                            :db-after db
                            :tempids {-1 1}
                            :new-attributes [:name]}
-              ptx  (prepare/prepare-tx ctx [{:name "test"}] 1
-                     (fn [es t] fake-report))]
+              ptx  (binding [c/*collect-prepare-stats* true]
+                     (prepare/prepare-tx ctx [{:name "test"}] 1
+                       (fn [es t] fake-report)))]
           (is (instance? datalevin.prepare.PreparedTx ptx))
           (is (= [{:fake "datom"}] (:tx-data ptx)))
           (is (= db (:db-after ptx)))
@@ -74,7 +75,14 @@
           (is (nil? (:tx-redundant ptx)))
           (is (nil? (:side-index-ops ptx)))
           (is (nil? (:touch-summary ptx)))
-          (is (nil? (:stats ptx))))
+          (is (map? (:stats ptx)))
+          (is (contains? (:stats ptx) :normalize))
+          (is (contains? (:stats ptx) :resolve-ids))
+          (is (contains? (:stats ptx) :apply-op-semantics))
+          (is (contains? (:stats ptx) :delta-plan))
+          (is (contains? (:stats ptx) :side-index-overlay-build))
+          (is (contains? (:stats ptx) :finalize))
+          (is (contains? (:stats ptx) :execute)))
         (finally
           (d/close conn)
           (u/delete-files dir))))))
@@ -89,6 +97,54 @@
       (is (= entities (prepare/plan-delta ctx entities)))
       (is (= entities (prepare/build-side-index-ops ctx entities)))
       (is (= entities (prepare/finalize ctx entities))))))
+
+(deftest test-prepare-tx-runs-stages-in-order
+  (let [calls        (atom [])
+        execute-args (atom nil)
+        ptx          (binding [c/*collect-prepare-stats* true]
+                       (with-redefs [prepare/normalize
+                                     (fn [_ entities]
+                                       (swap! calls conj :normalize)
+                                       (conj (vec entities) :n))
+                                     prepare/resolve-ids
+                                     (fn [_ entities]
+                                       (swap! calls conj :resolve-ids)
+                                       (conj (vec entities) :r))
+                                     prepare/apply-op-semantics
+                                     (fn [_ entities]
+                                       (swap! calls conj :apply-op-semantics)
+                                       (conj (vec entities) :o))
+                                     prepare/plan-delta
+                                     (fn [_ entities]
+                                       (swap! calls conj :delta-plan)
+                                       (conj (vec entities) :d))
+                                     prepare/build-side-index-ops
+                                     (fn [_ entities]
+                                       (swap! calls conj
+                                              :side-index-overlay-build)
+                                       (conj (vec entities) :s))
+                                     prepare/finalize
+                                     (fn [_ entities]
+                                       (swap! calls conj :finalize)
+                                       (conj (vec entities) :f))]
+                           (prepare/prepare-tx
+                             nil [{:name "x"}] 42
+                             (fn [entities tx-time]
+                               (reset! execute-args [entities tx-time])
+                               {:tx-data []
+                                :db-after nil
+                                :tempids {}
+                                :new-attributes nil}))))]
+    (is (= [:normalize
+            :resolve-ids
+            :apply-op-semantics
+            :delta-plan
+            :side-index-overlay-build
+            :finalize]
+           @calls))
+    (is (= [[{:name "x"} :n :r :o :d :s :f] 42] @execute-args))
+    (is (map? (:stats ptx)))
+    (is (pos? (or (get-in ptx [:stats :execute :elapsed-ns]) 0)))))
 
 (deftest test-validate-prepared-datoms
   (testing "prepare validator enforces closed schema for added datoms"
@@ -260,6 +316,29 @@
       (is (thrown-with-msg? Exception #"Cannot rename to existing attribute"
                             (prepare/validate-rename-attr nil :a/b :e/f))))))
 
+(deftest test-validate-rename-map
+  (testing "rename map validates against projected schema and returns projection"
+    (is (= {:x/y {:db/aid 4}
+            :e/f {:db/aid 3}}
+           (prepare/validate-rename-map
+             {:a/b {:db/aid 3}
+              :x/y {:db/aid 4}}
+             [[:a/b :e/f]]))))
+
+  (testing "rename map validates sequentially across evolving schema"
+    (is (= {:g/h {:db/aid 3}}
+           (prepare/validate-rename-map
+             {:a/b {:db/aid 3}}
+             [[:a/b :e/f]
+              [:e/f :g/h]]))))
+
+  (testing "rename map rejects collisions based on projected schema"
+    (is (thrown-with-msg? Exception #"Cannot rename to existing attribute"
+                          (prepare/validate-rename-map
+                            {:a/b {:db/aid 3}
+                             :e/f {:db/aid 4}}
+                            [[:a/b :e/f]])))))
+
 (deftest test-transact-with-prepare-path-false
   (testing "transact! works with *use-prepare-path* bound to false (default)"
     (let [dir  (u/tmp-dir (str "prepare-false-" (UUID/randomUUID)))
@@ -270,7 +349,8 @@
         (binding [c/*use-prepare-path* false]
           (let [report (d/transact! conn [{:name "Alice"}])]
             (is (some? report))
-            (is (seq (:tx-data report)))))
+            (is (seq (:tx-data report)))
+            (is (nil? (:prepare-stats report)))))
         (finally
           (d/close conn)
           (u/delete-files dir))))))
@@ -285,7 +365,27 @@
         (binding [c/*use-prepare-path* true]
           (let [report (d/transact! conn [{:name "Bob"}])]
             (is (some? report))
-            (is (seq (:tx-data report)))))
+            (is (seq (:tx-data report)))
+            (is (nil? (:prepare-stats report)))))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-transact-with-prepare-path-true-with-stats
+  (testing "transact! can collect prepare stats when enabled"
+    (let [dir  (u/tmp-dir (str "prepare-true-stats-" (UUID/randomUUID)))
+          conn (d/create-conn dir {:name {:db/valueType :db.type/string}}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (binding [c/*use-prepare-path* true
+                  c/*collect-prepare-stats* true]
+          (let [report (d/transact! conn [{:name "Bob"}])]
+            (is (some? report))
+            (is (seq (:tx-data report)))
+            (is (map? (:prepare-stats report)))
+            (is (contains? (:prepare-stats report) :normalize))
+            (is (contains? (:prepare-stats report) :execute))))
         (finally
           (d/close conn)
           (u/delete-files dir))))))

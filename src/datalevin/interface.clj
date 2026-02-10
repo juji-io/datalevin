@@ -144,6 +144,15 @@
     "return the set of flags that are set")
   (sync [db] [db force]
     "force synchronous flush to disk if force (int) is non-zero, otherwise respect env flags")
+  (kv-wal-watermarks [db]
+    "Return KV WAL watermarks as a map:
+     `:last-committed-wal-tx-id`, `:last-indexed-wal-tx-id`,
+     `:last-committed-user-tx-id`.")
+  (flush-kv-indexer!
+    [db]
+    [db upto-wal-id]
+    "Replay KV WAL to advance indexed watermark and return:
+     `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <bool>}`.")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]

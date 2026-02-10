@@ -108,6 +108,9 @@
       (is (instance? datalevin.remote.DatalogStore store))
       (is (= c/implicit-schema (if/schema store)))
       (is (= c/e0 (if/init-max-eid store)))
+      (is (thrown-with-msg?
+            Exception #"Trusted internal apply is unavailable on remote stores"
+            (if/apply-prepared-datoms store [(d/datom c/e0 :a/b "v")])))
       (is (thrown? Exception
                    (if/load-datoms store [[:db/add c/e0 :bad "payload"]])))
       (let [a  :a/b

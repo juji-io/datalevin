@@ -86,6 +86,23 @@ This command runs mixed read/write benchmark following the pure write task above
 time clj -Xmixed :dir \"/tmp/dl/dl-async-10\" :f dl-async > dl-10-async-mixed.csv
 ```
 
+To benchmark the prepare path and collect per-stage timing summaries, add
+`:use-prepare-path? true`. Regular throughput CSV stays on `stdout`; the
+prepare stage summary is emitted to `stderr`.
+
+```bash
+time clj -Xwrite :base-dir \"/tmp/dl/\" :batch 10 :f dl-sync :use-prepare-path? true > dl-10-sync.csv 2> dl-10-sync-prepare.csv
+time clj -Xmixed :dir \"/tmp/dl/dl-sync-10\" :f dl-sync :use-prepare-path? true > dl-10-sync-mixed.csv 2> dl-10-sync-mixed-prepare.csv
+```
+
+To measure prepare-path throughput without per-stage instrumentation overhead,
+set `:collect-prepare-stats? false`:
+
+```bash
+time clj -Xwrite :base-dir \"/tmp/dl/\" :batch 10 :f dl-sync :use-prepare-path? true :collect-prepare-stats? false > dl-10-sync.csv
+time clj -Xmixed :dir \"/tmp/dl/dl-sync-10\" :f dl-sync :use-prepare-path? true :collect-prepare-stats? false > dl-10-sync-mixed.csv
+```
+
 The command below runs pure write benchmark for Sqlite `INSERT`  with batch size
 1, and save the results in `sqlite-1.csv`
 

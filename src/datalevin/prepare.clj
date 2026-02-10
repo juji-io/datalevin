@@ -235,38 +235,105 @@
     (populated? store :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
   attr)
 
+(defn- validate-rename-attr*
+  [s attr new-attr]
+  (when-not (s attr)
+    (u/raise "Cannot rename missing attribute: " attr
+             {:error :schema/rename
+              :attribute attr
+              :target new-attr}))
+  (when (and (not= attr new-attr) (s new-attr))
+    (u/raise "Cannot rename to existing attribute: " new-attr
+             {:error :schema/rename
+              :attribute attr
+              :target new-attr}))
+  [attr new-attr])
+
 (defn validate-rename-attr
   "Validate `rename-attr` safety checks before apply."
   [store attr new-attr]
-  (let [s (schema store)]
-    (when-not (s attr)
-      (u/raise "Cannot rename missing attribute: " attr
-               {:error :schema/rename
-                :attribute attr
-                :target new-attr}))
-    (when (and (not= attr new-attr) (s new-attr))
-      (u/raise "Cannot rename to existing attribute: " new-attr
-               {:error :schema/rename
-                :attribute attr
-                :target new-attr})))
-  [attr new-attr])
+  (validate-rename-attr* (schema store) attr new-attr))
+
+(defn validate-rename-map
+  "Validate ordered rename mutations against a projected schema map.
+   Returns the projected schema after all renames are applied."
+  [projected-schema rename-map]
+  (reduce
+    (fn [s [attr new-attr]]
+      (validate-rename-attr* s attr new-attr)
+      (if (= attr new-attr)
+        s
+        (let [props (s attr)]
+          (-> s
+              (dissoc attr)
+              (assoc new-attr props)))))
+    projected-schema
+    rename-map))
 
 ;; ---- Top-level entry point ----
+
+(defn- maybe-count
+  [x]
+  (when (counted? x) (count x)))
+
+(defn- run-stage
+  [ctx stats stage-k stage-fn entities]
+  (let [start   (System/nanoTime)
+        output  (stage-fn ctx entities)
+        elapsed (- (System/nanoTime) start)]
+    [output
+     (assoc stats stage-k
+            {:elapsed-ns   elapsed
+             :input-count  (maybe-count entities)
+             :output-count (maybe-count output)})]))
 
 (defn prepare-tx
   "Run the full prepare pipeline. Returns a PreparedTx.
    execute-fn: (fn [entities tx-time] -> report) runs the transaction loop."
   [ctx entities tx-time execute-fn]
-  (let [report (execute-fn entities tx-time)]
-    (->PreparedTx
-      (:tx-data report)
-      (:db-after report)
-      (:tempids report)
-      (:new-attributes report)
-      nil   ; tx-redundant not needed externally
-      nil   ; side-index-ops (future)
-      nil   ; touch-summary (future)
-      nil)))
+  (if c/*collect-prepare-stats*
+    (let [[entities stats] (run-stage ctx {} :normalize normalize entities)
+          [entities stats] (run-stage ctx stats :resolve-ids resolve-ids entities)
+          [entities stats] (run-stage
+                             ctx stats :apply-op-semantics apply-op-semantics
+                             entities)
+          [entities stats] (run-stage ctx stats :delta-plan plan-delta entities)
+          [entities stats] (run-stage
+                             ctx stats :side-index-overlay-build
+                             build-side-index-ops entities)
+          [entities stats] (run-stage ctx stats :finalize finalize entities)
+          start            (System/nanoTime)
+          report           (execute-fn entities tx-time)
+          elapsed          (- (System/nanoTime) start)
+          stats            (assoc stats :execute
+                                  {:elapsed-ns elapsed
+                                   :tx-datoms  (maybe-count (:tx-data report))
+                                   :tempids    (maybe-count (:tempids report))})]
+      (->PreparedTx
+        (:tx-data report)
+        (:db-after report)
+        (:tempids report)
+        (:new-attributes report)
+        nil   ; tx-redundant not needed externally
+        nil   ; side-index-ops (future)
+        nil   ; touch-summary (future)
+        stats))
+    (let [entities (normalize ctx entities)
+          entities (resolve-ids ctx entities)
+          entities (apply-op-semantics ctx entities)
+          entities (plan-delta ctx entities)
+          entities (build-side-index-ops ctx entities)
+          entities (finalize ctx entities)
+          report   (execute-fn entities tx-time)]
+      (->PreparedTx
+        (:tx-data report)
+        (:db-after report)
+        (:tempids report)
+        (:new-attributes report)
+        nil
+        nil
+        nil
+        nil))))
 
 ;; ---- Type coercion and value correction ----
 

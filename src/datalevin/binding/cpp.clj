@@ -10,6 +10,7 @@
   "Native binding using JavaCPP"
   (:refer-clojure :exclude [sync])
   (:require
+   [taoensso.nippy :as nippy]
    [clojure.stacktrace :as stt]
    [clojure.java.io :as io]
    [clojure.string :as s]
@@ -637,7 +638,12 @@
 
 (defn- transact1*
   [txs ^DBI dbi txn kt vt]
-  (let [validate? (.-validate-data? dbi)]
+  (let [dbi-name (.dbi-name dbi)
+        validate? (.-validate-data? dbi)]
+    (when (and (= dbi-name c/kv-wal) (not c/*trusted-apply*))
+      (raise "Direct mutation of internal KV WAL DBI is not allowed"
+             {:error :access/unauthorized
+              :dbi   dbi-name}))
     (doseq [t txs]
       (let [tx (l/->kv-tx-data t kt vt)]
         (vld/validate-kv-tx-data tx validate?)
@@ -651,8 +657,57 @@
           ^DBI dbi     (or (.get dbis dbi-name)
                            (raise dbi-name " is not open" {}))
           validate?    (.-validate-data? dbi)]
+      (when (and (= dbi-name c/kv-wal) (not c/*trusted-apply*))
+        (raise "Direct mutation of internal KV WAL DBI is not allowed"
+               {:error :access/unauthorized
+                :dbi   dbi-name}))
       (vld/validate-kv-tx-data tx validate?)
       (put-tx dbi txn tx))))
+
+(defn- wal-system-dbi?
+  [dbi-name]
+  (or (= dbi-name c/kv-info)
+      (= dbi-name c/kv-wal)))
+
+(defn- canonical-kv-op
+  [^KVTxData tx fallback-dbi]
+  {:op      (.-op tx)
+   :dbi     (or (.-dbi-name tx) fallback-dbi)
+   :k       (.-k tx)
+   :v       (.-v tx)
+   :kt      (.-kt tx)
+   :vt      (.-vt tx)
+   :flags   (.-flags tx)})
+
+(defn- append-kv-wal-record!
+  [lmdb ^HashMap dbis txn txs dbi-name kt vt]
+  (when (:kv-wal? @(.-info lmdb))
+    (let [ops (if dbi-name
+                (mapv (fn [t]
+                        (canonical-kv-op (l/->kv-tx-data t kt vt) dbi-name))
+                      txs)
+                (mapv (fn [t]
+                        (canonical-kv-op (l/->kv-tx-data t) nil))
+                      txs))]
+      (when (and (seq ops)
+                 (not-any? #(wal-system-dbi? (:dbi %)) ops))
+        (let [wal-id (inc (long (or (:wal-next-tx-id @(.-info lmdb)) 0)))
+              rec    {:wal/tx-id      wal-id
+                      :wal/record-type :kv
+                      :wal/created-at  (System/currentTimeMillis)
+                      :wal/ops         ops}
+              bytes  (nippy/freeze rec)]
+          (binding [c/*trusted-apply* true]
+            (transact* [[:put c/kv-wal wal-id bytes :id :raw]
+                        [:put c/kv-info c/wal-next-tx-id wal-id :attr :long]
+                        [:put c/kv-info c/last-committed-wal-tx-id wal-id
+                         :attr :long]
+                        [:put c/kv-info c/last-indexed-wal-tx-id wal-id
+                         :attr :long]
+                        [:put c/kv-info c/last-committed-user-tx-id wal-id
+                         :attr :long]]
+                       dbis txn))
+          wal-id)))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
@@ -1051,7 +1106,16 @@
             (transact* [[:put c/kv-info :max-val-size (:max-val-size @info)]]
                        dbis txn)
             (vswap! info assoc :max-val-size-changed? false))
-          (when one-shot? (.commit txn))
+          (let [wal-id (when one-shot?
+                         (append-kv-wal-record!
+                           this dbis txn txs dbi-name k-type v-type))]
+            (when one-shot? (.commit txn))
+            (when wal-id
+              (vswap! info assoc
+                      :wal-next-tx-id wal-id
+                      :last-committed-wal-tx-id wal-id
+                      :last-indexed-wal-tx-id wal-id
+                      :last-committed-user-tx-id wal-id)))
           :transacted
           (catch Util$MapFullException _
             (.close txn)
@@ -1062,7 +1126,9 @@
                   (raise "DB resized" {:resized true}))))
           (catch Exception e
             (when one-shot? (.close txn))
-            (raise "Fail to transact to LMDB: " e {}))))))
+            (if-let [edata (ex-data e)]
+              (raise "Fail to transact to LMDB: " e edata)
+              (raise "Fail to transact to LMDB: " e {})))))))
 
   (set-env-flags [_ ks on-off] (.setFlags env (kv-flags ks) (if on-off 1 0)))
 
@@ -1070,6 +1136,14 @@
 
   (sync [_] (.sync env 1))
   (sync [_ force] (.sync env force))
+
+  (kv-wal-watermarks [this]
+    (l/kv-wal-watermarks this))
+
+  (flush-kv-indexer! [this]
+    (.flush-kv-indexer! this nil))
+  (flush-kv-indexer! [this upto-wal-id]
+    (l/flush-kv-indexer! this upto-wal-id))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -1502,12 +1576,14 @@
 
 (defn- open-kv*
   [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?
+                                kv-wal?
                                 key-compress val-compress]
                          :or   {max-readers c/*max-readers*
                                 max-dbs     c/*max-dbs*
                                 mapsize     c/*init-db-size*
                                 flags       c/default-env-flags
-                                temp?       false}
+                                temp?       false
+                                kv-wal?     c/*enable-kv-wal*}
                          :as   opts}]
   (try
     (let [mapsize       (* (long (if (.exists ^File db-file)
@@ -1523,7 +1599,8 @@
                                              :flags        flags
                                              :max-readers  max-readers
                                              :max-dbs      max-dbs
-                                             :temp?        temp?})
+                                             :temp?        temp?
+                                             :kv-wal?      (boolean kv-wal?)})
                           key-compress (assoc :key-compress key-compress)
                           val-compress (assoc :val-compress val-compress))
           ^CppLMDB lmdb (->CppLMDB env
@@ -1546,6 +1623,10 @@
                                    nil)]
       (swap! l/lmdb-dirs conj dir)
       (open-dbi lmdb c/kv-info) ;; never compressed
+      (when kv-wal?
+        (open-dbi lmdb c/kv-wal {:key-size (b/type-size :id)
+                                 :flags    (conj c/default-dbi-flags
+                                                 :counted)}))
       (if temp?
         (u/delete-on-exit dir-file)
         (let [k-comp (when (and key-compress
@@ -1556,7 +1637,8 @@
                                 (.exists (io/file dir c/valcode-file-name)))
                        (cp/load-val-compressor
                          (str dir u/+separator+ c/valcode-file-name)))]
-          (init-info lmdb info)
+          (init-info lmdb (dissoc info :kv-wal?))
+          (vswap! (.-info lmdb) assoc :kv-wal? (boolean kv-wal?))
           (set-max-val-size lmdb (max-val-size lmdb))
           (set-key-compressor lmdb k-comp)
           (set-val-compressor lmdb v-comp)

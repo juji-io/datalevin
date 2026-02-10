@@ -206,7 +206,13 @@
   ([conn schema-update del-attrs rename-map]
    {:pre [(conn? conn)]}
    (let [^DB db       (db conn)
-         ^Store store (.-store db)]
+         ^Store store (.-store db)
+         current-schema (i/schema store)
+         rename-entries (seq rename-map)
+         projected-schema (let [s (merge current-schema (or schema-update {}))]
+                            (if (seq del-attrs)
+                              (apply dissoc s del-attrs)
+                              s))]
      (when schema-update
        (if (instance? Store store)
          (prepare/validate-schema-update
@@ -215,12 +221,13 @@
             :vector   (set (keys (.-vector-indices ^Store store)))
             :idoc     (set (keys (.-idoc-indices ^Store store)))})
          (vld/validate-schema schema-update)))
+     (doseq [attr del-attrs]
+       (prepare/validate-del-attr store attr))
+     (prepare/validate-rename-map projected-schema rename-entries)
      (i/set-schema store schema-update)
      (doseq [attr del-attrs]
-       (prepare/validate-del-attr store attr)
        (i/del-attr store attr))
-     (doseq [[old new] rename-map]
-       (prepare/validate-rename-attr store old new)
+     (doseq [[old new] rename-entries]
        (i/rename-attr store old new))
      (schema conn))))
 

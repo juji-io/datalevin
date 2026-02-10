@@ -233,6 +233,19 @@
 (def ^:const kv-info
   "dbi name for kv store system information is `datalevin/kv-info`"
   "datalevin/kv-info")
+(def ^:const kv-wal
+  "dbi name for kv WAL records is `datalevin/kv-wal`"
+  "datalevin/kv-wal")
+
+;; WAL metadata keys stored in kv-info/meta
+(def ^:const wal-next-tx-id
+  :wal/next-tx-id)
+(def ^:const last-committed-wal-tx-id
+  :wal/last-committed-wal-tx-id)
+(def ^:const last-indexed-wal-tx-id
+  :wal/last-indexed-wal-tx-id)
+(def ^:const last-committed-user-tx-id
+  :wal/last-committed-user-tx-id)
 
 ;; dl
 (def ^:const eav
@@ -451,11 +464,22 @@
        :doc     "Time interval between automatic LMDB sync to disk, in seconds, default is 300"}
   lmdb-sync-interval 300)
 
+(def ^{:dynamic true :no-doc true
+       :doc     "When true, append KV transactions to the internal KV WAL
+                 (`datalevin/kv-wal`). This remains opt-in for rollout safety."}
+  *enable-kv-wal* false)
+
 ;; datalog db
 
 (def ^{:dynamic true :no-doc true
        :doc     "When true, use the prepare/apply transaction path"}
   *use-prepare-path* false)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "When true, collect per-stage prepare timing/counter stats.
+                 This is useful for diagnostics and benchmarks but adds
+                 overhead on every transaction."}
+  *collect-prepare-stats* false)
 
 (def ^{:dynamic true :no-doc true
        :doc     "When true, the current call is in a trusted internal apply

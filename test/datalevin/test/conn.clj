@@ -52,6 +52,33 @@
     (u/delete-files dir1)
     (u/delete-files dir2)))
 
+(deftest test-update-schema-prevalidates-before-apply
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        conn (d/create-conn dir {:a/b {:db/valueType :db.type/string}})]
+    (try
+      (is (thrown-with-msg?
+            Exception #"Cannot rename to existing attribute"
+            (d/update-schema
+              conn
+              {:e/f {:db/valueType :db.type/string}}
+              nil
+              {:a/b :e/f})))
+      (is (contains? (d/schema conn) :a/b))
+      (is (not (contains? (d/schema conn) :e/f)))
+
+      (d/transact! conn [{:db/id 1 :a/b "x"}])
+      (is (thrown-with-msg?
+            Exception #"Cannot delete attribute"
+            (d/update-schema
+              conn
+              {:x/y {:db/valueType :db.type/string}}
+              #{:a/b})))
+      (is (contains? (d/schema conn) :a/b))
+      (is (not (contains? (d/schema conn) :x/y)))
+      (finally
+        (d/close conn)
+        (u/delete-files dir)))))
+
 (deftest test-update-schema-1
   (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]

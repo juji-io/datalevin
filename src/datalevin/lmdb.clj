@@ -21,8 +21,8 @@
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.interface
-    :refer [close-kv list-dbis entries get-range open-dbi transact-kv clear-dbi
-            env-dir copy open-transact-kv close-transact-kv stat]])
+    :refer [close-kv list-dbis entries get-range get-value open-dbi transact-kv
+            clear-dbi env-dir copy open-transact-kv close-transact-kv stat]])
   (:import
    [datalevin.async IAsyncWork]
    [datalevin.cpp Util]
@@ -390,6 +390,115 @@
                  condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
+
+(defn- wal-op->kv-tx
+  [op]
+  (let [{:keys [op dbi k v kt vt flags]} op]
+    (case op
+      :put (kv-tx :put dbi k v kt vt flags)
+      :del (kv-tx :del dbi k kt)
+      :put-list (kv-tx :put-list dbi k v kt vt)
+      :del-list (kv-tx :del-list dbi k v kt vt)
+      (u/raise "Unsupported KV WAL op for replay"
+               {:error :wal/invalid-op
+                :op    op}))))
+
+(defn apply-wal-kv-ops!
+  "Apply canonical KV WAL ops through the trusted internal mutation tier.
+   Intended for WAL replay/indexer paths only."
+  [db ops]
+  (when (seq ops)
+    (binding [c/*trusted-apply* true]
+      (transact-kv db (mapv wal-op->kv-tx ops)))))
+
+(defn- kv-wal-enabled?
+  [lmdb]
+  (contains? (set (list-dbis lmdb)) c/kv-wal))
+
+(defn kv-wal-watermarks
+  "Return KV WAL watermark values as a map with long values:
+   `:last-committed-wal-tx-id`, `:last-indexed-wal-tx-id`,
+   and `:last-committed-user-tx-id`."
+  [lmdb]
+  (if-not (kv-wal-enabled? lmdb)
+    {:last-committed-wal-tx-id 0
+     :last-indexed-wal-tx-id   0
+     :last-committed-user-tx-id 0}
+    {:last-committed-wal-tx-id
+     (long (or (get-value lmdb c/kv-info c/last-committed-wal-tx-id
+                          :attr :long)
+               0))
+     :last-indexed-wal-tx-id
+     (long (or (get-value lmdb c/kv-info c/last-indexed-wal-tx-id
+                          :attr :long)
+               0))
+     :last-committed-user-tx-id
+     (long (or (get-value lmdb c/kv-info c/last-committed-user-tx-id
+                          :attr :long)
+               0))}))
+
+(defn replay-kv-wal!
+  "Replay committed KV WAL records into base KV DBIs and advance
+   `:wal/last-indexed-wal-tx-id`.
+
+   This is an internal/indexer helper. Replayed writes are executed inside an
+   explicit transaction context so they do not append new WAL records."
+  ([lmdb]
+   (replay-kv-wal! lmdb nil))
+  ([lmdb upto-wal-id]
+   (if-not (kv-wal-enabled? lmdb)
+     {:from 0 :to 0 :applied 0}
+     (let [from-id      (long (or (get-value lmdb c/kv-info
+                                              c/last-indexed-wal-tx-id
+                                              :attr :long)
+                                  0))
+           committed-id (long (or (get-value lmdb c/kv-info
+                                              c/last-committed-wal-tx-id
+                                              :attr :long)
+                                  0))
+           target-id    (long (min committed-id
+                                   (if (some? upto-wal-id)
+                                     (long upto-wal-id)
+                                     committed-id)))]
+       (if (<= target-id from-id)
+         {:from from-id :to target-id :applied 0}
+         (let [applied (volatile! 0)]
+           (with-transaction-kv [db lmdb]
+             (doseq [wal-id (range (inc from-id) (inc target-id))]
+               (let [payload (get-value db c/kv-wal wal-id :id :raw)]
+                 (when-not payload
+                   (u/raise "Missing KV WAL record during replay"
+                            {:error     :wal/missing-record
+                             :wal-tx-id wal-id}))
+                 (let [{:keys [wal/record-type wal/ops]} (nippy/thaw payload)]
+                   (when-not (= :kv record-type)
+                     (u/raise "Unexpected WAL record type during KV replay"
+                              {:error       :wal/unexpected-record-type
+                               :wal-tx-id   wal-id
+                               :record-type record-type}))
+                   (apply-wal-kv-ops! db ops)))
+               (transact-kv db c/kv-info
+                            [[:put c/last-indexed-wal-tx-id wal-id]]
+                            :attr :long)
+               (vswap! applied u/long-inc)))
+           {:from from-id :to target-id :applied @applied}))))))
+
+(defn flush-kv-indexer!
+  "Catch up KV indexer watermark to committed WAL via replay and return:
+   `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <bool>}`.
+
+   When `upto-wal-id` is provided, replay is bounded by that wal id, while
+   `:drained?` still reflects indexed vs committed equality at return time."
+  ([lmdb]
+   (flush-kv-indexer! lmdb nil))
+  ([lmdb upto-wal-id]
+   (replay-kv-wal! lmdb upto-wal-id)
+   (let [{:keys [last-committed-wal-tx-id last-indexed-wal-tx-id]}
+         (kv-wal-watermarks lmdb)]
+     {:indexed-wal-tx-id   last-indexed-wal-tx-id
+      :committed-wal-tx-id last-committed-wal-tx-id
+      :drained?            (= last-indexed-wal-tx-id
+                              last-committed-wal-tx-id)})))
 
 ;; for shutting down various executors when the last LMDB exits
 (defonce lmdb-dirs (atom #{}))

@@ -131,8 +131,8 @@
         (if/close-kv store)))
 
     (testing "range and filter queries"
-      (let [store (sut/open-kv dir)]
-        (if/open-dbi store "r" {:key-size (inc Long/BYTES)
+        (let [store (sut/open-kv dir)]
+          (if/open-dbi store "r" {:key-size (inc Long/BYTES)
                                :val-size (inc Long/BYTES)})
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
@@ -154,6 +154,33 @@
           (is (= (range 1 10001)
                  (if/get-range store "r" [:all] :long :long true))))
         (if/close-kv store)))))
+
+(deftest kv-wal-admin-test
+  (let [dir   (str "dtlv://datalevin:datalevin@localhost/"
+                   (str "remote-kv-wal-admin-" (UUID/randomUUID)))
+        store (sut/open-kv dir {:kv-wal? true})]
+    (if/open-dbi store "a")
+    (if/transact-kv store [[:put "a" 1 "x"]])
+    (if/transact-kv store [[:put "a" 2 "y"]])
+
+    (is (= {:last-committed-wal-tx-id 2
+            :last-indexed-wal-tx-id 2
+            :last-committed-user-tx-id 2}
+           (dc/kv-wal-watermarks store)))
+
+    (if/transact-kv store c/kv-info
+                    [[:put c/last-indexed-wal-tx-id 0]]
+                    :attr :long)
+
+    (is (= {:indexed-wal-tx-id 1
+            :committed-wal-tx-id 2
+            :drained? false}
+           (dc/flush-kv-indexer! store 1)))
+    (is (= {:indexed-wal-tx-id 2
+            :committed-wal-tx-id 2
+            :drained? true}
+           (dc/flush-kv-indexer! store)))
+    (if/close-kv store)))
 
 (deftest async-basic-ops-test
   (let [dir  (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
