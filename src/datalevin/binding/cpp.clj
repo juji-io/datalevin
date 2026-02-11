@@ -908,8 +908,15 @@
           seg-bytes     (if rotate? 0 seg-bytes)
           sync-mode     (or (:wal-sync-mode info) c/*wal-sync-mode*)
           group-size    (long (or (:wal-group-commit info) c/*wal-group-commit*))
+          group-ms      (long (or (:wal-group-commit-ms info)
+                                   c/*wal-group-commit-ms*))
           unsynced      (inc (long (or (:wal-unsynced-count info) 0)))
-          sync?         (or rotate? (>= unsynced group-size))
+          last-sync-ms  (long (or (:wal-last-sync-ms info) 0))
+          sync?         (or rotate?
+                            (>= unsynced group-size)
+                            (and (pos? group-ms)
+                                 (pos? last-sync-ms)
+                                 (>= (- now-ms last-sync-ms) group-ms)))
           dir           (env-dir lmdb)
           ch            (ensure-wal-channel! lmdb dir seg-id)]
       (.write ch (ByteBuffer/wrap record))
@@ -922,7 +929,8 @@
               :wal-segment-id seg-id
               :wal-segment-created-ms seg-start-ms
               :wal-segment-bytes (+ seg-bytes record-bytes)
-              :wal-unsynced-count (if sync? 0 unsynced))
+              :wal-unsynced-count (if sync? 0 unsynced)
+              :wal-last-sync-ms (if sync? now-ms last-sync-ms))
       {:wal-id wal-id
        :tx-time now-ms
        :ops ops})))
@@ -2864,6 +2872,7 @@
                                 wal-meta-flush-max-txs
                                 wal-meta-flush-max-ms
                                 wal-group-commit
+                                wal-group-commit-ms
                                 key-compress val-compress]
                          :or   {max-readers c/*max-readers*
                                 max-dbs     c/*max-dbs*
@@ -2876,6 +2885,8 @@
                                 c/*wal-meta-flush-max-ms*
                                 wal-group-commit
                                 c/*wal-group-commit*
+                                wal-group-commit-ms
+                                c/*wal-group-commit-ms*
                                 kv-wal?     c/*enable-kv-wal*}
                          :as   opts}]
   (try
@@ -2899,8 +2910,11 @@
                                              (long wal-meta-flush-max-txs)
                                              :wal-meta-flush-max-ms
                                              (long wal-meta-flush-max-ms)
+                                             :wal-group-commit-ms
+                                             (long wal-group-commit-ms)
                                              :wal-meta-pending-txs 0
                                              :wal-meta-last-flush-ms now-ms
+                                             :wal-last-sync-ms now-ms
                                              :kv-overlay-committed-by-tx
                                              (empty-overlay-committed-map)
                                              :kv-overlay-by-dbi {}

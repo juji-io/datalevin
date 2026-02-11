@@ -513,6 +513,12 @@
                  N-1 records on a hard crash."}
   *wal-group-commit* 100)
 
+(def ^{:dynamic true :no-doc true
+       :doc     "Max milliseconds since the last WAL sync before forcing an
+                 fdatasync on the next write.  Bounds the durability window when
+                 writes are infrequent.  0 disables the time-based trigger."}
+  *wal-group-commit-ms* 10)
+
 ;; datalog db
 
 (def ^{:dynamic true :no-doc true
