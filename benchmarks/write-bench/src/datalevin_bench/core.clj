@@ -190,6 +190,7 @@
         kv?      (s/starts-with? nf "kv")
         dl?      (s/starts-with? nf "dl")
         sql?     (s/starts-with? nf "sql")
+        wal?     (s/includes? nf "wal")
         async?   (s/ends-with? nf "async")
         collect-prepare-stats? (resolve-collect-prepare-stats?
                                  use-prepare-path?
@@ -198,14 +199,9 @@
         sql-dir  (path-under base-dir (str "sqlite-" batch))
         kvdb     (when kv?
                    (doto (d/open-kv kv-dir
-                                    {:mapsize 60000
-                                     :flags   (-> c/default-env-flags
-                                                  ;; (conj :writemap)
-                                                  ;; (conj :mapasync)
-                                                  (conj :nosync)
-                                                  ;; (conj :nometasync)
-                                                  )
-                                     })
+                                    (cond-> {:mapsize 60000
+                                             :flags   c/default-env-flags}
+                                      wal? (assoc :kv-wal? true)))
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/transact-kv-async kvdb max-write-dbi txs
@@ -246,8 +242,8 @@
         sql-add  (fn [^FastList txs]
                    (.add txs {:k (vswap! id + 2) :v (str (random-uuid))}))
         tx-fn    (case f
-                   kv-async kv-async
-                   kv-sync  kv-sync
+                   (kv-async kv-wal-async) kv-async
+                   (kv-sync kv-wal-sync)   kv-sync
                    dl-async dl-async
                    dl-sync  dl-sync
                    sql-tx   sql-tx)
@@ -268,6 +264,7 @@
     (when (and prepare-summary (pos? (:tx-count @prepare-summary)))
       (print-prepare-summary @prepare-summary))
     (when kvdb
+      (when wal? (d/flush-kv-indexer! kvdb))
       (let [written (d/entries kvdb max-write-dbi)]
         (when-not (= written total) (println "Write only" written)))
       (d/close-kv kvdb))
@@ -292,18 +289,15 @@
         kv?      (s/starts-with? nf "kv")
         dl?      (s/starts-with? nf "dl")
         sql?     (s/starts-with? nf "sql")
+        wal?     (s/includes? nf "wal")
         collect-prepare-stats? (resolve-collect-prepare-stats?
                                  use-prepare-path?
                                  collect-prepare-stats?)
         kvdb     (when kv?
                    (doto (d/open-kv dir
-                                    {:mapsize 60000
-                                     :flags   (-> c/default-env-flags
-                                                  ;; (conj :writemap)
-                                                  ;; (conj :mapasync)
-                                                  ;; (conj :nosync)
-                                                  ;; (conj :nometasync)
-                                                  )})
+                                    (cond-> {:mapsize 60000
+                                             :flags   c/default-env-flags}
+                                      wal? (assoc :kv-wal? true)))
                      (d/open-dbi max-write-dbi)))
         kv-async (fn [txs measure]
                    (d/get-value kvdb max-write-dbi (random-int) :id :string)
@@ -353,8 +347,8 @@
         sql-add  (fn [^FastList txs]
                    (.add txs [(random-int) (str (random-uuid))]))
         tx-fn    (case f
-                   kv-async kv-async
-                   kv-sync  kv-sync
+                   (kv-async kv-wal-async) kv-async
+                   (kv-sync kv-wal-sync)   kv-sync
                    dl-async dl-async
                    dl-sync  dl-sync
                    sql-tx   sql-tx)

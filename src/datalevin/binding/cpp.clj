@@ -42,12 +42,13 @@
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
-   [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
+   [java.util.concurrent ConcurrentSkipListMap TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
-   [java.util Iterator HashMap TreeMap ArrayDeque Arrays]
+   [java.util Iterator HashMap ArrayDeque Arrays]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
+   [java.nio.charset StandardCharsets]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
    [clojure.lang IObj Seqable IReduceInit]))
 
@@ -668,17 +669,47 @@
     (let [^DBI dbi (.get dbis dbi-name)]
       (boolean (and dbi (.-dupsort? dbi))))))
 
+(defn- normalize-kv-type
+  [t]
+  (or t :data))
+
+(def ^:private ^ThreadLocal tl-overlay-encode-buf
+  (ThreadLocal/withInitial
+    (reify java.util.function.Supplier
+      (get [_] (ByteBuffer/allocate 256)))))
+
+(defn- encode-kv-bytes
+  [x t]
+  (let [t (normalize-kv-type t)]
+    (loop [^ByteBuffer buf (.get tl-overlay-encode-buf)]
+      (let [result (try
+                     (b/put-bf buf x t)
+                     (b/get-bytes (.duplicate buf))
+                     (catch BufferOverflowException _
+                       ::overflow))]
+        (if (not= result ::overflow)
+          result
+          (let [new-buf (ByteBuffer/allocate (* 2 (.capacity buf)))]
+            (.set tl-overlay-encode-buf new-buf)
+            (recur new-buf)))))))
+
 (defn- canonical-kv-op
-  [^KVTxData tx fallback-dbi ^HashMap dbis]
-  (let [dbi-name (or (.-dbi-name tx) fallback-dbi)]
-    {:op       (.-op tx)
-     :dbi      dbi-name
-     :k        (.-k tx)
-     :v        (.-v tx)
-     :kt       (.-kt tx)
-     :vt       (.-vt tx)
-     :flags    (.-flags tx)
-     :dupsort? (dbi-dupsort? dbis dbi-name)}))
+  ([^KVTxData tx fallback-dbi ^HashMap dbis]
+   (canonical-kv-op tx fallback-dbi dbis nil))
+  ([^KVTxData tx fallback-dbi ^HashMap dbis cached-dbi-bytes]
+   (let [dbi-name (or (.-dbi-name tx) fallback-dbi)
+         kt       (normalize-kv-type (.-kt tx))]
+     {:op        (.-op tx)
+      :dbi       dbi-name
+      :k         (.-k tx)
+      :v         (.-v tx)
+      :kt        kt
+      :vt        (.-vt tx)
+      :flags     (.-flags tx)
+      :dupsort?  (dbi-dupsort? dbis dbi-name)
+      :k-bytes   (encode-kv-bytes (.-k tx) kt)
+      :dbi-bytes (or cached-dbi-bytes
+                     (.getBytes ^String dbi-name StandardCharsets/UTF_8))})))
 
 (defn- validate-kv-txs!
   [txs dbi-name kt vt ^HashMap dbis]
@@ -699,44 +730,19 @@
           (vld/validate-kv-tx-data tx validate?)))
       tx-data)))
 
-(defn- normalize-kv-type
-  [t]
-  (or t :data))
-
-(defn- encode-kv-bytes
-  [x t]
-  (let [t (normalize-kv-type t)]
-    (loop [size (int (max 64
-                          (long (or (b/type-size t) 0))
-                          (+ 16 (long (or (b/measure-size x) 0)))))]
-      (let [^ByteBuffer bf (ByteBuffer/allocate size)
-            encoded        (try
-                             (b/put-bf bf x t)
-                             (b/get-bytes (.duplicate bf))
-                             (catch BufferOverflowException _
-                               ::overflow))]
-        (if (not= encoded ::overflow)
-          encoded
-          (let [next-size (long (* 2 size))]
-            (if (> next-size Integer/MAX_VALUE)
-              (raise "Fail to encode KV WAL overlay bytes: value too large"
-                     {:error :wal/overlay-encode
-                      :type  t})
-              (recur (int next-size)))))))))
-
 (defn- compare-bytes
   ^long [^bytes a ^bytes b]
   (Arrays/compareUnsigned a b))
 
 (defn- empty-overlay-keys-map
-  []
-  (TreeMap.
+  ^ConcurrentSkipListMap []
+  (ConcurrentSkipListMap.
     (reify java.util.Comparator
       (compare [_ a b] (compare-bytes a b)))))
 
 (defn- empty-overlay-committed-map
-  []
-  (TreeMap.))
+  ^ConcurrentSkipListMap []
+  (ConcurrentSkipListMap.))
 
 (def ^:private overlay-deleted ::overlay-deleted)
 (def ^:private overlay-present (Object.))
@@ -796,10 +802,9 @@
       false)))
 
 (defn- wal-op->overlay-entry
-  [{:keys [op dbi k v kt vt dupsort?]}]
+  [{:keys [op dbi k v kt vt dupsort? k-bytes]}]
   (when (and dbi (not (wal-system-dbi? dbi)))
-    (let [kt   (normalize-kv-type kt)
-          kbs  (encode-kv-bytes k kt)]
+    (let [kbs (or k-bytes (encode-kv-bytes k (normalize-kv-type kt)))]
       (case op
         :put (if dupsort?
                [dbi kbs (list-overlay-op-entry k :put [v] vt)]
@@ -815,7 +820,7 @@
   [ops]
   (reduce (fn [m op]
             (if-let [[dbi kbs entry] (wal-op->overlay-entry op)]
-              (let [^TreeMap dbi-delta (or (get m dbi)
+              (let [^ConcurrentSkipListMap dbi-delta (or (get m dbi)
                                            (empty-overlay-keys-map))]
                 (.put dbi-delta kbs
                       (merge-overlay-entry (.get dbi-delta kbs) entry))
@@ -827,14 +832,30 @@
           ops))
 
 (defn- merge-overlay-delta
+  "Create a new overlay by copying existing maps and merging delta."
   [overlay delta]
   (reduce-kv (fn [m dbi dbi-delta]
-               (let [^TreeMap merged (if-let [^TreeMap dbi-overlay (get m dbi)]
-                                       (TreeMap. dbi-overlay)
-                                       (empty-overlay-keys-map))]
+               (let [^ConcurrentSkipListMap merged
+                     (if-let [^ConcurrentSkipListMap dbi-overlay (get m dbi)]
+                       (ConcurrentSkipListMap. dbi-overlay)
+                       (empty-overlay-keys-map))]
                  (doseq [[k entry] dbi-delta]
                    (.put merged k (merge-overlay-entry (.get merged k) entry)))
                  (assoc m dbi merged)))
+             (or overlay {})
+             delta))
+
+(defn- merge-overlay-delta!
+  "Merge delta into overlay in-place (mutates existing ConcurrentSkipListMaps).
+   Only creates new maps for previously-unseen DBIs."
+  [overlay delta]
+  (reduce-kv (fn [m dbi dbi-delta]
+               (let [existing? (contains? m dbi)
+                     ^ConcurrentSkipListMap merged
+                     (or (get m dbi) (empty-overlay-keys-map))]
+                 (doseq [[k entry] dbi-delta]
+                   (.put merged k (merge-overlay-entry (.get merged k) entry)))
+                 (if existing? m (assoc m dbi merged))))
              (or overlay {})
              delta))
 
@@ -844,6 +865,23 @@
             (merge-overlay-delta m delta))
           {}
           committed-by-tx))
+
+(defn- ensure-wal-channel!
+  "Return a cached FileChannel for the given segment, opening a new one if
+  needed (or if the segment rotated). Closes the old channel on rotation."
+  [lmdb dir seg-id]
+  (let [info @(.-info lmdb)
+        ^java.nio.channels.FileChannel ch (:wal-channel info)
+        ch-seg (long (or (:wal-channel-segment-id info) -1))]
+    (if (and ch (.isOpen ch) (= ch-seg (long seg-id)))
+      ch
+      (do
+        (wal/close-segment-channel! ch)
+        (let [new-ch (wal/open-segment-channel dir seg-id)]
+          (vswap! (.-info lmdb) assoc
+                  :wal-channel new-ch
+                  :wal-channel-segment-id seg-id)
+          new-ch)))))
 
 (defn- append-kv-wal-record!
   [lmdb ops tx-time]
@@ -868,16 +906,23 @@
                           seg-id)
           seg-start-ms  (if rotate? now-ms seg-start-ms)
           seg-bytes     (if rotate? 0 seg-bytes)
-          sync-mode     (or (:wal-sync-mode info) c/*wal-sync-mode*)]
-      (wal/append-record-bytes!
-        (env-dir lmdb) seg-id record sync-mode)
+          sync-mode     (or (:wal-sync-mode info) c/*wal-sync-mode*)
+          group-size    (long (or (:wal-group-commit info) c/*wal-group-commit*))
+          unsynced      (inc (long (or (:wal-unsynced-count info) 0)))
+          sync?         (or rotate? (>= unsynced group-size))
+          dir           (env-dir lmdb)
+          ch            (ensure-wal-channel! lmdb dir seg-id)]
+      (.write ch (ByteBuffer/wrap record))
+      (when sync? (wal/sync-channel! ch sync-mode))
       (vswap! (.-info lmdb) assoc
               :wal-next-tx-id wal-id
               :last-committed-wal-tx-id wal-id
               :last-committed-user-tx-id wal-id
+              :committed-last-modified-ms now-ms
               :wal-segment-id seg-id
               :wal-segment-created-ms seg-start-ms
-              :wal-segment-bytes (+ seg-bytes record-bytes))
+              :wal-segment-bytes (+ seg-bytes record-bytes)
+              :wal-unsynced-count (if sync? 0 unsynced))
       {:wal-id wal-id
        :tx-time now-ms
        :ops ops})))
@@ -960,18 +1005,16 @@
   [lmdb wal-id ops]
   (let [delta (overlay-delta-by-dbi ops)]
     (when (seq delta)
-      (vswap! (.-info lmdb)
-              (fn [m]
-                (let [^TreeMap committed-by-tx
-                      (if-let [^TreeMap tx-map (:kv-overlay-committed-by-tx m)]
-                        (TreeMap. tx-map)
-                        (empty-overlay-committed-map))]
-                  (.put committed-by-tx wal-id delta)
-                  (-> m
-                      (assoc :kv-overlay-committed-by-tx committed-by-tx
-                             :kv-overlay-by-dbi
-                             (merge-overlay-delta (:kv-overlay-by-dbi m)
-                                                  delta)))))))))
+      (let [info       @(.-info lmdb)
+            ^ConcurrentSkipListMap committed-by-tx
+            (or (:kv-overlay-committed-by-tx info)
+                (empty-overlay-committed-map))
+            by-dbi     (merge-overlay-delta!
+                         (:kv-overlay-by-dbi info) delta)]
+        (.put committed-by-tx wal-id delta)
+        (vswap! (.-info lmdb) assoc
+                :kv-overlay-committed-by-tx committed-by-tx
+                :kv-overlay-by-dbi by-dbi)))))
 
 (defn- publish-kv-private-overlay!
   [^Rtx wtxn ops]
@@ -991,10 +1034,11 @@
     (when (pos? upto)
       (vswap! (.-info lmdb)
               (fn [m]
-                (let [^TreeMap committed-by-tx
+                (let [^ConcurrentSkipListMap committed-by-tx
                       (or (:kv-overlay-committed-by-tx m)
                           (empty-overlay-committed-map))
-                      ^TreeMap remaining (empty-overlay-committed-map)]
+                      ^ConcurrentSkipListMap remaining
+                      (empty-overlay-committed-map)]
                   (doseq [[wal-id delta] committed-by-tx]
                     (when (> (long wal-id) upto)
                       (.put remaining wal-id delta)))
@@ -1030,12 +1074,12 @@
        (not (wal-system-dbi? dbi-name))))
 
 (defn- ordered-map-seq
-  [^TreeMap m desc?]
+  [^ConcurrentSkipListMap m desc?]
   (seq (if desc? (.descendingMap m) m)))
 
 (defn- group-base-kvs-by-key
   [base-kvs k-type]
-  (let [^TreeMap grouped (empty-overlay-keys-map)]
+  (let [^ConcurrentSkipListMap grouped (empty-overlay-keys-map)]
     (doseq [[k _ :as kv] base-kvs]
       (let [kbs (encode-kv-bytes k k-type)
             acc (or (.get grouped kbs) [])]
@@ -1048,7 +1092,7 @@
 
 (defn- materialize-list-overlay-values
   [entry base-kvs base-v-type]
-  (let [^TreeMap vals (empty-overlay-keys-map)]
+  (let [^ConcurrentSkipListMap vals (empty-overlay-keys-map)]
     (doseq [[_ v] base-kvs]
       (when (some? v)
         (.put vals (encode-kv-bytes v base-v-type) overlay-present)))
@@ -1073,11 +1117,11 @@
   [lmdb dbi-name k k-type]
   (let [kbs (encode-kv-bytes k (normalize-kv-type k-type))
         priv (get-in (private-overlay-by-dbi lmdb) [dbi-name])
-        entry (when priv (.get ^TreeMap priv kbs))]
+        entry (when priv (.get ^ConcurrentSkipListMap priv kbs))]
     (if (some? entry)
       entry
       (let [overlay (get-in @(.-info lmdb) [:kv-overlay-by-dbi dbi-name])]
-        (when overlay (.get ^TreeMap overlay kbs))))))
+        (when overlay (.get ^ConcurrentSkipListMap overlay kbs))))))
 
 (defn- overlay-get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
@@ -1092,7 +1136,7 @@
             base-kvs    (mapv (fn [v0] [k v0])
                               (or (scan/get-list lmdb dbi-name k kt base-v-type)
                                   []))
-            ^TreeMap vals (materialize-list-overlay-values
+            ^ConcurrentSkipListMap vals (materialize-list-overlay-values
                             entry base-kvs base-v-type)
             first-ent  (.firstEntry vals)]
         (if first-ent
@@ -1139,7 +1183,7 @@
 
     (list-overlay-entry? entry)
     (let [k      (overlay-entry-key entry k-type key-bs)
-          ^TreeMap vals (materialize-list-overlay-values
+          ^ConcurrentSkipListMap vals (materialize-list-overlay-values
                           entry base-kvs base-v-type)]
       (if (= v-type :ignore)
         (let [out (transient [])]
@@ -1156,7 +1200,7 @@
 
 (defn- overlay-get-range
   [lmdb dbi-name [range-type k1 k2 :as k-range] k-type v-type ignore-key?]
-  (let [^TreeMap overlay (overlay-by-dbi lmdb dbi-name)]
+  (let [^ConcurrentSkipListMap overlay (overlay-by-dbi lmdb dbi-name)]
     (if-not (seq overlay)
       overlay-miss
       (let [k-type       (normalize-kv-type k-type)
@@ -1448,7 +1492,7 @@
   [lmdb dbi-name v-range vt]
   (let [vt          (normalize-kv-type vt)
         kvs         (overlay-list-range lmdb dbi-name [:all] :raw v-range vt)
-        ^TreeMap m  (empty-overlay-keys-map)]
+        ^ConcurrentSkipListMap m  (empty-overlay-keys-map)]
     (doseq [[kbs v] kvs]
       (let [acc (or (.get m kbs) [])]
         (.put m kbs (conj acc v))))
@@ -1665,6 +1709,12 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
+      ;; Sync any unsynced WAL records before closing
+      (when-let [^java.nio.channels.FileChannel ch (:wal-channel @info)]
+        (when (.isOpen ch)
+          (let [sync-mode (or (:wal-sync-mode @info) c/*wal-sync-mode*)]
+            (try (wal/sync-channel! ch sync-mode) (catch Exception _ nil)))))
+      (wal/close-segment-channel! (:wal-channel @info))
       (swap! l/lmdb-dirs disj (env-dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
@@ -1971,92 +2021,111 @@
             ^DBI dbi     (when dbi-name
                            (or (.get dbis dbi-name)
                                (raise dbi-name " is not open" {})))]
-        (let [^Txn txn (if one-shot?
-                         (Txn/create env)
-                         (.-txn rtx))]
+        (if (and wal-enabled? one-shot?)
+          ;; Fast WAL one-shot path — no LMDB transaction needed
           (try
             (let [tx-data    (validate-kv-txs! txs dbi-name k-type v-type dbis)
-                  ops        (when wal-enabled?
-                               (->> tx-data
-                                    (mapv #(canonical-kv-op % dbi-name dbis))
-                                    vec))
-                  max-val-op (when (and wal-enabled?
-                                        (:max-val-size-changed? @info))
+                  dbi-bs     (when dbi-name
+                               (.getBytes ^String dbi-name StandardCharsets/UTF_8))
+                  ops        (mapv #(canonical-kv-op % dbi-name dbis dbi-bs)
+                                   tx-data)
+                  max-val-op (when (:max-val-size-changed? @info)
                                (let [tx (l/->kv-tx-data
                                           [:put :max-val-size
                                            (:max-val-size @info)]
                                           :attr :id)]
                                  (vswap! info assoc :max-val-size-changed? false)
                                  (canonical-kv-op tx c/kv-info dbis)))
-                  ops        (cond
-                               (and ops max-val-op) (conj ops max-val-op)
-                               max-val-op           [max-val-op]
-                               :else                ops)]
-              (if writeable?
-                (do
-                  (if dbi
-                    (transact1* txs dbi txn k-type v-type)
-                    (transact* txs dbis txn))
-                  (when (:max-val-size-changed? @info)
-                    (transact* [[:put c/kv-info :max-val-size
-                                 (:max-val-size @info)]]
-                               dbis txn)
-                    (vswap! info assoc :max-val-size-changed? false))
-                  (when one-shot? (.commit txn))
-                  :transacted)
-                (do
-                  (if one-shot?
-                    (let [wal-entry (when (seq ops)
-                                      (vld/check-failpoint :step-3 :before)
-                                      (let [entry (append-kv-wal-record!
-                                                    this ops
-                                                    (System/currentTimeMillis))]
-                                        (vld/check-failpoint :step-3 :after)
-                                        entry))
-                          wal-id    (:wal-id wal-entry)
-                          tx-time   (:tx-time wal-entry)]
-                      (when wal-id
-                        (run-writer-step!
-                          :step-4
-                          #(publish-kv-wal-watermarks! this wal-id tx-time))
-                        (run-writer-step!
-                          :step-5
-                          #(publish-kv-committed-overlay! this wal-id
-                                                          (:ops wal-entry)))
-                        (run-writer-step! :step-6 (fn [] nil))
-                        (run-writer-step!
-                          :step-7
-                          #(publish-kv-overlay-watermark! this wal-id)))
-                      (when one-shot? (.abort txn))
-                      ;; Step 8 (`wal/meta` checkpoint publish) is outside commit
-                      ;; critical path; failures are non-fatal to the caller.
-                      (when wal-id
-                        (try
-                          (run-writer-step! :step-8
-                                            #(maybe-publish-kv-wal-meta! this
-                                                                         wal-id))
-                          (catch Exception _ nil))))
-                    (when (seq ops)
-                      (vswap! (.-wal-ops rtx) into ops)
-                      (publish-kv-private-overlay! rtx ops)))
-                  :transacted)))
-            (catch Util$MapFullException _
-              (.close txn)
-              (up-db-size env)
-              (if (and one-shot? (not wal-enabled?))
-                (.transact-kv this dbi-name txs k-type v-type)
-                (do (.reset-write this)
-                    (raise "DB resized" {:resized true}))))
+                  ops        (if max-val-op (conj ops max-val-op) ops)
+                  wal-entry  (when (seq ops)
+                               (vld/check-failpoint :step-3 :before)
+                               (let [entry (append-kv-wal-record!
+                                             this ops
+                                             (System/currentTimeMillis))]
+                                 (vld/check-failpoint :step-3 :after)
+                                 entry))
+                  wal-id     (:wal-id wal-entry)]
+              (when wal-id
+                (vld/check-failpoint :step-4 :before)
+                (vld/check-failpoint :step-4 :after)
+                (vld/check-failpoint :step-5 :before)
+                (publish-kv-committed-overlay! this wal-id
+                                               (:ops wal-entry))
+                (vld/check-failpoint :step-5 :after)
+                (vld/check-failpoint :step-6 :before)
+                (vld/check-failpoint :step-6 :after)
+                (vld/check-failpoint :step-7 :before)
+                (publish-kv-overlay-watermark! this wal-id)
+                (vld/check-failpoint :step-7 :after)
+                (try
+                  (vld/check-failpoint :step-8 :before)
+                  (maybe-publish-kv-wal-meta! this wal-id)
+                  (vld/check-failpoint :step-8 :after)
+                  (catch Exception _ nil)))
+              :transacted)
             (catch Exception e
-              (when one-shot? (.close txn))
-              ;; A post-commit failpoint may throw after WAL/meta are committed;
-              ;; refresh in-memory counters from durable wal/meta to avoid stale IDs.
-              (when (and one-shot? wal-enabled?)
-                (refresh-kv-wal-info! this)
-                (refresh-kv-wal-meta-info! this))
+              (refresh-kv-wal-info! this)
+              (refresh-kv-wal-meta-info! this)
               (if-let [edata (ex-data e)]
                 (raise "Fail to transact to LMDB: " e edata)
-                (raise "Fail to transact to LMDB: " e {}))))))))
+                (raise "Fail to transact to LMDB: " e {}))))
+          ;; Standard path with LMDB transaction
+          (let [^Txn txn (if one-shot?
+                           (Txn/create env)
+                           (.-txn rtx))]
+            (try
+              (let [tx-data    (validate-kv-txs! txs dbi-name k-type v-type dbis)
+                    dbi-bs     (when (and wal-enabled? dbi-name)
+                                 (.getBytes ^String dbi-name StandardCharsets/UTF_8))
+                    ops        (when wal-enabled?
+                                 (->> tx-data
+                                      (mapv #(canonical-kv-op % dbi-name dbis dbi-bs))
+                                      vec))
+                    max-val-op (when (and wal-enabled?
+                                          (:max-val-size-changed? @info))
+                                 (let [tx (l/->kv-tx-data
+                                            [:put :max-val-size
+                                             (:max-val-size @info)]
+                                            :attr :id)]
+                                   (vswap! info assoc :max-val-size-changed? false)
+                                   (canonical-kv-op tx c/kv-info dbis)))
+                    ops        (cond
+                                 (and ops max-val-op) (conj ops max-val-op)
+                                 max-val-op           [max-val-op]
+                                 :else                ops)]
+                (if writeable?
+                  (do
+                    (if dbi
+                      (transact1* txs dbi txn k-type v-type)
+                      (transact* txs dbis txn))
+                    (when (:max-val-size-changed? @info)
+                      (transact* [[:put c/kv-info :max-val-size
+                                   (:max-val-size @info)]]
+                                 dbis txn)
+                      (vswap! info assoc :max-val-size-changed? false))
+                    (when one-shot? (.commit txn))
+                    :transacted)
+                  ;; WAL inside open-transact-kv/close-transact-kv
+                  (do
+                    (when (seq ops)
+                      (vswap! (.-wal-ops rtx) into ops)
+                      (publish-kv-private-overlay! rtx ops))
+                    :transacted)))
+              (catch Util$MapFullException _
+                (.close txn)
+                (up-db-size env)
+                (if (and one-shot? (not wal-enabled?))
+                  (.transact-kv this dbi-name txs k-type v-type)
+                  (do (.reset-write this)
+                      (raise "DB resized" {:resized true}))))
+              (catch Exception e
+                (when one-shot? (.close txn))
+                (when (and one-shot? wal-enabled?)
+                  (refresh-kv-wal-info! this)
+                  (refresh-kv-wal-meta-info! this))
+                (if-let [edata (ex-data e)]
+                  (raise "Fail to transact to LMDB: " e edata)
+                  (raise "Fail to transact to LMDB: " e {})))))))))
 
   (set-env-flags [_ ks on-off] (.setFlags env (kv-flags ks) (if on-off 1 0)))
 
@@ -2071,6 +2140,11 @@
   (flush-kv-indexer! [this]
     (.flush-kv-indexer! this nil))
   (flush-kv-indexer! [this upto-wal-id]
+    ;; Force-flush the cached WAL segment channel so that reads via a
+    ;; separate FileInputStream see all written data.
+    (when-let [^java.nio.channels.FileChannel ch (:wal-channel @info)]
+      (when (.isOpen ch)
+        (try (.force ch true) (catch Exception _ nil))))
     (let [res (l/flush-kv-indexer! this upto-wal-id)]
       (vswap! (.-info this) assoc
               :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
@@ -2789,6 +2863,7 @@
                                 kv-wal?
                                 wal-meta-flush-max-txs
                                 wal-meta-flush-max-ms
+                                wal-group-commit
                                 key-compress val-compress]
                          :or   {max-readers c/*max-readers*
                                 max-dbs     c/*max-dbs*
@@ -2799,6 +2874,8 @@
                                 c/*wal-meta-flush-max-txs*
                                 wal-meta-flush-max-ms
                                 c/*wal-meta-flush-max-ms*
+                                wal-group-commit
+                                c/*wal-group-commit*
                                 kv-wal?     c/*enable-kv-wal*}
                          :as   opts}]
   (try

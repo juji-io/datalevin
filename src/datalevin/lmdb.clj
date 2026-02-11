@@ -492,7 +492,10 @@
                        (u/raise "KV WAL replay out of order"
                                 {:error       :wal/out-of-order
                                  :applied-wal @applied-id
-                                 :wal-tx-id   wal-id}))
+                                 :wal-tx-id   wal-id
+                                 :start-id    start-id
+                                 :target-id   target-id
+                                 :applied-cnt @applied-count}))
                      (apply-wal-kv-ops! db ops)
                      (vreset! applied-id wal-id)
                      (vswap! applied-count u/long-inc)))

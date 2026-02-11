@@ -504,7 +504,14 @@
 
 (def ^{:dynamic true :no-doc true
        :doc     "WAL sync mode for file-based WAL: :fsync, :fdatasync, or :none."}
-  *wal-sync-mode* :fsync)
+  *wal-sync-mode* :fdatasync)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Number of WAL records to accumulate before issuing an fdatasync
+                 (group commit).  1 means sync every record (full durability).
+                 Higher values amortize sync cost at the expense of losing up to
+                 N-1 records on a hard crash."}
+  *wal-group-commit* 100)
 
 ;; datalog db
 

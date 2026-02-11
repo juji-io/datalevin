@@ -154,28 +154,27 @@
     (.readFully in bs)
     bs))
 
+(def ^:private ^ThreadLocal tl-encode-buf
+  (ThreadLocal/withInitial
+    (reify java.util.function.Supplier
+      (get [_] (ByteBuffer/allocate 256)))))
+
 (defn- encode-bits
   ^bytes [x t]
   (let [t (or t :data)]
-    (loop [size (int (max 64
-                          (long (or (b/type-size t) 0))
-                          (+ 16 (long (or (b/measure-size x) 0)))))]
-      (let [^ByteBuffer bf (ByteBuffer/allocate size)
-            encoded        (try
-                             (b/put-bf bf x t)
-                             (b/get-bytes (.duplicate bf))
-                             (catch Exception e
-                               (if (instance? java.nio.BufferOverflowException e)
-                                 ::overflow
-                                 (throw e))))]
-        (if (not= encoded ::overflow)
-          encoded
-          (let [next-size (long (* 2 size))]
-            (if (> next-size Integer/MAX_VALUE)
-              (u/raise "Fail to encode WAL value bytes: value too large"
-                       {:error :wal/encode-overflow
-                        :type  t})
-              (recur (int next-size)))))))))
+    (loop [^ByteBuffer buf (.get tl-encode-buf)]
+      (let [result (try
+                     (b/put-bf buf x t)
+                     (b/get-bytes (.duplicate buf))
+                     (catch Exception e
+                       (if (instance? java.nio.BufferOverflowException e)
+                         ::overflow
+                         (throw e))))]
+        (if (not= result ::overflow)
+          result
+          (let [new-buf (ByteBuffer/allocate (* 2 (.capacity buf)))]
+            (.set tl-encode-buf new-buf)
+            (recur new-buf)))))))
 
 (defn- decode-bits
   [^bytes bs t]
@@ -193,7 +192,7 @@
 
 (defn- write-u32
   [^DataOutputStream out ^long v]
-  (.writeInt out (int v)))
+  (.writeInt out (unchecked-int v)))
 
 (defn- write-u64
   [^DataOutputStream out ^long v]
@@ -215,60 +214,54 @@
   [t]
   (or t :data))
 
-(defn- encode-kv-op
-  [op]
-  (let [{:keys [op dbi k v kt vt flags]} op
-        dbi-bs (dbi-name-bytes dbi)
-        k-type (normalize-type kt)
-        k-bs   (encode-bits k k-type)]
+(defn- write-kv-op!
+  "Encode and write a single KV op directly to the output stream."
+  [^DataOutputStream out op-map]
+  (let [{:keys [op dbi k v kt vt flags k-bytes dbi-bytes]} op-map
+        ^bytes dbi-bs (or dbi-bytes (dbi-name-bytes dbi))
+        k-type        (normalize-type kt)
+        ^bytes k-bs   (or k-bytes (encode-bits k k-type))
+        dbi-len       (alength dbi-bs)
+        k-len         (alength k-bs)]
     (case op
       :put
-      (let [v-type (normalize-type vt)
-            v-bs   (encode-bits v v-type)]
-        {:opcode op-kv-put
-         :fields [dbi-bs k-type k-bs v-type v-bs]
-         :flags flags})
+      (let [v-type  (normalize-type vt)
+            ^bytes v-bs (encode-bits v v-type)
+            v-len   (alength v-bs)]
+        (.writeByte out (int op-kv-put))
+        (write-u16 out dbi-len) (write-bytes! out dbi-bs)
+        (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
+        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        (write-flags! out flags))
 
       :del
-      {:opcode op-kv-del
-       :fields [dbi-bs k-type k-bs]
-       :flags flags}
+      (do
+        (.writeByte out (int op-kv-del))
+        (write-u16 out dbi-len) (write-bytes! out dbi-bs)
+        (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
+        (write-flags! out flags))
 
       :put-list
-      (let [v-type (normalize-type vt)
-            ;; list payload is encoded as :data so we can round-trip the vector.
-            v-bs   (encode-bits v :data)]
-        {:opcode op-kv-put-list
-         :fields [dbi-bs k-type k-bs v-type v-bs]
-         :flags flags})
+      (let [v-type  (normalize-type vt)
+            ^bytes v-bs (encode-bits v :data)
+            v-len   (alength v-bs)]
+        (.writeByte out (int op-kv-put-list))
+        (write-u16 out dbi-len) (write-bytes! out dbi-bs)
+        (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
+        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        (write-flags! out flags))
 
       :del-list
-      (let [v-type (normalize-type vt)
-            v-bs   (encode-bits v :data)]
-        {:opcode op-kv-del-list
-         :fields [dbi-bs k-type k-bs v-type v-bs]
-         :flags flags})
+      (let [v-type  (normalize-type vt)
+            ^bytes v-bs (encode-bits v :data)
+            v-len   (alength v-bs)]
+        (.writeByte out (int op-kv-del-list))
+        (write-u16 out dbi-len) (write-bytes! out dbi-bs)
+        (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
+        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        (write-flags! out flags))
 
       (u/raise "Unsupported KV WAL op" {:error :wal/invalid-op :op op}))))
-
-(defn- write-kv-op!
-  [^DataOutputStream out {:keys [opcode fields flags]}]
-  (.writeByte out (int opcode))
-  (let [[dbi-bs k-type k-bs & more] fields
-        dbi-len (alength ^bytes dbi-bs)
-        k-len   (alength ^bytes k-bs)]
-    (write-u16 out dbi-len)
-    (write-bytes! out dbi-bs)
-    (write-type! out k-type)
-    (write-u16 out k-len)
-    (write-bytes! out k-bs)
-    (when (seq more)
-      (let [[v-type v-bs] more
-            v-len (alength ^bytes v-bs)]
-        (write-type! out v-type)
-        (write-u32 out v-len)
-        (write-bytes! out v-bs)))
-    (write-flags! out flags)))
 
 (defn- decode-kv-op
   [^DataInputStream in]
@@ -308,40 +301,48 @@
       (u/raise "Unknown WAL opcode" {:error :wal/invalid-opcode
                                      :opcode opcode}))))
 
-(defn- encode-record-body
-  [wal-id user-tx-id tx-time ops]
-  (let [op-count (count ops)]
-    (with-open [bos (ByteArrayOutputStream.)
-                out (DataOutputStream. bos)]
-      (write-u64 out wal-id)
-      (write-u64 out user-tx-id)
-      (write-u64 out user-tx-id)
-      (write-u32 out 1)
-      ;; user-tx entry
-      (write-u64 out user-tx-id)
-      (write-u64 out tx-time)
-      (write-u32 out 0) ;; tx-meta-len
-      (write-u32 out 0) ;; op-start
-      (write-u32 out op-count) ;; op-end (exclusive)
-      (write-u32 out op-count)
-      (doseq [op ops]
-        (write-kv-op! out (encode-kv-op op)))
-      (.toByteArray bos))))
+(def ^:const ^:private record-header-size 14)
+
+(def ^:private ^ThreadLocal tl-record-bos
+  (ThreadLocal/withInitial
+    (reify java.util.function.Supplier
+      (get [_] (ByteArrayOutputStream. 512)))))
 
 (defn record-bytes
   [wal-id user-tx-id tx-time ops]
-  (let [body (encode-record-body wal-id user-tx-id tx-time ops)
-        body-len (alength ^bytes body)
-        checksum (crc32c body 0 body-len)]
-    (with-open [bos (ByteArrayOutputStream.)
-                out (DataOutputStream. bos)]
-      (write-bytes! out wal-record-magic)
-      (.writeByte out wal-format-major)
-      (.writeByte out 0) ;; flags
-      (write-u32 out body-len)
-      (write-u32 out checksum)
-      (write-bytes! out body)
-      (.toByteArray bos))))
+  (let [op-count (count ops)
+        ^ByteArrayOutputStream bos (.get tl-record-bos)
+        _        (.reset bos)
+        out      (DataOutputStream. bos)]
+    ;; header with placeholders for body-len and checksum
+    (write-bytes! out wal-record-magic)
+    (.writeByte out (int wal-format-major))
+    (.writeByte out 0)
+    (write-u32 out 0)                          ;; body-len placeholder
+    (write-u32 out 0)                          ;; checksum placeholder
+    ;; body
+    (write-u64 out wal-id)
+    (write-u64 out user-tx-id)
+    (write-u64 out user-tx-id)
+    (write-u32 out 1)
+    ;; user-tx entry
+    (write-u64 out user-tx-id)
+    (write-u64 out tx-time)
+    (write-u32 out 0)                          ;; tx-meta-len
+    (write-u32 out 0)                          ;; op-start
+    (write-u32 out op-count)                   ;; op-end (exclusive)
+    (write-u32 out op-count)
+    (doseq [op ops]
+      (write-kv-op! out op))
+    (.close out)
+    (let [buf      (.toByteArray bos)
+          body-len (- (alength buf) record-header-size)
+          checksum (crc32c buf record-header-size body-len)
+          bb       (ByteBuffer/wrap buf)]
+      ;; patch body-len at offset 6 and checksum at offset 10
+      (.putInt bb 6 (unchecked-int body-len))
+      (.putInt bb 10 (unchecked-int checksum))
+      buf)))
 
 (defn wal-dir-path
   [dir]
@@ -380,7 +381,7 @@
                                  StandardOpenOption/WRITE
                                  StandardOpenOption/APPEND])))
 
-(defn- sync-channel!
+(defn sync-channel!
   [^FileChannel ch mode]
   (case mode
     :none nil
@@ -597,7 +598,8 @@
         slot-b (if use-a?
                  (if existing (meta-slot-bytes existing) empty-slot)
                  slot-bytes)
-        payload (byte-array 128)]
+        payload (byte-array 128)
+        metadata? (not= c/*wal-sync-mode* :none)]
     (System/arraycopy slot-a 0 payload 0 64)
     (System/arraycopy slot-b 0 payload 64 64)
     (with-open [ch (FileChannel/open
@@ -607,25 +609,42 @@
                                   StandardOpenOption/WRITE
                                   StandardOpenOption/TRUNCATE_EXISTING]))]
       (.write ch (ByteBuffer/wrap payload))
-      (.force ch true))
-    (when-not existed?
+      (when metadata? (sync-channel! ch c/*wal-sync-mode*)))
+    (when (and (not existed?) metadata?)
       (try
         (with-open [dch (FileChannel/open
                           (.toPath (io/file (wal-dir-path dir)))
                           (into-array StandardOpenOption
                                       [StandardOpenOption/READ]))]
-          (.force dch true))
+          (sync-channel! dch c/*wal-sync-mode*))
         (catch Exception _ nil)))
     merged))
 
+(defn open-segment-channel
+  "Open a FileChannel for a WAL segment. Caller is responsible for closing."
+  ^FileChannel [dir segment-id]
+  (u/file (wal-dir-path dir))
+  (open-channel (segment-path dir segment-id)))
+
+(defn close-segment-channel!
+  "Close a cached WAL segment channel if open."
+  [^FileChannel ch]
+  (when (and ch (.isOpen ch))
+    (.close ch)))
+
 (defn append-record-bytes!
-  [dir segment-id ^bytes record sync-mode]
-  (let [path (segment-path dir segment-id)]
-    (u/file (wal-dir-path dir))
-    (with-open [ch (open-channel path)]
-      (.write ch (ByteBuffer/wrap record))
-      (sync-channel! ch sync-mode))
-    (alength ^bytes record)))
+  "Append a WAL record. When ch is provided, uses it directly (caller manages
+  lifecycle). When ch is nil, opens and closes a channel per call."
+  ([dir segment-id ^bytes record sync-mode]
+   (u/file (wal-dir-path dir))
+   (with-open [ch (open-channel (segment-path dir segment-id))]
+     (.write ch (ByteBuffer/wrap record))
+     (sync-channel! ch sync-mode))
+   (alength ^bytes record))
+  ([^FileChannel ch ^bytes record sync-mode]
+   (.write ch (ByteBuffer/wrap record))
+   (sync-channel! ch sync-mode)
+   (alength ^bytes record)))
 
 (defn append-kv-record!
   [dir segment-id wal-id user-tx-id tx-time ops sync-mode]
