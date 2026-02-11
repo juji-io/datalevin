@@ -20,9 +20,11 @@
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c]
+   [datalevin.wal :as wal]
    [datalevin.interface
     :refer [close-kv list-dbis entries get-range get-value open-dbi transact-kv
-            clear-dbi env-dir copy open-transact-kv close-transact-kv stat]])
+            clear-dbi env-dir env-opts copy open-transact-kv close-transact-kv
+            stat]])
   (:import
    [datalevin.async IAsyncWork]
    [datalevin.cpp Util]
@@ -413,29 +415,37 @@
 
 (defn- kv-wal-enabled?
   [lmdb]
-  (contains? (set (list-dbis lmdb)) c/kv-wal))
+  (boolean (:kv-wal? (env-opts lmdb))))
+
+(defn- kv-info-id
+  [lmdb k]
+  (get-value lmdb c/kv-info k :attr :id))
+
+(defn- kv-applied-id
+  [lmdb]
+  (or (kv-info-id lmdb c/applied-wal-tx-id)
+      (kv-info-id lmdb c/legacy-applied-tx-id)))
 
 (defn kv-wal-watermarks
-  "Return KV WAL watermark values as a map with long values:
+  "Return KV WAL watermark values as a map with ID values:
    `:last-committed-wal-tx-id`, `:last-indexed-wal-tx-id`,
    and `:last-committed-user-tx-id`."
   [lmdb]
-  (if-not (kv-wal-enabled? lmdb)
-    {:last-committed-wal-tx-id 0
-     :last-indexed-wal-tx-id   0
-     :last-committed-user-tx-id 0}
-    {:last-committed-wal-tx-id
-     (long (or (get-value lmdb c/kv-info c/last-committed-wal-tx-id
-                          :attr :long)
-               0))
-     :last-indexed-wal-tx-id
-     (long (or (get-value lmdb c/kv-info c/last-indexed-wal-tx-id
-                          :attr :long)
-               0))
-     :last-committed-user-tx-id
-     (long (or (get-value lmdb c/kv-info c/last-committed-user-tx-id
-                          :attr :long)
-               0))}))
+  (let [info (env-opts lmdb)]
+    (if-not (:kv-wal? info)
+      {:last-committed-wal-tx-id 0
+       :last-indexed-wal-tx-id   0
+       :last-committed-user-tx-id 0}
+      {:last-committed-wal-tx-id
+       (long (or (:last-committed-wal-tx-id info) 0))
+       :last-indexed-wal-tx-id
+       (long (or (kv-info-id lmdb c/last-indexed-wal-tx-id)
+                 (:last-indexed-wal-tx-id info)
+                 0))
+       :last-committed-user-tx-id
+       (long (or (:last-committed-user-tx-id info)
+                 (:last-committed-wal-tx-id info)
+                 0))})))
 
 (defn replay-kv-wal!
   "Replay committed KV WAL records into base KV DBIs and advance
@@ -448,57 +458,68 @@
   ([lmdb upto-wal-id]
    (if-not (kv-wal-enabled? lmdb)
      {:from 0 :to 0 :applied 0}
-     (let [from-id      (long (or (get-value lmdb c/kv-info
-                                              c/last-indexed-wal-tx-id
-                                              :attr :long)
+     (let [info         (env-opts lmdb)
+           from-id      (long (or (kv-info-id lmdb c/last-indexed-wal-tx-id)
+                                  (kv-applied-id lmdb)
                                   0))
-           committed-id (long (or (get-value lmdb c/kv-info
-                                              c/last-committed-wal-tx-id
-                                              :attr :long)
-                                  0))
-           target-id    (long (min committed-id
-                                   (if (some? upto-wal-id)
-                                     (long upto-wal-id)
-                                     committed-id)))]
+           committed-id (long (or (:last-committed-wal-tx-id info) 0))
+           target-id    (let [upto-id (if (some? upto-wal-id)
+                                        (long upto-wal-id)
+                                        committed-id)]
+                          (long (min committed-id upto-id)))]
        (if (<= target-id from-id)
          {:from from-id :to target-id :applied 0}
-         (let [applied (volatile! 0)]
-           (with-transaction-kv [db lmdb]
-             (doseq [wal-id (range (inc from-id) (inc target-id))]
-               (let [payload (get-value db c/kv-wal wal-id :id :raw)]
-                 (when-not payload
-                   (u/raise "Missing KV WAL record during replay"
+         (let [applied-count (volatile! 0)]
+           (binding [c/*trusted-apply* true]
+             (with-transaction-kv [db lmdb]
+               (let [initial-applied-wal (kv-info-id db c/applied-wal-tx-id)
+                     initial-applied     (long (or initial-applied-wal
+                                                   (kv-info-id db
+                                                               c/legacy-applied-tx-id)
+                                                   0))
+                     applied-id          (volatile! initial-applied)
+                     start-id            (long (max from-id initial-applied))
+                     records         (wal/read-wal-records (env-dir db)
+                                                           start-id target-id)]
+                 (when (and (> target-id start-id) (nil? (seq records)))
+                   (u/raise "Missing KV WAL records during replay"
                             {:error     :wal/missing-record
-                             :wal-tx-id wal-id}))
-                 (let [{:keys [wal/record-type wal/ops]} (nippy/thaw payload)]
-                   (when-not (= :kv record-type)
-                     (u/raise "Unexpected WAL record type during KV replay"
-                              {:error       :wal/unexpected-record-type
-                               :wal-tx-id   wal-id
-                               :record-type record-type}))
-                   (apply-wal-kv-ops! db ops)))
-               (transact-kv db c/kv-info
-                            [[:put c/last-indexed-wal-tx-id wal-id]]
-                            :attr :long)
-               (vswap! applied u/long-inc)))
-           {:from from-id :to target-id :applied @applied}))))))
+                             :wal-tx-id target-id}))
+                 (doseq [rec records]
+                   (let [wal-id (long (:wal/tx-id rec))
+                         ops    (:wal/ops rec)]
+                     (when (> wal-id (unchecked-inc (long @applied-id)))
+                       (u/raise "KV WAL replay out of order"
+                                {:error       :wal/out-of-order
+                                 :applied-wal @applied-id
+                                 :wal-tx-id   wal-id}))
+                     (apply-wal-kv-ops! db ops)
+                     (vreset! applied-id wal-id)
+                     (vswap! applied-count u/long-inc)))
+                 (transact-kv db c/kv-info
+                              (cond-> [[:put c/last-indexed-wal-tx-id target-id]]
+                                (or (nil? initial-applied-wal)
+                                    (> (long @applied-id) initial-applied))
+                                (conj [:put c/applied-wal-tx-id @applied-id]))
+                              :attr :id))))
+           {:from from-id :to target-id :applied @applied-count}))))))
 
 (defn flush-kv-indexer!
   "Catch up KV indexer watermark to committed WAL via replay and return:
-   `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <bool>}`.
+   `{:indexed-wal-tx-id <id> :committed-wal-tx-id <id> :drained? <bool>}`.
 
    When `upto-wal-id` is provided, replay is bounded by that wal id, while
    `:drained?` still reflects indexed vs committed equality at return time."
   ([lmdb]
    (flush-kv-indexer! lmdb nil))
   ([lmdb upto-wal-id]
-   (replay-kv-wal! lmdb upto-wal-id)
-   (let [{:keys [last-committed-wal-tx-id last-indexed-wal-tx-id]}
-         (kv-wal-watermarks lmdb)]
-     {:indexed-wal-tx-id   last-indexed-wal-tx-id
-      :committed-wal-tx-id last-committed-wal-tx-id
-      :drained?            (= last-indexed-wal-tx-id
-                              last-committed-wal-tx-id)})))
+   (let [res       (replay-kv-wal! lmdb upto-wal-id)
+         info      (env-opts lmdb)
+         committed (long (or (:last-committed-wal-tx-id info) 0))
+         indexed   (long (or (:to res) 0))]
+     {:indexed-wal-tx-id   indexed
+      :committed-wal-tx-id committed
+      :drained?            (= indexed committed)})))
 
 ;; for shutting down various executors when the last LMDB exits
 (defonce lmdb-dirs (atom #{}))

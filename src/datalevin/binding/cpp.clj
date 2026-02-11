@@ -10,7 +10,6 @@
   "Native binding using JavaCPP"
   (:refer-clojure :exclude [sync])
   (:require
-   [taoensso.nippy :as nippy]
    [clojure.stacktrace :as stt]
    [clojure.java.io :as io]
    [clojure.string :as s]
@@ -22,6 +21,7 @@
    [datalevin.async :as a]
    [datalevin.migrate :as m]
    [datalevin.validate :as vld]
+   [datalevin.wal :as wal]
    [datalevin.scan :as scan]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
@@ -45,11 +45,11 @@
    [java.util.concurrent TimeUnit ScheduledExecutorService ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
-   [java.util Iterator HashMap ArrayDeque]
+   [java.util Iterator HashMap TreeMap ArrayDeque Arrays]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
-   [clojure.lang IObj]))
+   [clojure.lang IObj Seqable IReduceInit]))
 
 (defn- version-file
   [^File dir]
@@ -178,7 +178,9 @@
               ^BufVal stop-vp
               ^ByteBuffer k-comp-bf
               ^:volatile-mutable ^ByteBuffer v-comp-bf
-              aborted?]
+              aborted?
+              wal-ops
+              kv-overlay-private]
 
   ICompress
   (key-bf [_] (.clear k-comp-bf))
@@ -640,10 +642,6 @@
   [txs ^DBI dbi txn kt vt]
   (let [dbi-name (.dbi-name dbi)
         validate? (.-validate-data? dbi)]
-    (when (and (= dbi-name c/kv-wal) (not c/*trusted-apply*))
-      (raise "Direct mutation of internal KV WAL DBI is not allowed"
-             {:error :access/unauthorized
-              :dbi   dbi-name}))
     (doseq [t txs]
       (let [tx (l/->kv-tx-data t kt vt)]
         (vld/validate-kv-tx-data tx validate?)
@@ -657,57 +655,874 @@
           ^DBI dbi     (or (.get dbis dbi-name)
                            (raise dbi-name " is not open" {}))
           validate?    (.-validate-data? dbi)]
-      (when (and (= dbi-name c/kv-wal) (not c/*trusted-apply*))
-        (raise "Direct mutation of internal KV WAL DBI is not allowed"
-               {:error :access/unauthorized
-                :dbi   dbi-name}))
       (vld/validate-kv-tx-data tx validate?)
       (put-tx dbi txn tx))))
 
 (defn- wal-system-dbi?
   [dbi-name]
-  (or (= dbi-name c/kv-info)
-      (= dbi-name c/kv-wal)))
+  (= dbi-name c/kv-wal))
+
+(defn- dbi-dupsort?
+  [^HashMap dbis dbi-name]
+  (when dbi-name
+    (let [^DBI dbi (.get dbis dbi-name)]
+      (boolean (and dbi (.-dupsort? dbi))))))
 
 (defn- canonical-kv-op
-  [^KVTxData tx fallback-dbi]
-  {:op      (.-op tx)
-   :dbi     (or (.-dbi-name tx) fallback-dbi)
-   :k       (.-k tx)
-   :v       (.-v tx)
-   :kt      (.-kt tx)
-   :vt      (.-vt tx)
-   :flags   (.-flags tx)})
+  [^KVTxData tx fallback-dbi ^HashMap dbis]
+  (let [dbi-name (or (.-dbi-name tx) fallback-dbi)]
+    {:op       (.-op tx)
+     :dbi      dbi-name
+     :k        (.-k tx)
+     :v        (.-v tx)
+     :kt       (.-kt tx)
+     :vt       (.-vt tx)
+     :flags    (.-flags tx)
+     :dupsort? (dbi-dupsort? dbis dbi-name)}))
+
+(defn- validate-kv-txs!
+  [txs dbi-name kt vt ^HashMap dbis]
+  (if dbi-name
+    (let [^DBI dbi (or (.get dbis dbi-name)
+                       (raise dbi-name " is not open" {}))
+          validate? (.-validate-data? dbi)
+          tx-data   (mapv #(l/->kv-tx-data % kt vt) txs)]
+      (doseq [tx tx-data]
+        (vld/validate-kv-tx-data tx validate?))
+      tx-data)
+    (let [tx-data (mapv l/->kv-tx-data txs)]
+      (doseq [^KVTxData tx tx-data]
+        (let [dbi-name (.-dbi-name tx)
+              ^DBI dbi (or (.get dbis dbi-name)
+                           (raise dbi-name " is not open" {}))
+              validate? (.-validate-data? dbi)]
+          (vld/validate-kv-tx-data tx validate?)))
+      tx-data)))
+
+(defn- normalize-kv-type
+  [t]
+  (or t :data))
+
+(defn- encode-kv-bytes
+  [x t]
+  (let [t (normalize-kv-type t)]
+    (loop [size (int (max 64
+                          (long (or (b/type-size t) 0))
+                          (+ 16 (long (or (b/measure-size x) 0)))))]
+      (let [^ByteBuffer bf (ByteBuffer/allocate size)
+            encoded        (try
+                             (b/put-bf bf x t)
+                             (b/get-bytes (.duplicate bf))
+                             (catch BufferOverflowException _
+                               ::overflow))]
+        (if (not= encoded ::overflow)
+          encoded
+          (let [next-size (long (* 2 size))]
+            (if (> next-size Integer/MAX_VALUE)
+              (raise "Fail to encode KV WAL overlay bytes: value too large"
+                     {:error :wal/overlay-encode
+                      :type  t})
+              (recur (int next-size)))))))))
+
+(defn- compare-bytes
+  ^long [^bytes a ^bytes b]
+  (Arrays/compareUnsigned a b))
+
+(defn- empty-overlay-keys-map
+  []
+  (TreeMap.
+    (reify java.util.Comparator
+      (compare [_ a b] (compare-bytes a b)))))
+
+(defn- empty-overlay-committed-map
+  []
+  (TreeMap.))
+
+(def ^:private overlay-deleted ::overlay-deleted)
+(def ^:private overlay-present (Object.))
+
+(defn- list-overlay-entry
+  [k]
+  {:k    k
+   :ops  []})
+
+(defn- list-overlay-entry?
+  [entry]
+  (map? entry))
+
+(defn- list-overlay-op-entry
+  [k op vs vt]
+  (let [values (cond
+                 (nil? vs) nil
+                 (sequential? vs) (vec vs)
+                 :else [vs])]
+    {:k    k
+     :ops  [[op values (when vt (normalize-kv-type vt))]]}))
+
+(defn- merge-list-overlay-entry
+  [existing incoming]
+  (let [base (if (list-overlay-entry? existing)
+               existing
+               (list-overlay-entry (:k incoming)))]
+    (assoc base :ops (into (or (:ops base) []) (:ops incoming)))))
+
+(defn- merge-overlay-entry
+  [existing incoming]
+  (if (list-overlay-entry? incoming)
+    (merge-list-overlay-entry existing incoming)
+    incoming))
+
+(defn- range-backward?
+  [range-type]
+  (contains? #{:all-back :at-most-back :at-least-back :closed-back
+               :closed-open-back :less-than-back :greater-than-back
+               :open-back :open-closed-back}
+             range-type))
+
+(defn- key-in-k-range?
+  [^bytes kbs range-type ^bytes low ^bytes high]
+  (let [c-low  (when low (compare-bytes kbs low))
+        c-high (when high (compare-bytes kbs high))]
+    (case range-type
+      (:all :all-back) true
+      (:at-least :at-least-back) (>= c-low 0)
+      (:at-most :at-most-back) (<= c-low 0)
+      (:closed :closed-back) (and (>= c-low 0) (<= c-high 0))
+      (:closed-open :closed-open-back) (and (>= c-low 0) (< c-high 0))
+      (:greater-than :greater-than-back) (> c-low 0)
+      (:less-than :less-than-back) (< c-low 0)
+      (:open :open-back) (and (> c-low 0) (< c-high 0))
+      (:open-closed :open-closed-back) (and (> c-low 0) (<= c-high 0))
+      false)))
+
+(defn- wal-op->overlay-entry
+  [{:keys [op dbi k v kt vt dupsort?]}]
+  (when (and dbi (not (wal-system-dbi? dbi)))
+    (let [kt   (normalize-kv-type kt)
+          kbs  (encode-kv-bytes k kt)]
+      (case op
+        :put (if dupsort?
+               [dbi kbs (list-overlay-op-entry k :put [v] vt)]
+               [dbi kbs [k v]])
+        :del (if dupsort?
+               [dbi kbs (list-overlay-op-entry k :wipe nil nil)]
+               [dbi kbs overlay-deleted])
+        :put-list [dbi kbs (list-overlay-op-entry k :put v vt)]
+        :del-list [dbi kbs (list-overlay-op-entry k :del v vt)]
+        nil))))
+
+(defn- overlay-delta-by-dbi
+  [ops]
+  (reduce (fn [m op]
+            (if-let [[dbi kbs entry] (wal-op->overlay-entry op)]
+              (let [^TreeMap dbi-delta (or (get m dbi)
+                                           (empty-overlay-keys-map))]
+                (.put dbi-delta kbs
+                      (merge-overlay-entry (.get dbi-delta kbs) entry))
+                (if (contains? m dbi)
+                  m
+                  (assoc m dbi dbi-delta)))
+              m))
+          {}
+          ops))
+
+(defn- merge-overlay-delta
+  [overlay delta]
+  (reduce-kv (fn [m dbi dbi-delta]
+               (let [^TreeMap merged (if-let [^TreeMap dbi-overlay (get m dbi)]
+                                       (TreeMap. dbi-overlay)
+                                       (empty-overlay-keys-map))]
+                 (doseq [[k entry] dbi-delta]
+                   (.put merged k (merge-overlay-entry (.get merged k) entry)))
+                 (assoc m dbi merged)))
+             (or overlay {})
+             delta))
+
+(defn- rebuild-overlay-by-dbi
+  [committed-by-tx]
+  (reduce (fn [m [_ delta]]
+            (merge-overlay-delta m delta))
+          {}
+          committed-by-tx))
 
 (defn- append-kv-wal-record!
-  [lmdb ^HashMap dbis txn txs dbi-name kt vt]
-  (when (:kv-wal? @(.-info lmdb))
-    (let [ops (if dbi-name
-                (mapv (fn [t]
-                        (canonical-kv-op (l/->kv-tx-data t kt vt) dbi-name))
-                      txs)
-                (mapv (fn [t]
-                        (canonical-kv-op (l/->kv-tx-data t) nil))
-                      txs))]
-      (when (and (seq ops)
-                 (not-any? #(wal-system-dbi? (:dbi %)) ops))
-        (let [wal-id (inc (long (or (:wal-next-tx-id @(.-info lmdb)) 0)))
-              rec    {:wal/tx-id      wal-id
-                      :wal/record-type :kv
-                      :wal/created-at  (System/currentTimeMillis)
-                      :wal/ops         ops}
-              bytes  (nippy/freeze rec)]
-          (binding [c/*trusted-apply* true]
-            (transact* [[:put c/kv-wal wal-id bytes :id :raw]
-                        [:put c/kv-info c/wal-next-tx-id wal-id :attr :long]
-                        [:put c/kv-info c/last-committed-wal-tx-id wal-id
-                         :attr :long]
-                        [:put c/kv-info c/last-indexed-wal-tx-id wal-id
-                         :attr :long]
-                        [:put c/kv-info c/last-committed-user-tx-id wal-id
-                         :attr :long]]
-                       dbis txn))
-          wal-id)))))
+  [lmdb ops tx-time]
+  (when (seq ops)
+    (let [info          @(.-info lmdb)
+          wal-id        (inc (long (or (:wal-next-tx-id info) 0)))
+          user-tx-id    wal-id
+          record        (wal/record-bytes wal-id user-tx-id tx-time ops)
+          record-bytes  (alength ^bytes record)
+          now-ms        (long (or tx-time (System/currentTimeMillis)))
+          max-bytes     (long (or (:wal-segment-max-bytes info)
+                                  c/*wal-segment-max-bytes*))
+          max-ms        (long (or (:wal-segment-max-ms info)
+                                  c/*wal-segment-max-ms*))
+          seg-id        (long (or (:wal-segment-id info) 1))
+          seg-bytes     (long (or (:wal-segment-bytes info) 0))
+          seg-start-ms  (long (or (:wal-segment-created-ms info) now-ms))
+          rotate?       (or (>= (+ seg-bytes record-bytes) max-bytes)
+                             (>= (- now-ms seg-start-ms) max-ms))
+          seg-id        (if rotate?
+                          (inc seg-id)
+                          seg-id)
+          seg-start-ms  (if rotate? now-ms seg-start-ms)
+          seg-bytes     (if rotate? 0 seg-bytes)
+          sync-mode     (or (:wal-sync-mode info) c/*wal-sync-mode*)]
+      (wal/append-record-bytes!
+        (env-dir lmdb) seg-id record sync-mode)
+      (vswap! (.-info lmdb) assoc
+              :wal-next-tx-id wal-id
+              :last-committed-wal-tx-id wal-id
+              :last-committed-user-tx-id wal-id
+              :wal-segment-id seg-id
+              :wal-segment-created-ms seg-start-ms
+              :wal-segment-bytes (+ seg-bytes record-bytes))
+      {:wal-id wal-id
+       :tx-time now-ms
+       :ops ops})))
+
+(defn- get-kv-info-id
+  [lmdb k]
+  (i/get-value lmdb c/kv-info k :attr :id))
+
+(defn- refresh-kv-wal-info!
+  [lmdb]
+  (try
+    (let [dir          (env-dir lmdb)
+          now-ms       (System/currentTimeMillis)
+          meta         (wal/read-wal-meta dir)
+          scanned      (when-not meta (wal/scan-last-wal dir))
+          committed-id (long (or (get meta c/last-committed-wal-tx-id)
+                                 (:last-wal-id scanned)
+                                 0))
+          indexed-id   (long (or (get-kv-info-id lmdb c/last-indexed-wal-tx-id)
+                                 (get meta c/last-indexed-wal-tx-id)
+                                 0))
+          committed-ms (long (or (get meta c/committed-last-modified-ms) 0))
+          user-id      (long (or (get meta c/last-committed-user-tx-id)
+                                 committed-id))
+          next-id      committed-id
+          applied-id   (long (or (get-kv-info-id lmdb c/applied-wal-tx-id)
+                                 (get-kv-info-id lmdb c/legacy-applied-tx-id)
+                                 0))
+          seg-id       (long (or (get meta :wal/last-segment-id)
+                                 (:last-segment-id scanned)
+                                 1))
+          seg-file     (io/file (wal/segment-path dir seg-id))
+          seg-bytes    (if (.exists seg-file) (.length seg-file) 0)
+          seg-created  (long (or (:last-segment-ms scanned)
+                                 (when (.exists seg-file) (.lastModified seg-file))
+                                 now-ms))]
+      (vswap! (.-info lmdb) assoc
+              :wal-next-tx-id next-id
+              :applied-wal-tx-id applied-id
+              :last-committed-wal-tx-id committed-id
+              :last-indexed-wal-tx-id indexed-id
+              :last-committed-user-tx-id user-id
+              :committed-last-modified-ms committed-ms
+              :overlay-published-wal-tx-id committed-id
+              :wal-segment-id seg-id
+              :wal-segment-created-ms seg-created
+              :wal-segment-bytes seg-bytes))
+    (catch Exception _ nil)))
+
+(defn- read-kv-wal-meta
+  [lmdb]
+  (wal/read-wal-meta (env-dir lmdb)))
+
+(defn- refresh-kv-wal-meta-info!
+  [lmdb]
+  (let [now-ms (System/currentTimeMillis)]
+    (if-let [meta (read-kv-wal-meta lmdb)]
+      (let [last-ms (long (or (get meta c/committed-last-modified-ms) 0))]
+        (vswap! (.-info lmdb) assoc
+                :wal-meta-revision
+                (or (get meta c/wal-meta-revision) 0)
+                :wal-meta-last-modified-ms last-ms
+                :wal-meta-last-flush-ms (if (pos? last-ms) last-ms now-ms)
+                :wal-meta-pending-txs 0))
+      (vswap! (.-info lmdb) assoc
+              :wal-meta-revision 0
+              :wal-meta-last-modified-ms 0
+              :wal-meta-last-flush-ms now-ms
+              :wal-meta-pending-txs 0))))
+
+(defn- publish-kv-wal-watermarks!
+  [lmdb wal-id tx-time]
+  (vswap! (.-info lmdb) assoc
+          :wal-next-tx-id wal-id
+          :last-committed-wal-tx-id wal-id
+          :last-committed-user-tx-id wal-id
+          :committed-last-modified-ms tx-time))
+
+(defn- publish-kv-committed-overlay!
+  [lmdb wal-id ops]
+  (let [delta (overlay-delta-by-dbi ops)]
+    (when (seq delta)
+      (vswap! (.-info lmdb)
+              (fn [m]
+                (let [^TreeMap committed-by-tx
+                      (if-let [^TreeMap tx-map (:kv-overlay-committed-by-tx m)]
+                        (TreeMap. tx-map)
+                        (empty-overlay-committed-map))]
+                  (.put committed-by-tx wal-id delta)
+                  (-> m
+                      (assoc :kv-overlay-committed-by-tx committed-by-tx
+                             :kv-overlay-by-dbi
+                             (merge-overlay-delta (:kv-overlay-by-dbi m)
+                                                  delta)))))))))
+
+(defn- publish-kv-private-overlay!
+  [^Rtx wtxn ops]
+  (let [delta (overlay-delta-by-dbi ops)]
+    (when (seq delta)
+      (let [current (or (some-> (.-kv-overlay-private wtxn) deref) {})
+            merged  (merge-overlay-delta current delta)]
+        (vreset! (.-kv-overlay-private wtxn) merged)))))
+
+(defn- publish-kv-overlay-watermark!
+  [lmdb wal-id]
+  (vswap! (.-info lmdb) assoc :overlay-published-wal-tx-id wal-id))
+
+(defn- prune-kv-committed-overlay!
+  [lmdb upto-wal-id]
+  (let [upto (long (or upto-wal-id 0))]
+    (when (pos? upto)
+      (vswap! (.-info lmdb)
+              (fn [m]
+                (let [^TreeMap committed-by-tx
+                      (or (:kv-overlay-committed-by-tx m)
+                          (empty-overlay-committed-map))
+                      ^TreeMap remaining (empty-overlay-committed-map)]
+                  (doseq [[wal-id delta] committed-by-tx]
+                    (when (> (long wal-id) upto)
+                      (.put remaining wal-id delta)))
+                  (assoc m
+                         :kv-overlay-committed-by-tx remaining
+                         :kv-overlay-by-dbi
+                         (rebuild-overlay-by-dbi remaining))))))))
+
+(def ^:private overlay-miss ::overlay-miss)
+(def ^:private overlay-tombstone ::overlay-tombstone)
+
+(defn- private-overlay-by-dbi
+  [lmdb]
+  (when (and (:kv-wal? @(.-info lmdb)) (l/writing? lmdb))
+    (when-let [^Rtx wtxn @(.-write-txn lmdb)]
+      (when-let [v (.-kv-overlay-private wtxn)]
+        @v))))
+
+(defn- overlay-by-dbi
+  [lmdb dbi-name]
+  (let [committed (get-in @(.-info lmdb) [:kv-overlay-by-dbi dbi-name])
+        priv      (get-in (private-overlay-by-dbi lmdb) [dbi-name])]
+    (cond
+      (and (seq committed) (seq priv))
+      (get (merge-overlay-delta {dbi-name committed} {dbi-name priv}) dbi-name)
+      (seq priv) priv
+      (seq committed) committed
+      :else nil)))
+
+(defn- kv-overlay-eligible?
+  [lmdb dbi-name]
+  (and (:kv-wal? @(.-info lmdb))
+       (not (wal-system-dbi? dbi-name))))
+
+(defn- ordered-map-seq
+  [^TreeMap m desc?]
+  (seq (if desc? (.descendingMap m) m)))
+
+(defn- group-base-kvs-by-key
+  [base-kvs k-type]
+  (let [^TreeMap grouped (empty-overlay-keys-map)]
+    (doseq [[k _ :as kv] base-kvs]
+      (let [kbs (encode-kv-bytes k k-type)
+            acc (or (.get grouped kbs) [])]
+        (.put grouped kbs (conj acc kv))))
+    grouped))
+
+(defn- decode-kv-bytes
+  [^bytes bs t]
+  (b/read-buffer (ByteBuffer/wrap bs) t))
+
+(defn- materialize-list-overlay-values
+  [entry base-kvs base-v-type]
+  (let [^TreeMap vals (empty-overlay-keys-map)]
+    (doseq [[_ v] base-kvs]
+      (when (some? v)
+        (.put vals (encode-kv-bytes v base-v-type) overlay-present)))
+    (doseq [[op vs vt] (:ops entry)]
+      (let [t (normalize-kv-type (or vt base-v-type))]
+        (case op
+          :wipe
+          (.clear vals)
+
+          :put
+          (doseq [v (or vs [])]
+            (.put vals (encode-kv-bytes v t) overlay-present))
+
+          :del
+          (doseq [v (or vs [])]
+            (.remove vals (encode-kv-bytes v t)))
+
+          nil)))
+    vals))
+
+(defn- get-overlay-entry
+  [lmdb dbi-name k k-type]
+  (let [kbs (encode-kv-bytes k (normalize-kv-type k-type))
+        priv (get-in (private-overlay-by-dbi lmdb) [dbi-name])
+        entry (when priv (.get ^TreeMap priv kbs))]
+    (if (some? entry)
+      entry
+      (let [overlay (get-in @(.-info lmdb) [:kv-overlay-by-dbi dbi-name])]
+        (when overlay (.get ^TreeMap overlay kbs))))))
+
+(defn- overlay-get-value
+  [lmdb dbi-name k k-type v-type ignore-key?]
+  (if-let [entry (get-overlay-entry lmdb dbi-name k k-type)]
+    (cond
+      (= entry overlay-deleted)
+      overlay-tombstone
+
+      (list-overlay-entry? entry)
+      (let [kt          (normalize-kv-type k-type)
+            base-v-type (if (= v-type :ignore) :data v-type)
+            base-kvs    (mapv (fn [v0] [k v0])
+                              (or (scan/get-list lmdb dbi-name k kt base-v-type)
+                                  []))
+            ^TreeMap vals (materialize-list-overlay-values
+                            entry base-kvs base-v-type)
+            first-ent  (.firstEntry vals)]
+        (if first-ent
+          (let [v0 (if (= v-type :ignore)
+                     nil
+                     (decode-kv-bytes (.getKey ^java.util.Map$Entry first-ent)
+                                      base-v-type))]
+            (if ignore-key?
+              v0
+              [(b/expected-return k k-type) v0]))
+          overlay-tombstone))
+
+      :else
+      (let [[_ v] entry]
+        (if ignore-key?
+          v
+          [(b/expected-return k k-type) v])))
+    overlay-miss))
+
+(defn- overlay-entry-key
+  [entry k-type key-bs]
+  (cond
+    key-bs
+    (decode-kv-bytes key-bs k-type)
+
+    (list-overlay-entry? entry)
+    (b/expected-return (:k entry) k-type)
+
+    :else
+    (b/expected-return (first entry) k-type)))
+
+(defn- overlay-entry-item
+  [entry key-bs k-type v-type]
+  [(overlay-entry-key entry k-type key-bs)
+   (if (= v-type :ignore)
+     nil
+     (second entry))])
+
+(defn- overlay-entry-items
+  [entry base-kvs key-bs k-type v-type base-v-type]
+  (cond
+    (= entry overlay-deleted)
+    []
+
+    (list-overlay-entry? entry)
+    (let [k      (overlay-entry-key entry k-type key-bs)
+          ^TreeMap vals (materialize-list-overlay-values
+                          entry base-kvs base-v-type)]
+      (if (= v-type :ignore)
+        (let [out (transient [])]
+          (doseq [_ (.entrySet vals)]
+            (conj! out [k nil]))
+          (persistent! out))
+        (let [out (transient [])]
+          (doseq [^java.util.Map$Entry e (.entrySet vals)]
+            (conj! out [k (decode-kv-bytes (.getKey e) base-v-type)]))
+          (persistent! out))))
+
+    :else
+    [(overlay-entry-item entry key-bs k-type v-type)]))
+
+(defn- overlay-get-range
+  [lmdb dbi-name [range-type k1 k2 :as k-range] k-type v-type ignore-key?]
+  (let [^TreeMap overlay (overlay-by-dbi lmdb dbi-name)]
+    (if-not (seq overlay)
+      overlay-miss
+      (let [k-type       (normalize-kv-type k-type)
+            lower-bs     (when (some? k1) (encode-kv-bytes k1 k-type))
+            upper-bs     (when (some? k2) (encode-kv-bytes k2 k-type))
+            base-v-type  (if (and (i/list-dbi? lmdb dbi-name)
+                                  (= v-type :ignore))
+                           :data
+                           v-type)
+            base-kvs     (scan/get-range lmdb dbi-name k-range k-type
+                                         base-v-type false)
+            base-by-key  (group-base-kvs-by-key base-kvs k-type)
+            desc?        (range-backward? range-type)
+            overlay-seq  (->> (ordered-map-seq overlay desc?)
+                              (filter (fn [[kbs _]]
+                                        (key-in-k-range? kbs range-type
+                                                         lower-bs upper-bs))))
+            base-seq     (ordered-map-seq base-by-key desc?)
+            merged       (loop [os  (seq overlay-seq)
+                                bs  (seq base-seq)
+                                out (transient [])]
+                           (cond
+                             (and (nil? os) (nil? bs))
+                             (persistent! out)
+
+                             (nil? os)
+                             (let [[_ bgroup] (first bs)]
+                               (recur nil (next bs) (reduce conj! out bgroup)))
+
+                             (nil? bs)
+                            (let [[okbs entry] (first os)
+                                  items      (overlay-entry-items entry [] okbs k-type
+                                                                 v-type
+                                                                 base-v-type)]
+                              (recur (next os) nil (reduce conj! out items)))
+
+                             :else
+                             (let [[okbs entry] (first os)
+                                   [bkbs bgroup] (first bs)
+                                   cmp            (if desc?
+                                                    (compare-bytes bkbs okbs)
+                                                    (compare-bytes okbs bkbs))]
+                               (cond
+                                 (zero? cmp)
+                                 (let [items (overlay-entry-items entry bgroup
+                                                                  okbs
+                                                                  k-type
+                                                                  v-type
+                                                                  base-v-type)]
+                                   (recur (next os) (next bs)
+                                          (reduce conj! out items)))
+
+                                 (neg? cmp)
+                                 (let [items (overlay-entry-items entry []
+                                                                  okbs
+                                                                  k-type
+                                                                  v-type
+                                                                  base-v-type)]
+                                   (recur (next os) bs (reduce conj! out items)))
+
+                                 :else
+                                 (recur os (next bs)
+                                        (reduce conj! out bgroup))))))]
+        (if ignore-key?
+          (mapv second merged)
+          merged)))))
+
+(defn- kv-overlay-active?
+  [lmdb dbi-name]
+  (and (kv-overlay-eligible? lmdb dbi-name)
+       (or (seq (get-in @(.-info lmdb) [:kv-overlay-by-dbi dbi-name]))
+           (seq (get-in (private-overlay-by-dbi lmdb) [dbi-name])))))
+
+(defn- overlay-key-seq
+  [kvs k-type list-dbi?]
+  (if-not list-dbi?
+    (mapv first kvs)
+    (loop [xs   (seq kvs)
+           prev nil
+           out  (transient [])]
+      (if-let [[k _] (first xs)]
+        (let [kbs (encode-kv-bytes k k-type)]
+          (if (and prev (zero? (compare-bytes prev kbs)))
+            (recur (next xs) prev out)
+            (recur (next xs) kbs (conj! out k))))
+        (persistent! out)))))
+
+(defn- overlay-key-count
+  [kvs k-type list-dbi? cap]
+  (if-not list-dbi?
+    (let [cnt (count kvs)]
+      (if cap
+        (min (long cap) (long cnt))
+        (long cnt)))
+    (loop [xs   (seq kvs)
+           prev nil
+           cnt  0]
+      (if (or (nil? xs) (and cap (>= cnt (long cap))))
+        cnt
+        (let [[k _] (first xs)
+              kbs   (encode-kv-bytes k k-type)]
+          (if (and prev (zero? (compare-bytes prev kbs)))
+            (recur (next xs) prev cnt)
+            (recur (next xs) kbs (unchecked-inc cnt))))))))
+
+(defn- overlay-pred-v-type
+  [v-type raw-pred?]
+  (if (and raw-pred? (= v-type :ignore))
+    :data
+    v-type))
+
+(defn- overlay-out-value
+  [v v-type]
+  (if (= v-type :ignore) nil v))
+
+(defn- overlay-raw-key
+  ^ByteBuffer [k k-type]
+  (ByteBuffer/wrap (encode-kv-bytes k k-type)))
+
+(defn- overlay-raw-kv
+  [k v k-type v-type]
+  (let [^ByteBuffer kb (ByteBuffer/wrap (encode-kv-bytes k k-type))
+        ^ByteBuffer vb (when (some? v)
+                         (ByteBuffer/wrap (encode-kv-bytes v v-type)))]
+    (reify IKV
+      (k [_] (.duplicate kb))
+      (v [_] (when vb (.duplicate vb))))))
+
+(defn- overlay-list-append-group
+  [out group desc?]
+  (if (seq group)
+    (if desc?
+      (reduce conj! out (rseq group))
+      (reduce conj! out group))
+    out))
+
+(defn- overlay-list-range
+  [lmdb dbi-name k-range k-type [v-range-type v1 v2] v-type]
+  (let [k-type    (normalize-kv-type k-type)
+        v-type    (normalize-kv-type v-type)
+        lower-bs  (when (some? v1) (encode-kv-bytes v1 v-type))
+        upper-bs  (when (some? v2) (encode-kv-bytes v2 v-type))
+        desc?     (range-backward? v-range-type)
+        kvs       (.get-range lmdb dbi-name k-range k-type v-type false)]
+    (loop [xs       (seq kvs)
+           prev-kbs nil
+           group    []
+           out      (transient [])]
+      (if-let [[k v :as kv] (first xs)]
+        (let [kbs      (encode-kv-bytes k k-type)
+              same-key (and prev-kbs (zero? (compare-bytes prev-kbs kbs)))
+              keep?    (key-in-k-range? (encode-kv-bytes v v-type)
+                                        v-range-type lower-bs upper-bs)]
+          (if same-key
+            (recur (next xs) prev-kbs (if keep? (conj group kv) group) out)
+            (recur (next xs) kbs (if keep? [kv] [])
+                   (overlay-list-append-group out group desc?))))
+        (persistent! (overlay-list-append-group out group desc?))))))
+
+(defn- overlay-list-values
+  [lmdb dbi-name k kt vt]
+  (when k
+    (mapv second (overlay-list-range
+                   lmdb dbi-name [:closed k k] kt [:all] vt))))
+
+(defn- overlay-list-near-val-buf
+  [lmdb dbi-name k v kt vt]
+  (when (and k v)
+    (when-let [[_ v0] (first (overlay-list-range
+                               lmdb dbi-name [:closed k k] kt [:at-least v]
+                               vt))]
+      (ByteBuffer/wrap (encode-kv-bytes v0 vt)))))
+
+(defn- overlay-range-seq
+  [lmdb dbi-name k-range k-type v-type ignore-key? opts]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
+  (let [batch-size (long (max 1 (or (:batch-size opts) 100)))
+        read-vt    (if (= v-type :ignore) :raw v-type)
+        kvs        (.get-range lmdb dbi-name k-range k-type read-vt false)
+        item       (fn [[k v]]
+                     (let [v' (overlay-out-value v v-type)]
+                       (if ignore-key?
+                         v'
+                         [k v'])))
+        batches    (->> kvs
+                        (map item)
+                        (partition-all batch-size)
+                        (mapv vec))]
+    (reify
+      Seqable
+      (seq [_] (seq batches))
+
+      IReduceInit
+      (reduce [_ rf init] (reduce rf init batches))
+
+      AutoCloseable
+      (close [_] nil)
+
+      Object
+      (toString [_] (str (apply list batches))))))
+
+(defn- overlay-rank
+  [lmdb dbi-name k k-type]
+  (let [k-type (normalize-kv-type k-type)
+        target (encode-kv-bytes k k-type)
+        ks     (.key-range lmdb dbi-name [:all] k-type)]
+    (loop [xs (seq ks)
+           i  0]
+      (when-let [k0 (first xs)]
+        (let [cmp (compare-bytes (encode-kv-bytes k0 k-type) target)]
+          (cond
+            (zero? cmp) i
+            (pos? cmp)  nil
+            :else       (recur (next xs) (unchecked-inc i))))))))
+
+(defn- overlay-get-by-rank
+  [lmdb dbi-name rank k-type v-type ignore-key?]
+  (when-not (neg? (long rank))
+    (let [k-type (normalize-kv-type k-type)
+          ks     (.key-range lmdb dbi-name [:all] k-type)]
+      (loop [xs (seq ks)
+             i  0]
+        (when-let [k (first xs)]
+          (if (= i (long rank))
+            (.get-value lmdb dbi-name k k-type v-type ignore-key?)
+            (recur (next xs) (unchecked-inc i))))))))
+
+(defn- overlay-sample-kv
+  [lmdb dbi-name n k-type v-type ignore-key?]
+  (let [k-type      (normalize-kv-type k-type)
+        sample-vt   (if (= v-type :ignore) :raw v-type)
+        kvs         (vec (.get-range lmdb dbi-name [:all] k-type sample-vt false))
+        total       (long (count kvs))
+        indices     (u/reservoir-sampling total (long n))
+        out-value   (fn [v] (overlay-out-value v v-type))
+        format-item (fn [[k v]]
+                      (let [v' (out-value v)]
+                        (if ignore-key? v' [k v'])))]
+    (when indices
+      (loop [xs  (seq indices)
+             out (transient [])]
+        (if-let [idx0 (first xs)]
+          (let [idx (long idx0)]
+            (if (or (neg? idx) (>= idx total))
+              (recur (next xs) out)
+              (recur (next xs) (conj! out (format-item (nth kvs idx))))))
+          (persistent! out))))))
+
+(defn- overlay-visit-key-sample
+  [lmdb dbi-name indices visitor k-range k-type raw-pred?]
+  (when indices
+    (let [k-type (normalize-kv-type k-type)
+          ks     (vec (.key-range lmdb dbi-name k-range k-type))
+          total  (long (count ks))]
+      (loop [xs (seq indices)]
+        (when-let [idx0 (first xs)]
+          (let [idx (long idx0)]
+            (if (or (neg? idx) (>= idx total))
+              (recur (next xs))
+              (let [k   (nth ks idx)
+                    res (if raw-pred?
+                          (visitor (overlay-raw-key k k-type))
+                          (visitor k))]
+                (when-not (identical? res :datalevin/terminate-visit)
+                  (recur (next xs)))))))))))
+
+(defn- overlay-visit-list-sample
+  [lmdb dbi-name indices visitor k-range k-type v-type raw-pred?]
+  (when indices
+    (let [k-type (normalize-kv-type k-type)
+          v-type (normalize-kv-type v-type)
+          kvs    (vec (overlay-list-range lmdb dbi-name k-range
+                                          k-type [:all] v-type))
+          total  (long (count kvs))]
+      (loop [xs (seq indices)]
+        (when-let [idx0 (first xs)]
+          (let [idx (long idx0)]
+            (if (or (neg? idx) (>= idx total))
+              (recur (next xs))
+              (let [[k v] (nth kvs idx)
+                    res   (if raw-pred?
+                            (visitor (overlay-raw-kv k v k-type v-type))
+                            (visitor k v))]
+                (when-not (identical? res :datalevin/terminate-visit)
+                  (recur (next xs)))))))))))
+
+(defn- overlay-list-val-iterable
+  [lmdb dbi-name v-range vt]
+  (let [vt          (normalize-kv-type vt)
+        kvs         (overlay-list-range lmdb dbi-name [:all] :raw v-range vt)
+        ^TreeMap m  (empty-overlay-keys-map)]
+    (doseq [[kbs v] kvs]
+      (let [acc (or (.get m kbs) [])]
+        (.put m kbs (conj acc v))))
+    (reify IListRandKeyValIterable
+      (val-iterator [_]
+        (let [vals (volatile! nil)
+              idx  (volatile! 0)]
+          (reify
+            IListRandKeyValIterator
+            (seek-key [_ k-value k-type]
+              (let [target (encode-kv-bytes k-value (normalize-kv-type k-type))
+                    found  (.get m target)]
+                (vreset! vals found)
+                (vreset! idx 0)
+                (boolean (seq found))))
+            (has-next-val [_]
+              (let [vs @vals
+                    i  (long @idx)]
+                (boolean (and vs (< i (long (count vs)))))))
+            (next-val [_]
+              (let [vs @vals
+                    i  (long @idx)]
+                (when-let [v (when (and vs (< i (long (count vs))))
+                               (nth vs i))]
+                  (vreset! idx (unchecked-inc i))
+                  (ByteBuffer/wrap (encode-kv-bytes v vt)))))
+            AutoCloseable
+            (close [_] nil)))))))
+
+(defn- publish-kv-wal-meta!
+  [lmdb wal-id now-ms]
+  (let [info     @(.-info lmdb)
+        seg-id   (long (or (:wal-segment-id info) 0))
+        indexed  (long (or (:last-indexed-wal-tx-id info) 0))
+        user-id  (long (or (:last-committed-user-tx-id info) wal-id))
+        commit-ms (long (or (:committed-last-modified-ms info) now-ms))
+        snapshot {c/last-committed-wal-tx-id   wal-id
+                  c/last-indexed-wal-tx-id     indexed
+                  c/last-committed-user-tx-id  user-id
+                  c/committed-last-modified-ms commit-ms
+                  :wal/last-segment-id         seg-id
+                  :wal/enabled?                true}
+        meta'    (wal/publish-wal-meta! (env-dir lmdb) snapshot)
+        rev      (long (or (:wal-meta-revision meta') 0))]
+    (vswap! (.-info lmdb) assoc
+            :wal-meta-revision rev
+            :wal-meta-last-modified-ms now-ms
+            :wal-meta-last-flush-ms now-ms
+            :wal-meta-pending-txs 0)
+    meta'))
+
+(defn- maybe-publish-kv-wal-meta!
+  [lmdb wal-id]
+  (let [now-ms      (System/currentTimeMillis)
+        info'       (vswap! (.-info lmdb) update :wal-meta-pending-txs
+                            (fnil u/long-inc 0))
+        pending     (long (or (:wal-meta-pending-txs info') 0))
+        flush-txs   (max 1 (long (or (:wal-meta-flush-max-txs info')
+                                     c/*wal-meta-flush-max-txs*)))
+        flush-ms    (max 0 (long (or (:wal-meta-flush-max-ms info')
+                                     c/*wal-meta-flush-max-ms*)))
+        last-flush  (long (or (:wal-meta-last-flush-ms info') 0))
+        due?        (or (>= pending flush-txs)
+                        (>= (- now-ms last-flush) flush-ms))]
+    (when due?
+      (publish-kv-wal-meta! lmdb wal-id now-ms))))
+
+(defn- run-writer-step!
+  [step f]
+  (vld/check-failpoint step :before)
+  (vld/check-failpoint step :during)
+  (let [ret (f)]
+    (vld/check-failpoint step :after)
+    ret))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
@@ -832,7 +1647,9 @@
                              stop-vp-w
                              k-comp-bf-w
                              v-comp-bf-w
-                             (volatile! false))))
+                             (volatile! false)
+                             (volatile! [])
+                             (volatile! {}))))
 
   IObj
   (withMeta [this m] (set! meta m) this)
@@ -985,7 +1802,9 @@
                             (new-bufval c/+max-key-size+)
                             (bf/allocate-buffer c/+max-key-size+)
                             (bf/allocate-buffer (.max-val-size this))
-                            (volatile! false))]
+                            (volatile! false)
+                            (volatile! nil)
+                            (volatile! nil))]
               (.set tl-reader rtx)
               rtx))
         (catch Exception e
@@ -1053,32 +1872,86 @@
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
-  (close-transact-kv [_]
+  (close-transact-kv [this]
     (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
-        (let [aborted? @(.-aborted? wtxn)]
-          (if aborted?
-            (.close txn)
-            (try
-              (.commit txn)
-              (catch Util$MapFullException _
-                (.close txn)
-                (up-db-size env)
-                (vreset! write-txn nil)
-                (raise "DB resized" {:resized true}))
-              (catch Exception e
-                (.close txn)
-                (vreset! write-txn nil)
-                (raise "Fail to commit read/write transaction in LMDB: "
-                       e {}))))
-          (vreset! write-txn nil)
-          (.close txn)
-          (if aborted? :aborted :committed)))
+        (let [aborted?     @(.-aborted? wtxn)
+              wal-enabled? (and (:kv-wal? @info) (not c/*trusted-apply*))
+              ops          (when (and wal-enabled? (not aborted?))
+                             (seq @(.-wal-ops wtxn)))]
+          (try
+            (let [wal-entry (when (seq ops)
+                              (vld/check-failpoint :step-3 :before)
+                              (let [entry (append-kv-wal-record!
+                                            this (vec ops)
+                                            (System/currentTimeMillis))]
+                                (vld/check-failpoint :step-3 :after)
+                                entry))
+                  wal-id    (:wal-id wal-entry)
+                  tx-time   (:tx-time wal-entry)]
+              (when wal-id
+                (run-writer-step! :step-4
+                                  #(publish-kv-wal-watermarks!
+                                     this wal-id tx-time))
+                (run-writer-step! :step-5
+                                  #(publish-kv-committed-overlay!
+                                     this wal-id (:ops wal-entry)))
+                (run-writer-step! :step-6 (fn [] nil))
+                (run-writer-step! :step-7
+                                  #(publish-kv-overlay-watermark!
+                                     this wal-id)))
+              (if (or aborted? wal-enabled?)
+                (.abort txn)
+                (try
+                  (.commit txn)
+                  (catch Util$MapFullException _
+                    (.close txn)
+                    (up-db-size env)
+                    (vreset! write-txn nil)
+                    (raise "DB resized" {:resized true}))
+                  (catch Exception e
+                    (.close txn)
+                    (vreset! write-txn nil)
+                    (raise "Fail to commit read/write transaction in LMDB: "
+                           e {}))))
+              (vreset! write-txn nil)
+              (.close txn)
+              ;; Step 8 (`wal/meta` checkpoint publish) is outside commit
+              ;; critical path; failures are non-fatal to the caller.
+              (when wal-id
+                (try
+                  (run-writer-step!
+                    :step-8
+                    #(maybe-publish-kv-wal-meta! this wal-id))
+                  (catch Exception _ nil)))
+              (when (.-wal-ops wtxn)
+                (vreset! (.-wal-ops wtxn) []))
+              (when (.-kv-overlay-private wtxn)
+                (vreset! (.-kv-overlay-private wtxn) {}))
+              (if aborted? :aborted :committed))
+            (catch Exception e
+              (when (and wal-enabled? (not aborted?))
+                (refresh-kv-wal-info! this)
+                (refresh-kv-wal-meta-info! this))
+              (when-let [^Txn t (.-txn wtxn)]
+                (try
+                  (.close t)
+                  (catch Exception _ nil)))
+              (vreset! write-txn nil)
+              (if-let [edata (ex-data e)]
+                (raise "Fail to close read/write transaction in LMDB: "
+                       e edata)
+                (raise "Fail to close read/write transaction in LMDB: "
+                       e {}))))))
       (raise "Calling `close-transact-kv` without opening" {})))
 
   (abort-transact-kv [_]
     (when-let [^Rtx wtxn @write-txn]
       (vreset! (.-aborted? wtxn) true)
+      (when (.-wal-ops wtxn)
+        (vreset! (.-wal-ops wtxn) []))
+      (when (.-kv-overlay-private wtxn)
+        (vreset! (.-kv-overlay-private wtxn) {}))
       (vreset! write-txn wtxn)
       nil))
 
@@ -1090,45 +1963,100 @@
   (transact-kv [this dbi-name txs k-type v-type]
     (locking write-txn
       (.check-ready this)
-      (let [^Rtx rtx  @write-txn
-            one-shot? (nil? rtx)
-            ^DBI dbi  (when dbi-name
-                        (or (.get dbis dbi-name)
-                            (raise dbi-name " is not open" {})))
-            ^Txn txn  (if one-shot?
-                        (Txn/create env)
-                        (.-txn rtx))]
-        (try
-          (if dbi
-            (transact1* txs dbi txn k-type v-type)
-            (transact* txs dbis txn))
-          (when (:max-val-size-changed? @info)
-            (transact* [[:put c/kv-info :max-val-size (:max-val-size @info)]]
-                       dbis txn)
-            (vswap! info assoc :max-val-size-changed? false))
-          (let [wal-id (when one-shot?
-                         (append-kv-wal-record!
-                           this dbis txn txs dbi-name k-type v-type))]
-            (when one-shot? (.commit txn))
-            (when wal-id
-              (vswap! info assoc
-                      :wal-next-tx-id wal-id
-                      :last-committed-wal-tx-id wal-id
-                      :last-indexed-wal-tx-id wal-id
-                      :last-committed-user-tx-id wal-id)))
-          :transacted
-          (catch Util$MapFullException _
-            (.close txn)
-            (up-db-size env)
-            (if one-shot?
-              (.transact-kv this dbi-name txs k-type v-type)
-              (do (.reset-write this)
-                  (raise "DB resized" {:resized true}))))
-          (catch Exception e
-            (when one-shot? (.close txn))
-            (if-let [edata (ex-data e)]
-              (raise "Fail to transact to LMDB: " e edata)
-              (raise "Fail to transact to LMDB: " e {})))))))
+      (let [^Rtx rtx     @write-txn
+            one-shot?    (nil? rtx)
+            trusted?     c/*trusted-apply*
+            wal-enabled? (and (:kv-wal? @info) (not trusted?))
+            writeable?   (or trusted? (not wal-enabled?))
+            ^DBI dbi     (when dbi-name
+                           (or (.get dbis dbi-name)
+                               (raise dbi-name " is not open" {})))]
+        (let [^Txn txn (if one-shot?
+                         (Txn/create env)
+                         (.-txn rtx))]
+          (try
+            (let [tx-data    (validate-kv-txs! txs dbi-name k-type v-type dbis)
+                  ops        (when wal-enabled?
+                               (->> tx-data
+                                    (mapv #(canonical-kv-op % dbi-name dbis))
+                                    vec))
+                  max-val-op (when (and wal-enabled?
+                                        (:max-val-size-changed? @info))
+                               (let [tx (l/->kv-tx-data
+                                          [:put :max-val-size
+                                           (:max-val-size @info)]
+                                          :attr :id)]
+                                 (vswap! info assoc :max-val-size-changed? false)
+                                 (canonical-kv-op tx c/kv-info dbis)))
+                  ops        (cond
+                               (and ops max-val-op) (conj ops max-val-op)
+                               max-val-op           [max-val-op]
+                               :else                ops)]
+              (if writeable?
+                (do
+                  (if dbi
+                    (transact1* txs dbi txn k-type v-type)
+                    (transact* txs dbis txn))
+                  (when (:max-val-size-changed? @info)
+                    (transact* [[:put c/kv-info :max-val-size
+                                 (:max-val-size @info)]]
+                               dbis txn)
+                    (vswap! info assoc :max-val-size-changed? false))
+                  (when one-shot? (.commit txn))
+                  :transacted)
+                (do
+                  (if one-shot?
+                    (let [wal-entry (when (seq ops)
+                                      (vld/check-failpoint :step-3 :before)
+                                      (let [entry (append-kv-wal-record!
+                                                    this ops
+                                                    (System/currentTimeMillis))]
+                                        (vld/check-failpoint :step-3 :after)
+                                        entry))
+                          wal-id    (:wal-id wal-entry)
+                          tx-time   (:tx-time wal-entry)]
+                      (when wal-id
+                        (run-writer-step!
+                          :step-4
+                          #(publish-kv-wal-watermarks! this wal-id tx-time))
+                        (run-writer-step!
+                          :step-5
+                          #(publish-kv-committed-overlay! this wal-id
+                                                          (:ops wal-entry)))
+                        (run-writer-step! :step-6 (fn [] nil))
+                        (run-writer-step!
+                          :step-7
+                          #(publish-kv-overlay-watermark! this wal-id)))
+                      (when one-shot? (.abort txn))
+                      ;; Step 8 (`wal/meta` checkpoint publish) is outside commit
+                      ;; critical path; failures are non-fatal to the caller.
+                      (when wal-id
+                        (try
+                          (run-writer-step! :step-8
+                                            #(maybe-publish-kv-wal-meta! this
+                                                                         wal-id))
+                          (catch Exception _ nil))))
+                    (when (seq ops)
+                      (vswap! (.-wal-ops rtx) into ops)
+                      (publish-kv-private-overlay! rtx ops)))
+                  :transacted)))
+            (catch Util$MapFullException _
+              (.close txn)
+              (up-db-size env)
+              (if (and one-shot? (not wal-enabled?))
+                (.transact-kv this dbi-name txs k-type v-type)
+                (do (.reset-write this)
+                    (raise "DB resized" {:resized true}))))
+            (catch Exception e
+              (when one-shot? (.close txn))
+              ;; A post-commit failpoint may throw after WAL/meta are committed;
+              ;; refresh in-memory counters from durable wal/meta to avoid stale IDs.
+              (when (and one-shot? wal-enabled?)
+                (refresh-kv-wal-info! this)
+                (refresh-kv-wal-meta-info! this))
+              (if-let [edata (ex-data e)]
+                (raise "Fail to transact to LMDB: " e edata)
+                (raise "Fail to transact to LMDB: " e {}))))))))
 
   (set-env-flags [_ ks on-off] (.setFlags env (kv-flags ks) (if on-off 1 0)))
 
@@ -1143,7 +2071,14 @@
   (flush-kv-indexer! [this]
     (.flush-kv-indexer! this nil))
   (flush-kv-indexer! [this upto-wal-id]
-    (l/flush-kv-indexer! this upto-wal-id))
+    (let [res (l/flush-kv-indexer! this upto-wal-id)]
+      (vswap! (.-info this) assoc
+              :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
+              :applied-wal-tx-id (long (or (get-kv-info-id this
+                                                           c/applied-wal-tx-id)
+                                           0)))
+      (prune-kv-committed-overlay! this (:indexed-wal-tx-id res))
+      res))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -1152,12 +2087,21 @@
   (get-value [this dbi-name k k-type v-type]
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
-    (scan/get-value this dbi-name k k-type v-type ignore-key?))
+    (if (kv-overlay-eligible? this dbi-name)
+      (let [ret (overlay-get-value this dbi-name k k-type v-type ignore-key?)]
+        (case ret
+          ::overlay-miss
+          (scan/get-value this dbi-name k k-type v-type ignore-key?)
+          ::overlay-tombstone nil
+          ret))
+      (scan/get-value this dbi-name k k-type v-type ignore-key?)))
 
   (get-rank [this dbi-name k]
     (.get-rank this dbi-name k :data))
   (get-rank [this dbi-name k k-type]
-    (scan/get-rank this dbi-name k k-type))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-rank this dbi-name k k-type)
+      (scan/get-rank this dbi-name k k-type)))
 
   (get-by-rank [this dbi-name rank]
     (.get-by-rank this dbi-name rank :data :data true))
@@ -1166,7 +2110,9 @@
   (get-by-rank [this dbi-name rank k-type v-type]
     (.get-by-rank this dbi-name rank k-type v-type true))
   (get-by-rank [this dbi-name rank k-type v-type ignore-key?]
-    (scan/get-by-rank this dbi-name rank k-type v-type ignore-key?))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-get-by-rank this dbi-name rank k-type v-type ignore-key?)
+      (scan/get-by-rank this dbi-name rank k-type v-type ignore-key?)))
 
   (sample-kv [this dbi-name n]
     (.sample-kv this dbi-name n :data :data true))
@@ -1175,7 +2121,9 @@
   (sample-kv [this dbi-name n k-type v-type]
     (.sample-kv this dbi-name n k-type v-type true))
   (sample-kv [this dbi-name n k-type v-type ignore-key?]
-    (scan/sample-kv this dbi-name n k-type v-type ignore-key?))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-sample-kv this dbi-name n k-type v-type ignore-key?)
+      (scan/sample-kv this dbi-name n k-type v-type ignore-key?)))
 
   (get-first [this dbi-name k-range]
     (.get-first this dbi-name k-range :data :data false))
@@ -1184,7 +2132,13 @@
   (get-first [this dbi-name k-range k-type v-type]
     (.get-first this dbi-name k-range k-type v-type false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
-    (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
+    (if (kv-overlay-active? this dbi-name)
+      (when-let [[k v] (first (.get-range this dbi-name k-range
+                                          k-type v-type false))]
+        (if ignore-key?
+          (if (= v-type :ignore) true v)
+          [k v]))
+      (scan/get-first this dbi-name k-range k-type v-type ignore-key?)))
 
   (get-first-n [this dbi-name n k-range]
     (.get-first-n this dbi-name n k-range :data :data false))
@@ -1193,7 +2147,15 @@
   (get-first-n [this dbi-name n k-range k-type v-type]
     (.get-first-n this dbi-name n k-range k-type v-type false))
   (get-first-n [this dbi-name n k-range k-type v-type ignore-key?]
-    (scan/get-first-n this dbi-name n k-range k-type v-type ignore-key?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kvs (take n (.get-range this dbi-name k-range
+                                    k-type v-type false))]
+        (if ignore-key?
+          (mapv (fn [[_ v]]
+                  (if (= v-type :ignore) nil v))
+                kvs)
+          (vec kvs)))
+      (scan/get-first-n this dbi-name n k-range k-type v-type ignore-key?)))
 
   (get-range [this dbi-name k-range]
     (.get-range this dbi-name k-range :data :data false))
@@ -1202,54 +2164,78 @@
   (get-range [this dbi-name k-range k-type v-type]
     (.get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
-    (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
+    (if (kv-overlay-eligible? this dbi-name)
+      (let [ret (overlay-get-range this dbi-name k-range
+                                   k-type v-type ignore-key?)]
+        (if (= ret ::overlay-miss)
+          (scan/get-range this dbi-name k-range k-type v-type ignore-key?)
+          ret))
+      (scan/get-range this dbi-name k-range k-type v-type ignore-key?)))
 
   (key-range [this dbi-name k-range]
     (.key-range this dbi-name k-range :data))
   (key-range [this dbi-name k-range k-type]
-    (scan/key-range this dbi-name k-range k-type))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type (normalize-kv-type k-type)
+            kvs    (.get-range this dbi-name k-range k-type :ignore false)]
+        (overlay-key-seq kvs k-type (i/list-dbi? this dbi-name)))
+      (scan/key-range this dbi-name k-range k-type)))
 
   (visit-key-range [this dbi-name visitor k-range]
     (.visit-key-range this dbi-name visitor k-range :data true))
   (visit-key-range [this dbi-name visitor k-range k-type]
     (.visit-key-range this dbi-name visitor k-range k-type true))
   (visit-key-range [this dbi-name visitor k-range k-type raw-pred?]
-    (scan/visit-key-range this dbi-name visitor k-range k-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type (normalize-kv-type k-type)
+            ks     (.key-range this dbi-name k-range k-type)]
+        (loop [xs (seq ks)]
+          (when-let [k (first xs)]
+            (let [res (if raw-pred?
+                        (visitor (overlay-raw-key k k-type))
+                        (visitor k))]
+              (when-not (identical? res :datalevin/terminate-visit)
+                (recur (next xs)))))))
+      (scan/visit-key-range this dbi-name visitor k-range k-type raw-pred?)))
 
   (key-range-count [lmdb dbi-name k-range]
     (.key-range-count lmdb dbi-name k-range :data))
   (key-range-count [lmdb dbi-name k-range k-type]
     (.key-range-count lmdb dbi-name k-range k-type nil))
-  (key-range-count [lmdb dbi-name [range-type k1 k2] k-type cap]
-    (scan/scan
-      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
-            forward           (dtlv-bool (.-forward? ctx))
-            start             (dtlv-bool (.-include-start? ctx))
-            end               (dtlv-bool (.-include-stop? ctx))
-            sk                (dtlv-val (.-start-bf ctx))
-            ek                (dtlv-val (.-stop-bf ctx))]
-        (dtlv-c
-          (if cap
-            (DTLV/dtlv_key_range_count_cap
-              (.ptr ^Cursor cur) cap
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              forward start end sk ek)
-            (if (l/dlmdb?)
-              (let [flag (BitOps/intOr
-                           (if (.-include-start? ctx)
-                             (int DTLV/MDB_COUNT_LOWER_INCL) 0)
-                           (if (.-include-stop? ctx)
-                             (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
-                (with-open [total (LongPointer. 1)]
-                  (DTLV/mdb_range_count_keys
-                    (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
-                    sk ek flag total)
-                  (.get ^LongPointer total)))
-              (DTLV/dtlv_key_range_count
-                (.ptr ^Cursor cur)
+  (key-range-count [lmdb dbi-name [range-type k1 k2 :as k-range] k-type cap]
+    (if (kv-overlay-active? lmdb dbi-name)
+      (let [k-type (normalize-kv-type k-type)
+            kvs    (.get-range lmdb dbi-name k-range k-type :ignore false)]
+        (overlay-key-count kvs k-type (i/list-dbi? lmdb dbi-name) cap))
+      (scan/scan
+        (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+              forward           (dtlv-bool (.-forward? ctx))
+              start             (dtlv-bool (.-include-start? ctx))
+              end               (dtlv-bool (.-include-stop? ctx))
+              sk                (dtlv-val (.-start-bf ctx))
+              ek                (dtlv-val (.-stop-bf ctx))]
+          (dtlv-c
+            (if cap
+              (DTLV/dtlv_key_range_count_cap
+                (.ptr ^Cursor cur) cap
                 (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-                forward start end sk ek)))))
-      (raise "Fail to count key range: " e {:dbi dbi-name})))
+                forward start end sk ek)
+              (if (l/dlmdb?)
+                (let [flag (BitOps/intOr
+                             (if (.-include-start? ctx)
+                               (int DTLV/MDB_COUNT_LOWER_INCL) 0)
+                             (if (.-include-stop? ctx)
+                               (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
+                  (with-open [total (LongPointer. 1)]
+                    (DTLV/mdb_range_count_keys
+                      (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
+                      sk ek flag total)
+                    (.get ^LongPointer total)))
+                (DTLV/dtlv_key_range_count
+                  (.ptr ^Cursor cur)
+                  (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+                  forward start end sk ek)))))
+        (raise "Fail to count key range: " e {:dbi dbi-name}))))
 
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
@@ -1260,15 +2246,19 @@
   (range-seq [this dbi-name k-range k-type v-type ignore-key?]
     (.range-seq this dbi-name k-range k-type v-type ignore-key? nil))
   (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
-    (scan/range-seq this dbi-name k-range k-type v-type ignore-key? opts))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-range-seq this dbi-name k-range k-type v-type ignore-key? opts)
+      (scan/range-seq this dbi-name k-range k-type v-type ignore-key? opts)))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
   (range-count [lmdb dbi-name k-range k-type]
-    (let [dupsort? (.-dupsort? ^DBI (.get dbis dbi-name))]
-      (if dupsort?
-        (.list-range-count lmdb dbi-name k-range k-type [:all] nil)
-        (.key-range-count lmdb dbi-name k-range k-type))))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (long (count (.get-range lmdb dbi-name k-range k-type :ignore false)))
+      (let [dupsort? (.-dupsort? ^DBI (.get dbis dbi-name))]
+        (if dupsort?
+          (.list-range-count lmdb dbi-name k-range k-type [:all] nil)
+          (.key-range-count lmdb dbi-name k-range k-type)))))
 
   (get-some [this dbi-name pred k-range]
     (.get-some this dbi-name pred k-range :data :data false true))
@@ -1279,8 +2269,26 @@
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
     (.get-some this dbi-name pred k-range k-type v-type  ignore-key? true))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?
-                   raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (do
+        (assert (not (and (= v-type :ignore) ignore-key?))
+                "Cannot ignore both key and value")
+        (let [k-type      (normalize-kv-type k-type)
+              pred-v-type (normalize-kv-type
+                            (overlay-pred-v-type v-type raw-pred?))
+              kvs         (.get-range this dbi-name k-range
+                                      k-type pred-v-type false)]
+          (loop [xs (seq kvs)]
+            (when-let [[k v] (first xs)]
+              (let [v-out   (overlay-out-value v v-type)
+                    matched (if raw-pred?
+                              (pred (overlay-raw-kv k v k-type pred-v-type))
+                              (pred k v-out))]
+                (if matched
+                  (if ignore-key? v-out [k v-out])
+                  (recur (next xs))))))))
+      (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?
+                     raw-pred?)))
 
   (range-filter [this dbi-name pred k-range]
     (.range-filter this dbi-name pred k-range :data :data false true))
@@ -1291,8 +2299,28 @@
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
     (.range-filter this dbi-name pred k-range k-type v-type  ignore-key? true))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?
-                       raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (do
+        (assert (not (and (= v-type :ignore) ignore-key?))
+                "Cannot ignore both key and value")
+        (let [k-type      (normalize-kv-type k-type)
+              pred-v-type (normalize-kv-type
+                            (overlay-pred-v-type v-type raw-pred?))
+              kvs         (.get-range this dbi-name k-range
+                                      k-type pred-v-type false)]
+          (loop [xs  (seq kvs)
+                 out (transient [])]
+            (if-let [[k v] (first xs)]
+              (let [v-out   (overlay-out-value v v-type)
+                    matched (if raw-pred?
+                              (pred (overlay-raw-kv k v k-type pred-v-type))
+                              (pred k v-out))]
+                (if matched
+                  (recur (next xs) (conj! out (if ignore-key? v-out [k v-out])))
+                  (recur (next xs) out)))
+              (persistent! out)))))
+      (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?
+                         raw-pred?)))
 
   (range-keep [this dbi-name pred k-range]
     (.range-keep this dbi-name pred k-range :data :data true))
@@ -1301,7 +2329,23 @@
   (range-keep [this dbi-name pred k-range k-type v-type]
     (.range-keep this dbi-name pred k-range k-type v-type true))
   (range-keep [this dbi-name pred k-range k-type v-type raw-pred?]
-    (scan/range-keep this dbi-name pred k-range k-type v-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type      (normalize-kv-type k-type)
+            pred-v-type (normalize-kv-type
+                          (overlay-pred-v-type v-type raw-pred?))
+            kvs         (.get-range this dbi-name k-range
+                                    k-type pred-v-type false)]
+        (loop [xs  (seq kvs)
+               out (transient [])]
+          (if-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (pred (overlay-raw-kv k v k-type pred-v-type))
+                        (pred k (overlay-out-value v v-type)))]
+              (if (nil? res)
+                (recur (next xs) out)
+                (recur (next xs) (conj! out res))))
+            (persistent! out))))
+      (scan/range-keep this dbi-name pred k-range k-type v-type raw-pred?)))
 
   (range-some [this dbi-name pred k-range]
     (.range-some this dbi-name pred k-range :data :data true))
@@ -1310,7 +2354,19 @@
   (range-some [this dbi-name pred k-range k-type v-type]
     (.range-some this dbi-name pred k-range k-type v-type true))
   (range-some [this dbi-name pred k-range k-type v-type raw-pred?]
-    (scan/range-some this dbi-name pred k-range k-type v-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type      (normalize-kv-type k-type)
+            pred-v-type (normalize-kv-type
+                          (overlay-pred-v-type v-type raw-pred?))
+            kvs         (.get-range this dbi-name k-range
+                                    k-type pred-v-type false)]
+        (loop [xs (seq kvs)]
+          (when-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (pred (overlay-raw-kv k v k-type pred-v-type))
+                        (pred k (overlay-out-value v v-type)))]
+              (or res (recur (next xs)))))))
+      (scan/range-some this dbi-name pred k-range k-type v-type raw-pred?)))
 
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data :data true))
@@ -1319,7 +2375,24 @@
   (range-filter-count [this dbi-name pred k-range k-type v-type]
     (.range-filter-count this dbi-name pred k-range k-type v-type true))
   (range-filter-count [this dbi-name pred k-range k-type v-type raw-pred?]
-    (scan/range-filter-count this dbi-name pred k-range k-type v-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type      (normalize-kv-type k-type)
+            pred-v-type (normalize-kv-type
+                          (overlay-pred-v-type v-type raw-pred?))
+            kvs         (.get-range this dbi-name k-range
+                                    k-type pred-v-type false)]
+        (loop [xs  (seq kvs)
+               cnt 0]
+          (if-let [[k v] (first xs)]
+            (let [matched (if raw-pred?
+                            (pred (overlay-raw-kv k v k-type pred-v-type))
+                            (pred k (overlay-out-value v v-type)))]
+              (if matched
+                (recur (next xs) (unchecked-inc cnt))
+                (recur (next xs) cnt)))
+            cnt)))
+      (scan/range-filter-count this dbi-name pred k-range k-type
+                               v-type raw-pred?)))
 
   (visit [this dbi-name visitor k-range]
     (.visit this dbi-name visitor k-range :data :data true))
@@ -1328,7 +2401,20 @@
   (visit [this dbi-name visitor k-range k-type v-type]
     (.visit this dbi-name visitor k-range k-type v-type true))
   (visit [this dbi-name visitor k-range k-type v-type raw-pred?]
-    (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type      (normalize-kv-type k-type)
+            pred-v-type (normalize-kv-type
+                          (overlay-pred-v-type v-type raw-pred?))
+            kvs         (.get-range this dbi-name k-range
+                                    k-type pred-v-type false)]
+        (loop [xs (seq kvs)]
+          (when-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (visitor (overlay-raw-kv k v k-type pred-v-type))
+                        (visitor k (overlay-out-value v v-type)))]
+              (when-not (identical? res :datalevin/terminate-visit)
+                (recur (next xs)))))))
+      (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?)))
 
   (visit-key-sample
     [db dbi-name indices budget step visitor k-range k-type]
@@ -1336,8 +2422,11 @@
       db dbi-name indices budget step visitor k-range k-type true))
   (visit-key-sample
     [db dbi-name indices budget step visitor k-range k-type raw-pred?]
-    (scan/visit-key-sample
-      db dbi-name indices budget step visitor k-range k-type raw-pred?))
+    (if (kv-overlay-active? db dbi-name)
+      (overlay-visit-key-sample db dbi-name indices visitor k-range
+                                k-type raw-pred?)
+      (scan/visit-key-sample
+        db dbi-name indices budget step visitor k-range k-type raw-pred?)))
 
   (open-list-dbi [this dbi-name {:keys [key-size val-size flags]
                                  :or   {key-size c/+max-key-size+
@@ -1365,102 +2454,180 @@
     (.transact-kv this [(l/kv-tx :del-list dbi-name k vs kt vt)]))
 
   (get-list [this dbi-name k kt vt]
-    (scan/get-list this dbi-name k kt vt))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-list-values this dbi-name k kt vt)
+      (scan/get-list this dbi-name k kt vt)))
 
   (visit-list [this dbi-name visitor k kt]
     (.visit-list this dbi-name visitor k kt :data true))
   (visit-list [this dbi-name visitor k kt vt]
     (.visit-list this dbi-name visitor k kt vt true))
   (visit-list [this dbi-name visitor k kt vt raw-pred?]
-    (scan/visit-list this dbi-name visitor k kt vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [vt (normalize-kv-type vt)]
+        (doseq [v (or (overlay-list-values this dbi-name k kt vt) [])]
+          (if raw-pred?
+            (visitor (ByteBuffer/wrap (encode-kv-bytes v vt)))
+            (visitor v))))
+      (scan/visit-list this dbi-name visitor k kt vt raw-pred?)))
 
   (list-count [lmdb dbi-name k kt]
-    (.check-ready lmdb)
-    (if k
-      (scan/scan
-        (list-count* rtx cur k kt)
-        (raise "Fail to count list: " e {:dbi dbi-name :k k}))
-      0))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (if k
+        (long (count (overlay-list-range lmdb dbi-name
+                                         [:closed k k] kt [:all] :raw)))
+        0)
+      (do
+        (.check-ready lmdb)
+        (if k
+          (scan/scan
+            (list-count* rtx cur k kt)
+            (raise "Fail to count list: " e {:dbi dbi-name :k k}))
+          0))))
 
   (near-list [lmdb dbi-name k v kt vt]
-    (.check-ready lmdb)
-    (scan/scan
-      (near-list* rtx cur k kt v vt)
-      (raise "Fail to get an item that is near in a list: "
-             e {:dbi dbi-name :k k :v v})))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (overlay-list-near-val-buf lmdb dbi-name k v kt vt)
+      (do
+        (.check-ready lmdb)
+        (scan/scan
+          (near-list* rtx cur k kt v vt)
+          (raise "Fail to get an item that is near in a list: "
+                 e {:dbi dbi-name :k k :v v})))))
 
   (in-list? [lmdb dbi-name k v kt vt]
-    (.check-ready lmdb)
-    (if (and k v)
-      (scan/scan
-        (in-list?* rtx cur k kt v vt)
-        (raise "Fail to test if an item is in list: "
-               e {:dbi dbi-name :k k :v v}))
-      false))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (if (and k v)
+        (boolean (seq (overlay-list-range lmdb dbi-name [:closed k k] kt
+                                          [:closed v v] vt)))
+        false)
+      (do
+        (.check-ready lmdb)
+        (if (and k v)
+          (scan/scan
+            (in-list?* rtx cur k kt v vt)
+            (raise "Fail to test if an item is in list: "
+                   e {:dbi dbi-name :k k :v v}))
+          false))))
 
   (key-range-list-count [lmdb dbi-name k-range k-type]
     (.key-range-list-count lmdb dbi-name k-range k-type nil nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap]
     (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap budget]
-    (if (l/dlmdb?)
-      (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
-      (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (let [k-type (normalize-kv-type k-type)
+            kvs    (overlay-list-range lmdb dbi-name k-range k-type
+                                       [:all] :raw)]
+        (overlay-key-count kvs k-type true cap))
+      (if (l/dlmdb?)
+        (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
+        (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget))))
 
   (list-range [this dbi-name k-range kt v-range vt]
-    (scan/list-range this dbi-name k-range kt v-range vt))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-list-range this dbi-name k-range kt v-range vt)
+      (scan/list-range this dbi-name k-range kt v-range vt)))
 
   (list-range-count [lmdb dbi-name k-range kt v-range vt]
     (.list-range-count lmdb dbi-name k-range kt v-range vt nil))
   (list-range-count [lmdb dbi-name [k-range-type k1 k2] k-type
                      [v-range-type v1 v2] v-type cap]
-    (scan/scan
-      (let [[^RangeContext kctx ^RangeContext vctx]
-            (l/list-range-info rtx k-range-type k1 k2 k-type
-                               v-range-type v1 v2 v-type)
-            kforward (dtlv-bool (.-forward? kctx))
-            kstart   (dtlv-bool (.-include-start? kctx))
-            kend     (dtlv-bool (.-include-stop? kctx))
-            sk       (dtlv-val (.-start-bf kctx))
-            ek       (dtlv-val (.-stop-bf kctx))
-            vforward (dtlv-bool (.-forward? vctx))
-            vstart   (dtlv-bool (.-include-start? vctx))
-            vend     (dtlv-bool (.-include-stop? vctx))
-            sv       (dtlv-val (.-start-bf vctx))
-            ev       (dtlv-val (.-stop-bf vctx))]
-        (dtlv-c
-          (if cap
-            (DTLV/dtlv_list_range_count_cap
-              (.ptr ^Cursor cur) cap
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              kforward kstart kend sk ek vforward vstart vend sv ev)
-            (DTLV/dtlv_list_range_count
-              (.ptr ^Cursor cur)
-              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-              kforward kstart kend sk ek vforward vstart vend sv ev))))
-      (raise "Fail to count list range: " e {:dbi dbi-name})))
+    (if (kv-overlay-active? lmdb dbi-name)
+      (let [cnt (long (count (overlay-list-range
+                               lmdb dbi-name
+                               [k-range-type k1 k2] k-type
+                               [v-range-type v1 v2] v-type)))]
+        (if cap (min (long cap) cnt) cnt))
+      (scan/scan
+        (let [[^RangeContext kctx ^RangeContext vctx]
+              (l/list-range-info rtx k-range-type k1 k2 k-type
+                                 v-range-type v1 v2 v-type)
+              kforward (dtlv-bool (.-forward? kctx))
+              kstart   (dtlv-bool (.-include-start? kctx))
+              kend     (dtlv-bool (.-include-stop? kctx))
+              sk       (dtlv-val (.-start-bf kctx))
+              ek       (dtlv-val (.-stop-bf kctx))
+              vforward (dtlv-bool (.-forward? vctx))
+              vstart   (dtlv-bool (.-include-start? vctx))
+              vend     (dtlv-bool (.-include-stop? vctx))
+              sv       (dtlv-val (.-start-bf vctx))
+              ev       (dtlv-val (.-stop-bf vctx))]
+          (dtlv-c
+            (if cap
+              (DTLV/dtlv_list_range_count_cap
+                (.ptr ^Cursor cur) cap
+                (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+                kforward kstart kend sk ek vforward vstart vend sv ev)
+              (DTLV/dtlv_list_range_count
+                (.ptr ^Cursor cur)
+                (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+                kforward kstart kend sk ek vforward vstart vend sv ev))))
+        (raise "Fail to count list range: " e {:dbi dbi-name}))))
 
   (list-range-first [this dbi-name k-range kt v-range vt]
-    (scan/list-range-first this dbi-name k-range kt v-range vt))
+    (if (kv-overlay-active? this dbi-name)
+      (first (overlay-list-range this dbi-name k-range kt v-range vt))
+      (scan/list-range-first this dbi-name k-range kt v-range vt)))
 
   (list-range-first-n [this dbi-name n k-range kt v-range vt]
-    (scan/list-range-first-n this dbi-name n k-range kt v-range vt))
+    (if (kv-overlay-active? this dbi-name)
+      (vec (take n (overlay-list-range this dbi-name k-range kt v-range vt)))
+      (scan/list-range-first-n this dbi-name n k-range kt v-range vt)))
 
   (list-range-filter [this dbi-name pred k-range kt v-range vt]
     (.list-range-filter this dbi-name pred k-range kt v-range vt true))
   (list-range-filter [this dbi-name pred k-range kt v-range vt raw-pred?]
-    (scan/list-range-filter this dbi-name pred k-range kt v-range vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kt  (normalize-kv-type kt)
+            vt  (normalize-kv-type vt)
+            kvs (overlay-list-range this dbi-name k-range kt v-range vt)]
+        (loop [xs  (seq kvs)
+               out (transient [])]
+          (if-let [[k v] (first xs)]
+            (let [matched (if raw-pred?
+                            (pred (overlay-raw-kv k v kt vt))
+                            (pred k v))]
+              (if matched
+                (recur (next xs) (conj! out [k v]))
+                (recur (next xs) out)))
+            (persistent! out))))
+      (scan/list-range-filter this dbi-name pred k-range kt v-range vt raw-pred?)))
 
   (list-range-keep [this dbi-name pred k-range kt v-range vt]
     (.list-range-keep this dbi-name pred k-range kt v-range vt true))
   (list-range-keep [this dbi-name pred k-range kt v-range vt raw-pred?]
-    (scan/list-range-keep this dbi-name pred k-range kt v-range vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kt  (normalize-kv-type kt)
+            vt  (normalize-kv-type vt)
+            kvs (overlay-list-range this dbi-name k-range kt v-range vt)]
+        (loop [xs  (seq kvs)
+               out (transient [])]
+          (if-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (pred (overlay-raw-kv k v kt vt))
+                        (pred k v))]
+              (if (nil? res)
+                (recur (next xs) out)
+                (recur (next xs) (conj! out res))))
+            (persistent! out))))
+      (scan/list-range-keep this dbi-name pred k-range kt v-range vt raw-pred?)))
 
   (list-range-some [this list-name pred k-range k-type v-range v-type]
     (.list-range-some this list-name pred k-range k-type v-range v-type
                       true))
   (list-range-some [this dbi-name pred k-range kt v-range vt raw-pred?]
-    (scan/list-range-some this dbi-name pred k-range kt v-range vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kt  (normalize-kv-type kt)
+            vt  (normalize-kv-type vt)
+            kvs (overlay-list-range this dbi-name k-range kt v-range vt)]
+        (loop [xs (seq kvs)]
+          (when-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (pred (overlay-raw-kv k v kt vt))
+                        (pred k v))]
+              (or res (recur (next xs)))))))
+      (scan/list-range-some this dbi-name pred k-range kt v-range vt raw-pred?)))
 
   (list-range-filter-count
     [this list-name pred k-range k-type v-range v-type]
@@ -1472,8 +2639,23 @@
                               vt raw-pred? nil))
   (list-range-filter-count
     [this dbi-name pred k-range kt v-range vt raw-pred? cap]
-    (scan/list-range-filter-count this dbi-name pred k-range kt v-range
-                                  vt raw-pred? cap))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kt  (normalize-kv-type kt)
+            vt  (normalize-kv-type vt)
+            kvs (overlay-list-range this dbi-name k-range kt v-range vt)]
+        (loop [xs  (seq kvs)
+               cnt 0]
+          (if (or (nil? xs) (and cap (>= cnt (long cap))))
+            cnt
+            (let [[k v]   (first xs)
+                  matched (if raw-pred?
+                            (pred (overlay-raw-kv k v kt vt))
+                            (pred k v))]
+              (if matched
+                (recur (next xs) (unchecked-inc cnt))
+                (recur (next xs) cnt))))))
+      (scan/list-range-filter-count this dbi-name pred k-range kt v-range
+                                    vt raw-pred? cap)))
 
   (visit-list-range
     [this list-name visitor k-range k-type v-range v-type]
@@ -1481,8 +2663,19 @@
                        v-type true))
   (visit-list-range
     [this dbi-name visitor k-range kt v-range vt raw-pred?]
-    (scan/visit-list-range this dbi-name visitor k-range kt v-range
-                           vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [kt  (normalize-kv-type kt)
+            vt  (normalize-kv-type vt)
+            kvs (overlay-list-range this dbi-name k-range kt v-range vt)]
+        (loop [xs (seq kvs)]
+          (when-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (visitor (overlay-raw-kv k v kt vt))
+                        (visitor k v))]
+              (when-not (identical? res :datalevin/terminate-visit)
+                (recur (next xs)))))))
+      (scan/visit-list-range this dbi-name visitor k-range kt v-range
+                             vt raw-pred?)))
 
   (visit-list-key-range
     [this dbi-name visitor k-range k-type v-type]
@@ -1490,8 +2683,20 @@
                            v-type true))
   (visit-list-key-range
     [this dbi-name visitor k-range k-type v-type raw-pred?]
-    (scan/visit-list-key-range this dbi-name visitor k-range k-type
-                               v-type raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (let [k-type (normalize-kv-type k-type)
+            v-type (normalize-kv-type v-type)
+            kvs    (overlay-list-range this dbi-name k-range k-type
+                                       [:all] v-type)]
+        (loop [xs (seq kvs)]
+          (when-let [[k v] (first xs)]
+            (let [res (if raw-pred?
+                        (visitor (overlay-raw-kv k v k-type v-type))
+                        (visitor k v))]
+              (when-not (identical? res :datalevin/terminate-visit)
+                (recur (next xs)))))))
+      (scan/visit-list-key-range this dbi-name visitor k-range k-type
+                                 v-type raw-pred?)))
 
   (visit-list-sample
     [this list-name indices budget step visitor k-range k-type v-type]
@@ -1499,33 +2704,38 @@
                         k-type v-type true))
   (visit-list-sample
     [this dbi-name indices budget step visitor k-range kt vt raw-pred?]
-    (scan/visit-list-sample this dbi-name indices budget step visitor k-range
-                            kt vt raw-pred?))
+    (if (kv-overlay-active? this dbi-name)
+      (overlay-visit-list-sample this dbi-name indices visitor k-range
+                                 kt vt raw-pred?)
+      (scan/visit-list-sample this dbi-name indices budget step visitor k-range
+                              kt vt raw-pred?)))
 
   (operate-list-val-range
     [this dbi-name operator v-range vt]
-    (scan/operate-list-val-range this dbi-name operator v-range vt))
+    (if (kv-overlay-active? this dbi-name)
+      (operator (overlay-list-val-iterable this dbi-name v-range vt))
+      (scan/operate-list-val-range this dbi-name operator v-range vt)))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
 
-(defn- key-range-list-count-fast
-  [lmdb dbi-name [range-type k1 k2] k-type cap]
-  (scan/scan
-    (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
-          flag              (BitOps/intOr
-                              (if (.-include-start? ctx)
-                                (int DTLV/MDB_COUNT_LOWER_INCL) 0)
-                              (if (.-include-stop? ctx)
-                                (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
-      (with-open [ptr (LongPointer. 1)]
-        (DTLV/mdb_range_count_values
-          (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
-          (dtlv-val (.-start-bf ctx)) (dtlv-val (.-stop-bf ctx))
-          flag ptr)
-        (let [res (.get ^LongPointer ptr)]
-          (if (and cap (> ^long res ^long cap)) cap res))))
-    (raise "Fail to count (fast) list in key range: " e {:dbi dbi-name})))
+  (defn- key-range-list-count-fast
+    [lmdb dbi-name [range-type k1 k2] k-type cap]
+    (scan/scan
+      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+            flag              (BitOps/intOr
+                                (if (.-include-start? ctx)
+                                  (int DTLV/MDB_COUNT_LOWER_INCL) 0)
+                                (if (.-include-stop? ctx)
+                                  (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
+        (with-open [ptr (LongPointer. 1)]
+          (DTLV/mdb_range_count_values
+            (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
+            (dtlv-val (.-start-bf ctx)) (dtlv-val (.-stop-bf ctx))
+            flag ptr)
+          (let [res (.get ^LongPointer ptr)]
+            (if (and cap (> ^long res ^long cap)) cap res))))
+      (raise "Fail to count (fast) list in key range: " e {:dbi dbi-name})))
 
 (defn- key-range-list-count-slow
   [lmdb dbi-name [range-type k1 k2] k-type cap budget]
@@ -1577,12 +2787,18 @@
 (defn- open-kv*
   [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?
                                 kv-wal?
+                                wal-meta-flush-max-txs
+                                wal-meta-flush-max-ms
                                 key-compress val-compress]
                          :or   {max-readers c/*max-readers*
                                 max-dbs     c/*max-dbs*
                                 mapsize     c/*init-db-size*
                                 flags       c/default-env-flags
                                 temp?       false
+                                wal-meta-flush-max-txs
+                                c/*wal-meta-flush-max-txs*
+                                wal-meta-flush-max-ms
+                                c/*wal-meta-flush-max-ms*
                                 kv-wal?     c/*enable-kv-wal*}
                          :as   opts}]
   (try
@@ -1595,12 +2811,23 @@
                           flags)
           ^Env env      (Env/create dir mapsize max-readers max-dbs
                                     (kv-flags flags))
+          now-ms        (System/currentTimeMillis)
           info          (cond-> (merge opts {:dir          dir
                                              :flags        flags
                                              :max-readers  max-readers
                                              :max-dbs      max-dbs
                                              :temp?        temp?
-                                             :kv-wal?      (boolean kv-wal?)})
+                                             :kv-wal?      (boolean kv-wal?)
+                                             :wal-meta-flush-max-txs
+                                             (long wal-meta-flush-max-txs)
+                                             :wal-meta-flush-max-ms
+                                             (long wal-meta-flush-max-ms)
+                                             :wal-meta-pending-txs 0
+                                             :wal-meta-last-flush-ms now-ms
+                                             :kv-overlay-committed-by-tx
+                                             (empty-overlay-committed-map)
+                                             :kv-overlay-by-dbi {}
+                                             :overlay-published-wal-tx-id 0})
                           key-compress (assoc :key-compress key-compress)
                           val-compress (assoc :val-compress val-compress))
           ^CppLMDB lmdb (->CppLMDB env
@@ -1624,9 +2851,7 @@
       (swap! l/lmdb-dirs conj dir)
       (open-dbi lmdb c/kv-info) ;; never compressed
       (when kv-wal?
-        (open-dbi lmdb c/kv-wal {:key-size (b/type-size :id)
-                                 :flags    (conj c/default-dbi-flags
-                                                 :counted)}))
+        (u/file (str dir u/+separator+ c/wal-dir)))
       (if temp?
         (u/delete-on-exit dir-file)
         (let [k-comp (when (and key-compress
@@ -1637,8 +2862,19 @@
                                 (.exists (io/file dir c/valcode-file-name)))
                        (cp/load-val-compressor
                          (str dir u/+separator+ c/valcode-file-name)))]
-          (init-info lmdb (dissoc info :kv-wal?))
-          (vswap! (.-info lmdb) assoc :kv-wal? (boolean kv-wal?))
+          (init-info lmdb (dissoc info
+                                  :kv-wal?
+                                  :kv-overlay-committed-by-tx
+                                  :kv-overlay-by-dbi
+                                  :overlay-published-wal-tx-id))
+          (vswap! (.-info lmdb) assoc
+                  :kv-wal? (boolean kv-wal?)
+                  :kv-overlay-committed-by-tx (empty-overlay-committed-map)
+                  :kv-overlay-by-dbi {}
+                  :overlay-published-wal-tx-id 0)
+          (when kv-wal?
+            (refresh-kv-wal-info! lmdb)
+            (refresh-kv-wal-meta-info! lmdb))
           (set-max-val-size lmdb (max-val-size lmdb))
           (set-key-compressor lmdb k-comp)
           (set-val-compressor lmdb v-comp)

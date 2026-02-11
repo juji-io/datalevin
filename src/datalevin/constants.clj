@@ -169,6 +169,7 @@
 (def ^:no-doc ^:const type-symbol     (unchecked-byte 0xFC))
 (def ^:no-doc ^:const type-boolean    (unchecked-byte 0xFD))
 (def ^:no-doc ^:const type-bytes      (unchecked-byte 0xFE))
+(def ^:no-doc ^:const type-giant-ref  (unchecked-byte 0xE0))
 
 (def ^:no-doc ^:const false-value     (unchecked-byte 0x01))
 (def ^:no-doc ^:const true-value      (unchecked-byte 0x02))
@@ -234,18 +235,32 @@
   "dbi name for kv store system information is `datalevin/kv-info`"
   "datalevin/kv-info")
 (def ^:const kv-wal
-  "dbi name for kv WAL records is `datalevin/kv-wal`"
+  "Legacy dbi name for KV WAL records (LMDB-backed WAL, deprecated)."
   "datalevin/kv-wal")
 
 ;; WAL metadata keys stored in kv-info/meta
+(def ^:const wal-dir
+  "directory name under db root for WAL artifacts"
+  "wal")
+(def ^:const wal-meta-file
+  "WAL metadata file name under `wal/`"
+  "meta")
 (def ^:const wal-next-tx-id
   :wal/next-tx-id)
+(def ^:const applied-wal-tx-id
+  :wal/applied-wal-tx-id)
+(def ^:const legacy-applied-tx-id
+  :wal/applied-tx-id)
 (def ^:const last-committed-wal-tx-id
   :wal/last-committed-wal-tx-id)
 (def ^:const last-indexed-wal-tx-id
   :wal/last-indexed-wal-tx-id)
 (def ^:const last-committed-user-tx-id
   :wal/last-committed-user-tx-id)
+(def ^:const committed-last-modified-ms
+  :wal/committed-last-modified-ms)
+(def ^:const wal-meta-revision
+  :wal/meta-revision)
 
 ;; dl
 (def ^:const eav
@@ -465,9 +480,31 @@
   lmdb-sync-interval 300)
 
 (def ^{:dynamic true :no-doc true
-       :doc     "When true, append KV transactions to the internal KV WAL
-                 (`datalevin/kv-wal`). This remains opt-in for rollout safety."}
+       :doc     "When true, append KV transactions to the on-disk WAL
+                 (`<db-dir>/wal`). This remains opt-in for rollout safety."}
   *enable-kv-wal* false)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "When KV WAL is enabled, flush durable `wal/meta` after this
+                 many newly committed txs unless time threshold fired first."}
+  *wal-meta-flush-max-txs* 1024)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "When KV WAL is enabled, max delay in ms before durable
+                 `wal/meta` flush even when tx-count threshold is not reached."}
+  *wal-meta-flush-max-ms* 100)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Max WAL segment size in bytes before rotation."}
+  *wal-segment-max-bytes* (* 256 1024 1024))
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Max WAL segment age in ms before rotation."}
+  *wal-segment-max-ms* 300000)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "WAL sync mode for file-based WAL: :fsync, :fdatasync, or :none."}
+  *wal-sync-mode* :fsync)
 
 ;; datalog db
 

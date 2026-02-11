@@ -160,26 +160,31 @@
                    (str "remote-kv-wal-admin-" (UUID/randomUUID)))
         store (sut/open-kv dir {:kv-wal? true})]
     (if/open-dbi store "a")
-    (if/transact-kv store [[:put "a" 1 "x"]])
-    (if/transact-kv store [[:put "a" 2 "y"]])
+    (let [base-id (:last-committed-wal-tx-id
+                   (dc/kv-wal-watermarks store))]
+      (if/transact-kv store [[:put "a" 1 "x"]])
+      (if/transact-kv store [[:put "a" 2 "y"]])
+      (let [partial-id   (inc base-id)]
+        (is (= {:last-committed-wal-tx-id (+ base-id 2)
+                :last-indexed-wal-tx-id 0
+                :last-committed-user-tx-id (+ base-id 2)}
+               (dc/kv-wal-watermarks store)))
 
-    (is (= {:last-committed-wal-tx-id 2
-            :last-indexed-wal-tx-id 2
-            :last-committed-user-tx-id 2}
-           (dc/kv-wal-watermarks store)))
-
-    (if/transact-kv store c/kv-info
-                    [[:put c/last-indexed-wal-tx-id 0]]
-                    :attr :long)
-
-    (is (= {:indexed-wal-tx-id 1
-            :committed-wal-tx-id 2
-            :drained? false}
-           (dc/flush-kv-indexer! store 1)))
-    (is (= {:indexed-wal-tx-id 2
-            :committed-wal-tx-id 2
-            :drained? true}
-           (dc/flush-kv-indexer! store)))
+        ;; *trusted-apply* doesn't cross the remote boundary, so this
+        ;; transact-kv emits an extra WAL record on the server side.
+        (if/transact-kv store c/kv-info
+                        [[:put c/last-indexed-wal-tx-id 0]]
+                        :attr :id)
+        (let [committed-id (:last-committed-wal-tx-id
+                            (dc/kv-wal-watermarks store))]
+          (is (= {:indexed-wal-tx-id partial-id
+                  :committed-wal-tx-id committed-id
+                  :drained? false}
+                 (dc/flush-kv-indexer! store partial-id)))
+          (is (= {:indexed-wal-tx-id committed-id
+                  :committed-wal-tx-id committed-id
+                  :drained? true}
+                 (dc/flush-kv-indexer! store))))))
     (if/close-kv store)))
 
 (deftest async-basic-ops-test

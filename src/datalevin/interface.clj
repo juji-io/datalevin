@@ -152,7 +152,7 @@
     [db]
     [db upto-wal-id]
     "Replay KV WAL to advance indexed watermark and return:
-     `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <bool>}`.")
+     `{:indexed-wal-tx-id <id> :committed-wal-tx-id <id> :drained? <bool>}`.")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]

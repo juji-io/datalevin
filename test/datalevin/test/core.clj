@@ -9,6 +9,10 @@
    [datalevin.server :as srv])
   (:import [java.util UUID]))
 
+(defn- with-test-trace
+  [f]
+  (f))
+
 (defn wrap-res [f]
   (let [res (f)]
     (when (pos? ^long (+ ^long (:fail res) ^long (:error res)))
@@ -49,18 +53,20 @@
     ;; (log/set-min-level! :debug)
     (log/set-min-level! :report)
     (binding [c/*db-background-sampling?* false]
-      (try
-        (srv/start server)
-        (f)
-        (catch Exception e (throw e))
-        (finally
-          (srv/stop server)
-          (u/delete-files dir)))))
+      (with-test-trace
+        (fn []
+          (try
+            (srv/start server)
+            (f)
+            (catch Exception e (throw e))
+            (finally
+              (srv/stop server)
+              (u/delete-files dir)))))))
   (System/gc))
 
 (defn db-fixture
   [f]
   (log/set-min-level! :report)
   (binding [c/*db-background-sampling?* false]
-    (f))
+    (with-test-trace f))
   (System/gc))

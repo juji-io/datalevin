@@ -1039,7 +1039,7 @@ Only usable for debug output.
 (def ^{:arglists '([db]
                    [db upto-wal-id])
        :doc      "Replay KV WAL records through the local indexer path and return:
-  `{:indexed-wal-tx-id <long> :committed-wal-tx-id <long> :drained? <boolean>}`.
+  `{:indexed-wal-tx-id <id> :committed-wal-tx-id <id> :drained? <boolean>}`.
   When `upto-wal-id` is provided, replay is bounded by that WAL id."}
   flush-kv-indexer! i/flush-kv-indexer!)
 
