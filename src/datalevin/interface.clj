@@ -83,9 +83,7 @@
     [db list-name indices budget step visitor k-range k-type v-type
      raw-pred?]
     "visit a list range, presumably for side effects of vistor call")
-  (operate-list-val-range
-    [db list-name operator v-range v-type]
-    "Take an operator function that operates a ListRandKeyValIterable"))
+)
 
 (defprotocol ILMDB
   (check-ready [db] "check if db is ready to be operated on")

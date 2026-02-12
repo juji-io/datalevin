@@ -234,9 +234,6 @@
 (def ^:const kv-info
   "dbi name for kv store system information is `datalevin/kv-info`"
   "datalevin/kv-info")
-(def ^:const kv-wal
-  "Legacy dbi name for KV WAL records (LMDB-backed WAL, deprecated)."
-  "datalevin/kv-wal")
 
 ;; WAL metadata keys stored in kv-info/meta
 (def ^:const wal-dir

@@ -638,14 +638,6 @@
     (raise "Fail to visit key sample: " e
            {:dbi dbi-name :key-range k-range})))
 
-(defn operate-list-val-range
-  [lmdb dbi-name operator v-range v-type]
-  (scan
-    (let [iterable (l/iterate-list-val dbi rtx cur v-range v-type)]
-      (operator iterable))
-    (raise "Fail to operate list val range: " e
-           {:dbi dbi-name :val-range v-range})))
-
 (defn visit-list*
   [iter visitor k kt vt raw-pred?]
   (loop [next? (l/seek-key iter k kt)]

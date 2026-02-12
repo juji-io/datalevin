@@ -14,6 +14,7 @@
    [datalevin.util :as u])
   (:import
    [java.util.concurrent ConcurrentLinkedDeque]
+   [java.util.function Supplier]
    [java.nio ByteBuffer]
    [datalevin.utl BufOps]))
 
@@ -73,3 +74,12 @@
   (let [sa (byte-array (.remaining sb))]
     (.get sb sa)
     (u/hexify sa)))
+
+(def ^:private ^ThreadLocal tl-buf
+  (ThreadLocal/withInitial
+    (reify Supplier
+      (get [_] (ByteBuffer/allocate c/+max-key-size+)))))
+
+(defn get-tl-buffer [] (.get ^ThreadLocal tl-buf))
+
+(defn set-tl-buffer [bf] (.set tl-buf bf))

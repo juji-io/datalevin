@@ -14,8 +14,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop])
   (:import
-   [java.util UUID]
-   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]))
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -302,7 +301,7 @@
                              :kv-wal? true})]
     (try
       (let [ex (try
-                 (if/transact-kv lmdb [[:put c/kv-wal 1 (byte-array [1]) :id :raw]])
+                 (if/transact-kv lmdb [[:put "nonexistent-dbi" 1 (byte-array [1]) :id :raw]])
                  nil
                  (catch Exception e e))]
         (is (instance? clojure.lang.ExceptionInfo ex))
@@ -576,29 +575,6 @@
                               (fn [k v] (vswap! sampled conj [k v]))
                               [:all] :string :long false)
         (is (= [["a" 3] ["c" 7]] @sampled)))
-      (let [vals (volatile! [])
-            op   (fn [^IListRandKeyValIterable iterable]
-                   (with-open [^IListRandKeyValIterator iter
-                               (l/val-iterator iterable)]
-                     (loop [next? (l/seek-key iter "a" :string)]
-                       (when next?
-                         (vswap! vals conj (b/read-buffer (l/next-val iter)
-                                                          :long))
-                         (recur (l/has-next-val iter))))))]
-        (if/operate-list-val-range lmdb "l" op [:all] :long)
-        (is (= [1 3 6] @vals)))
-      (let [vals (volatile! [])
-            op   (fn [^IListRandKeyValIterable iterable]
-                   (with-open [^IListRandKeyValIterator iter
-                               (l/val-iterator iterable)]
-                     (loop [next? (l/seek-key iter "a" :string)]
-                       (when next?
-                         (vswap! vals conj (b/read-buffer (l/next-val iter)
-                                                          :long))
-                         (recur (l/has-next-val iter))))))]
-        (if/operate-list-val-range lmdb "l" op [:closed 2 6] :long)
-        (is (= [3 6] @vals)))
-
       ;; Replay catches base up and prunes committed overlay <= indexed watermark.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
       (binding [c/*trusted-apply* true]
@@ -869,6 +845,272 @@
             ;; Verify op types in WAL records
             (is (every? #(= :put (:op %)) (:wal/ops (first records))))
             (is (every? #(= :del (:op %)) (:wal/ops (second records))))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Fuzz tests for wrapped KV iterators (overlay merge)
+;; ---------------------------------------------------------------------------
+
+(def ^:private gen-small-long
+  "Small longs (0–30) for key/value generation.  Kept small to maximize
+   collision probability between base and overlay."
+  (gen/choose 0 30))
+
+;; --- Non-dupsort helpers ---
+
+(def ^:private gen-key-iter-op
+  (gen/one-of
+    [(gen/fmap (fn [[k v]] {:op :put :k k :v v})
+              (gen/tuple gen-small-long gen-small-long))
+     (gen/fmap (fn [k] {:op :del :k k})
+              gen-small-long)]))
+
+(def ^:private gen-key-iter-ops
+  (gen/not-empty (gen/vector gen-key-iter-op 1 30)))
+
+(defn- apply-key-iter-ops
+  "Apply put/del ops to a sorted-map reference model (key → value)."
+  [m ops]
+  (reduce (fn [acc {:keys [op k v]}]
+            (case op
+              :put (assoc acc k v)
+              :del (dissoc acc k)))
+          m ops))
+
+(defn- kv-ops->txn [dbi ops]
+  (mapv (fn [{:keys [op k v]}]
+          (case op
+            :put [:put dbi k v :long :long]
+            :del [:del dbi k :long]))
+        ops))
+
+(defn- verify-key-iter
+  "Verify key iteration against sorted-map reference."
+  [lmdb dbi ref-map]
+  ;; get-range :all
+  (is (= (vec ref-map)
+         (vec (if/get-range lmdb dbi [:all] :long :long)))
+      "get-range :all")
+  ;; get-range :all-back
+  (is (= (if (empty? ref-map) [] (vec (rseq ref-map)))
+         (vec (if/get-range lmdb dbi [:all-back] :long :long)))
+      "get-range :all-back")
+  ;; key-range
+  (is (= (vec (keys ref-map))
+         (vec (if/key-range lmdb dbi [:all] :long)))
+      "key-range :all")
+  ;; range-count
+  (is (= (count ref-map)
+         (if/range-count lmdb dbi [:all] :long))
+      "range-count :all")
+  ;; visit-key-range
+  (let [visited (volatile! [])]
+    (if/visit-key-range lmdb dbi (fn [k] (vswap! visited conj k))
+                        [:all] :long false)
+    (is (= (vec (keys ref-map)) @visited) "visit-key-range :all"))
+  ;; visit (key+value)
+  (let [visited (volatile! [])]
+    (if/visit lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+              [:all] :long :long false)
+    (is (= (vec ref-map) @visited) "visit :all"))
+  ;; Parametric :closed range
+  (when (>= (count ref-map) 2)
+    (let [ks  (vec (keys ref-map))
+          lo  (first ks)
+          hi  (last ks)]
+      (is (= (vec (subseq ref-map >= lo <= hi))
+             (vec (if/get-range lmdb dbi [:closed lo hi] :long :long)))
+          "get-range :closed")
+      (when (> (count ks) 2)
+        (let [mid (nth ks (quot (count ks) 2))]
+          (is (= (vec (subseq ref-map >= mid))
+                 (vec (if/get-range lmdb dbi [:at-least mid] :long :long)))
+              "get-range :at-least")
+          (is (= (vec (subseq ref-map <= mid))
+                 (vec (if/get-range lmdb dbi [:at-most mid] :long :long)))
+              "get-range :at-most")
+          (is (= (vec (subseq ref-map > mid))
+                 (vec (if/get-range lmdb dbi [:greater-than mid] :long :long)))
+              "get-range :greater-than"))))))
+
+(test/defspec kv-wal-fuzz-key-iter-test
+  50
+  (prop/for-all
+    [ops1 gen-key-iter-ops
+     ops2 gen-key-iter-ops]
+    (let [dir  (u/tmp-dir (str "kv-wal-fuzz-ki-" (UUID/randomUUID)))
+          lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                :kv-wal? true})]
+      (try
+        (if/open-dbi lmdb "a")
+
+        ;; Phase 1: overlay-only (base is empty)
+        (if/transact-kv lmdb (kv-ops->txn "a" ops1))
+        (let [ref1 (apply-key-iter-ops (sorted-map) ops1)]
+          (verify-key-iter lmdb "a" ref1)
+
+          ;; Phase 2: replay to base, prune overlay, add new overlay
+          (binding [c/*trusted-apply* true]
+            (if/transact-kv lmdb c/kv-info
+                            [[:put c/last-indexed-wal-tx-id 0]
+                             [:put c/applied-wal-tx-id 0]]
+                            :attr :id))
+          (if/flush-kv-indexer! lmdb)
+
+          (if/transact-kv lmdb (kv-ops->txn "a" ops2))
+          (let [ref2 (apply-key-iter-ops ref1 ops2)]
+            (verify-key-iter lmdb "a" ref2)))
+        true
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+;; --- Dupsort helpers ---
+
+(def ^:private gen-list-iter-op
+  (gen/frequency
+    [[5 (gen/fmap (fn [[k vs]]
+                    {:op :put-list :k k :vs (vec (distinct vs))})
+                  (gen/tuple gen-small-long
+                             (gen/not-empty (gen/vector gen-small-long 1 5))))]
+     [3 (gen/fmap (fn [[k vs]]
+                    {:op :del-list :k k :vs (vec (distinct vs))})
+                  (gen/tuple gen-small-long
+                             (gen/not-empty (gen/vector gen-small-long 1 3))))]
+     [2 (gen/fmap (fn [k] {:op :wipe :k k})
+                  gen-small-long)]]))
+
+(def ^:private gen-list-iter-ops
+  (gen/not-empty (gen/vector gen-list-iter-op 1 20)))
+
+(defn- apply-list-iter-ops
+  "Apply list ops to a sorted-map of key → sorted-set-of-values."
+  [m ops]
+  (reduce (fn [acc {:keys [op k vs]}]
+            (case op
+              :put-list (update acc k
+                                (fn [s] (into (or s (sorted-set)) vs)))
+              :del-list (if-let [s (get acc k)]
+                          (let [new-s (reduce disj s vs)]
+                            (if (empty? new-s) (dissoc acc k)
+                                (assoc acc k new-s)))
+                          acc)
+              :wipe     (dissoc acc k)))
+          m ops))
+
+(defn- flatten-list-ref
+  "Flatten sorted-map {k → sorted-set} to [[k v] …] pairs."
+  ([m] (flatten-list-ref m false false))
+  ([m key-back? val-back?]
+   (vec (let [key-seq (if key-back?
+                        (when (seq m) (rseq m))
+                        (seq m))]
+          (for [[k vs] key-seq
+                v (if val-back? (rseq vs) (seq vs))]
+            [k v])))))
+
+(defn- list-ops->txn [dbi ops]
+  (mapv (fn [{:keys [op k vs]}]
+          (case op
+            :put-list [:put-list dbi k vs :long :long]
+            :del-list [:del-list dbi k vs :long :long]
+            :wipe     [:del dbi k :long]))
+        ops))
+
+(defn- verify-list-iter
+  "Verify list iteration (wrap-list-iterable) against reference model."
+  [lmdb dbi ref-map]
+  ;; list-range [:all] [:all]
+  (is (= (flatten-list-ref ref-map)
+         (vec (if/list-range lmdb dbi [:all] :long [:all] :long)))
+      "list-range :all :all")
+  ;; list-range [:all-back] [:all]
+  (is (= (flatten-list-ref ref-map true false)
+         (vec (if/list-range lmdb dbi [:all-back] :long [:all] :long)))
+      "list-range :all-back :all")
+  ;; list-range [:all] [:all-back]
+  (is (= (flatten-list-ref ref-map false true)
+         (vec (if/list-range lmdb dbi [:all] :long [:all-back] :long)))
+      "list-range :all :all-back")
+  ;; list-range-count
+  (is (= (reduce + 0 (map count (vals ref-map)))
+         (if/list-range-count lmdb dbi [:all] :long [:all] :long))
+      "list-range-count :all :all")
+  ;; visit-list-range
+  (let [visited (volatile! [])]
+    (if/visit-list-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+                         [:all] :long [:all] :long false)
+    (is (= (flatten-list-ref ref-map) @visited)
+        "visit-list-range :all :all"))
+  ;; Parametric value sub-range for a key that exists
+  (when (seq ref-map)
+    (let [[k vs] (first ref-map)
+          v-lo   (first vs)
+          v-hi   (last vs)
+          expected (vec (for [v (subseq vs >= v-lo <= v-hi)] [k v]))]
+      (is (= expected
+             (vec (if/list-range lmdb dbi [:closed k k] :long
+                                 [:closed v-lo v-hi] :long)))
+          "list-range :closed key :closed val"))))
+
+(defn- verify-list-key-range-iter
+  "Verify list-key-range iteration (wrap-list-key-range-full-val-iterable)."
+  [lmdb dbi ref-map]
+  ;; visit-list-key-range [:all]
+  (let [visited (volatile! [])]
+    (if/visit-list-key-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+                             [:all] :long :long false)
+    (is (= (flatten-list-ref ref-map) @visited)
+        "visit-list-key-range :all"))
+  ;; visit-list-key-range [:all-back] — underlying iterator is forward-only
+  (let [visited (volatile! [])]
+    (if/visit-list-key-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+                             [:all-back] :long :long false)
+    (is (= (flatten-list-ref ref-map) @visited)
+        "visit-list-key-range :all-back"))
+  ;; Parametric :closed key range
+  (when (>= (count ref-map) 2)
+    (let [lo  (first (keys ref-map))
+          hi  (last (keys ref-map))
+          sub (into (sorted-map) (subseq ref-map >= lo <= hi))]
+      (let [visited (volatile! [])]
+        (if/visit-list-key-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+                                 [:closed lo hi] :long :long false)
+        (is (= (flatten-list-ref sub) @visited)
+            "visit-list-key-range :closed")))))
+
+(test/defspec kv-wal-fuzz-list-iter-test
+  50
+  (prop/for-all
+    [ops1 gen-list-iter-ops
+     ops2 gen-list-iter-ops]
+    (let [dir  (u/tmp-dir (str "kv-wal-fuzz-li-" (UUID/randomUUID)))
+          lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                :kv-wal? true})]
+      (try
+        (if/open-list-dbi lmdb "l")
+
+        ;; Phase 1: overlay-only
+        (if/transact-kv lmdb (list-ops->txn "l" ops1))
+        (let [ref1 (apply-list-iter-ops (sorted-map) ops1)]
+          (verify-list-iter lmdb "l" ref1)
+          (verify-list-key-range-iter lmdb "l" ref1)
+
+          ;; Phase 2: replay to base, prune overlay, add new overlay
+          (binding [c/*trusted-apply* true]
+            (if/transact-kv lmdb c/kv-info
+                            [[:put c/last-indexed-wal-tx-id 0]
+                             [:put c/applied-wal-tx-id 0]]
+                            :attr :id))
+          (if/flush-kv-indexer! lmdb)
+
+          (if/transact-kv lmdb (list-ops->txn "l" ops2))
+          (let [ref2 (apply-list-iter-ops ref1 ops2)]
+            (verify-list-iter lmdb "l" ref2)
+            (verify-list-key-range-iter lmdb "l" ref2)))
+        true
         (finally
           (if/close-kv lmdb)
           (u/delete-files dir))))))

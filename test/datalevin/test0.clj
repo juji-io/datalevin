@@ -8,6 +8,7 @@
    datalevin.query-test
    datalevin.test.transact
    datalevin.remote-withtxn-test
+   datalevin.wal-datalog-test
    datalevin.search-test
    datalevin.vector-test
    datalevin.idoc-test
@@ -24,6 +25,7 @@
           'datalevin.query-test
           'datalevin.test.transact
           'datalevin.remote-withtxn-test
+          'datalevin.wal-datalog-test
           'datalevin.search-test
           'datalevin.vector-test
           'datalevin.idoc-test

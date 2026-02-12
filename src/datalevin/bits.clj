@@ -18,7 +18,7 @@
    [clojure.string :as s]
    [taoensso.nippy :as nippy])
   (:import
-   [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
+   [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder Comparator]
    [java.util.regex Pattern]
    [java.math BigInteger BigDecimal]
    [java.io Writer]
@@ -221,6 +221,30 @@
   "Return the values in the 64-bit bitmap as a long array"
   [^Roaring64Bitmap bm]
   (.toArray bm))
+
+;; bytes
+
+(defn compare-bytes ^long [^bytes a ^bytes b] (Arrays/compareUnsigned a b))
+
+(def bytes-cmp
+  (reify Comparator
+    (compare [_ a b] (compare-bytes a b))))
+
+(defn compare-bf-bytes
+  "Unsigned byte comparison between ByteBuffer and byte[], no allocation."
+  ^long [^ByteBuffer bb ^bytes bs]
+  (let [pos     (.position bb)
+        bb-len  (.remaining bb)
+        bs-len  (alength bs)
+        min-len (min bb-len bs-len)]
+    (loop [i 0]
+      (if (< i min-len)
+        (let [a (Byte/toUnsignedInt (.get bb (unchecked-add-int pos i)))
+              b (Byte/toUnsignedInt (aget bs i))]
+          (if (== a b)
+            (recur (unchecked-inc-int i))
+            (unchecked-subtract-int a b)))
+        (unchecked-subtract-int bb-len bs-len)))))
 
 ;; data read/write from/to buffer
 

@@ -17,8 +17,7 @@
    [clojure.test.check.properties :as prop])
   (:import
    [java.util UUID Arrays]
-   [java.lang Long]
-   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]))
+   [java.lang Long]))
 
 (use-fixtures :each db-fixture)
 
@@ -457,19 +456,7 @@
         kvisit  (i/inter-fn
                     [bf]
                   (let [k (b/read-buffer bf :string)]
-                    (vswap! joins #(s/join " " [% k]))))
-        values  (volatile! [])
-        op-gen  (i/inter-fn
-                    [k kt]
-                  (i/inter-fn
-                      [^IListRandKeyValIterable iterable]
-                    (let [^IListRandKeyValIterator iter
-                          (l/val-iterator iterable)]
-                      (loop [next? (l/seek-key iter k kt)]
-                        (when next?
-                          (vswap! values conj
-                                  (b/read-buffer (l/next-val iter) :long))
-                          (recur (l/has-next-val iter)))))))]
+                    (vswap! joins #(s/join " " [% k]))))]
     (if/open-list-dbi lmdb "list" #_{:flags #{:create :counted :dupsort}})
     (is (if/list-dbi? lmdb "list"))
 
@@ -498,26 +485,6 @@
     (is (= (if/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
     (is (= (if/key-range-count lmdb "list" [:greater-than "b"] :string) 1))
     (is (= (if/key-range lmdb "list" [:less-than "b"] :string) ["a"]))
-
-    (if/operate-list-val-range lmdb "list" (op-gen "b" :string) [:all] :long)
-    (is (= [5 6 7] @values))
-    (vreset! values [])
-
-    (if/operate-list-val-range lmdb "list" (op-gen "b" :string)
-                               [:closed 5 6] :long)
-    (is (= [5 6] @values))
-    (vreset! values [])
-
-    ;; we no longer support open boundary for list val
-    (if/operate-list-val-range lmdb "list" (op-gen "b" :string)
-                               [:closed 5 6] :long)
-    (is (= [5 6] @values))
-    (vreset! values [])
-
-    (if/operate-list-val-range lmdb "list"  (op-gen "d" :string)
-                               [:closed 5 6] :long)
-    (is (= [] @values))
-    (vreset! values [])
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
