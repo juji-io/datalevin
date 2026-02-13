@@ -328,6 +328,14 @@
   "dbi name suffix for vec-ref -> vec-id map is `vec-refs`"
   "vec-refs")
 
+(def ^:const vec-index-dbi
+  "dbi name for vector index blob chunks is `datalevin/vec-index`"
+  "datalevin/vec-index")
+
+(def ^:const vec-meta-dbi
+  "dbi name for vector index metadata is `datalevin/vec-meta`"
+  "datalevin/vec-meta")
+
 ;; idoc
 
 (def ^:const idoc-doc-ref
@@ -515,6 +523,15 @@
                  fdatasync on the next write.  Bounds the durability window when
                  writes are infrequent.  0 disables the time-based trigger."}
   *wal-group-commit-ms* 10)
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Max buffer size in bytes for in-memory vector index
+                 serialization.  Above this, file-spool mode is used."}
+  *wal-vec-max-buffer-bytes* (* 128 1024 1024))
+
+(def ^{:dynamic true :no-doc true
+       :doc     "Max LMDB value chunk size in bytes for vector index blobs."}
+  *wal-vec-chunk-bytes* (* 512 1024 1024))
 
 ;; datalog db
 

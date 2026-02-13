@@ -777,3 +777,219 @@
       (finally
         (d/close conn)
         (u/delete-files dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Test 16: Vector index with WAL mode (KV-level)
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-vector-kv-test
+  (when-not (u/windows?)
+    (let [dir  (u/tmp-dir (str "dl-wal-vec-kv-" (UUID/randomUUID)))
+          lmdb (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                               :kv-wal? true})
+          n    200
+          v1   (float-array (repeatedly n #(float (rand))))
+          v2   (float-array (repeatedly n #(float (rand))))]
+      (try
+        (let [index (d/new-vector-index lmdb {:dimensions n})]
+          (testing "WAL-mode vector add and search"
+            (d/add-vec index :ok v1)
+            (is (= 1 (:size (d/vector-index-info index))))
+            (is (i/vec-indexed? index :ok))
+            (is (= [:ok] (d/search-vec index v1)))
+            (is (= [(vec v1)] (mapv vec (i/get-vec index :ok)))))
+
+          (testing "add second vector"
+            (d/add-vec index :nice v2)
+            (is (= 2 (:size (d/vector-index-info index))))
+            (is (= [:nice] (d/search-vec index v2 {:top 1}))))
+
+          (testing "no .vid file in WAL mode"
+            (is (not (u/file-exists
+                       (str (i/env-dir lmdb) u/+separator+ c/default-domain
+                            c/vector-index-suffix)))))
+
+          (testing "close and reopen preserves vector index"
+            (d/close-vector-index index))
+
+          (let [index2 (d/new-vector-index lmdb {:dimensions n})]
+            (is (= 2 (:size (d/vector-index-info index2))))
+            (is (i/vec-indexed? index2 :ok))
+            (is (i/vec-indexed? index2 :nice))
+            (is (= [:ok] (d/search-vec index2 v1 {:top 1})))
+            (is (= [:nice] (d/search-vec index2 v2 {:top 1})))
+
+            (testing "remove vector in WAL mode"
+              (d/remove-vec index2 :ok)
+              (is (= 1 (:size (d/vector-index-info index2))))
+              (is (not (i/vec-indexed? index2 :ok)))
+              (is (= [:nice] (d/search-vec index2 v2))))
+
+            (testing "clear vector index in WAL mode"
+              (d/clear-vector-index index2))
+
+            (let [index3 (d/new-vector-index lmdb {:dimensions n})]
+              (is (= 0 (:size (d/vector-index-info index3))))
+              (d/close-vector-index index3))))
+        (finally
+          (d/close-kv lmdb)
+          (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Test 17: Vector index file-spool mode (forced by low buffer threshold)
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-vector-file-spool-test
+  (when-not (u/windows?)
+    (let [dir  (u/tmp-dir (str "dl-wal-vec-spool-" (UUID/randomUUID)))
+          lmdb (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                               :kv-wal? true})
+          n    200
+          v1   (float-array (repeatedly n #(float (rand))))]
+      (try
+        ;; Force file-spool mode by setting very low buffer threshold
+        (binding [c/*wal-vec-max-buffer-bytes* 1]
+          (let [index (d/new-vector-index lmdb {:dimensions n})]
+            (d/add-vec index :spool-test v1)
+            (is (= 1 (:size (d/vector-index-info index))))
+            (is (= [:spool-test] (d/search-vec index v1)))
+
+            ;; Close triggers file-spool checkpoint
+            (d/close-vector-index index))
+
+          ;; Reopen with same low threshold - should file-spool load
+          (let [index2 (d/new-vector-index lmdb {:dimensions n})]
+            (is (= 1 (:size (d/vector-index-info index2))))
+            (is (i/vec-indexed? index2 :spool-test))
+            (is (= [:spool-test] (d/search-vec index2 v1)))
+            (d/close-vector-index index2)))
+        (finally
+          (d/close-kv lmdb)
+          (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Test 18: Vector index Datalog WAL integration
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-vector-datalog-test
+  (when-not (u/windows?)
+    (let [dir    (u/tmp-dir (str "dl-wal-vec-dl-" (UUID/randomUUID)))
+          schema {:chunk/id        {:db/valueType :db.type/string
+                                    :db/unique    :db.unique/identity}
+                  :chunk/embedding {:db/valueType :db.type/vec}}
+          conn   (d/create-conn dir schema
+                                {:datalog-wal? true
+                                 :kv-opts      {:flags (conj c/default-env-flags
+                                                             :nosync)}
+                                 :vector-opts  {:dimensions 3}})]
+      (try
+        (testing "add vector entities in WAL mode"
+          (d/transact! conn [{:chunk/id        "cat"
+                              :chunk/embedding [0.1 0.2 0.3]}
+                             {:chunk/id        "dog"
+                              :chunk/embedding [0.4 0.5 0.6]}
+                             {:chunk/id        "fish"
+                              :chunk/embedding [0.7 0.8 0.9]}])
+
+          (is (= 3 (count (d/q '[:find ?e
+                                  :where [?e :chunk/id _]]
+                                @conn)))))
+
+        (testing "vec-neighbors query works in WAL mode"
+          (let [results (d/q '[:find [?i ...]
+                               :in $ ?q
+                               :where
+                               [(vec-neighbors $ :chunk/embedding ?q {:top 1})
+                                [[?e _ _]]]
+                               [?e :chunk/id ?i]]
+                             (d/db conn) [0.1 0.2 0.3])]
+            (is (= ["cat"] results))))
+
+        (testing "vector data persists after flush"
+          (d/flush-kv-indexer! (conn-lmdb conn))
+          (let [results (d/q '[:find [?i ...]
+                               :in $ ?q
+                               :where
+                               [(vec-neighbors $ :chunk/embedding ?q {:top 1})
+                                [[?e _ _]]]
+                               [?e :chunk/id ?i]]
+                             (d/db conn) [0.4 0.5 0.6])]
+            (is (= ["dog"] results))))
+
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Test 19: Vector index migration from file to LMDB blob
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-vector-migration-test
+  (when-not (u/windows?)
+    (let [dir  (u/tmp-dir (str "dl-wal-vec-mig-" (UUID/randomUUID)))
+          n    200
+          v1   (float-array (repeatedly n #(float (rand))))
+          v2   (float-array (repeatedly n #(float (rand))))]
+      (try
+        ;; Session 1: Create vector index without WAL (file-based)
+        (let [lmdb  (d/open-kv dir {:flags (conj c/default-env-flags :nosync)})
+              index (d/new-vector-index lmdb {:dimensions n})]
+          (d/add-vec index :alpha v1)
+          (d/add-vec index :beta v2)
+          (is (= 2 (:size (d/vector-index-info index))))
+          (d/close-vector-index index)
+          ;; .usearch file should exist
+          (is (u/file-exists
+                (str (i/env-dir lmdb) u/+separator+ c/default-domain
+                     c/vector-index-suffix)))
+          (d/close-kv lmdb))
+
+        ;; Session 2: Reopen with WAL enabled - should migrate
+        (let [lmdb  (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                    :kv-wal? true})
+              index (d/new-vector-index lmdb {:dimensions n})]
+          ;; .usearch file should be deleted after migration
+          (is (not (u/file-exists
+                     (str (i/env-dir lmdb) "/" c/default-domain
+                          c/vector-index-suffix))))
+          ;; Data should be intact
+          (is (= 2 (:size (d/vector-index-info index))))
+          (is (i/vec-indexed? index :alpha))
+          (is (i/vec-indexed? index :beta))
+          (is (= [:alpha] (d/search-vec index v1 {:top 1})))
+          (is (= [:beta] (d/search-vec index v2 {:top 1})))
+          (d/close-vector-index index)
+          (d/close-kv lmdb))
+
+        (finally
+          (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Test 20: Vector WAL persistence across close/reopen
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-vector-persistence-test
+  (when-not (u/windows?)
+    (let [dir  (u/tmp-dir (str "dl-wal-vec-persist-" (UUID/randomUUID)))
+          n    200
+          v1   (float-array (repeatedly n #(float (rand))))
+          v2   (float-array (repeatedly n #(float (rand))))]
+      (try
+        ;; Session 1: Create and populate vector index in WAL mode
+        (let [lmdb  (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                    :kv-wal? true})
+              index (d/new-vector-index lmdb {:dimensions n})]
+          (d/add-vec index :first v1)
+          (d/add-vec index :second v2)
+          (d/close-vector-index index)
+          (d/close-kv lmdb))
+
+        ;; Session 2: Reopen and verify data persisted
+        (let [lmdb  (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                    :kv-wal? true})
+              index (d/new-vector-index lmdb {:dimensions n})]
+          (is (= 2 (:size (d/vector-index-info index))))
+          (is (i/vec-indexed? index :first))
+          (is (i/vec-indexed? index :second))
+          (is (= [:first] (d/search-vec index v1 {:top 1})))
+          (is (= [:second] (d/search-vec index v2 {:top 1})))
+          (d/close-vector-index index)
+          (d/close-kv lmdb))
+
+        (finally
+          (u/delete-files dir))))))
