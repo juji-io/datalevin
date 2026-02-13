@@ -265,38 +265,37 @@
 
 (defn- decode-kv-op
   [^DataInputStream in]
-  (let [opcode (byte (.readUnsignedByte in))
+  (let [opcode  (byte (.readUnsignedByte in))
         dbi-len (read-u16 in)
         dbi-bs  (read-bytes in dbi-len)
         dbi     (String. dbi-bs StandardCharsets/UTF_8)
         k-type  (read-type in)
         k-len   (read-u16 in)
-        k-bs    (read-bytes in k-len)
-        k       (decode-bits k-bs k-type)]
+        k-bs    (read-bytes in k-len)]
     (case opcode
       0x10 (let [v-type (read-type in)
                  v-len  (read-u32 in)
                  v-bs   (read-bytes in v-len)
                  flags  (read-flags in)]
-             (cond-> {:op :put :dbi dbi :k k :kt k-type
-                      :v  (decode-bits v-bs v-type) :vt v-type}
+             (cond-> {:op :put :dbi dbi :k k-bs :kt k-type
+                      :v v-bs :vt v-type :raw? true}
                (seq flags) (assoc :flags flags)))
       0x11 (let [flags (read-flags in)]
-             (cond-> {:op :del :dbi dbi :k k :kt k-type}
+             (cond-> {:op :del :dbi dbi :k k-bs :kt k-type :raw? true}
                (seq flags) (assoc :flags flags)))
       0x16 (let [v-type (read-type in)
                  v-len  (read-u32 in)
                  v-bs   (read-bytes in v-len)
                  flags  (read-flags in)]
-             (cond-> {:op :put-list :dbi dbi :k k :kt k-type
-                      :v  (decode-bits v-bs :data) :vt v-type}
+             (cond-> {:op :put-list :dbi dbi :k k-bs :kt k-type
+                      :v v-bs :vt v-type :raw? true}
                (seq flags) (assoc :flags flags)))
       0x17 (let [v-type (read-type in)
                  v-len  (read-u32 in)
                  v-bs   (read-bytes in v-len)
                  flags  (read-flags in)]
-             (cond-> {:op :del-list :dbi dbi :k k :kt k-type
-                      :v  (decode-bits v-bs :data) :vt v-type}
+             (cond-> {:op :del-list :dbi dbi :k k-bs :kt k-type
+                      :v v-bs :vt v-type :raw? true}
                (seq flags) (assoc :flags flags)))
       (u/raise "Unknown WAL opcode" {:error :wal/invalid-opcode
                                      :opcode opcode}))))

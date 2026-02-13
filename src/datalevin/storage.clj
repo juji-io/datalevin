@@ -1583,8 +1583,10 @@
   ([dir schema
     {:keys [kv-opts search-opts search-domains vector-opts vector-domains]
      :as   opts}]
-   (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
-         lmdb (lmdb/open-kv dir kv-opts)]
+   (let [dir     (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
+         kv-opts (cond-> (or kv-opts {})
+                   (:datalog-wal? opts) (assoc :kv-wal? true))
+         lmdb    (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (let [opts0     (load-opts lmdb)
            opts1     (if (empty opts0)

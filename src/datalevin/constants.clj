@@ -537,6 +537,12 @@
   *trusted-apply* false)
 
 (def ^{:dynamic true :no-doc true
+       :doc     "When true, bypass WAL even when :kv-wal? is enabled.
+                 Used by WAL replay/indexer paths that must write directly
+                 to LMDB base without re-entering WAL."}
+  *bypass-wal* false)
+
+(def ^{:dynamic true :no-doc true
        :doc     "Failpoint injection hook for writer step crash testing.
                  When non-nil, must be a map with:
                    :step   - keyword identifying the writer step

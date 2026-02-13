@@ -391,7 +391,18 @@
 
 (defn- wal-op->kv-tx
   [op]
-  (let [{:keys [op dbi k v kt vt flags]} op]
+  (let [{:keys [op dbi k v kt vt flags raw?]} op
+        ;; When raw?, keys are already serialized byte arrays;
+        ;; replay them with :raw type to avoid decode/re-encode.
+        [k kt] (if raw? [k :raw] [k kt])
+        ;; For put/del, value is a single serialized item → use :raw.
+        ;; For put-list/del-list, value is a Nippy-encoded collection
+        ;; that must be deserialized so transact-kv can iterate elements.
+        [v vt]  (if raw?
+                  (case op
+                    (:put-list :del-list) [(b/deserialize v) vt]
+                    [v :raw])
+                  [v vt])]
     (case op
       :put (kv-tx :put dbi k v kt vt flags)
       :del (kv-tx :del dbi k kt)
@@ -406,7 +417,8 @@
    Intended for WAL replay/indexer paths only."
   [db ops]
   (when (seq ops)
-    (binding [c/*trusted-apply* true]
+    (binding [c/*trusted-apply* true
+              c/*bypass-wal*   true]
       (transact-kv db (mapv wal-op->kv-tx ops)))))
 
 (defn- kv-wal-enabled?
@@ -415,7 +427,7 @@
 
 (defn- kv-info-id
   [lmdb k]
-  (get-value lmdb c/kv-info k :attr :id))
+  (get-value lmdb c/kv-info k :data :data))
 
 (defn- kv-applied-id
   [lmdb]
@@ -466,7 +478,8 @@
        (if (<= target-id from-id)
          {:from from-id :to target-id :applied 0}
          (let [applied-count (volatile! 0)]
-           (binding [c/*trusted-apply* true]
+           (binding [c/*trusted-apply* true
+                     c/*bypass-wal*   true]
              (with-transaction-kv [db lmdb]
                (let [initial-applied-wal (kv-info-id db c/applied-wal-tx-id)
                      initial-applied     (long (or initial-applied-wal
@@ -499,8 +512,7 @@
                               (cond-> [[:put c/last-indexed-wal-tx-id target-id]]
                                 (or (nil? initial-applied-wal)
                                     (> (long @applied-id) initial-applied))
-                                (conj [:put c/applied-wal-tx-id @applied-id]))
-                              :attr :id))))
+                                (conj [:put c/applied-wal-tx-id @applied-id]))))))
            {:from from-id :to target-id :applied @applied-count}))))))
 
 (defn flush-kv-indexer!

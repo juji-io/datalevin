@@ -9,7 +9,9 @@
   (:import
    [java.util Random]
    [java.util.concurrent Semaphore]
-   [org.eclipse.collections.impl.list.mutable FastList]))
+   [org.eclipse.collections.impl.list.mutable FastList]
+   [datalevin.db DB]
+   [datalevin.storage Store]))
 
 ;; for kv
 (def max-write-dbi "test")
@@ -215,14 +217,14 @@
                    (d/get-conn kv-dir
                                {:k {:db/valueType :db.type/long}
                                 :v {:db/valueType :db.type/string}}
-                               {:kv-opts {:mapsize 60000
-                                          :flags   (-> c/default-env-flags
-                                                       ;; (conj :writemap)
-                                                       ;; (conj :mapasync)
-                                                       ;; (conj :nosync)
-                                                       ;; (conj :nometasync)
-                                                       )
-                                          }}))
+                               (cond-> {:kv-opts {:mapsize 60000
+                                                  :flags   (-> c/default-env-flags
+                                                               ;; (conj :writemap)
+                                                               ;; (conj :mapasync)
+                                                               ;; (conj :nosync)
+                                                               ;; (conj :nometasync)
+                                                               )}}
+                                 wal? (assoc :datalog-wal? true))))
         dl-async (fn [txs measure] (d/transact-async conn txs nil measure))
         dl-sync  (fn [txs measure] (measure (d/transact! conn txs nil)))
         dl-add   (fn [^FastList txs]
@@ -242,11 +244,11 @@
         sql-add  (fn [^FastList txs]
                    (.add txs {:k (vswap! id + 2) :v (str (random-uuid))}))
         tx-fn    (case f
-                   (kv-async kv-wal-async) kv-async
-                   (kv-sync kv-wal-sync)   kv-sync
-                   dl-async dl-async
-                   dl-sync  dl-sync
-                   sql-tx   sql-tx)
+                   (kv-async kv-wal-async)   kv-async
+                   (kv-sync kv-wal-sync)     kv-sync
+                   (dl-async dl-wal-async)   dl-async
+                   (dl-sync dl-wal-sync)     dl-sync
+                   sql-tx                    sql-tx)
         add-fn   (cond
                    kv?  kv-add
                    dl?  dl-add
@@ -269,6 +271,10 @@
         (when-not (= written total) (println "Write only" written)))
       (d/close-kv kvdb))
     (when conn
+      (when wal?
+        (let [store (.-store ^DB (d/db conn))
+              lmdb  (.-lmdb ^Store store)]
+          (d/flush-kv-indexer! lmdb)))
       (let [datoms (d/count-datoms (d/db conn) nil nil nil)]
         (when-not (= datoms (* 2 total)) (println "Write only" datoms)))
       (d/close conn))
@@ -312,13 +318,14 @@
         conn     (when dl?
                    (d/get-conn dir {:k {:db/valueType :db.type/long}
                                     :v {:db/valueType :db.type/string}}
-                               {:kv-opts {:mapsize 60000
-                                          :flags   (-> c/default-env-flags
-                                                       ;; (conj :writemap)
-                                                       ;; (conj :mapasync)
-                                                       ;; (conj :nosync)
-                                                       ;; (conj :nometasync)
-                                                       )}}))
+                               (cond-> {:kv-opts {:mapsize 60000
+                                                  :flags   (-> c/default-env-flags
+                                                               ;; (conj :writemap)
+                                                               ;; (conj :mapasync)
+                                                               ;; (conj :nosync)
+                                                               ;; (conj :nometasync)
+                                                               )}}
+                                 wal? (assoc :datalog-wal? true))))
         query    '[:find (pull ?e [:v])
                    :in $ ?k
                    :where [?e :k ?k]]
@@ -347,11 +354,11 @@
         sql-add  (fn [^FastList txs]
                    (.add txs [(random-int) (str (random-uuid))]))
         tx-fn    (case f
-                   (kv-async kv-wal-async) kv-async
-                   (kv-sync kv-wal-sync)   kv-sync
-                   dl-async dl-async
-                   dl-sync  dl-sync
-                   sql-tx   sql-tx)
+                   (kv-async kv-wal-async)   kv-async
+                   (kv-sync kv-wal-sync)     kv-sync
+                   (dl-async dl-wal-async)   dl-async
+                   (dl-sync dl-wal-sync)     dl-sync
+                   sql-tx                    sql-tx)
         add-fn   (cond
                    kv?  kv-add
                    dl?  dl-add

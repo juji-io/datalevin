@@ -238,22 +238,23 @@
       (let [committed-id (last-wal-id lmdb)]
         (is (= committed-id (:last-committed-wal-tx-id
                               (if/kv-wal-watermarks lmdb))))
-        (binding [c/*trusted-apply* true]
+        (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
           (if/transact-kv lmdb c/kv-info
                           [[:put c/last-indexed-wal-tx-id 0]]
-                          :attr :id))
+                          :data :data))
         (is (= 0 (if/get-value lmdb c/kv-info
-                               c/last-indexed-wal-tx-id :attr :id)))
+                               c/last-indexed-wal-tx-id :data :data)))
         ;; Applied marker starts at 0; replay should apply WAL records.
         (is (nil? (if/get-value lmdb c/kv-info
-                                c/applied-wal-tx-id :attr :id)))
+                                c/applied-wal-tx-id :data :data)))
 
         (let [res (l/replay-kv-wal! lmdb)]
           (is (= {:from 0 :to committed-id :applied committed-id} res)))
         (is (= committed-id (if/get-value lmdb c/kv-info
-                                          c/last-indexed-wal-tx-id :attr :id)))
+                                          c/last-indexed-wal-tx-id :data :data)))
         (is (= committed-id (if/get-value lmdb c/kv-info
-                                          c/applied-wal-tx-id :attr :id)))
+                                          c/applied-wal-tx-id :data :data)))
         (is (= committed-id (:last-committed-wal-tx-id
                               (if/kv-wal-watermarks lmdb))))
 
@@ -281,11 +282,12 @@
       (is (= [2 3] (if/get-list lmdb "list" "a" :string :long)))
       ;; Reset watermarks to simulate base lagging behind WAL.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
-      (binding [c/*trusted-apply* true]
+      (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
-                        :attr :id))
+                        :data :data))
 
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:from 0 :to committed-id :applied committed-id}
@@ -321,18 +323,19 @@
       (let [base-id (last-wal-id lmdb)]
         (if/transact-kv lmdb [[:put "a" 1 "x"]])
         (if/transact-kv lmdb [[:put "a" 2 "y"]])
-        (binding [c/*trusted-apply* true]
+        (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
           (if/transact-kv lmdb c/kv-info
                           [[:put c/last-indexed-wal-tx-id 0]
                            [:put c/applied-wal-tx-id 0]]
-                          :attr :id))
+                          :data :data))
 
         (is (= {:from 0 :to base-id :applied base-id}
                (l/replay-kv-wal! lmdb base-id)))
         (is (= base-id (if/get-value lmdb c/kv-info
-                                     c/last-indexed-wal-tx-id :attr :id)))
+                                     c/last-indexed-wal-tx-id :data :data)))
         (is (= base-id (if/get-value lmdb c/kv-info
-                                     c/applied-wal-tx-id :attr :id)))
+                                     c/applied-wal-tx-id :data :data)))
 
         (is (= {:from base-id :to base-id :applied 0}
                (l/replay-kv-wal! lmdb base-id)))
@@ -356,21 +359,22 @@
 
       ;; Simulate a pre-separation marker store: legacy key exists, new key absent.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
-      (binding [c/*trusted-apply* true]
+      (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:del c/applied-wal-tx-id]
                          [:put c/legacy-applied-tx-id 0]
                          [:put c/last-indexed-wal-tx-id 0]]
-                        :attr :id))
+                        :data :data))
 
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:from 0 :to committed-id :applied committed-id}
                (l/replay-kv-wal! lmdb)))
         (is (= committed-id
-               (if/get-value lmdb c/kv-info c/applied-wal-tx-id :attr :id)))
+               (if/get-value lmdb c/kv-info c/applied-wal-tx-id :data :data)))
         (is (= committed-id
                (if/get-value lmdb c/kv-info
-                             c/last-indexed-wal-tx-id :attr :id))))
+                             c/last-indexed-wal-tx-id :data :data))))
       (is (= "x" (if/get-value lmdb "a" 1)))
       (is (= "y" (if/get-value lmdb "a" 2)))
       (finally
@@ -456,11 +460,12 @@
 
       ;; Replay catches base up and prunes committed overlay <= indexed watermark.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
-      (binding [c/*trusted-apply* true]
+      (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
-                        :attr :id))
+                        :data :data))
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:indexed-wal-tx-id committed-id
                 :committed-wal-tx-id committed-id
@@ -577,11 +582,12 @@
         (is (= [["a" 3] ["c" 7]] @sampled)))
       ;; Replay catches base up and prunes committed overlay <= indexed watermark.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
-      (binding [c/*trusted-apply* true]
+      (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
-                        :attr :id))
+                        :data :data))
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:indexed-wal-tx-id committed-id
                 :committed-wal-tx-id committed-id
@@ -614,10 +620,11 @@
                   :last-committed-user-tx-id committed-id}
                  (l/kv-wal-watermarks lmdb)))
 
-          (binding [c/*trusted-apply* true]
+          (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]]
-                            :attr :id))
+                            :data :data))
 
           (is (= {:indexed-wal-tx-id partial-id
                   :committed-wal-tx-id committed-id
@@ -663,10 +670,11 @@
                   :last-committed-user-tx-id committed-id}
                  (if/kv-wal-watermarks lmdb)))
 
-          (binding [c/*trusted-apply* true]
+          (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]]
-                            :attr :id))
+                            :data :data))
 
           (is (= {:indexed-wal-tx-id partial-id
                   :committed-wal-tx-id committed-id
@@ -775,11 +783,12 @@
                 "WAL tx-ids should be contiguous"))
 
           ;; 4. Replay: reset indexed marker, replay WAL, verify values survive
-          (binding [c/*trusted-apply* true]
+          (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
-                            :attr :id))
+                            :data :data))
           (let [replay-res (l/replay-kv-wal! lmdb)]
             (is (= final-id (:applied replay-res))
                 "Replay should apply up to the committed WAL id"))
@@ -952,11 +961,12 @@
           (verify-key-iter lmdb "a" ref1)
 
           ;; Phase 2: replay to base, prune overlay, add new overlay
-          (binding [c/*trusted-apply* true]
+          (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
-                            :attr :id))
+                            :data :data))
           (if/flush-kv-indexer! lmdb)
 
           (if/transact-kv lmdb (kv-ops->txn "a" ops2))
@@ -1072,14 +1082,14 @@
         "visit-list-key-range :all-back"))
   ;; Parametric :closed key range
   (when (>= (count ref-map) 2)
-    (let [lo  (first (keys ref-map))
-          hi  (last (keys ref-map))
-          sub (into (sorted-map) (subseq ref-map >= lo <= hi))]
-      (let [visited (volatile! [])]
-        (if/visit-list-key-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
-                                 [:closed lo hi] :long :long false)
-        (is (= (flatten-list-ref sub) @visited)
-            "visit-list-key-range :closed")))))
+    (let [lo      (first (keys ref-map))
+          hi      (last (keys ref-map))
+          sub     (into (sorted-map) (subseq ref-map >= lo <= hi))
+          visited (volatile! [])]
+      (if/visit-list-key-range lmdb dbi (fn [k v] (vswap! visited conj [k v]))
+                               [:closed lo hi] :long :long false)
+      (is (= (flatten-list-ref sub) @visited)
+          "visit-list-key-range :closed"))))
 
 (test/defspec kv-wal-fuzz-list-iter-test
   50
@@ -1099,11 +1109,12 @@
           (verify-list-key-range-iter lmdb "l" ref1)
 
           ;; Phase 2: replay to base, prune overlay, add new overlay
-          (binding [c/*trusted-apply* true]
+          (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
-                            :attr :id))
+                            :data :data))
           (if/flush-kv-indexer! lmdb)
 
           (if/transact-kv lmdb (list-ops->txn "l" ops2))

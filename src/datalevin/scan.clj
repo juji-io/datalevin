@@ -509,6 +509,23 @@
     (raise "Fail to get first of list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 
+(defn list-range-first-raw-v
+  "Return the first value as a raw ByteBuffer (no decode/re-encode).
+   Used by near-list overlay path where the seek type differs from stored type."
+  [lmdb dbi-name k-range k-type v-range v-type]
+  (scan
+    (with-open [^AutoCloseable iter
+                (.iterator ^Iterable (l/iterate-list dbi rtx cur k-range k-type
+                                                     v-range v-type))]
+      (when (.hasNext ^Iterator iter)
+        (let [kv (.next ^Iterator iter)
+              ^ByteBuffer vb (l/v kv)
+              bs (byte-array (.remaining vb))]
+          (.get vb bs)
+          (ByteBuffer/wrap bs))))
+    (raise "Fail to get first raw value of list range: " e
+           {:dbi dbi-name :key-range k-range :val-range v-range})))
+
 (defn list-range-first-n
   [lmdb dbi-name n k-range k-type v-range v-type]
   (scan

@@ -721,7 +721,8 @@
 (defn- pour
   [store datoms]
   (if (instance? Store store)
-    (binding [c/*trusted-apply* true]
+    (binding [c/*trusted-apply* true
+              c/*bypass-wal*   true]
       (doseq [batch (sequence (comp
                                 (map #(correct-datom store %))
                                 (partition-all c/*fill-db-batch-size*))
@@ -1753,8 +1754,10 @@
        ;; WAL writer/indexer paths are live.
        (vld/check-failpoint :step-3 :before)
        (if (instance? Store pstore)
-         (binding [c/*trusted-apply* true]
-           (apply-prepared-datoms pstore (:tx-data rp)))
+         (let [wal? (:kv-wal? (i/env-opts (.-lmdb ^Store pstore)))]
+           (binding [c/*trusted-apply* true
+                     c/*bypass-wal*   (not wal?)]
+             (apply-prepared-datoms pstore (:tx-data rp))))
          (load-datoms pstore (:tx-data rp)))
        (vld/check-failpoint :step-3 :after)
        (invalidate-cache pstore (:tx-data rp) (last-modified pstore)))
