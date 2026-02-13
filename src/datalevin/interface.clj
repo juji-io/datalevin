@@ -284,7 +284,11 @@ values;")
   (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
-  (search [this query] [this query opts]))
+  (search [this query] [this query opts])
+  (begin-search-tx [this] "begin shadow transaction for search engine")
+  (collect-search-txs [this txs] "add deferred LMDB txs to txs list")
+  (commit-search-tx [this] "clear shadow state")
+  (abort-search-tx [this] "undo in-memory changes, clear shadow"))
 
 (defprotocol IVectorIndex
   (add-vec [this vec-ref vec-data] "add vector to in memory index")
@@ -297,7 +301,10 @@ values;")
   (vecs-info [this] "return a map of info about this index")
   (vec-indexed? [this vec-ref] "test if a rec-ref is in the index")
   (search-vec [this query-vec] [this query-vec opts]
-    "search vector, return found vec-refs"))
+    "search vector, return found vec-refs")
+  (begin-vec-tx [this] "begin shadow transaction for vector index")
+  (commit-vec-tx [this] "apply shadow to base, write vecs-dbi")
+  (abort-vec-tx [this] "discard shadow, reset max-vec"))
 
 (defprotocol IStore
   (opts [this] "Return the opts map")

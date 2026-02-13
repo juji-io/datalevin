@@ -918,7 +918,7 @@
           (u/delete-files dir))))))
 
 ;; ---------------------------------------------------------------------------
-;; Test 19: Vector index migration from file to LMDB blob
+;; Test 19: Vector index non-WAL to WAL transition (LMDB blob in both modes)
 ;; ---------------------------------------------------------------------------
 (deftest dl-wal-vector-migration-test
   (when-not (u/windows?)
@@ -927,27 +927,23 @@
           v1   (float-array (repeatedly n #(float (rand))))
           v2   (float-array (repeatedly n #(float (rand))))]
       (try
-        ;; Session 1: Create vector index without WAL (file-based)
+        ;; Session 1: Create vector index without WAL (stored in LMDB blob)
         (let [lmdb  (d/open-kv dir {:flags (conj c/default-env-flags :nosync)})
               index (d/new-vector-index lmdb {:dimensions n})]
           (d/add-vec index :alpha v1)
           (d/add-vec index :beta v2)
           (is (= 2 (:size (d/vector-index-info index))))
           (d/close-vector-index index)
-          ;; .usearch file should exist
-          (is (u/file-exists
-                (str (i/env-dir lmdb) u/+separator+ c/default-domain
-                     c/vector-index-suffix)))
+          ;; No .vid file — vector data is in LMDB blob
+          (is (not (u/file-exists
+                     (str (i/env-dir lmdb) u/+separator+ c/default-domain
+                          c/vector-index-suffix))))
           (d/close-kv lmdb))
 
-        ;; Session 2: Reopen with WAL enabled - should migrate
+        ;; Session 2: Reopen with WAL enabled - data persists from LMDB blob
         (let [lmdb  (d/open-kv dir {:flags   (conj c/default-env-flags :nosync)
                                     :kv-wal? true})
               index (d/new-vector-index lmdb {:dimensions n})]
-          ;; .usearch file should be deleted after migration
-          (is (not (u/file-exists
-                     (str (i/env-dir lmdb) "/" c/default-domain
-                          c/vector-index-suffix))))
           ;; Data should be intact
           (is (= 2 (:size (d/vector-index-info index))))
           (is (i/vec-indexed? index :alpha))

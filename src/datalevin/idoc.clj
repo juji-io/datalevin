@@ -796,7 +796,8 @@
                     ^AtomicBoolean paths-loaded
                     paths-lock
                     range-cache
-                    ^AtomicLong index-version])
+                    ^AtomicLong index-version
+                    shadow])
 
 (defn new-idoc-index
   [lmdb {:keys [domain format] :as _opts}]
@@ -828,7 +829,8 @@
                  paths-loaded
                  paths-lock
                  range-cache
-                 index-version)))
+                 index-version
+                 (volatile! nil))))
 
 (defn transfer
   [^IdocIndex old lmdb]
@@ -849,7 +851,8 @@
                (.-paths-loaded old)
                (.-paths-lock old)
                (.-range-cache old)
-               (.-index-version old)))
+               (.-index-version old)
+               (volatile! nil)))
 
 (defn- invalidate-range-cache!
   [^IdocIndex index]
@@ -857,6 +860,51 @@
   (let [^ConcurrentHashMap range-cache (.-range-cache index)]
     (when-not (.isEmpty range-cache)
       (.clear range-cache))))
+
+(defn begin-idoc-tx
+  [^IdocIndex index]
+  (vreset! (.-shadow index)
+           {:deferred-txs    (java.util.ArrayList.)
+            :added-doc-ids   (java.util.ArrayList.)
+            :removed-entries (java.util.ArrayList.)
+            :updated-refs    (java.util.ArrayList.)
+            :saved-max-doc   (.get ^AtomicInteger (.-max-doc index))
+            :saved-max-path  (.get ^AtomicInteger (.-max-path index))}))
+
+(defn collect-idoc-txs
+  [^IdocIndex index ^FastList txs]
+  (when-let [s @(.-shadow index)]
+    (.addAll txs ^java.util.ArrayList (:deferred-txs s))))
+
+(defn commit-idoc-tx
+  [^IdocIndex index]
+  (vreset! (.-shadow index) nil))
+
+(defn abort-idoc-tx
+  [^IdocIndex index]
+  (when-let [s @(.-shadow index)]
+    ;; 1. Undo added docs
+    (doseq [doc-id (:added-doc-ids s)]
+      (.remove ^IntObjectHashMap (.-doc-refs index) (int doc-id))
+      (b/bitmap-del (.-all-doc-ids index) (int doc-id)))
+    ;; 2. Re-add removed docs
+    (doseq [[doc-id doc-ref] (:removed-entries s)]
+      (.put ^IntObjectHashMap (.-doc-refs index) (int doc-id) doc-ref)
+      (b/bitmap-add (.-all-doc-ids index) (int doc-id)))
+    ;; 3. Undo ref updates
+    (doseq [[doc-id old-ref] (:updated-refs s)]
+      (.put ^IntObjectHashMap (.-doc-refs index) (int doc-id) old-ref))
+    ;; 4. Reset counters
+    (.set ^AtomicInteger (.-max-doc index) (int (:saved-max-doc s)))
+    (.set ^AtomicInteger (.-max-path index) (int (:saved-max-path s)))
+    ;; 5. Clear caches
+    (.clear ^ConcurrentHashMap (.-path-cache index))
+    (.clear ^ConcurrentHashMap (.-path-seg-cache index))
+    (.clear ^ConcurrentHashMap (.-pattern-cache index))
+    (.set ^AtomicBoolean (.-paths-loaded index) false)
+    (invalidate-range-cache! index)
+    ;; 6. Clear shadow
+    (vreset! (.-shadow index) nil)))
 
 (defn- cache-path!
   ([^IdocIndex index path ^long pid] (cache-path! index path pid nil))
@@ -945,17 +993,22 @@
      (let [txs         (FastList.)
            doc-id      (.incrementAndGet ^AtomicInteger (.-max-doc index))
            index-dbi   (.-doc-index-dbi index)
-           doc-ref-dbi (.-doc-ref-dbi index)]
+           doc-ref-dbi (.-doc-ref-dbi index)
+           s           @(.-shadow index)]
        ;; TODO: if doc-ref ever exceeds LMDB key size, fall back to a :g ref.
        (.add txs (l/kv-tx :put doc-ref-dbi doc-ref doc-id :data :int))
        (.put ^IntObjectHashMap (.-doc-refs index) (int doc-id) doc-ref)
        (b/bitmap-add (.-all-doc-ids index) (int doc-id))
+       (when s (.add ^java.util.ArrayList (:added-doc-ids s)
+                     (Integer/valueOf doc-id)))
        (doseq [[path values] (doc->path-values-mutable doc)
                :let          [pid (ensure-path-id index path txs)]]
          (doseq [v    values
                  :let [idx (indexable-key pid v)]]
            (.add txs (l/kv-tx :put index-dbi idx doc-id :avg :int))))
-       (transact-kv (.-lmdb index) txs)
+       (if s
+         (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+         (transact-kv (.-lmdb index) txs))
        (invalidate-range-cache! index)
        :doc-added))))
 
@@ -968,7 +1021,8 @@
            index-dbi   (.-doc-index-dbi index)
            doc-ref-dbi (.-doc-ref-dbi index)
            doc-refs    (.-doc-refs index)
-           idx->ids    (HashMap.)]
+           idx->ids    (HashMap.)
+           s           @(.-shadow index)]
        (doseq [[doc-ref doc] docs]
          (when-not (and check-exist?
                         (get-value lmdb doc-ref-dbi doc-ref :data :int))
@@ -976,6 +1030,8 @@
              (.add txs (l/kv-tx :put doc-ref-dbi doc-ref doc-id :data :int))
              (.put ^IntObjectHashMap doc-refs (int doc-id) doc-ref)
              (b/bitmap-add (.-all-doc-ids index) (int doc-id))
+             (when s (.add ^java.util.ArrayList (:added-doc-ids s)
+                           (Integer/valueOf doc-id)))
              (doseq [[path values] (doc->path-values-mutable doc)
                      :let          [pid (ensure-path-id index path txs)]]
                (doseq [v    values
@@ -988,7 +1044,9 @@
        (doseq [[idx ids] idx->ids]
          (.add txs (l/kv-tx :put-list index-dbi idx ids :avg :int)))
        (when-not (.isEmpty txs)
-         (transact-kv lmdb txs)
+         (if s
+           (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+           (transact-kv lmdb txs))
          (invalidate-range-cache! index))
        :docs-added))))
 
@@ -997,7 +1055,13 @@
   (when-let [doc-id (get-value (.-lmdb index) (.-doc-ref-dbi index)
                                doc-ref :data :int)]
     (let [txs       (FastList.)
-          index-dbi (.-doc-index-dbi index)]
+          index-dbi (.-doc-index-dbi index)
+          s         @(.-shadow index)]
+      ;; Record removed doc info before removal (for undo on abort)
+      (when s
+        (.add ^java.util.ArrayList (:removed-entries s)
+              [(int doc-id) (.get ^IntObjectHashMap (.-doc-refs index)
+                                  (int doc-id))]))
       (doseq [[path values] (doc->path-values-mutable doc)
               :let          [pid (get-path-id index path)]]
         (when pid
@@ -1007,7 +1071,9 @@
       (.add txs (l/kv-tx :del (.-doc-ref-dbi index) doc-ref :data))
       (.remove ^IntObjectHashMap (.-doc-refs index) (int doc-id))
       (b/bitmap-del (.-all-doc-ids index) (int doc-id))
-      (transact-kv (.-lmdb index) txs)
+      (if s
+        (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+        (transact-kv (.-lmdb index) txs))
       (invalidate-range-cache! index)
       :doc-removed)))
 
@@ -1019,9 +1085,14 @@
           index-dbi   (.-doc-index-dbi index)
           doc-ref-dbi (.-doc-ref-dbi index)
           doc-refs    (.-doc-refs index)
-          idx->ids    (HashMap.)]
+          idx->ids    (HashMap.)
+          s           @(.-shadow index)]
       (doseq [[doc-ref doc] docs]
         (when-let [doc-id (get-value lmdb doc-ref-dbi doc-ref :data :int)]
+          ;; Record removed doc info before removal (for undo on abort)
+          (when s
+            (.add ^java.util.ArrayList (:removed-entries s)
+                  [(int doc-id) (.get ^IntObjectHashMap doc-refs (int doc-id))]))
           (doseq [[path values] (doc->path-values-mutable doc)
                   :let          [pid (get-path-id index path)]]
             (when pid
@@ -1038,7 +1109,9 @@
       (doseq [[idx ids] idx->ids]
         (.add txs (l/kv-tx :del-list index-dbi idx ids :avg :int)))
       (when-not (.isEmpty txs)
-        (transact-kv lmdb txs)
+        (if s
+          (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+          (transact-kv lmdb txs))
         (invalidate-range-cache! index))
       :docs-removed)))
 
@@ -1054,7 +1127,11 @@
             doc-ref-dbi       (.-doc-ref-dbi index)
             doc-refs          (.-doc-refs index)
             ^Set empty-set    (Collections/emptySet)
-            [old-map new-map] (diff-path-values old-doc new-doc)]
+            [old-map new-map] (diff-path-values old-doc new-doc)
+            s                 @(.-shadow index)]
+        (when (and s (not= old-ref new-ref))
+          (.add ^java.util.ArrayList (:updated-refs s)
+                [(int doc-id) (.get ^IntObjectHashMap doc-refs (int doc-id))]))
         (when-not (= old-ref new-ref)
           (.add txs (l/kv-tx :del doc-ref-dbi old-ref :data))
           (.add txs (l/kv-tx :put doc-ref-dbi new-ref doc-id :data :int))
@@ -1077,7 +1154,9 @@
                 (let [idx (indexable-key pid v)]
                   (.add txs (l/kv-tx :put index-dbi idx doc-id :avg :int)))))))
         (when-not (.isEmpty txs)
-          (transact-kv lmdb txs)
+          (if s
+            (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+            (transact-kv lmdb txs))
           (invalidate-range-cache! index))
         :doc-updated))
     :doc-missing))
@@ -1126,7 +1205,11 @@
             ^Set empty-set (Collections/emptySet)
             paths          (or paths [])
             old-map        (patch-path-values-mutable old-doc paths)
-            new-map        (patch-path-values-mutable new-doc paths)]
+            new-map        (patch-path-values-mutable new-doc paths)
+            s              @(.-shadow index)]
+        (when (and s (not= old-ref new-ref))
+          (.add ^java.util.ArrayList (:updated-refs s)
+                [(int doc-id) (.get ^IntObjectHashMap doc-refs (int doc-id))]))
         (when-not (= old-ref new-ref)
           (.add txs (l/kv-tx :del doc-ref-dbi old-ref :data))
           (.add txs (l/kv-tx :put doc-ref-dbi new-ref doc-id :data :int))
@@ -1149,7 +1232,9 @@
                 (let [idx (indexable-key pid v)]
                   (.add txs (l/kv-tx :put index-dbi idx doc-id :avg :int)))))))
         (when-not (.isEmpty txs)
-          (transact-kv lmdb txs)
+          (if s
+            (.addAll ^java.util.ArrayList (:deferred-txs s) txs)
+            (transact-kv lmdb txs))
           (invalidate-range-cache! index))
         :doc-updated))
     :doc-missing))

@@ -622,7 +622,8 @@
                        ^AtomicInteger max-term
                        index-position?
                        include-text?
-                       search-opts]
+                       search-opts
+                       shadow]
   ISearchEngine
   (add-doc [this doc-ref doc-text check-exist?]
     (locking docs
@@ -680,6 +681,43 @@
                   scoring (score-docs context n norms result)]
               (tiered-scoring top scoring this proximity-expansion
                               proximity-max-dist result n)))))))
+
+  (begin-search-tx [_]
+    (vreset! shadow
+             {:deferred-txs   (ArrayList.)
+              :added-doc-ids  (ArrayList.)
+              :added-term-ids (ArrayList.)
+              :removed-docs   (HashMap.)
+              :saved-max-doc  (.get max-doc)
+              :saved-max-term (.get max-term)}))
+
+  (collect-search-txs [_ txs]
+    (when-let [s @shadow]
+      (.addAll ^FastList txs ^ArrayList (:deferred-txs s))))
+
+  (commit-search-tx [_]
+    (vreset! shadow nil))
+
+  (abort-search-tx [_]
+    (when-let [s @shadow]
+      ;; 1. Undo added docs
+      (doseq [doc-id (:added-doc-ids s)]
+        (.remove docs (int doc-id))
+        (.remove norms (int doc-id)))
+      ;; 2. Undo added terms
+      (doseq [term-id (:added-term-ids s)]
+        (.remove terms (int term-id)))
+      ;; 3. Re-add removed docs
+      (doseq [[doc-id [doc-ref norm]] (:removed-docs s)]
+        (.put docs (int doc-id) doc-ref)
+        (.put norms (int doc-id) (short norm)))
+      ;; 4. Reset counters
+      (.set max-doc (int (:saved-max-doc s)))
+      (.set max-term (int (:saved-max-term s)))
+      ;; 5. Clear LRU cache (sparse lists were modified in-place)
+      (.clear ^LRUCache cache)
+      ;; 6. Clear shadow
+      (vreset! shadow nil)))
 
   IAdmin
   (re-index [this opts]
@@ -863,7 +901,12 @@
         terms-dbi       (.-terms-dbi engine)
         positions-dbi   (.-positions-dbi engine)
         rawtext-dbi     (.-rawtext-dbi engine)
-        ^LRUCache cache (.-cache engine)]
+        ^LRUCache cache (.-cache engine)
+        s               @(.-shadow engine)]
+    ;; Record removed doc info before removal (for undo on abort)
+    (when s
+      (.put ^HashMap (:removed-docs s) (Integer/valueOf (int doc-id))
+            [((.-docs engine) doc-id) (.get norms doc-id)]))
     (.add txs (l/kv-tx :del rawtext-dbi doc-id :int))
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
       (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
@@ -879,7 +922,9 @@
     (.add txs (l/kv-tx :del (.-docs-dbi engine) doc-ref :data))
     (.remove ^SpillableMap (.-docs engine) doc-id)
     (.remove norms doc-id)
-    (transact-kv (.-lmdb engine) txs)
+    (if s
+      (.addAll ^ArrayList (:deferred-txs s) txs)
+      (transact-kv (.-lmdb engine) txs))
     (.remove cache [:doc-ref->id doc-ref])
     (.remove cache [:doc-ref->term-ids doc-ref]))
   :doc-removed)
@@ -892,16 +937,19 @@
         max-term        (.-max-term engine)
         index-position? (.-index-position? engine)
         include-text?   (.-include-text? engine)
+        ^LRUCache cache (.-cache engine)
         result          ((.-analyzer engine) doc-text)
         new-terms       ^HashMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
-        txs             (FastList.)]
+        txs             (FastList.)
+        s               @(.-shadow engine)]
     (when include-text? (.add txs (l/kv-tx :put (.-rawtext-dbi engine) doc-id
                                            doc-text :int :string)))
     (.put ^SpillableMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
+    (when s (.add ^ArrayList (:added-doc-ids s) (Integer/valueOf doc-id)))
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term                                            (.getKey kv)
             [^IntArrayList positions ^IntArrayList offsets] (.getValue kv)
@@ -911,6 +959,9 @@
             (or (get-term-info engine term)
                 [(let [new-tid (.incrementAndGet ^AtomicInteger max-term)]
                    (.put terms new-tid term)
+                   (when s
+                     (.add ^ArrayList (:added-term-ids s)
+                           (Integer/valueOf new-tid)))
                    new-tid)
                  0.0
                  (sl/sparse-arraylist)])
@@ -918,16 +969,25 @@
             term-info
             [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)]]
         (.add txs (l/kv-tx :put terms-dbi term term-info :string :term-info))
+        ;; Eagerly update cache so within-tx reads find the data
+        (when s (.put cache [:get-term-info term] term-info))
         (if index-position?
           (let [pos-info [(.toArray positions) (.toArray offsets)]]
             (.add txs (l/kv-tx :put positions-dbi [doc-id tid]
-                               pos-info :int-int :pos-info)))
+                               pos-info :int-int :pos-info))
+            (when s (.put cache [:get-pos-info doc-id tid] pos-info)))
           (.add ^IntHashSet term-set (int tid)))))
     (let [term-ar  (.toArray ^IntHashSet term-set)
           doc-info [doc-id unique term-ar]]
       (.add txs (l/kv-tx :put (.-docs-dbi engine) doc-ref doc-info
                          :data :doc-info))
-      (transact-kv (.-lmdb engine) txs)))
+      ;; Eagerly update cache for doc-ref lookups within tx
+      (when s
+        (.put cache [:doc-ref->id doc-ref] doc-id)
+        (.put cache [:doc-ref->term-ids doc-ref] term-ar))
+      (if s
+        (.addAll ^ArrayList (:deferred-txs s) txs)
+        (transact-kv (.-lmdb engine) txs))))
   :doc-added)
 
 (defn- hydrate-query*
@@ -1092,7 +1152,8 @@
                        (AtomicInteger. max-term)
                        index-position?
                        include-text?
-                       search-opts)))))
+                       search-opts
+                       (volatile! nil))))))
 
 (defn new-search-engine
   ([lmdb]
@@ -1121,7 +1182,8 @@
                   (.-max-term old)
                   (.-index-position? old)
                   (.-include-text? old)
-                  (.-search-opts old)))
+                  (.-search-opts old)
+                  (volatile! nil)))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])

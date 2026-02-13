@@ -782,6 +782,11 @@
     (cl/normal-request (.-client store) :search
                        [(.-db-name store) query opts]))
 
+  (begin-search-tx [_])
+  (collect-search-txs [_ _])
+  (commit-search-tx [_])
+  (abort-search-tx [_])
+
   IAdmin
   (re-index [this opts]
     (cl/normal-request (.-client store) :search-re-index
@@ -831,6 +836,10 @@
   (search-vec [_ query opts]
     (cl/normal-request (.-client store) :search-vec
                        [(.-db-name store) query opts]))
+
+  (begin-vec-tx [_])
+  (commit-vec-tx [_])
+  (abort-vec-tx [_])
 
   IAdmin
   (re-index [this opts]

@@ -3,12 +3,17 @@
 ## WIP
 
 ### Added
-- [WAL] Write Ahead Log (WAL) mode for both KV and Datalog transactions. When
-  enabled, transaction returns success after WAL is sync'ed to disk. Persistence
-  to DLMDB is done later at checkpoint. This increases write speed while keeping
-  durability guarantees. In memory overlay serves queries for non-checkpointed
-  data. WAL will be the bases for replication, crash recovery and high
-  availability.
+- [WAL] Write Ahead Log (WAL) mode for both KV and Datalog transactions, as well
+  as secondary indices. When enabled, transaction returns success after WAL is
+  sync'ed to disk. Persistence to DLMDB is done later at checkpoint. This
+  increases write speed while keeping durability guarantees. In memory overlay
+  serves queries for non-checkpointed data. WAL will be the bases for
+  replication, crash recovery and high availability.
+
+### Improved
+- [Vector] Moved vector index persistence into DLMDB.
+- [Datalog] Full-text and idoc indices are within the same atomic transaction as
+  Datalog indices.
 
 ## 0.10.5 (2026-02-08)
 

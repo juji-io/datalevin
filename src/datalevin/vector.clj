@@ -14,7 +14,6 @@
    [datalevin.util :as u :refer [raise]]
    [datalevin.spill :as sp]
    [datalevin.constants :as c]
-   [datalevin.async :as a]
    [datalevin.remote :as r]
    [datalevin.bits :as b]
    [datalevin.interface :as i]
@@ -24,12 +23,11 @@
    [datalevin.dtlvnative DTLV DTLV$usearch_index_t]
    [datalevin.cpp VecIdx VecIdx$SearchResult VecIdx$IndexInfo]
    [datalevin.spill SpillableMap]
-   [datalevin.async IAsyncWork]
    [datalevin.remote KVStore]
    [datalevin.interface IAdmin IVectorIndex]
    [java.io File FileOutputStream FileInputStream DataOutputStream
     DataInputStream]
-   [java.util Arrays Map]
+   [java.util Arrays ArrayList HashMap HashSet Map]
    [java.util.concurrent.atomic AtomicLong]
    [java.util.concurrent.locks ReentrantReadWriteLock]
    [org.bytedeco.javacpp BytePointer]))
@@ -74,17 +72,6 @@
     ^long connectivity
     ^long expansion-add
     ^long expansion-search))
-
-(defn- init-index
-  "Create a native HNSW index, loading from file if it exists."
-  [^String fname dimensions metric-key quantization connectivity expansion-add
-   expansion-search]
-  (let [^DTLV$usearch_index_t index (create-index
-                                      dimensions metric-key quantization
-                                      connectivity expansion-add
-                                      expansion-search)]
-    (when (u/file-exists fname) (VecIdx/load index fname))
-    index))
 
 (defn- ->array
   [quantization vec-data]
@@ -170,7 +157,7 @@
     [@max-id vecs]))
 
 ;;; ---------------------------------------------------------------
-;;; LMDB Blob Checkpoint / Load for WAL Mode
+;;; LMDB Blob Checkpoint / Load
 ;;; ---------------------------------------------------------------
 
 (defn- checkpoint-to-lmdb
@@ -282,26 +269,44 @@
                           :top        10
                           :vec-filter (constantly true)})
 
-(defn- vec-save-key* [fname] (->> fname hash (str "vec-save-") keyword))
-
-(def vec-save-key (memoize vec-save-key*))
-
-(deftype AsyncVecSave [vec-index fname ^ReentrantReadWriteLock vec-lock]
-  IAsyncWork
-  (work-key [_] (vec-save-key fname))
-  (do-work [_]
-    (let [rlock (.readLock vec-lock)]
-      (when (.tryLock rlock)
-        (try
-          (when-not (i/vec-closed? vec-index)
-            (i/persist-vecs vec-index))
-          (catch Throwable _)
-          (finally
-            (.unlock rlock))))))
-  (combine [_] first)
-  (callback [_] nil))
-
 (declare display-xf new-vector-index)
+
+(defn- merge-search-results
+  "Merge base and shadow search results, filtering tombstones.
+   Returns [long-array float-array] of at most `top` results sorted by distance."
+  [^VecIdx$SearchResult base-res shadow-res ^HashSet tombstones ^long top]
+  (let [bk (.getKeys base-res)
+        bd (.getDists base-res)]
+    (if (and (nil? shadow-res) (nil? tombstones))
+      [bk bd]
+      (let [pairs (ArrayList.)]
+        ;; Add base results, filtering tombstones
+        (dotimes [i (alength bk)]
+          (let [k (aget bk i)]
+            (when-not (and tombstones (.contains tombstones k))
+              (.add pairs (long-array [k (Float/floatToRawIntBits (aget bd i))])))))
+        ;; Add shadow results
+        (when shadow-res
+          (let [sk (.getKeys ^VecIdx$SearchResult shadow-res)
+                sd (.getDists ^VecIdx$SearchResult shadow-res)]
+            (dotimes [i (alength sk)]
+              (.add pairs (long-array [(aget sk i)
+                                       (Float/floatToRawIntBits (aget sd i))])))))
+        ;; Sort by distance (stored as raw int bits)
+        (.sort pairs (reify java.util.Comparator
+                       (compare [_ a b]
+                         (Float/compare
+                           (Float/intBitsToFloat (int (aget ^longs a 1)))
+                           (Float/intBitsToFloat (int (aget ^longs b 1)))))))
+        ;; Take top results
+        (let [n     (min top (.size pairs))
+              rkeys (long-array n)
+              rdist (float-array n)]
+          (dotimes [i n]
+            (let [^longs p (.get pairs i)]
+              (aset rkeys i (aget p 0))
+              (aset rdist i (Float/intBitsToFloat (int (aget p 1))))))
+          [rkeys rdist])))))
 
 (deftype VectorIndex [lmdb
                       closed?
@@ -319,49 +324,71 @@
                       ^Map search-opts
                       ^ReentrantReadWriteLock vec-lock
                       ^String domain
-                      wal-mode?]
+                      shadow]              ; volatile! nil or shadow map
   IVectorIndex
-  (add-vec [this vec-ref vec-data]
+  (add-vec [_ vec-ref vec-data]
     (let [vec-id  (.incrementAndGet max-vec)
           vec-arr (vec->arr dimensions quantization vec-data)]
-      (add index quantization vec-id vec-arr)
-      (when-not wal-mode?
-        (a/exec (a/get-executor) (AsyncVecSave. this fname vec-lock)))
-      (.put vecs vec-id vec-ref)
-      ;; In WAL mode, bypass WAL for vecs-dbi writes so list DBI data
-      ;; goes directly to LMDB base (list DBIs don't support WAL overlay).
-      (if wal-mode?
-        (binding [c/*bypass-wal*    true
-                  c/*trusted-apply* true]
-          (i/transact-kv
-            lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)]))
-        (i/transact-kv
-          lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)]))
+      (if-let [s @shadow]
+        ;; Shadow mode: add to shadow index only
+        (let [^HashMap sv   (:vecs s)
+              ^HashMap ri   (:ref->ids s)]
+          (add (:index s) quantization vec-id vec-arr)
+          (.put sv vec-id vec-ref)
+          (.computeIfAbsent ri vec-ref
+            (reify java.util.function.Function
+              (apply [_ _] (ArrayList.))))
+          (.add ^ArrayList (.get ri vec-ref) (Long/valueOf vec-id)))
+        ;; Direct mode: mutate base + write vecs-dbi (current behavior)
+        (do (add index quantization vec-id vec-arr)
+            (.put vecs vec-id vec-ref)
+            (binding [c/*bypass-wal*    true
+                      c/*trusted-apply* true]
+              (i/transact-kv
+                lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)]))))
       vec-id))
 
   (get-vec [_ vec-ref]
-    (let [ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
-      (for [^long id ids]
-        (get-vec* index id quantization dimensions))))
+    (let [s           @shadow
+          tombstones  (when s (:tombstones s))
+          base-ids    (i/get-list lmdb vecs-dbi vec-ref :data :id)
+          base-vecs   (for [^long id base-ids
+                            :when (not (and tombstones
+                                            (.contains ^HashSet tombstones id)))]
+                        (get-vec* index id quantization dimensions))
+          shadow-vecs (when s
+                        (when-let [ids (.get ^HashMap (:ref->ids s) vec-ref)]
+                          (for [^long id ids]
+                            (get-vec* (:index s) id quantization dimensions))))]
+      (concat base-vecs shadow-vecs)))
 
-  (remove-vec [this vec-ref]
-    (let [ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
-      (doseq [^long id ids]
-        (VecIdx/remove index id)
-        (.remove vecs id))
-      (when-not wal-mode?
-        (a/exec (a/get-executor) (AsyncVecSave. this fname vec-lock)))
-      (if wal-mode?
+  (remove-vec [_ vec-ref]
+    (if-let [s @shadow]
+      ;; Shadow mode
+      (let [base-ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
+        (doseq [^long id base-ids]
+          (.add ^HashSet (:tombstones s) id))
+        (when (seq base-ids)
+          (.add ^HashSet (:del-refs s) vec-ref))
+        ;; Remove from shadow if present
+        (when-let [shadow-ids (.get ^HashMap (:ref->ids s) vec-ref)]
+          (doseq [^long id shadow-ids]
+            (VecIdx/remove (:index s) id)
+            (.remove ^HashMap (:vecs s) id))
+          (.remove ^HashMap (:ref->ids s) vec-ref)))
+      ;; Direct mode (current behavior)
+      (let [ids (i/get-list lmdb vecs-dbi vec-ref :data :id)]
+        (doseq [^long id ids]
+          (VecIdx/remove index id)
+          (.remove vecs id))
         (binding [c/*bypass-wal*    true
                   c/*trusted-apply* true]
-          (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)]))
-        (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)]))))
+          (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))))
 
-  (persist-vecs [_]
+  (persist-vecs [this]
     (when-not @closed?
-      (if wal-mode?
-        (checkpoint-to-lmdb lmdb index domain)
-        (VecIdx/save index fname))))
+      (.commit-vec-tx this)
+      (checkpoint-to-lmdb lmdb index domain)))
 
   (close-vecs [this]
     (let [wlock (.writeLock vec-lock)]
@@ -369,6 +396,9 @@
       (try
         (when-not (.vec-closed? this)
           (.persist_vecs this)
+          (when-let [s @shadow]
+            (VecIdx/free ^DTLV$usearch_index_t (:index s))
+            (vreset! shadow nil))
           (vreset! closed? true)
           (swap! l/vector-indices dissoc fname)
           (VecIdx/free index))
@@ -381,9 +411,7 @@
     (.close-vecs this)
     (.empty vecs)
     (i/clear-dbi lmdb vecs-dbi)
-    (if wal-mode?
-      (clear-vec-blobs lmdb domain)
-      (u/delete-files fname)))
+    (clear-vec-blobs lmdb domain))
 
   (vecs-info [_]
     (let [^VecIdx$IndexInfo info (VecIdx/info index)]
@@ -399,7 +427,10 @@
        :expansion-add    expansion-add
        :expansion-search expansion-search}))
 
-  (vec-indexed? [_ vec-ref] (i/get-value lmdb vecs-dbi vec-ref))
+  (vec-indexed? [_ vec-ref]
+    (or (i/get-value lmdb vecs-dbi vec-ref)
+        (when-let [s @shadow]
+          (.containsKey ^HashMap (:ref->ids s) vec-ref))))
 
   (search-vec [this query-vec]
     (.search-vec this query-vec {}))
@@ -408,10 +439,69 @@
                                       top        (:top search-opts)
                                       vec-filter (:vec-filter search-opts)}}]
     (let [query                    (vec->arr dimensions quantization query-vec)
-          ^VecIdx$SearchResult res (search index query quantization (int top))]
+          s                        @shadow
+          ^VecIdx$SearchResult res (search index query quantization (int top))
+          shadow-res               (when (and s
+                                              (pos? (.getSize
+                                                      ^VecIdx$IndexInfo
+                                                      (VecIdx/info
+                                                        ^DTLV$usearch_index_t
+                                                        (:index s)))))
+                                    (search (:index s) query
+                                            quantization (int top)))
+          [merged-keys merged-dists]
+          (merge-search-results res shadow-res
+                                (when s (:tombstones s)) top)]
       (doall (sequence
                (display-xf this vec-filter display)
-               (.getKeys res) (.getDists res)))))
+               merged-keys merged-dists))))
+
+  (begin-vec-tx [_]
+    (vreset! shadow
+      {:index      (create-index dimensions metric-type quantization
+                                 connectivity expansion-add expansion-search)
+       :vecs       (HashMap.)
+       :ref->ids   (HashMap.)
+       :tombstones (HashSet.)
+       :del-refs   (HashSet.)
+       :saved-max  (.get max-vec)}))
+
+  (commit-vec-tx [_]
+    (when-let [s @shadow]
+      (let [shadow-idx  ^DTLV$usearch_index_t (:index s)
+            shadow-vecs ^HashMap (:vecs s)
+            tombstones  ^HashSet (:tombstones s)
+            del-refs    ^HashSet (:del-refs s)
+            txs         (ArrayList.)]
+        ;; 1. Apply shadow additions to base
+        (doseq [[vec-id vec-ref] shadow-vecs]
+          (let [^long vid  vec-id
+                vec-data   (get-vec* shadow-idx vid quantization dimensions)]
+            (add index quantization vid vec-data)
+            (.put vecs vid vec-ref)
+            (.add txs (l/kv-tx :put vecs-dbi vec-ref vid :data :id))))
+        ;; 2. Apply tombstones to base
+        (doseq [id tombstones]
+          (let [^long vid id]
+            (VecIdx/remove index vid)
+            (.remove vecs vid)))
+        ;; 3. Delete refs from vecs-dbi
+        (doseq [ref del-refs]
+          (.add txs (l/kv-tx :del vecs-dbi ref)))
+        ;; 4. Write vecs-dbi changes
+        (when (pos? (.size txs))
+          (binding [c/*bypass-wal*    true
+                    c/*trusted-apply* true]
+            (i/transact-kv lmdb txs)))
+        ;; 5. Free shadow
+        (VecIdx/free shadow-idx)
+        (vreset! shadow nil))))
+
+  (abort-vec-tx [_]
+    (when-let [s @shadow]
+      (VecIdx/free ^DTLV$usearch_index_t (:index s))
+      (.set max-vec (long (:saved-max s)))
+      (vreset! shadow nil)))
 
   IAdmin
   (re-index [this opts]
@@ -434,14 +524,21 @@
       (catch Exception e
         (u/raise "Unable to re-index vectors. " e {:dir (i/env-dir lmdb)})))))
 
+(defn- resolve-vec-ref
+  "Resolve vec-id to vec-ref, checking shadow then base."
+  [^VectorIndex vi ^long vec-id]
+  (or (when-let [s @(.-shadow vi)]
+        (.get ^HashMap (:vecs s) vec-id))
+      ((.-vecs vi) vec-id)))
+
 (defn- get-ref
   [^VectorIndex index vec-filter vec-id _]
-  (when-let [vec-ref ((.-vecs index) vec-id)]
+  (when-let [vec-ref (resolve-vec-ref index vec-id)]
     (when (vec-filter vec-ref) vec-ref)))
 
 (defn- get-ref-dist
   [^VectorIndex index vec-filter vec-id dist]
-  (when-let [vec-ref ((.-vecs index) vec-id)]
+  (when-let [vec-ref (resolve-vec-ref index vec-id)]
     (when (vec-filter vec-ref) [vec-ref dist])))
 
 (defn- display-xf
@@ -470,27 +567,21 @@
                 search-opts      (default-opts :search-opts)
                 domain           c/default-domain}}]
   (assert dimensions ":dimensions is required")
-  (let [vecs-dbi  (str domain "/" c/vec-refs)
-        wal-mode? (boolean (:kv-wal? (i/env-opts lmdb)))]
+  (let [vecs-dbi (str domain "/" c/vec-refs)]
     (open-dbi lmdb vecs-dbi)
-    (when wal-mode?
-      (open-vec-blob-dbis lmdb))
+    (open-vec-blob-dbis lmdb)
     (let [[max-vec-id vecs] (init-vecs lmdb vecs-dbi)
           fname             (index-fname lmdb domain)
           index             (create-index dimensions metric-type
                                           quantization connectivity
                                           expansion-add expansion-search)]
-      ;; Load index data
-      (if wal-mode?
-        (let [loaded? (load-from-lmdb lmdb index domain)]
-          (when-not loaded?
-            (when (u/file-exists fname)
-              ;; Migration from file-based to LMDB blob
-              (VecIdx/load index fname)
-              (checkpoint-to-lmdb lmdb index domain)
-              (u/delete-files fname))))
-        (when (u/file-exists fname)
-          (VecIdx/load index fname)))
+      ;; Load from LMDB blob; if not found, migrate from legacy .vid file
+      (let [loaded? (load-from-lmdb lmdb index domain)]
+        (when-not loaded?
+          (when (u/file-exists fname)
+            (VecIdx/load index fname)
+            (checkpoint-to-lmdb lmdb index domain)
+            (u/delete-files fname))))
       (swap! l/vector-indices assoc fname index)
       (->VectorIndex lmdb
                      (volatile! false)
@@ -508,7 +599,7 @@
                      search-opts
                      (ReentrantReadWriteLock.)
                      domain
-                     wal-mode?))))
+                     (volatile! nil)))))
 
 (defn new-vector-index
   [lmdb opts]
@@ -534,6 +625,6 @@
                  (.-search-opts old)
                  (ReentrantReadWriteLock.)
                  (.-domain old)
-                 (.-wal-mode? old)))
+                 (.-shadow old)))
 
 (defn attr-domain [attr] (s/replace (u/keyword->string attr) "/" "_"))

@@ -38,7 +38,10 @@
             list-range-first-n get-list list-range-filter-count max-aid
             list-range-some list-range-keep visit-list-range max-gt max-tx
             open-list-dbi open-dbi attrs add-doc remove-doc opts swap-attr
-            add-vec remove-vec schema closed? a-size db-name populated?]]
+            add-vec remove-vec schema closed? a-size db-name populated?
+            begin-vec-tx commit-vec-tx abort-vec-tx
+            begin-search-tx collect-search-txs commit-search-tx
+            abort-search-tx]]
    [clojure.string :as str])
   (:import
    [java.util List Comparator Collection HashMap UUID]
@@ -1143,6 +1146,79 @@
         :g (idoc/add-doc index [:g (nth d 0)] (peek d) false)
         :r (idoc/remove-doc index [:g (nth d 0)] (peek d))))))
 
+(defn- begin-vec-txs
+  "Begin shadow transaction on vector indices affected by vi-ds.
+   Returns collection of affected indices."
+  [vector-indices ^FastList vi-ds]
+  (when (pos? (.size vi-ds))
+    (let [domains (into #{} (comp (map first) cat) vi-ds)
+          indices (keep vector-indices domains)]
+      (doseq [idx indices]
+        (begin-vec-tx idx))
+      (seq indices))))
+
+(defn- commit-vec-txs [indices]
+  (when indices
+    (doseq [idx indices]
+      (commit-vec-tx idx))))
+
+(defn- abort-vec-txs [indices]
+  (when indices
+    (doseq [idx indices]
+      (abort-vec-tx idx))))
+
+(defn- begin-ft-txs
+  "Begin shadow transaction on search engines affected by ft-ds.
+   Returns collection of affected engines."
+  [search-engines ^FastList ft-ds]
+  (when (pos? (.size ft-ds))
+    (let [domains (into #{} (comp (map first) cat) ft-ds)
+          engines (keep search-engines domains)]
+      (doseq [engine engines]
+        (begin-search-tx engine))
+      (seq engines))))
+
+(defn- collect-ft-txs [^FastList txs engines]
+  (when engines
+    (doseq [engine engines]
+      (collect-search-txs engine txs))))
+
+(defn- commit-ft-txs [engines]
+  (when engines
+    (doseq [engine engines]
+      (commit-search-tx engine))))
+
+(defn- abort-ft-txs [engines]
+  (when engines
+    (doseq [engine engines]
+      (abort-search-tx engine))))
+
+(defn- begin-idoc-txs
+  "Begin shadow transaction on idoc indices affected by id-ds.
+   Returns collection of affected indices."
+  [idoc-indices ^FastList id-ds]
+  (when (pos? (.size id-ds))
+    (let [domains (into #{} (map first) id-ds)
+          indices (keep idoc-indices domains)]
+      (doseq [idx indices]
+        (idoc/begin-idoc-tx idx))
+      (seq indices))))
+
+(defn- collect-id-txs [^FastList txs indices]
+  (when indices
+    (doseq [idx indices]
+      (idoc/collect-idoc-txs idx txs))))
+
+(defn- commit-id-txs [indices]
+  (when indices
+    (doseq [idx indices]
+      (idoc/commit-idoc-tx idx))))
+
+(defn- abort-id-txs [indices]
+  (when indices
+    (doseq [idx indices]
+      (idoc/abort-idoc-tx idx))))
+
 (defn- apply-datoms*
   [^Store store datoms]
   (let [lmdb                            (.-lmdb store)
@@ -1168,10 +1244,27 @@
                             (.advance-max-tx store) :attr :long))
       (.add txs (lmdb/kv-tx :put c/meta :last-modified
                             (System/currentTimeMillis) :attr :long))
-      (fulltext-index search-engines ft-ds)
-      (vector-index vector-indices vi-ds)
-      (idoc-index idoc-indices id-ds)
-      (transact-kv lmdb txs))))
+      (let [affected-vis (begin-vec-txs vector-indices vi-ds)
+            affected-fts (begin-ft-txs search-engines ft-ds)
+            affected-ids (begin-idoc-txs idoc-indices id-ds)]
+        (try
+          (fulltext-index search-engines ft-ds)
+          (vector-index vector-indices vi-ds)
+          (idoc-index idoc-indices id-ds)
+          ;; Collect deferred LMDB txs into main batch
+          (collect-ft-txs txs affected-fts)
+          (collect-id-txs txs affected-ids)
+          ;; Single atomic LMDB write
+          (let [ret (transact-kv lmdb txs)]
+            (commit-vec-txs affected-vis)
+            (commit-ft-txs affected-fts)
+            (commit-id-txs affected-ids)
+            ret)
+          (catch Exception e
+            (abort-vec-txs affected-vis)
+            (abort-ft-txs affected-fts)
+            (abort-id-txs affected-ids)
+            (throw e)))))))
 
 (defn e-sample*
   [^Store store a aid]
