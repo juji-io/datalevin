@@ -18,7 +18,6 @@
    [datalevin.buffer :as bf]
    [datalevin.query :as q]
    [datalevin.db :as db]
-   [datalevin.prepare :as prepare]
    [datalevin.lmdb :as l]
    [datalevin.protocol :as p]
    [datalevin.storage :as st]
@@ -27,6 +26,7 @@
    [datalevin.built-ins :as dbq]
    [datalevin.constants :as c]
    [datalevin.interface :as i]
+   [datalevin.validate :as vld]
    [taoensso.timbre :as log]
    [clojure.stacktrace :as stt]
    [clojure.string :as s])
@@ -1628,7 +1628,7 @@
           k        (nth args 1)
           v        (nth args 2)
           dt-store ^Store (store server skey db-name writing?)]
-      (prepare/validate-option-update k v)
+      (vld/validate-option-update k v)
       (write-message skey {:type   :command-complete
                            :result (i/assoc-opt dt-store k v)}))))
 
@@ -1656,7 +1656,7 @@
                                      server
                                      (db-store server skey db-name)))
         "Don't have permission to alter the database"
-        (prepare/validate-schema-update
+        (vld/validate-schema-update
           dt-store (.-lmdb dt-store) new-schema
           {:fulltext (set (keys (.-search-engines dt-store)))
            :vector   (set (keys (.-vector-indices dt-store)))
@@ -1685,7 +1685,7 @@
     (let [db-name  (nth args 0)
           attr     (nth args 1)
           dt-store ^Store (store server skey db-name writing?)]
-      (prepare/validate-del-attr dt-store attr)
+      (vld/validate-del-attr dt-store attr)
       (write-message skey {:type   :command-complete
                            :result (i/del-attr dt-store attr)}))))
 
@@ -1696,7 +1696,7 @@
           attr      (nth args 1)
           new-attr  (nth args 2)
           dt-store  ^Store (store server skey db-name writing?)]
-      (prepare/validate-rename-attr dt-store attr new-attr)
+      (vld/validate-rename-attr dt-store attr new-attr)
       (write-message skey {:type   :command-complete
                            :result (i/rename-attr dt-store attr new-attr)}))))
 
@@ -1753,9 +1753,7 @@
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (cond-> (select-keys rp [:tx-data :tempids])
                     (:new-attributes rp)
-                    (assoc :new-attributes (:new-attributes rp))
-                    (:prepare-stats rp)
-                    (assoc :prepare-stats (:prepare-stats rp)))]
+                    (assoc :new-attributes (:new-attributes rp)))]
           (if (< ct ^long c/+wire-datom-batch-size+)
             (write-message skey {:type :command-complete :result res})
             (let [{:keys [tx-data tempids]} res]

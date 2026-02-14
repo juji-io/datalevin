@@ -339,7 +339,7 @@
 
 (defn- get-boolean [^ByteBuffer bb] (boolean-value (get-byte bb)))
 
-(defn- put-long [^ByteBuffer bb n] (.putLong bb ^long n))
+(defn put-long [^ByteBuffer bb n] (.putLong bb ^long n))
 
 (defn- encode-float
   [x]
@@ -367,7 +367,7 @@
 
 (defn put-bytes [^ByteBuffer bb ^bytes bs] (.put bb bs))
 
-(defn- put-byte [^ByteBuffer bb b] (.put bb ^byte (unchecked-byte b)))
+(defn put-byte [^ByteBuffer bb b] (.put bb ^byte (unchecked-byte b)))
 
 (defn encode-bigint
   [^BigInteger x]

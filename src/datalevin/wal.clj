@@ -8,18 +8,21 @@
 ;; You must not remove this notice, or any other, from this software.
 ;;
 (ns ^:no-doc datalevin.wal
+  "Write Ahead Log (WAL)"
   (:require
    [clojure.java.io :as io]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
    [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
-    DataOutputStream EOFException]
+    DataOutputStream EOFException File]
+   [java.util.zip CRC32C]
+   [java.util Arrays]
    [java.nio ByteBuffer]
    [java.nio.channels FileChannel]
    [java.nio.file StandardOpenOption]
-   [java.util.zip CRC32C]
    [java.nio.charset StandardCharsets]))
 
 (def ^:const wal-format-major 1)
@@ -42,10 +45,11 @@
   [:nooverwrite :nodupdata :current :reserve :append :appenddup :multiple])
 
 (def ^:private wal-flag->id
-  (zipmap wal-flag-keywords (map byte (range 1 (inc (count wal-flag-keywords))))))
+  (zipmap wal-flag-keywords
+          (mapv byte (range 1 (inc (count wal-flag-keywords))))))
 
 (def ^:private wal-id->flag
-  (into {} (map (fn [[k v]] [(int (bit-and (int v) 0xFF)) k]) wal-flag->id)))
+  (into {} (map (fn [[k v]] [(int (bit-and (int v) 0xFF)) k])) wal-flag->id))
 
 (def ^:private wal-type-keywords
   [:string :bigint :bigdec :long :float :double :bytes :keyword :symbol
@@ -53,21 +57,22 @@
    :ints :bitmap :term-info :doc-info :pos-info :attr :avg :raw :datom :data])
 
 (def ^:private wal-type->id
-  (zipmap wal-type-keywords (map byte (range 1 (inc (count wal-type-keywords))))))
+  (zipmap wal-type-keywords
+          (mapv byte (range 1 (inc (count wal-type-keywords))))))
 
 (def ^:private wal-id->type
-  (into {} (map (fn [[k v]] [(int (bit-and (int v) 0xFF)) k]) wal-type->id)))
+  (into {} (map (fn [[k v]] [(int (bit-and (int v) 0xFF)) k])) wal-type->id))
 
 (defn- type->byte
   [t]
   (let [t (or t :data)]
-    (or (get wal-type->id t)
+    (or (wal-type->id t)
         (u/raise "Unsupported WAL value type" {:error :wal/invalid-type
                                                :type  t}))))
 
 (defn- byte->type
   [b]
-  (or (get wal-id->type (int (bit-and (int b) 0xFF)))
+  (or (wal-id->type (int (bit-and (int b) 0xFF)))
       (u/raise "Unknown WAL value type tag"
                {:error :wal/invalid-type-tag :tag b})))
 
@@ -75,13 +80,13 @@
 
 (defn- flag->byte
   [f]
-  (or (get wal-flag->id f)
+  (or (wal-flag->id f)
       (u/raise "Unsupported WAL flag" {:error :wal/invalid-flag
                                        :flag  f})))
 
 (defn- byte->flag
   [b]
-  (or (get wal-id->flag (int (bit-and (int b) 0xFF)))
+  (or (wal-id->flag (int (bit-and (int b) 0xFF)))
       (u/raise "Unknown WAL flag tag"
                {:error :wal/invalid-flag-tag :tag b})))
 
@@ -112,10 +117,10 @@
 
 (defn- read-type
   [^DataInputStream in]
-  (let [tag (int (.readUnsignedByte in))]
-    (if (zero? tag)
+  (let [tag (.readUnsignedByte in)]
+    (if (zero? ^int tag)
       (let [cnt (read-u16 in)]
-        (when (zero? cnt)
+        (when (zero? ^short cnt)
           (u/raise "Tuple type must not be empty"
                    {:error :wal/invalid-type-count :count cnt}))
         (vec (repeatedly cnt #(byte->type (byte (.readUnsignedByte in))))))
@@ -135,7 +140,7 @@
 (defn- read-flags
   [^DataInputStream in]
   (let [cnt (.readUnsignedByte in)]
-    (when (pos? cnt)
+    (when (pos? ^int cnt)
       (vec (repeatedly cnt #(byte->flag (byte (.readUnsignedByte in))))))))
 
 (defn- crc32c
@@ -154,15 +159,10 @@
     (.readFully in bs)
     bs))
 
-(def ^:private ^ThreadLocal tl-encode-buf
-  (ThreadLocal/withInitial
-    (reify java.util.function.Supplier
-      (get [_] (ByteBuffer/allocate 256)))))
-
 (defn- encode-bits
   ^bytes [x t]
   (let [t (or t :data)]
-    (loop [^ByteBuffer buf (.get tl-encode-buf)]
+    (loop [^ByteBuffer buf (bf/get-tl-buffer)]
       (let [result (try
                      (b/put-bf buf x t)
                      (b/get-bytes (.duplicate buf))
@@ -173,14 +173,8 @@
         (if (not= result ::overflow)
           result
           (let [new-buf (ByteBuffer/allocate (* 2 (.capacity buf)))]
-            (.set tl-encode-buf new-buf)
+            (bf/set-tl-buffer new-buf)
             (recur new-buf)))))))
-
-(defn- decode-bits
-  [^bytes bs t]
-  (let [t  (or t :data)
-        bf (ByteBuffer/wrap bs)]
-    (b/read-buffer bf t)))
 
 (defn- dbi-name-bytes
   ^bytes [dbi-name]
@@ -268,7 +262,7 @@
   (let [opcode  (byte (.readUnsignedByte in))
         dbi-len (read-u16 in)
         dbi-bs  (read-bytes in dbi-len)
-        dbi     (String. dbi-bs StandardCharsets/UTF_8)
+        dbi     (String. ^bytes dbi-bs StandardCharsets/UTF_8)
         k-type  (read-type in)
         k-len   (read-u16 in)
         k-bs    (read-bytes in k-len)]
@@ -297,7 +291,7 @@
              (cond-> {:op :del-list :dbi dbi :k k-bs :kt k-type
                       :v v-bs :vt v-type :raw? true}
                (seq flags) (assoc :flags flags)))
-      (u/raise "Unknown WAL opcode" {:error :wal/invalid-opcode
+      (u/raise "Unknown WAL opcode" {:error  :wal/invalid-opcode
                                      :opcode opcode}))))
 
 (def ^:const ^:private record-header-size 14)
@@ -360,12 +354,12 @@
   (let [wal-dir (io/file (wal-dir-path dir))]
     (when (.exists wal-dir)
       (->> (.listFiles wal-dir)
-           (filter #(and (.isFile ^java.io.File %)
-                         (.endsWith (.getName ^java.io.File %) ".wal")))
-           (sort-by #(.getName ^java.io.File %))))))
+           (filter #(and (.isFile ^File %)
+                         (.endsWith (.getName ^File %) ".wal")))
+           (sort-by #(.getName ^File %))))))
 
 (defn parse-segment-id
-  [^java.io.File f]
+  [^File f]
   (let [name (.getName f)
         n    (count name)]
     (try
@@ -390,44 +384,44 @@
 
 (defn- read-record
   [^DataInputStream in]
-  (let [magic (read-bytes in 4)]
-    (when (not (java.util.Arrays/equals magic wal-record-magic))
+  (let [^bytes magic (read-bytes in 4)]
+    (when (not (Arrays/equals magic ^bytes wal-record-magic))
       (u/raise "Bad WAL record magic" {:error :wal/bad-magic}))
-    (let [version (.readUnsignedByte in)
-          _flags  (.readUnsignedByte in)
+    (let [version  (.readUnsignedByte in)
+          _flags   (.readUnsignedByte in)
           body-len (read-u32 in)
           checksum (read-u32 in)
           body     (read-bytes in body-len)
           actual   (crc32c body 0 body-len)]
       (when (not= checksum actual)
         (u/raise "WAL record checksum mismatch"
-                 {:error :wal/bad-checksum
+                 {:error    :wal/bad-checksum
                   :expected checksum
-                  :actual actual}))
+                  :actual   actual}))
       (when (not= version wal-format-major)
         (u/raise "WAL format version mismatch"
-                 {:error :wal/bad-version
+                 {:error    :wal/bad-version
                   :expected wal-format-major
-                  :actual version}))
+                  :actual   version}))
       (with-open [bin (ByteArrayInputStream. body)
                   din (DataInputStream. bin)]
-        (let [wal-id (read-u64 din)
+        (let [wal-id      (read-u64 din)
               _user-start (read-u64 din)
               _user-end   (read-u64 din)
               user-count  (read-u32 din)
               _entries    (dotimes [_ user-count]
                             (read-u64 din)
                             (read-u64 din)
-                            (let [meta-len (read-u32 din)]
+                            (let [^int meta-len (read-u32 din)]
                               (when (pos? meta-len)
                                 (read-bytes din meta-len)))
                             (read-u32 din)
                             (read-u32 din))
-              op-count   (read-u32 din)
-              ops        (loop [i 0 acc []]
-                           (if (< i op-count)
-                             (recur (inc i) (conj acc (decode-kv-op din)))
-                             acc))]
+              op-count    ^int (read-u32 din)
+              ops         (loop [i 0 acc []]
+                            (if (< i op-count)
+                              (recur (inc i) (conj acc (decode-kv-op din)))
+                              acc))]
           {:wal/tx-id wal-id :wal/ops ops})))))
 
 (defn read-wal-records
@@ -436,7 +430,7 @@
         upto-id (long (or upto-id Long/MAX_VALUE))]
     (lazy-seq
       (mapcat
-        (fn [^java.io.File f]
+        (fn [^File f]
           (let [path (.getAbsolutePath f)]
             (with-open [in (DataInputStream. (io/input-stream path))]
               (loop [acc (transient [])]
@@ -449,17 +443,17 @@
                       (cond
                         (<= wal-id from-id) (recur acc)
                         (<= wal-id upto-id) (recur (conj! acc rec))
-                        :else (persistent! acc)))))))))
+                        :else               (persistent! acc)))))))))
         (segment-files dir)))))
 
 (defn scan-last-wal
   [dir]
   (let [files (segment-files dir)]
-    (loop [fs files
-           last-id 0
-           last-seg 0
+    (loop [fs        files
+           last-id   0
+           last-seg  0
            last-time 0]
-      (if-let [^java.io.File f (first fs)]
+      (if-let [^File f (first fs)]
         (let [seg-id (long (or (parse-segment-id f) 0))
               path   (.getAbsolutePath f)
               cur-id (with-open [in (DataInputStream. (io/input-stream path))]
@@ -474,7 +468,7 @@
                  (long cur-id)
                  (max last-seg seg-id)
                  (max last-time (.lastModified f))))
-        {:last-wal-id last-id
+        {:last-wal-id     last-id
          :last-segment-id last-seg
          :last-segment-ms last-time}))))
 
@@ -494,21 +488,22 @@
   [snapshot]
   (let [buf (byte-array wal-meta-slot-size)
         bb  (ByteBuffer/wrap buf)]
-    (.put bb wal-meta-magic)
-    (.put bb wal-meta-version)
-    (.position bb wal-meta-payload-off)
-    (.putLong bb (long (get snapshot c/last-committed-wal-tx-id 0)))
-    (.putLong bb (long (get snapshot c/last-committed-user-tx-id 0)))
-    (.putLong bb (long (get snapshot c/committed-last-modified-ms 0)))
-    (.putLong bb (long (get snapshot c/last-indexed-wal-tx-id 0)))
-    (.putLong bb (long (get snapshot c/wal-meta-revision 0)))
-    (.put bb (byte wal-format-major))
-    (.put bb (byte wal-format-minor))
-    (.put bb (byte (if (get snapshot :wal/enabled? true) 1 0)))
-    (.putLong bb (long (get snapshot :wal/last-segment-id 0)))
-    (.position bb wal-meta-slot-size)
+    (b/put-bytes bb wal-meta-magic)
+    (b/put-byte bb wal-meta-version)
+    (.position bb ^int wal-meta-payload-off)
+    (b/put-long bb (get snapshot c/last-committed-wal-tx-id 0))
+    (b/put-long bb (get snapshot c/last-committed-user-tx-id 0))
+    (b/put-long bb (get snapshot c/committed-last-modified-ms 0))
+    (b/put-long bb (get snapshot c/last-indexed-wal-tx-id 0))
+    (b/put-long bb (get snapshot c/wal-meta-revision 0))
+    (b/put-byte bb wal-format-major)
+    (b/put-byte bb wal-format-minor)
+    (b/put-byte bb (if (get snapshot :wal/enabled? true) 1 0))
+    (b/put-long bb (get snapshot :wal/last-segment-id 0))
+    (.position bb ^int wal-meta-slot-size)
     (let [checksum (crc32c buf wal-meta-payload-off
-                           (- wal-meta-slot-size wal-meta-payload-off))]
+                           (- ^int wal-meta-slot-size
+                              ^int wal-meta-payload-off))]
       (aset-byte buf 5 (unchecked-byte (bit-shift-right checksum 24)))
       (aset-byte buf 6 (unchecked-byte (bit-shift-right checksum 16)))
       (aset-byte buf 7 (unchecked-byte (bit-shift-right checksum 8)))
@@ -520,39 +515,40 @@
   (when (and slot (= (alength slot) wal-meta-slot-size))
     (let [magic (byte-array 4)]
       (System/arraycopy slot 0 magic 0 4)
-      (when (java.util.Arrays/equals magic wal-meta-magic)
-        (let [version (aget slot 4)
-              c1      (bit-and (int (aget slot 5)) 0xFF)
-              c2      (bit-and (int (aget slot 6)) 0xFF)
-              c3      (bit-and (int (aget slot 7)) 0xFF)
-              c4      (bit-and (int (aget slot 8)) 0xFF)
+      (when (Arrays/equals ^bytes magic ^bytes wal-meta-magic)
+        (let [version  (aget slot 4)
+              c1       (bit-and (int (aget slot 5)) 0xFF)
+              c2       (bit-and (int (aget slot 6)) 0xFF)
+              c3       (bit-and (int (aget slot 7)) 0xFF)
+              c4       (bit-and (int (aget slot 8)) 0xFF)
               checksum (bit-or (bit-shift-left c1 24)
                                (bit-shift-left c2 16)
                                (bit-shift-left c3 8)
                                c4)
-              actual  (crc32c slot wal-meta-payload-off
-                              (- wal-meta-slot-size wal-meta-payload-off))]
+              actual   (crc32c slot wal-meta-payload-off
+                               (- ^int wal-meta-slot-size
+                                  ^int wal-meta-payload-off))]
           (when (and (= (byte wal-meta-version) version)
                      (= checksum actual))
             (let [bb (ByteBuffer/wrap slot)]
               {c/last-committed-wal-tx-id
-               (long (.getLong bb wal-meta-off-committed-wal))
+               (.getLong bb wal-meta-off-committed-wal)
                c/last-committed-user-tx-id
-               (long (.getLong bb wal-meta-off-committed-user))
+               (.getLong bb wal-meta-off-committed-user)
                c/committed-last-modified-ms
-               (long (.getLong bb wal-meta-off-committed-last-ms))
+               (.getLong bb wal-meta-off-committed-last-ms)
                c/last-indexed-wal-tx-id
-               (long (.getLong bb wal-meta-off-indexed-wal))
+               (.getLong bb wal-meta-off-indexed-wal)
                c/wal-meta-revision
-               (long (.getLong bb wal-meta-off-revision))
+               (.getLong bb wal-meta-off-revision)
                :wal-format-major
-               (int (bit-and (int (.get bb wal-meta-off-format-major)) 0xFF))
+               (bit-and (int (.get bb ^int wal-meta-off-format-major)) 0xFF)
                :wal-format-minor
-               (int (bit-and (int (.get bb wal-meta-off-format-minor)) 0xFF))
+               (bit-and (int (.get bb ^int wal-meta-off-format-minor)) 0xFF)
                :wal/enabled?
-               (= 1 (int (.get bb wal-meta-off-enabled)))
+               (= 1 (.get bb ^int wal-meta-off-enabled))
                :wal/last-segment-id
-               (long (.getLong bb wal-meta-off-last-segment))})))))))
+               (.getLong bb wal-meta-off-last-segment)})))))))
 
 (defn read-wal-meta
   [dir]
@@ -565,40 +561,41 @@
               b      (read-slot slot-b)]
           (cond
             (and a b)
-            (let [ra (get a c/wal-meta-revision)
-                  rb (get b c/wal-meta-revision)]
+            (let [ra ^long (get a c/wal-meta-revision)
+                  rb ^long (get b c/wal-meta-revision)]
               (cond
-                (> ra rb) a
-                (< ra rb) b
-                (> (get a c/last-committed-wal-tx-id)
-                   (get b c/last-committed-wal-tx-id)) a
-                :else b))
-            a a
-            b b
+                (> ra rb)                                    a
+                (< ra rb)                                    b
+                (> ^long (get a c/last-committed-wal-tx-id)
+                   ^long (get b c/last-committed-wal-tx-id)) a
+                :else                                        b))
+            a     a
+            b     b
             :else nil))))))
 
 (defn publish-wal-meta!
   [dir snapshot]
   (u/file (wal-dir-path dir))
-  (let [f (io/file (wal-meta-path dir))
-        existed? (.exists f)
-        existing (read-wal-meta dir)
-        rev (inc (long (or (get existing c/wal-meta-revision) 0)))
-        merged (merge existing snapshot {c/wal-meta-revision rev
-                                         :wal/enabled? true
-                                         :wal-format-major wal-format-major
-                                         :wal-format-minor wal-format-minor})
+  (let [f          (io/file (wal-meta-path dir))
+        existed?   (.exists f)
+        existing   (read-wal-meta dir)
+        rev        (u/long-inc (or (get existing c/wal-meta-revision) 0))
+        merged     (merge existing snapshot
+                          {c/wal-meta-revision rev
+                           :wal/enabled?       true
+                           :wal-format-major   wal-format-major
+                           :wal-format-minor   wal-format-minor})
         slot-bytes (meta-slot-bytes merged)
         empty-slot (byte-array 64)
-        use-a? (odd? rev)
-        slot-a (if use-a?
-                 slot-bytes
-                 (if existing (meta-slot-bytes existing) empty-slot))
-        slot-b (if use-a?
-                 (if existing (meta-slot-bytes existing) empty-slot)
-                 slot-bytes)
-        payload (byte-array 128)
-        metadata? (not= c/*wal-sync-mode* :none)]
+        use-a?     (odd? rev)
+        slot-a     (if use-a?
+                     slot-bytes
+                     (if existing (meta-slot-bytes existing) empty-slot))
+        slot-b     (if use-a?
+                     (if existing (meta-slot-bytes existing) empty-slot)
+                     slot-bytes)
+        payload    (byte-array 128)
+        metadata?  (not= c/*wal-sync-mode* :none)]
     (System/arraycopy slot-a 0 payload 0 64)
     (System/arraycopy slot-b 0 payload 64 64)
     (with-open [ch (FileChannel/open
@@ -636,7 +633,7 @@
   lifecycle). When ch is nil, opens and closes a channel per call."
   ([dir segment-id ^bytes record sync-mode]
    (u/file (wal-dir-path dir))
-   (with-open [ch (open-channel (segment-path dir segment-id))]
+   (with-open [^FileChannel ch (open-channel (segment-path dir segment-id))]
      (.write ch (ByteBuffer/wrap record))
      (sync-channel! ch sync-mode))
    (alength ^bytes record))

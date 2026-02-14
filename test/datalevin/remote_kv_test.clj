@@ -160,13 +160,13 @@
                    (str "remote-kv-wal-admin-" (UUID/randomUUID)))
         store (sut/open-kv dir {:kv-wal? true})]
     (if/open-dbi store "a")
-    (let [base-id (:last-committed-wal-tx-id
-                   (dc/kv-wal-watermarks store))]
+    (let [^long base-id (:last-committed-wal-tx-id
+                         (dc/kv-wal-watermarks store))]
       (if/transact-kv store [[:put "a" 1 "x"]])
       (if/transact-kv store [[:put "a" 2 "y"]])
-      (let [partial-id   (inc base-id)]
-        (is (= {:last-committed-wal-tx-id (+ base-id 2)
-                :last-indexed-wal-tx-id 0
+      (let [partial-id (inc ^long base-id)]
+        (is (= {:last-committed-wal-tx-id  (+ base-id 2)
+                :last-indexed-wal-tx-id    0
                 :last-committed-user-tx-id (+ base-id 2)}
                (dc/kv-wal-watermarks store)))
 
@@ -177,13 +177,13 @@
                         :attr :id)
         (let [committed-id (:last-committed-wal-tx-id
                             (dc/kv-wal-watermarks store))]
-          (is (= {:indexed-wal-tx-id partial-id
+          (is (= {:indexed-wal-tx-id   partial-id
                   :committed-wal-tx-id committed-id
-                  :drained? false}
+                  :drained?            false}
                  (dc/flush-kv-indexer! store partial-id)))
-          (is (= {:indexed-wal-tx-id committed-id
+          (is (= {:indexed-wal-tx-id   committed-id
                   :committed-wal-tx-id committed-id
-                  :drained? true}
+                  :drained?            true}
                  (dc/flush-kv-indexer! store))))))
     (if/close-kv store)))
 

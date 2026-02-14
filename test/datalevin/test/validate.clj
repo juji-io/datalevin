@@ -5,9 +5,10 @@
    [datalevin.core :as d]
    [datalevin.constants :as c]
    [datalevin.validate :as vld]
+   [datalevin.index :as idx]
    [datalevin.util :as u])
   (:import
-   [java.util UUID ArrayList]
+   [java.util UUID Date ArrayList]
    [datalevin.storage Store]
    [datalevin.lmdb KVTxData]))
 
@@ -737,3 +738,219 @@
                              :fn   #(throw (ex-info "injected crash" {}))}]
       (is (thrown-with-msg? Exception #"injected crash"
             (vld/check-failpoint :step-3 :after))))))
+
+;; ---- Prepare-time validators (moved from prepare.clj) ----
+
+(deftest test-validate-prepared-datoms
+  (testing "prepare validator enforces closed schema for added datoms"
+    (let [schema {:name {:db/aid 1}}
+          opts   {:closed-schema? true}
+          datoms [(d/datom 1 :name "Alice")
+                  (d/datom 1 :age 42)]]
+      (is (thrown-with-msg? Exception #"closed-schema"
+                            (vld/validate-prepared-datoms
+                              schema opts datoms)))))
+
+  (testing "prepare validator allows datoms when closed schema is disabled"
+    (let [schema {:name {:db/aid 1}}
+          opts   {:closed-schema? false}
+          datoms [(d/datom 1 :name "Alice")
+                  (d/datom 1 :age 42)]]
+      (is (= datoms (vld/validate-prepared-datoms schema opts datoms))))))
+
+(deftest test-validate-load-datoms
+  (testing "load-datoms validator rejects non-datom payloads"
+    (let [dir  (u/tmp-dir (str "prepare-load-datoms-shape-" (UUID/randomUUID)))
+          conn (d/create-conn dir nil
+                              {:kv-opts {:flags (conj c/default-env-flags
+                                                      :nosync)}})]
+      (try
+        (let [store (:store (d/db conn))]
+          (is (thrown-with-msg? Exception #"expects list of Datoms"
+                                (vld/validate-load-datoms
+                                  store [[:db/add 1 :name "Alice"]]))))
+        (finally
+          (d/close conn)
+          (u/delete-files dir)))))
+
+  (testing "load-datoms validator enforces closed schema before apply"
+    (let [dir  (u/tmp-dir (str "prepare-load-datoms-closed-schema-"
+                               (UUID/randomUUID)))
+          conn (d/create-conn
+                 dir
+                 {:name {:db/valueType :db.type/string}}
+                 {:closed-schema? true
+                  :kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (let [store (:store (d/db conn))]
+          (is (thrown-with-msg? Exception #"closed-schema"
+                                (vld/validate-load-datoms
+                                  store [(d/datom 1 :age 42)]))))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-validate-side-index-domains
+  (let [schema {:ft/title {:db/aid                 1
+                           :db/valueType           :db.type/string
+                           :db/fulltext            true
+                           :db.fulltext/domains    ["posts"]
+                           :db.fulltext/autoDomain true}
+                :vec/emb  {:db/aid         2
+                           :db/valueType   :db.type/vec
+                           :db.vec/domains ["vectors"]}
+                :doc/body {:db/aid       3
+                           :db/valueType :db.type/idoc
+                           :db/domain    "profiles"}}
+        datoms [(d/datom 1 :ft/title "hello")
+                (d/datom 1 :vec/emb [0.1 0.2])
+                (d/datom 1 :doc/body {:status "ok"})]
+        available {:fulltext #{"posts" "ft/title"}
+                   :vector   #{"vectors" "vec_emb"}
+                   :idoc     #{"profiles"}}]
+    (testing "domain validation passes when required domains exist"
+      (is (= datoms
+             (vld/validate-side-index-domains schema datoms available))))
+
+    (testing "missing fulltext domain fails before apply"
+      (is (thrown-with-msg? Exception #"Fulltext domain is not initialized"
+                            (vld/validate-side-index-domains
+                              schema
+                              [(d/datom 1 :ft/title "hello")]
+                              (assoc available :fulltext #{"posts"})))))
+
+    (testing "missing vector domain fails before apply"
+      (is (thrown-with-msg? Exception #"Vector domain is not initialized"
+                            (vld/validate-side-index-domains
+                              schema
+                              [(d/datom 1 :vec/emb [0.1 0.2])]
+                              (assoc available :vector #{"vectors"})))))
+
+    (testing "missing idoc domain fails before apply"
+      (is (thrown-with-msg? Exception #"Idoc domain is not initialized"
+                            (vld/validate-side-index-domains
+                              schema
+                              [(d/datom 1 :doc/body {:status "ok"})]
+                              (assoc available :idoc #{})))))))
+
+(deftest test-validate-schema-side-index-domains
+  (let [schema-update {:vec/emb {:db/valueType :db.type/vec}}
+        available     {:fulltext #{}
+                       :vector   #{"vec_emb"}
+                       :idoc     #{}}]
+    (testing "schema side-index domains pass when initialized"
+      (is (nil? (vld/validate-schema-side-index-domains
+                  schema-update available))))
+    (testing "schema side-index domains fail when missing"
+      (is (thrown-with-msg? Exception #"Vector domain is not initialized"
+                            (vld/validate-schema-side-index-domains
+                              schema-update
+                              (assoc available :vector #{})))))))
+
+(deftest test-validate-schema-update
+  (testing "prepare validator rejects malformed schema updates"
+    (is (thrown-with-msg? Exception #"Bad attribute specification"
+                          (vld/validate-schema-update
+                            nil nil {:bad/attr {:db/valueType :db.type/bogus}}))))
+
+  (testing "nil schema update is a no-op"
+    (is (nil? (vld/validate-schema-update nil nil nil)))))
+
+(deftest test-validate-option-update
+  (testing "valid option value passes through"
+    (is (= [:cache-limit 0]
+           (vld/validate-option-update :cache-limit 0))))
+
+  (testing "invalid option value raises"
+    (is (thrown-with-msg? Exception #"cache-limit expects a non-negative integer"
+                          (vld/validate-option-update :cache-limit -1)))))
+
+(deftest test-validate-swap-attr-update
+  (testing "aid-only attr updates pass through prepare swap validator"
+    (is (= {:db/aid 3}
+           (vld/validate-swap-attr-update nil nil :name
+                                          {:db/aid 3}
+                                          {:db/aid 3})))))
+
+(deftest test-validate-swap-attr-update-side-index-domain
+  (testing "swap-attr side-index domains are validated"
+    (is (thrown-with-msg? Exception #"Fulltext domain is not initialized"
+                          (vld/validate-swap-attr-update
+                            nil nil :ft/title {}
+                            {:db/fulltext            true
+                             :db.fulltext/autoDomain true}
+                            {:fulltext #{}
+                             :vector   #{}
+                             :idoc     #{}})))))
+
+(deftest test-validate-del-attr
+  (testing "del-attr validation passes when attribute has no datoms"
+    (with-redefs [datalevin.interface/populated? (fn [& _] false)]
+      (is (= :a/b (vld/validate-del-attr nil :a/b)))))
+
+  (testing "del-attr validation fails when attribute has datoms"
+    (with-redefs [datalevin.interface/populated? (fn [& _] true)]
+      (is (thrown-with-msg? Exception #"Cannot delete attribute with datoms"
+                            (vld/validate-del-attr nil :a/b))))))
+
+(deftest test-validate-rename-attr
+  (testing "rename validation passes for existing source and new target"
+    (with-redefs [datalevin.interface/schema (fn [_] {:a/b {:db/aid 3}})]
+      (is (= [:a/b :e/f]
+             (vld/validate-rename-attr nil :a/b :e/f)))))
+
+  (testing "rename validation rejects missing source attribute"
+    (with-redefs [datalevin.interface/schema (fn [_] {:a/b {:db/aid 3}})]
+      (is (thrown-with-msg? Exception #"Cannot rename missing attribute"
+                            (vld/validate-rename-attr nil :x/y :e/f)))))
+
+  (testing "rename validation rejects existing target attribute"
+    (with-redefs [datalevin.interface/schema
+                  (fn [_] {:a/b {:db/aid 3}
+                           :e/f {:db/aid 4}})]
+      (is (thrown-with-msg? Exception #"Cannot rename to existing attribute"
+                            (vld/validate-rename-attr nil :a/b :e/f))))))
+
+(deftest test-validate-rename-map
+  (testing "rename map validates against projected schema and returns projection"
+    (is (= {:x/y {:db/aid 4}
+            :e/f {:db/aid 3}}
+           (vld/validate-rename-map
+             {:a/b {:db/aid 3}
+              :x/y {:db/aid 4}}
+             [[:a/b :e/f]]))))
+
+  (testing "rename map validates sequentially across evolving schema"
+    (is (= {:g/h {:db/aid 3}}
+           (vld/validate-rename-map
+             {:a/b {:db/aid 3}}
+             [[:a/b :e/f]
+              [:e/f :g/h]]))))
+
+  (testing "rename map rejects collisions based on projected schema"
+    (is (thrown-with-msg? Exception #"Cannot rename to existing attribute"
+                          (vld/validate-rename-map
+                            {:a/b {:db/aid 3}
+                             :e/f {:db/aid 4}}
+                            [[:a/b :e/f]])))))
+
+(deftest test-type-coercion
+  (testing "correct coercion for each value type"
+    (is (= "hello" (vld/type-coercion :db.type/string "hello")))
+    (is (= 42 (vld/type-coercion :db.type/long 42)))
+    (is (= 3.14 (vld/type-coercion :db.type/double 3.14)))
+    (is (= true (vld/type-coercion :db.type/boolean true)))
+    (is (= :foo (vld/type-coercion :db.type/keyword "foo")))
+    (is (= 'foo (vld/type-coercion :db.type/symbol "foo")))
+    (is (= [1 2] (vld/type-coercion :db.type/tuple [1 2])))
+    (is (instance? Date (vld/coerce-inst 1000)))
+    (is (instance? UUID (vld/coerce-uuid "550e8400-e29b-41d4-a716-446655440000")))))
+
+;; ---- Index utilities ----
+
+(deftest test-index-value-type
+  (testing "value-type extracts type from props"
+    (is (= :db.type/string (idx/value-type {:db/valueType :db.type/string})))
+    (is (= :db.type/long (idx/value-type {:db/valueType :db.type/long})))
+    (is (= :data (idx/value-type {})))
+    (is (= :data (idx/value-type nil)))))

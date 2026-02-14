@@ -536,16 +536,6 @@
 ;; datalog db
 
 (def ^{:dynamic true :no-doc true
-       :doc     "When true, use the prepare/apply transaction path"}
-  *use-prepare-path* false)
-
-(def ^{:dynamic true :no-doc true
-       :doc     "When true, collect per-stage prepare timing/counter stats.
-                 This is useful for diagnostics and benchmarks but adds
-                 overhead on every transaction."}
-  *collect-prepare-stats* false)
-
-(def ^{:dynamic true :no-doc true
        :doc     "When true, the current call is in a trusted internal apply
                  context. Mutation functions that require prepared input
                  (e.g. apply-prepared-datoms) check this gate to reject

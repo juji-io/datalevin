@@ -21,7 +21,6 @@
    [datalevin.idoc :as idoc]
    [datalevin.storage :as s]
    [datalevin.index :as idx]
-   [datalevin.prepare :as prepare]
    [datalevin.validate :as vld]
    [datalevin.remote :as r]
    [datalevin.relation :as rel]
@@ -698,25 +697,25 @@
    (vld/validate-schema schema)
    (new-db (open-store dir schema opts))))
 
-(def coerce-inst prepare/coerce-inst)
+(def coerce-inst vld/coerce-inst)
 
-(def coerce-uuid prepare/coerce-uuid)
+(def coerce-uuid vld/coerce-uuid)
 
 (defn- type-coercion
   [vt v]
-  (prepare/type-coercion vt v))
+  (vld/type-coercion vt v))
 
 (defn- correct-datom*
   [^Datom datom v]
-  (prepare/correct-datom* datom v))
+  (vld/correct-datom* datom v))
 
 (defn- correct-datom
   [store ^Datom datom]
-  (prepare/correct-datom store datom))
+  (vld/correct-datom store datom))
 
 (defn- correct-value
   [store a v]
-  (prepare/correct-value store a v))
+  (vld/correct-value store a v))
 
 (defn- pour
   [store datoms]
@@ -1717,31 +1716,13 @@
   ([initial-report initial-es tx-time]
    (local-transact-tx-data initial-report initial-es tx-time false))
   ([initial-report initial-es tx-time simulated?]
-   (let [rp (if c/*use-prepare-path*
-              (let [db    ^DB (:db-before initial-report)
-                    store (.-store db)
-                    lmdb  (when (instance? Store store)
-                            (.-lmdb ^Store store))
-                    ctx   (prepare/make-prepare-ctx db lmdb)
-                    ptx   (prepare/prepare-tx
-                             ctx initial-es tx-time
-                             (fn [es t]
-                               (execute-tx-loop initial-report es t)))]
-                (cond-> (assoc initial-report
-                               :db-after       (:db-after ptx)
-                               :tx-data        (:tx-data ptx)
-                               :tempids        (:tempids ptx))
-                  (:stats ptx)
-                  (assoc :prepare-stats (:stats ptx))
-                  (seq (:new-attributes ptx))
-                  (assoc :new-attributes (:new-attributes ptx))))
-              (execute-tx-loop initial-report initial-es tx-time))
+   (let [rp     (execute-tx-loop initial-report initial-es tx-time)
          pstore (.-store ^DB (:db-after rp))]
      (when-not simulated?
-       (prepare/validate-prepared-datoms (schema pstore) (opts pstore)
-                                         (:tx-data rp))
+       (vld/validate-prepared-datoms (schema pstore) (opts pstore)
+                                    (:tx-data rp))
        (when (instance? Store pstore)
-         (prepare/validate-side-index-domains
+         (vld/validate-side-index-domains
            (schema pstore) (:tx-data rp)
            {:fulltext (set (keys (.-search-engines ^Store pstore)))
             :vector   (set (keys (.-vector-indices ^Store pstore)))
@@ -1766,13 +1747,13 @@
 (defn- remote-tx-result
   [res]
   (if (map? res)
-    (let [{:keys [tx-data tempids new-attributes prepare-stats]} res]
+    (let [{:keys [tx-data tempids new-attributes]} res]
       [tx-data (dissoc tempids :max-eid) (tempids :max-eid)
-       new-attributes prepare-stats])
+       new-attributes])
     (let [[tx-data tempids] (split-with datom? res)
           max-eid           (-> tempids last second)
           tempids           (into {} (butlast tempids))]
-      [tx-data tempids max-eid nil nil])))
+      [tx-data tempids max-eid nil])))
 
 ;; HACK to avoid circular dependency
 (def de-entity? (delay (resolve 'datalevin.entity/entity?)))
@@ -1828,7 +1809,7 @@
     (if (instance? datalevin.remote.DatalogStore store)
       (try
         (let [res (r/tx-data store initial-es simulated?)
-              [tx-data tempids max-eid new-attributes prepare-stats]
+              [tx-data tempids max-eid new-attributes]
               (remote-tx-result res)]
           (when-not simulated?
             (invalidate-cache store tx-data (last-modified store)))
@@ -1840,8 +1821,7 @@
                                            %)))
                          :tx-data tx-data
                          :tempids tempids)
-            (seq new-attributes) (assoc :new-attributes new-attributes)
-            prepare-stats (assoc :prepare-stats prepare-stats)))
+            (seq new-attributes) (assoc :new-attributes new-attributes)))
         (catch Exception e
           (if (:resized (ex-data e))
             (throw e)
@@ -1876,6 +1856,6 @@
      (:cache-limit (opts store))))
   ([^DB db ^long n]
    (let [^Store store (.-store db)]
-     (prepare/validate-option-update :cache-limit n)
+     (vld/validate-option-update :cache-limit n)
      (assoc-opt store :cache-limit n)
      (refresh-cache store (System/currentTimeMillis)))))

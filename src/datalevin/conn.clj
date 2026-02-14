@@ -14,7 +14,6 @@
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
    [datalevin.storage :as s]
-   [datalevin.prepare :as prepare]
    [datalevin.async :as a]
    [datalevin.remote :as r]
    [datalevin.util :as u]
@@ -215,15 +214,15 @@
                               s))]
      (when schema-update
        (if (instance? Store store)
-         (prepare/validate-schema-update
+         (vld/validate-schema-update
            store (.-lmdb ^Store store) schema-update
            {:fulltext (set (keys (.-search-engines ^Store store)))
             :vector   (set (keys (.-vector-indices ^Store store)))
             :idoc     (set (keys (.-idoc-indices ^Store store)))})
          (vld/validate-schema schema-update)))
      (doseq [attr del-attrs]
-       (prepare/validate-del-attr store attr))
-     (prepare/validate-rename-map projected-schema rename-entries)
+       (vld/validate-del-attr store attr))
+     (vld/validate-rename-map projected-schema rename-entries)
      (i/set-schema store schema-update)
      (doseq [attr del-attrs]
        (i/del-attr store attr))

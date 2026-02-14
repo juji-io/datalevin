@@ -18,11 +18,13 @@
    [datalevin.constants :as c]
    [datalevin.util :as u]
    [datalevin.bits :as b]
+   [datalevin.vector :as v]
    [datalevin.lmdb :as lmdb])
   (:import
    [datalevin.bits Retrieved]
    [datalevin.datom Datom]
-   [datalevin.lmdb KVTxData]))
+   [datalevin.lmdb KVTxData]
+   [java.util Date]))
 
 ;; ---- Storage / schema validators ----
 
@@ -561,3 +563,235 @@
   (when-some [{fp-step :step fp-phase :phase fp-fn :fn} c/*failpoint*]
     (when (and (= fp-step step) (= fp-phase phase))
       (fp-fn))))
+
+;; ---- Prepare-time validators ----
+
+(defn validate-prepared-datoms
+  "Run logical datom validations before apply."
+  [schema opts datoms]
+  (doseq [^Datom datom datoms
+          :when (d/datom-added datom)]
+    (validate-closed-schema schema opts (.-a datom) (.-v datom)))
+  datoms)
+
+(defn validate-load-datoms
+  "Validate public/untrusted `load-datoms` input before apply."
+  [store datoms]
+  (validate-datom-list datoms)
+  (validate-prepared-datoms (schema store) (opts store) datoms)
+  datoms)
+
+(defn- fulltext-domains
+  [attr props]
+  (cond-> (vec (or (:db.fulltext/domains props) [c/default-domain]))
+    (:db.fulltext/autoDomain props) (conj (u/keyword->string attr))))
+
+(defn- vector-domains
+  [attr props]
+  (conj (vec (:db.vec/domains props)) (v/attr-domain attr)))
+
+(defn- idoc-domain
+  [attr props]
+  (or (:db/domain props) (u/keyword->string attr)))
+
+(defn validate-schema-side-index-domains
+  "Validate side-index domain applicability for schema mutation payload."
+  [new-schema available]
+  (let [{:keys [fulltext vector idoc]} available]
+    (doseq [[attr props] new-schema
+            :let [vt (idx/value-type props)]]
+      (when (:db/fulltext props)
+        (doseq [domain (fulltext-domains attr props)]
+          (when-not (contains? fulltext domain)
+            (u/raise "Fulltext domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :fulltext
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/vec)
+        (doseq [domain (vector-domains attr props)]
+          (when-not (contains? vector domain)
+            (u/raise "Vector domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :vector
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/idoc)
+        (let [domain (idoc-domain attr props)]
+          (when-not (contains? idoc domain)
+            (u/raise "Idoc domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :idoc
+                      :attribute attr
+                      :domain domain})))))))
+
+(defn validate-side-index-domains
+  "Validate side-index domain applicability for a prepared datom batch.
+   `available` is {:fulltext #{...} :vector #{...} :idoc #{...}}."
+  [schema datoms available]
+  (let [{:keys [fulltext vector idoc]} available]
+    (doseq [^Datom datom datoms
+            :let [attr  (.-a datom)
+                  props (schema attr)
+                  vt    (idx/value-type props)]
+            :when props]
+      (when (:db/fulltext props)
+        (doseq [domain (fulltext-domains attr props)]
+          (when-not (contains? fulltext domain)
+            (u/raise "Fulltext domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :fulltext
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/vec)
+        (doseq [domain (vector-domains attr props)]
+          (when-not (contains? vector domain)
+            (u/raise "Vector domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :vector
+                      :attribute attr
+                      :domain domain}))))
+      (when (identical? vt :db.type/idoc)
+        (let [domain (idoc-domain attr props)]
+          (when-not (contains? idoc domain)
+            (u/raise "Idoc domain is not initialized for attribute " attr
+                     {:error :prepare/side-index-domain
+                      :kind :idoc
+                      :attribute attr
+                      :domain domain}))))))
+  datoms)
+
+(defn validate-schema-update
+  "Validate schema update payload and mutation safety checks before apply."
+  ([store lmdb new-schema]
+   (validate-schema-update store lmdb new-schema nil))
+  ([store lmdb new-schema available]
+   (when new-schema
+     (validate-schema new-schema)
+     (when available
+       (validate-schema-side-index-domains new-schema available))
+     (let [current-schema (schema store)]
+       (doseq [[attr new-props] new-schema
+               :let [old-props (current-schema attr)]
+               :when old-props]
+         (validate-schema-mutation store lmdb attr old-props new-props))))
+   new-schema))
+
+(defn validate-option-update
+  "Validate option key/value before apply."
+  [k v]
+  (validate-option-mutation k v)
+  [k v])
+
+(defn validate-swap-attr-update
+  "Validate swap-attr mutation safety checks before apply."
+  ([store lmdb attr old-props new-props]
+   (validate-swap-attr-update store lmdb attr old-props new-props nil))
+  ([store lmdb attr old-props new-props available]
+   (validate-schema-mutation store lmdb attr old-props new-props)
+   (when available
+     (validate-schema-side-index-domains {attr new-props} available))
+   new-props))
+
+(defn validate-del-attr
+  "Validate `del-attr` safety checks before apply."
+  [store attr]
+  (validate-attr-deletable
+    (populated? store :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
+  attr)
+
+(defn- validate-rename-attr*
+  [s attr new-attr]
+  (when-not (s attr)
+    (u/raise "Cannot rename missing attribute: " attr
+             {:error :schema/rename
+              :attribute attr
+              :target new-attr}))
+  (when (and (not= attr new-attr) (s new-attr))
+    (u/raise "Cannot rename to existing attribute: " new-attr
+             {:error :schema/rename
+              :attribute attr
+              :target new-attr}))
+  [attr new-attr])
+
+(defn validate-rename-attr
+  "Validate `rename-attr` safety checks before apply."
+  [store attr new-attr]
+  (validate-rename-attr* (schema store) attr new-attr))
+
+(defn validate-rename-map
+  "Validate ordered rename mutations against a projected schema map.
+   Returns the projected schema after all renames are applied."
+  [projected-schema rename-map]
+  (reduce
+    (fn [s [attr new-attr]]
+      (validate-rename-attr* s attr new-attr)
+      (if (= attr new-attr)
+        s
+        (let [props (s attr)]
+          (-> s
+              (dissoc attr)
+              (assoc new-attr props)))))
+    projected-schema
+    rename-map))
+
+;; ---- Type coercion and value correction ----
+
+(defn coerce-inst
+  "Coerce a value to java.util.Date."
+  [v]
+  (cond
+    (inst? v)    v
+    (integer? v) (Date. (long v))
+    :else        (u/raise "Expect java.util.Date" {:input v})))
+
+(defn coerce-uuid
+  "Coerce a value to java.util.UUID."
+  [v]
+  (cond
+    (uuid? v)   v
+    (string? v) (if-let [u (parse-uuid v)]
+                  u
+                  (u/raise "Unable to parse string to UUID" {:input v}))
+    :else       (u/raise "Expect java.util.UUID" {:input v})))
+
+(defn type-coercion
+  "Coerce a value to the appropriate type based on value type."
+  [vt v]
+  (case vt
+    :db.type/string              (str v)
+    :db.type/bigint              (biginteger v)
+    :db.type/bigdec              (bigdec v)
+    (:db.type/long :db.type/ref) (long v)
+    :db.type/float               (float v)
+    :db.type/double              (double v)
+    (:db.type/bytes :bytes)      (if (bytes? v) v (byte-array v))
+    (:db.type/keyword :keyword)  (keyword v)
+    (:db.type/symbol :symbol)    (symbol v)
+    (:db.type/boolean :boolean)  (boolean v)
+    (:db.type/instant :instant)  (coerce-inst v)
+    (:db.type/uuid :uuid)        (coerce-uuid v)
+    :db.type/tuple               (vec v)
+    v))
+
+(defn correct-datom*
+  "Reconstruct datom with corrected value."
+  [^Datom datom v]
+  (d/datom (.-e datom) (.-a datom) v
+           (d/datom-tx datom) (d/datom-added datom)))
+
+(declare correct-value)
+
+(defn correct-datom
+  "Correct value in datom via type validation and coercion."
+  [store ^Datom datom]
+  (correct-datom* datom (correct-value store (.-a datom) (.-v datom))))
+
+(defn correct-value
+  "Validate type and coerce value for an attribute."
+  [store a v]
+  (let [props ((schema store) a)
+        vt    (idx/value-type props)]
+    (if (identical? vt :db.type/idoc)
+      ((requiring-resolve 'datalevin.idoc/parse-value) a props (opts store) v)
+      (type-coercion (validate-type store a v) v))))

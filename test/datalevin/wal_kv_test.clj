@@ -30,7 +30,7 @@
                              :kv-wal? true})]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)
+      (let [base-id ^long (last-wal-id lmdb)
             ex      (try
                       (binding [c/*failpoint* {:step  step
                                                :phase phase
@@ -42,7 +42,7 @@
         (if (= step :step-4)
           (is (nil? (if/get-value lmdb "a" 1)))
           (is (= "x" (if/get-value lmdb "a" 1))))
-        (is (= (inc base-id) (last-wal-id lmdb)))
+        (is (= (u/long-inc base-id) (last-wal-id lmdb)))
 
         ;; After post-commit failure, WAL ids must continue from durable state.
         (if/transact-kv lmdb [[:put "a" 2 "y"]])
@@ -75,15 +75,15 @@
                              :kv-wal? true})]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)]
+      (let [base-id ^long (last-wal-id lmdb)]
         (if/transact-kv lmdb [[:put "a" 1 "x"]
                               [:put "a" 2 "y"]])
-        (let [wm     (if/kv-wal-watermarks lmdb)
-              wal-id (:last-committed-wal-tx-id wm)
-              idx-id (:last-indexed-wal-tx-id wm)
+        (let [wm      (if/kv-wal-watermarks lmdb)
+              wal-id  (:last-committed-wal-tx-id wm)
+              idx-id  (:last-indexed-wal-tx-id wm)
               user-id (:last-committed-user-tx-id wm)
               records (vec (wal/read-wal-records dir base-id wal-id))
-              record (last records)]
+              record  (last records)]
           (is (= (inc base-id) wal-id))
           (is (= 0 idx-id))
           (is (= wal-id user-id))
@@ -125,11 +125,11 @@
                              :kv-wal? true})]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)
+      (let [base-id ^long (last-wal-id lmdb)
             ex      (try
-                      (binding [c/*failpoint* {:step :step-3
+                      (binding [c/*failpoint* {:step  :step-3
                                                :phase :after
-                                               :fn #(throw (ex-info "fp-after" {}))}]
+                                               :fn    #(throw (ex-info "fp-after" {}))}]
                         (if/transact-kv lmdb [[:put "a" 1 "x"]]))
                       nil
                       (catch Exception e e))]
@@ -163,12 +163,14 @@
 
 (deftest kv-wal-failpoint-step8-after-nonfatal-test
   (let [dir  (u/tmp-dir (str "kv-wal-fp-step8-after-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                             :kv-wal? true
-                             :wal-meta-flush-max-txs 1})]
+        lmdb (l/open-kv
+               dir
+               {:flags                  (conj c/default-env-flags :nosync)
+                :kv-wal?                true
+                :wal-meta-flush-max-txs 1})]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)]
+      (let [base-id ^long (last-wal-id lmdb)]
         (is (= :transacted
                (binding [c/*failpoint* {:step  :step-8
                                         :phase :after
@@ -182,14 +184,16 @@
 
 (deftest kv-wal-meta-publish-test
   (let [dir       (u/tmp-dir (str "kv-wal-meta-" (UUID/randomUUID)))
-        lmdb      (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                                  :kv-wal? true
-                                  :wal-meta-flush-max-txs 1
-                                  :wal-meta-flush-max-ms 60000})
+        lmdb      (l/open-kv
+                    dir
+                    {:flags                  (conj c/default-env-flags :nosync)
+                     :kv-wal?                true
+                     :wal-meta-flush-max-txs 1
+                     :wal-meta-flush-max-ms  60000})
         meta-path (str dir u/+separator+ c/wal-dir u/+separator+ c/wal-meta-file)]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)]
+      (let [base-id ^long (last-wal-id lmdb)]
         (if/transact-kv lmdb [[:put "a" 1 "x"]])
         (is (.exists (io/file meta-path)))
         (let [meta (wal/read-wal-meta dir)]
@@ -205,14 +209,17 @@
 
 (deftest kv-wal-meta-flush-cadence-test
   (let [dir       (u/tmp-dir (str "kv-wal-meta-cadence-" (UUID/randomUUID)))
-        lmdb      (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                                  :kv-wal? true
-                                  :wal-meta-flush-max-txs 3
-                                  :wal-meta-flush-max-ms 60000})
-        meta-path (str dir u/+separator+ c/wal-dir u/+separator+ c/wal-meta-file)]
+        lmdb      (l/open-kv
+                    dir
+                    {:flags                  (conj c/default-env-flags :nosync)
+                     :kv-wal?                true
+                     :wal-meta-flush-max-txs 3
+                     :wal-meta-flush-max-ms  60000})
+        meta-path (str dir u/+separator+ c/wal-dir u/+separator+
+                       c/wal-meta-file)]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)]
+      (let [base-id ^long (last-wal-id lmdb)]
         (if/transact-kv lmdb [[:put "a" 1 "x"]])
         (is (not (.exists (io/file meta-path))))
         (if/transact-kv lmdb [[:put "a" 2 "y"]])
@@ -610,42 +617,42 @@
         lmdb2 (l/open-kv dir2 {:flags (conj c/default-env-flags :nosync)})]
     (try
       (if/open-dbi lmdb "a")
-      (let [base-id (last-wal-id lmdb)]
+      (let [base-id ^long (last-wal-id lmdb)]
         (if/transact-kv lmdb [[:put "a" 1 "x"]])
         (if/transact-kv lmdb [[:put "a" 2 "y"]])
         (let [committed-id (+ base-id 2)
               partial-id   (inc base-id)]
-          (is (= {:last-committed-wal-tx-id committed-id
-                  :last-indexed-wal-tx-id 0
+          (is (= {:last-committed-wal-tx-id  committed-id
+                  :last-indexed-wal-tx-id    0
                   :last-committed-user-tx-id committed-id}
                  (l/kv-wal-watermarks lmdb)))
 
           (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                    c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]]
                             :data :data))
 
-          (is (= {:indexed-wal-tx-id partial-id
+          (is (= {:indexed-wal-tx-id   partial-id
                   :committed-wal-tx-id committed-id
-                  :drained? false}
+                  :drained?            false}
                  (l/flush-kv-indexer! lmdb partial-id)))
-          (is (= {:indexed-wal-tx-id committed-id
+          (is (= {:indexed-wal-tx-id   committed-id
                   :committed-wal-tx-id committed-id
-                  :drained? true}
+                  :drained?            true}
                  (l/flush-kv-indexer! lmdb)))
-          (is (= {:last-committed-wal-tx-id committed-id
-                  :last-indexed-wal-tx-id committed-id
+          (is (= {:last-committed-wal-tx-id  committed-id
+                  :last-indexed-wal-tx-id    committed-id
                   :last-committed-user-tx-id committed-id}
                  (l/kv-wal-watermarks lmdb)))))
 
-      (is (= {:last-committed-wal-tx-id 0
-              :last-indexed-wal-tx-id 0
+      (is (= {:last-committed-wal-tx-id  0
+              :last-indexed-wal-tx-id    0
               :last-committed-user-tx-id 0}
              (l/kv-wal-watermarks lmdb2)))
-      (is (= {:indexed-wal-tx-id 0
+      (is (= {:indexed-wal-tx-id   0
               :committed-wal-tx-id 0
-              :drained? true}
+              :drained?            true}
              (l/flush-kv-indexer! lmdb2)))
       (finally
         (if/close-kv lmdb)
@@ -655,34 +662,34 @@
 
 (deftest kv-wal-admin-test
   (let [dir  (u/tmp-dir (str "datalevin-kv-wal-admin-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
                              :kv-wal? true})]
     (try
       (if/open-dbi lmdb "misc")
-      (let [base-id (:last-committed-wal-tx-id
-                     (if/kv-wal-watermarks lmdb))]
+      (let [base-id ^long (:last-committed-wal-tx-id
+                           (if/kv-wal-watermarks lmdb))]
         (if/transact-kv lmdb [[:put "misc" 1 "x"]])
         (if/transact-kv lmdb [[:put "misc" 2 "y"]])
-        (let [committed-id (+ base-id 2)
-              partial-id   (inc base-id)]
-          (is (= {:last-committed-wal-tx-id committed-id
-                  :last-indexed-wal-tx-id 0
+        (let [committed-id ^long (+ ^long base-id 2)
+              partial-id   (inc ^long base-id)]
+          (is (= {:last-committed-wal-tx-id  committed-id
+                  :last-indexed-wal-tx-id    0
                   :last-committed-user-tx-id committed-id}
                  (if/kv-wal-watermarks lmdb)))
 
           (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                    c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]]
                             :data :data))
 
-          (is (= {:indexed-wal-tx-id partial-id
+          (is (= {:indexed-wal-tx-id   partial-id
                   :committed-wal-tx-id committed-id
-                  :drained? false}
+                  :drained?            false}
                  (l/flush-kv-indexer! lmdb partial-id)))
-          (is (= {:indexed-wal-tx-id committed-id
+          (is (= {:indexed-wal-tx-id   committed-id
                   :committed-wal-tx-id committed-id
-                  :drained? true}
+                  :drained?            true}
                  (l/flush-kv-indexer! lmdb)))))
       (finally
         (if/close-kv lmdb)
@@ -752,12 +759,12 @@
                                :kv-wal? true})]
       (try
         (if/open-dbi lmdb "a")
-        (let [base-id   (last-wal-id lmdb)
-              _         (doseq [tx txs]
-                          (if/transact-kv lmdb (mapv ops->kv-entries tx)))
-              final-id  (last-wal-id lmdb)
-              expected  (expected-state txs)
-              n-txs     (count txs)]
+        (let [base-id  ^long (last-wal-id lmdb)
+              _        (doseq [tx txs]
+                         (if/transact-kv lmdb (mapv ops->kv-entries tx)))
+              final-id ^long (last-wal-id lmdb)
+              expected (expected-state txs)
+              n-txs    (count txs)]
 
           ;; 1. WAL id advanced by exactly the number of transactions
           (is (= (+ base-id n-txs) final-id)
@@ -771,9 +778,9 @@
             (is vals-ok "All expected values should be readable"))
 
           ;; 3. WAL records round-trip: correct number of records and total ops
-          (let [records    (vec (wal/read-wal-records dir base-id final-id))
-                total-ops  (reduce + (map (comp count :wal/ops) records))
-                input-ops  (reduce + (map count txs))]
+          (let [records   (vec (wal/read-wal-records dir base-id final-id))
+                total-ops (reduce + (map (comp count :wal/ops) records))
+                input-ops (reduce + (map count txs))]
             (is (= n-txs (count records))
                 "WAL should contain one record per transaction")
             (is (= input-ops total-ops)
@@ -784,7 +791,7 @@
 
           ;; 4. Replay: reset indexed marker, replay WAL, verify values survive
           (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                    c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]

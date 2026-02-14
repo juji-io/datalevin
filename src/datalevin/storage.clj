@@ -20,7 +20,6 @@
    [datalevin.pipe :as p]
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.search :as s]
-   [datalevin.prepare :as prepare]
    [datalevin.idoc :as idoc]
    [datalevin.vector :as v]
    [datalevin.constants :as c]
@@ -514,7 +513,7 @@
               x         (f o x)
               :else     (f o))]
       (when-not c/*trusted-apply*
-        (prepare/validate-swap-attr-update
+        (vld/validate-swap-attr-update
           this lmdb attr o p
           {:fulltext (set (keys search-engines))
            :vector   (set (keys vector-indices))
@@ -552,8 +551,8 @@
     (entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
-    (prepare/validate-load-datoms this datoms)
-    (prepare/validate-side-index-domains
+    (vld/validate-load-datoms this datoms)
+    (vld/validate-side-index-domains
       schema datoms
       {:fulltext (set (keys search-engines))
        :vector   (set (keys vector-indices))
