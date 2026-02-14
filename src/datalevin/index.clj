@@ -8,7 +8,7 @@
 ;; You must not remove this notice, or any other, from this software.
 ;;
 (ns ^:no-doc datalevin.index
-  "Shared index utility functions used by storage and prepare."
+  "Datalog index utility functions."
   (:require
    [datalevin.interface :refer [get-value]]
    [datalevin.bits :as b]

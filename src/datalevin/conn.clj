@@ -18,7 +18,8 @@
    [datalevin.remote :as r]
    [datalevin.util :as u]
    [datalevin.interface :as i]
-   [datalevin.validate :as vld])
+   [datalevin.validate :as vld]
+   [datalevin.index :as idx])
   (:import
    [datalevin.db DB]
    [datalevin.storage Store]
@@ -223,6 +224,16 @@
      (doseq [attr del-attrs]
        (vld/validate-del-attr store attr))
      (vld/validate-rename-map projected-schema rename-entries)
+     ;; Migrate untyped → typed attributes before schema is applied
+     (when (and schema-update (instance? Store store))
+       (doseq [[attr new-props] schema-update
+               :let [old-props (current-schema attr)]
+               :when old-props
+               :let [old-vt (idx/value-type old-props)
+                     new-vt (idx/value-type new-props)]
+               :when (and (identical? old-vt :data)
+                          (not (identical? new-vt :data)))]
+         (s/migrate-attr-values store attr new-vt)))
      (i/set-schema store schema-update)
      (doseq [attr del-attrs]
        (i/del-attr store attr))

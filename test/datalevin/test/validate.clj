@@ -946,6 +946,121 @@
     (is (instance? Date (vld/coerce-inst 1000)))
     (is (instance? UUID (vld/coerce-uuid "550e8400-e29b-41d4-a716-446655440000")))))
 
+;; ---- Value type migration ----
+
+(deftest test-migrate-untyped-to-string
+  (testing "migrate string data from untyped to :db.type/string"
+    (let [dir  (u/tmp-dir (str "mig-str-" (UUID/randomUUID)))
+          conn (d/create-conn dir {}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (d/transact! conn [{:name "Alice"} {:name "Bob"}])
+        ;; verify data exists with :data type
+        (is (= #{["Alice"] ["Bob"]}
+               (d/q '[:find ?n :where [_ :name ?n]] @conn)))
+        ;; migrate to string type
+        (d/update-schema conn {:name {:db/valueType :db.type/string}})
+        ;; data should still be readable
+        (is (= #{["Alice"] ["Bob"]}
+               (d/q '[:find ?n :where [_ :name ?n]] @conn)))
+        ;; schema should reflect new type
+        (is (= :db.type/string
+               (get-in (d/schema conn) [:name :db/valueType])))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-migrate-untyped-to-long
+  (testing "migrate long data from untyped to :db.type/long"
+    (let [dir  (u/tmp-dir (str "mig-long-" (UUID/randomUUID)))
+          conn (d/create-conn dir {}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (d/transact! conn [{:age 30} {:age 25}])
+        (is (= #{[30] [25]}
+               (d/q '[:find ?a :where [_ :age ?a]] @conn)))
+        (d/update-schema conn {:age {:db/valueType :db.type/long}})
+        (is (= #{[30] [25]}
+               (d/q '[:find ?a :where [_ :age ?a]] @conn)))
+        (is (= :db.type/long
+               (get-in (d/schema conn) [:age :db/valueType])))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-migrate-untyped-mixed-data-fails
+  (testing "migration fails when values cannot be coerced"
+    (let [dir  (u/tmp-dir (str "mig-fail-" (UUID/randomUUID)))
+          conn (d/create-conn dir {}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (d/transact! conn [{:age 30} {:age "not-a-number"}])
+        (is (thrown-with-msg? Exception #"Cannot migrate attribute values"
+              (d/update-schema conn {:age {:db/valueType :db.type/long}})))
+        ;; original data should be intact (migration was atomic — rolled back)
+        (is (= #{[30] ["not-a-number"]}
+               (d/q '[:find ?a :where [_ :age ?a]] @conn)))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-migrate-empty-attr
+  (testing "migration succeeds for attribute with no data"
+    (let [dir  (u/tmp-dir (str "mig-empty-" (UUID/randomUUID)))
+          conn (d/create-conn dir {:name {}}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        ;; no data transacted
+        (d/update-schema conn {:name {:db/valueType :db.type/string}})
+        (is (= :db.type/string
+               (get-in (d/schema conn) [:name :db/valueType])))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-migrate-typed-to-typed-rejected
+  (testing "changing from one typed to another typed is still rejected"
+    (let [dir  (u/tmp-dir (str "mig-rej-" (UUID/randomUUID)))
+          conn (d/create-conn dir {:name {:db/valueType :db.type/string}}
+                              {:kv-opts
+                               {:flags (conj c/default-env-flags :nosync)}})]
+      (try
+        (d/transact! conn [{:name "Alice"}])
+        (is (thrown-with-msg? Exception #"Value type change is not allowed"
+              (d/update-schema conn {:name {:db/valueType :db.type/long}})))
+        (finally
+          (d/close conn)
+          (u/delete-files dir))))))
+
+(deftest test-migrate-data-readable-after-reopen
+  (testing "migrated data is readable after closing and reopening the DB"
+    (let [dir (u/tmp-dir (str "mig-reopen-" (UUID/randomUUID)))]
+      (try
+        (let [conn (d/create-conn dir {}
+                                  {:kv-opts
+                                   {:flags (conj c/default-env-flags :nosync)}})]
+          (d/transact! conn [{:name "Alice" :age 30}
+                             {:name "Bob" :age 25}])
+          (d/update-schema conn {:age {:db/valueType :db.type/long}})
+          (d/close conn))
+        ;; reopen
+        (let [conn (d/create-conn dir)]
+          (try
+            (is (= #{["Alice" 30] ["Bob" 25]}
+                   (d/q '[:find ?n ?a
+                           :where [?e :name ?n] [?e :age ?a]]
+                        @conn)))
+            (is (= :db.type/long
+                   (get-in (d/schema conn) [:age :db/valueType])))
+            (finally
+              (d/close conn))))
+        (finally
+          (u/delete-files dir))))))
+
 ;; ---- Index utilities ----
 
 (deftest test-index-value-type

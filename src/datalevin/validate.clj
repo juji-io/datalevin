@@ -46,15 +46,21 @@
                  {:attribute attr})))))
 
 (defn validate-value-type-change
-  "Validate value type change when data exist."
+  "Validate value type change when data exist.
+   Allows migration from untyped (:data) to a specific type — the actual
+   value validation and re-encoding is handled by migrate-attr-values in
+   storage.clj."
   [store attr old new]
   (when (not= old new)
-    (when ((schema store) attr)
-      (let [low-datom  (d/datom c/e0 attr c/v0)
-            high-datom (d/datom c/emax attr c/vmax)]
-        (when (populated? store :ave low-datom high-datom)
-          (u/raise "Value type change is not allowed when data exist"
-                   {:attribute attr}))))))
+    (when-let [props ((schema store) attr)]
+      (let [old-vt (idx/value-type props)]
+        (when-not (identical? old-vt :data)
+          ;; Only allow migration FROM untyped (:data) to typed
+          (let [low-datom  (d/datom c/e0 attr c/v0)
+                high-datom (d/datom c/emax attr c/vmax)]
+            (when (populated? store :ave low-datom high-datom)
+              (u/raise "Value type change is not allowed when data exist"
+                       {:attribute attr}))))))))
 
 (defn violate-unique?
   "Check if adding uniqueness to an attribute would violate existing data."

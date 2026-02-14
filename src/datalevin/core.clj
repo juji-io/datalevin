@@ -830,6 +830,12 @@ Only usable for debug output.
   * `rename-map` is a map of old attributes to new attributes, for renaming
   attributes
 
+  When adding a `:db/valueType` to an attribute that was previously untyped
+  (schema-less), existing data is automatically migrated: all values are
+  validated and re-encoded to the new type atomically. If any value cannot be
+  coerced, the migration is aborted and an exception is thrown with details.
+  Changing from one typed value type to another is not allowed when data exist.
+
   Return the updated schema.
 
   Example:
@@ -837,7 +843,10 @@ Only usable for debug output.
         (update-schema conn {:new/attr {:db/valueType :db.type/string}})
         (update-schema conn {:new/attr {:db/valueType :db.type/string}}
                             #{:old/attr1 :old/attr2})
-        (update-schema conn nil nil {:old/attr :new/attr}) "}
+        (update-schema conn nil nil {:old/attr :new/attr})
+
+        ;; Add type to a previously untyped attribute (migrates existing data)
+        (update-schema conn {:age {:db/valueType :db.type/long}}) "}
   update-schema conn/update-schema)
 
 (def ^{:arglists '([dir] [dir schema] [dir schema opts])
