@@ -1211,7 +1211,9 @@
   (let [dir  (u/tmp-dir (str "kv-wal-gc-basic-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
                               :kv-wal?                true
-                              :wal-segment-max-bytes  1})]
+                              :wal-segment-max-bytes  1
+                              :wal-retention-bytes    0
+                              :wal-retention-ms       0})]
     (try
       (if/open-dbi lmdb "a")
       ;; Write enough txs to force segment rotation (max 1 byte per segment)
@@ -1242,7 +1244,9 @@
   (let [dir  (u/tmp-dir (str "kv-wal-gc-retain-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
                               :kv-wal?                true
-                              :wal-segment-max-bytes  1})]
+                              :wal-segment-max-bytes  1
+                              :wal-retention-bytes    0
+                              :wal-retention-ms       0})]
     (try
       (if/open-dbi lmdb "a")
       (dotimes [i 5]
@@ -1259,6 +1263,36 @@
       ;; since gc watermark = min(indexed, retain) = 0
       (let [result (if/gc-wal-segments! lmdb 0)]
         (is (zero? (:deleted result))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-gc-wal-segments-retention
+  (let [dir  (u/tmp-dir (str "kv-wal-gc-retention-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
+                              :kv-wal?                true
+                              :wal-segment-max-bytes  1
+                              ;; Large retention — nothing should be GC'd
+                              :wal-retention-bytes    (* 1024 1024 1024)
+                              :wal-retention-ms       (* 7 24 60 60 1000)})]
+    (try
+      (if/open-dbi lmdb "a")
+      (dotimes [i 5]
+        (if/transact-kv lmdb [[:put "a" i (str "v" i)]]))
+      (let [files-before (count (wal/segment-files dir))]
+        (is (> files-before 1))
+        ;; Advance indexed watermark
+        (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
+          (if/transact-kv lmdb c/kv-info
+                          [[:put c/last-indexed-wal-tx-id 0]
+                           [:put c/applied-wal-tx-id 0]]
+                          :data :data))
+        (if/flush-kv-indexer! lmdb)
+        ;; Even though segments are indexed, retention policy keeps them
+        (let [result (if/gc-wal-segments! lmdb)]
+          (is (zero? (:deleted result)))
+          (is (= files-before (:retained result)))))
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))

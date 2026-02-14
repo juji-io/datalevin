@@ -553,9 +553,15 @@
        (wal/read-wal-records (env-dir lmdb) from-wal-id upto)))))
 
 (defn gc-wal-segments!
-  "Delete WAL segments that are fully below the GC watermark.
-   A segment is deletable only if every record in it has
-   wal-id <= min(last-indexed-wal-tx-id, retain-wal-id).
+  "Delete WAL segments that are fully below the GC watermark and exceed
+   the retention policy.  A segment is eligible for deletion only when
+   every record in it has wal-id <= min(last-indexed-wal-tx-id, retain-wal-id).
+
+   Among eligible segments, one is actually deleted when *either*:
+     - the total WAL size exceeds `:wal-retention-bytes` (default 1 GB), or
+     - the segment is older than `:wal-retention-ms` (default 7 days).
+
+   The active (newest) segment is never deleted.
 
    `retain-wal-id` is the minimum wal-id that must be retained (e.g. the
    lowest wal-id a replica still needs). If omitted, uses last-indexed-wal-tx-id.
@@ -574,16 +580,37 @@
            files      (wal/segment-files (env-dir lmdb))]
        (if (or (nil? files) (empty? files))
          {:deleted 0 :retained 0}
-         (let [active-file (last files)
-               deleted     (volatile! (long 0))
-               retained    (volatile! (long 0))]
+         (let [opts          (env-opts lmdb)
+               max-bytes     (long (or (:wal-retention-bytes opts)
+                                       c/*wal-retention-bytes*))
+               max-age-ms    (long (or (:wal-retention-ms opts)
+                                       c/*wal-retention-ms*))
+               now-ms        (System/currentTimeMillis)
+               active-file   (last files)
+               ;; Compute total WAL size (all files, newest-first)
+               total-bytes   (long (reduce (fn [^long acc ^java.io.File f]
+                                             (+ acc (.length f)))
+                                           0 files))
+               ;; Walk oldest-first, accumulate bytes to delete
+               deleted       (volatile! (long 0))
+               retained      (volatile! (long 0))
+               running-bytes (volatile! total-bytes)]
            (doseq [^java.io.File f files]
              (if (identical? f active-file)
                (vswap! retained u/long-inc)
                (let [max-id (long (wal/segment-max-wal-id f))]
                  (if (<= max-id gc-wm)
-                   (do (.delete f)
-                       (vswap! deleted u/long-inc))
+                   ;; Eligible for GC — check retention policy
+                   (let [fsize    (.length f)
+                         age-ms   (- now-ms (.lastModified f))
+                         over-size? (> ^long @running-bytes max-bytes)
+                         over-age?  (> age-ms max-age-ms)]
+                     (if (or over-size? over-age?)
+                       (do (.delete f)
+                           (vswap! running-bytes
+                                   (fn [^long v] (- v fsize)))
+                           (vswap! deleted u/long-inc))
+                       (vswap! retained u/long-inc)))
                    (vswap! retained u/long-inc)))))
            {:deleted @deleted :retained @retained}))))))
 

@@ -484,6 +484,18 @@
        :doc     "Time interval between automatic LMDB sync to disk, in seconds, default is 300"}
   lmdb-sync-interval 300)
 
+(def ^{:dynamic true
+       :doc     "Time interval between automatic WAL checkpoint (flush + GC), in seconds, default is 300"}
+  wal-checkpoint-interval 300)
+
+(def ^{:dynamic true
+       :doc     "Max total WAL size in bytes before old segments are GC'd, default is 1 GB."}
+  *wal-retention-bytes* (* 1024 1024 1024))
+
+(def ^{:dynamic true
+       :doc     "Max WAL segment age in milliseconds before GC, default is 7 days."}
+  *wal-retention-ms* (* 7 24 60 60 1000))
+
 (def ^{:dynamic true :no-doc true
        :doc     "When true, append KV transactions to the on-disk WAL
                  (`<db-dir>/wal`). This remains opt-in for rollout safety."}

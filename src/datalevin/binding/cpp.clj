@@ -1798,6 +1798,33 @@
     (.cancel ^ScheduledFuture fut true)
     (vreset! scheduled-sync nil)))
 
+(defn- wal-checkpoint!
+  "Flush WAL to base LMDB, persist vector indices, and GC old segments."
+  [lmdb]
+  (try
+    (i/flush-kv-indexer! lmdb)
+    (doseq [idx (keep @l/vector-indices (u/list-files (i/env-dir lmdb)))]
+      (i/persist-vecs idx))
+    (i/gc-wal-segments! lmdb)
+    (catch Exception _)))
+
+(defn- start-scheduled-wal-checkpoint
+  [info lmdb]
+  (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
+        fut       (.scheduleWithFixedDelay
+                    scheduler
+                    ^Runnable #(wal-checkpoint! lmdb)
+                    ^long c/wal-checkpoint-interval
+                    ^long c/wal-checkpoint-interval
+                    TimeUnit/SECONDS)]
+    (vswap! info assoc :scheduled-wal-checkpoint fut)))
+
+(defn- stop-scheduled-wal-checkpoint
+  [info]
+  (when-let [fut ^ScheduledFuture (:scheduled-wal-checkpoint @info)]
+    (.cancel fut true)
+    (vswap! info dissoc :scheduled-wal-checkpoint)))
+
 (defn- copy-version-file
   [lmdb dest]
   (let [src (str (env-dir lmdb) u/+separator+ c/version-file-name)
@@ -1983,6 +2010,7 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
+      (stop-scheduled-wal-checkpoint info)
       ;; Sync any unsynced WAL records before closing
       (when-let [^FileChannel ch (:wal-channel @info)]
         (when (.isOpen ch)
@@ -3149,6 +3177,8 @@
                                 wal-meta-flush-max-ms
                                 wal-group-commit
                                 wal-group-commit-ms
+                                wal-retention-bytes
+                                wal-retention-ms
                                 key-compress val-compress]
                          :or   {max-readers      c/*max-readers*
                                 max-dbs          c/*max-dbs*
@@ -3162,6 +3192,10 @@
                                 wal-group-commit c/*wal-group-commit*
                                 wal-group-commit-ms
                                 c/*wal-group-commit-ms*
+                                wal-retention-bytes
+                                c/*wal-retention-bytes*
+                                wal-retention-ms
+                                c/*wal-retention-ms*
                                 kv-wal?          c/*enable-kv-wal*}
                          :as   opts}]
   (try
@@ -3188,6 +3222,10 @@
                                         wal-meta-flush-max-ms
                                         :wal-group-commit-ms
                                         wal-group-commit-ms
+                                        :wal-retention-bytes
+                                        wal-retention-bytes
+                                        :wal-retention-ms
+                                        wal-retention-ms
                                         :wal-meta-pending-txs 0
                                         :wal-meta-last-flush-ms now-ms
                                         :wal-last-sync-ms now-ms
@@ -3248,7 +3286,9 @@
           (set-val-compressor lmdb v-comp)
           (.addShutdownHook (Runtime/getRuntime)
                             (Thread. #(close-kv lmdb)))
-          (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
+          (start-scheduled-sync (.-scheduled-sync lmdb) dir env)
+          (when kv-wal?
+            (start-scheduled-wal-checkpoint (.-info lmdb) lmdb))))
       lmdb)
     (catch Exception e
       (stt/print-stack-trace e)
