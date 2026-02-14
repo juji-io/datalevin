@@ -343,8 +343,8 @@ reach as soon as we can. We may adjust the priorities based on feedback.
 * 0.10.0 ~~Async transaction; boolean search expression and phrase search; as a
   vector database; counted and prefix compressed KV storage; auto upgrade
   migration; new rule engine.~~[Done 2026/01/22]
-* 1.0.0 ~~As a document database with automatic path indexing;~~  WAL mode;
-  transaction log access API; read-only replicas; high availability; JSON API;
+* 1.0.0 ~~As a document database with automatic path indexing; WAL mode;
+  transaction log access API;~~  read-only replicas; high availability; JSON API;
   library for Java, Python, and JavaScript;
 * 1.1.0 TTL; extensible storage/query for arbitrary data; data compression.
 * 2.0.0 Incremental view maintenance.

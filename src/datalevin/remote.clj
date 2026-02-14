@@ -385,6 +385,18 @@
     (cl/normal-request
       client :flush-kv-indexer! [db-name upto-wal-id] writing?))
 
+  (open-tx-log [_ from-wal-id]
+    (cl/normal-request client :open-tx-log [db-name from-wal-id] writing?))
+  (open-tx-log [_ from-wal-id upto-wal-id]
+    (cl/normal-request
+      client :open-tx-log [db-name from-wal-id upto-wal-id] writing?))
+
+  (gc-wal-segments! [_]
+    (cl/normal-request client :gc-wal-segments! [db-name] writing?))
+  (gc-wal-segments! [_ retain-wal-id]
+    (cl/normal-request
+      client :gc-wal-segments! [db-name retain-wal-id] writing?))
+
   (open-transact-kv [db]
     (cl/normal-request client :open-transact-kv [db-name])
     (.mark-write db))

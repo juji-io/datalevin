@@ -1199,6 +1199,8 @@
    'entries
    'kv-wal-watermarks
    'flush-kv-indexer!
+   'open-tx-log
+   'gc-wal-segments!
    'open-transact-kv
    'close-transact-kv
    'abort-transact-kv
@@ -1996,6 +1998,20 @@
           ::alter ::database (db-eid sys-conn db-name)
           "Don't have permission to alter the database"
         (normal-kv-store-handler flush-kv-indexer!)))))
+
+(defn- open-tx-log
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler open-tx-log)))
+
+(defn- gc-wal-segments!
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+          ::alter ::database (db-eid sys-conn db-name)
+          "Don't have permission to alter the database"
+        (normal-kv-store-handler gc-wal-segments!)))))
 
 (defn- get-lock
   [^Server server db-name]

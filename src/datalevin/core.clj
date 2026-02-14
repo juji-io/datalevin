@@ -1043,6 +1043,29 @@ Only usable for debug output.
   When `upto-wal-id` is provided, replay is bounded by that WAL id."}
   flush-kv-indexer! i/flush-kv-indexer!)
 
+(def ^{:arglists '([db from-wal-id]
+                   [db from-wal-id upto-wal-id])
+       :doc      "Return a seq of WAL transaction records starting after `from-wal-id`
+  (exclusive). Each record is a map:
+    {:wal/tx-id <long>, :wal/ops [{:op :put|:del|:put-list|:del-list
+                                    :dbi <string> :k <bytes> :v <bytes>
+                                    :kt <keyword> :vt <keyword>} ...]}
+  Returns empty seq if WAL is not enabled or no records exist after from-wal-id.
+  Without `upto-wal-id`, reads up to last committed."}
+  open-tx-log i/open-tx-log)
+
+(def ^{:arglists '([db]
+                   [db retain-wal-id])
+       :doc      "Delete WAL segments that are fully below the GC watermark.
+  A segment is deletable only if every record in it has
+  wal-id <= min(last-indexed-wal-tx-id, retain-wal-id).
+
+  `retain-wal-id` is the minimum wal-id that must be retained (e.g. the
+  lowest wal-id a replica still needs). If omitted, uses last-indexed-wal-tx-id.
+
+  Returns {:deleted <count> :retained <count>}."}
+  gc-wal-segments! i/gc-wal-segments!)
+
 (def ^{:arglists '([db txs]
                    [db dbi-name txs]
                    [db dbi-name txs k-type]

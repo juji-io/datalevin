@@ -11,8 +11,7 @@
   "All validation functions for Datalevin.
    Pure checks that raise on invalid input — no data transformation."
   (:require
-   [datalevin.interface :as i
-    :refer [schema opts populated? visit-list-range]]
+   [datalevin.interface :as i :refer [schema opts populated? visit-list-range]]
    [datalevin.index :as idx]
    [datalevin.datom :as d]
    [datalevin.constants :as c]
@@ -110,12 +109,12 @@
       (u/raise "Option " k " expects a boolean, got " v
                {:option k :value v}))
 
-    (= k :cache-limit)
+    (identical? k :cache-limit)
     (when-not (and (integer? v) (not (neg? ^long v)))
       (u/raise "Option :cache-limit expects a non-negative integer, got " v
                {:option k :value v}))
 
-    (= k :db-name)
+    (identical? k :db-name)
     (when-not (string? v)
       (u/raise "Option :db-name expects a string, got " v
                {:option k :value v}))))
@@ -250,7 +249,8 @@
 
         (let [attrs (:db/tupleAttrs kv)]
           (when-not (sequential? attrs)
-            (u/raise a " :db/tupleAttrs must be a sequential collection, got: " attrs ex-data))
+            (u/raise a " :db/tupleAttrs must be a sequential collection, got: "
+                     attrs ex-data))
 
           (when (empty? attrs)
             (u/raise a " :db/tupleAttrs can\u2019t be empty" ex-data))
@@ -258,10 +258,16 @@
           (doseq [attr attrs
                   :let [ex-data (assoc ex-data :value attr)]]
             (when (contains? (schema attr) :db/tupleAttrs)
-              (u/raise a " :db/tupleAttrs can\u2019t depend on another tuple attribute: " attr ex-data))
+              (u/raise
+                a " :db/tupleAttrs can\u2019t depend on another tuple attribute: "
+                attr ex-data))
 
-            (when (identical? :db.cardinality/many (:db/cardinality (schema attr)))
-              (u/raise a " :db/tupleAttrs can\u2019t depend on :db.cardinality/many attribute: " attr ex-data))))))
+            (when (identical? :db.cardinality/many
+                              (:db/cardinality (schema attr)))
+              (u/raise
+                a
+                " :db/tupleAttrs can\u2019t depend on :db.cardinality/many attribute: "
+                attr ex-data))))))
 
     (when (contains? kv :db/tupleType)
       (let [ex-data {:error     :schema/validation
@@ -269,7 +275,8 @@
                      :key       :db/tupleType}
             attr    (:db/tupleType kv)]
         (when-not (c/datalog-value-types attr)
-          (u/raise a " :db/tupleType must be a single value type, got: " attr ex-data))
+          (u/raise a " :db/tupleType must be a single value type, got: "
+                   attr ex-data))
         (when (identical? attr :db.type/tuple)
           (u/raise a " :db/tupleType cannot be :db.type/tuple" ex-data))))
 
@@ -281,7 +288,9 @@
         (when-not (and (sequential? attrs) (< 1 (count attrs))
                        (every? c/datalog-value-types attrs)
                        (not (some #(identical? :db.type/tuple %) attrs)))
-          (u/raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data))))))
+          (u/raise
+            a " :db/tupleTypes must be a sequential collection of more than one value types, got: "
+            attrs ex-data))))))
 
 (defn validate-attr
   "Validate that an attribute is a keyword."
@@ -305,10 +314,11 @@
         v (.-v datom)]
     (when (and unique? (d/datom-added datom))
       (when-some [found (found?)]
-        (u/raise "Cannot add " datom " because of unique constraint: " found
-                 {:error     :transact/unique
-                  :attribute a
-                  :datom     datom})))
+        (u/raise
+          "Cannot add " datom " because of unique constraint: " found
+          {:error     :transact/unique
+           :attribute a
+           :datom     datom})))
     v))
 
 (defn validate-upserts
@@ -326,10 +336,11 @@
     (if (<= 2 (count upsert-ids))
       (let [[e1 [a1 v1]] (first upsert-ids)
             [e2 [a2 v2]] (second upsert-ids)]
-        (u/raise "Conflicting upserts: " [a1 v1] " resolves to " e1 ", but " [a2 v2] " resolves to " e2
-               {:error     :transact/upsert
-                :assertion [e1 a1 v1]
-                :conflict  [e2 a2 v2]}))
+        (u/raise "Conflicting upserts: " [a1 v1] " resolves to " e1 ", but "
+                 [a2 v2] " resolves to " e2
+                 {:error     :transact/upsert
+                  :assertion [e1 a1 v1]
+                  :conflict  [e2 a2 v2]}))
       (let [[upsert-id [a v]] (first upsert-ids)
             eid               (:db/id entity)]
         (when (and
@@ -337,10 +348,11 @@
                 (some? eid)
                 (not (tempid-fn? eid))
                 (not= upsert-id eid))
-          (u/raise "Conflicting upsert: " [a v] " resolves to " upsert-id ", but entity already has :db/id " eid
-                 {:error     :transact/upsert
-                  :assertion [upsert-id a v]
-                  :conflict  {:db/id eid}}))
+          (u/raise "Conflicting upsert: " [a v] " resolves to "
+                   upsert-id ", but entity already has :db/id " eid
+                   {:error     :transact/upsert
+                    :assertion [upsert-id a v]
+                    :conflict  {:db/id eid}}))
         upsert-id))))
 
 ;; ---- Type validation ----
@@ -363,7 +375,8 @@
   "Validate that tempids are only used with :db/add."
   [tempid? op entity]
   (when (and tempid? (not (identical? op :db/add)))
-    (u/raise "Can't use tempid in '" entity "'. Tempids are allowed in :db/add only"
+    (u/raise "Can't use tempid in '" entity
+             "'. Tempids are allowed in :db/add only"
              {:error :transact/syntax, :op entity})))
 
 (defn validate-cas-value
@@ -373,12 +386,14 @@
   [multival? e a ov nv datoms]
   (if multival?
     (when-not (some (fn [^Datom d] (= (.-v d) ov)) datoms)
-      (u/raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
+      (u/raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms)
+               "], expected " ov
                {:error :transact/cas, :old datoms, :expected ov, :new nv}))
     (let [v (:v (first datoms))]
       (when-not (= v ov)
         (u/raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
-                 {:error :transact/cas, :old (first datoms), :expected ov, :new nv})))))
+                 {:error :transact/cas, :old (first datoms), :expected ov,
+                  :new   nv})))))
 
 (defn validate-patch-idoc-arity
   "Validate patchIdoc arity: expected 4 or 5 items."
@@ -399,11 +414,13 @@
   "Validate patchIdoc cardinality rules for old value."
   [many? old-v a]
   (when (and many? (nil? old-v))
-    (u/raise "Idoc patch requires old value for cardinality many attribute: "
-             a {:attribute a}))
+    (u/raise
+      "Idoc patch requires old value for cardinality many attribute: "
+      a {:attribute a}))
   (when (and (not many?) (some? old-v))
-    (u/raise "Idoc patch old value is only supported for cardinality many attribute: "
-             a {:attribute a})))
+    (u/raise
+      "Idoc patch old value is only supported for cardinality many attribute: "
+      a {:attribute a})))
 
 (defn validate-patch-idoc-old-value
   "Validate that old value exists for cardinality-many idoc patch."
@@ -416,28 +433,33 @@
   "Validate that a resolved entity has a fn? :db/fn attribute."
   [fun op entity]
   (when-not (fn? fun)
-    (u/raise "Entity " op " expected to have :db/fn attribute with fn? value"
-             {:error :transact/syntax, :operation :db.fn/call, :tx-data entity})))
+    (u/raise
+      "Entity " op " expected to have :db/fn attribute with fn? value"
+      {:error :transact/syntax, :operation :db.fn/call, :tx-data entity})))
 
 (defn validate-custom-tx-fn-entity
   "Validate that an entity exists for a custom transaction function."
   [ident op entity]
   (when-not ident
-    (u/raise "Can\u2019t find entity for transaction fn " op
-             {:error :transact/syntax, :operation :db.fn/call, :tx-data entity})))
+    (u/raise
+      "Can\u2019t find entity for transaction fn " op
+      {:error :transact/syntax, :operation :db.fn/call, :tx-data entity})))
 
 (defn validate-tuple-direct-write
   "Validate that tuple attrs cannot be modified directly."
   [match? entity]
   (when-not match?
-    (u/raise "Can\u2019t modify tuple attrs directly: " entity
-             {:error :transact/syntax, :tx-data entity})))
+    (u/raise
+      "Can\u2019t modify tuple attrs directly: " entity
+      {:error :transact/syntax, :tx-data entity})))
 
 (defn validate-tx-op
   "Validate that the operation is a known transaction operation."
   [op entity]
-  (u/raise "Unknown operation at " entity ", expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)"
-           {:error :transact/syntax, :operation op, :tx-data entity}))
+  (u/raise
+    "Unknown operation at " entity
+    ", expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)"
+    {:error :transact/syntax, :operation op, :tx-data entity}))
 
 (defn validate-tx-entity-type
   "Validate that the entity is a valid type (map, vector, or datom)."
@@ -492,9 +514,11 @@
   "Validate that a reverse attribute has :db/valueType :db.type/ref in schema."
   [ref? a eid vs]
   (when-not ref?
-    (u/raise "Bad attribute " a ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
-             {:error   :transact/syntax, :attribute a,
-              :context {:db/id eid, a vs}})))
+    (u/raise
+      "Bad attribute " a
+      ": reverse attribute name requires {:db/valueType :db.type/ref} in schema"
+      {:error   :transact/syntax, :attribute a,
+       :context {:db/id eid, a vs}})))
 
 ;; ---- Finalize-phase consistency validators ----
 
@@ -552,8 +576,9 @@
    Rejects external/public callers from reaching internal apply paths."
   []
   (when-not c/*trusted-apply*
-    (u/raise "Direct call to internal apply is not allowed; use the public transaction API"
-             {:error :access/unauthorized})))
+    (u/raise
+      "Direct call to internal apply is not allowed; use the public transaction API"
+      {:error :access/unauthorized})))
 
 (defn check-failpoint
   "Check if a failpoint is active for the given step and phase.
@@ -697,7 +722,8 @@
   "Validate `del-attr` safety checks before apply."
   [store attr]
   (validate-attr-deletable
-    (populated? store :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
+    (populated? store :ave
+                (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax)))
   attr)
 
 (defn- validate-rename-attr*

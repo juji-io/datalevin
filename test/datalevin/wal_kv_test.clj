@@ -1132,3 +1132,156 @@
         (finally
           (if/close-kv lmdb)
           (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; TX-Log API tests
+;; ---------------------------------------------------------------------------
+
+(deftest test-open-tx-log-basic
+  (let [dir  (u/tmp-dir (str "kv-wal-txlog-basic-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                              :kv-wal? true})]
+    (try
+      (if/open-dbi lmdb "a")
+      (let [base-id ^long (last-wal-id lmdb)]
+        (if/transact-kv lmdb [[:put "a" 1 "x"]])
+        (if/transact-kv lmdb [[:put "a" 2 "y"]])
+        (if/transact-kv lmdb [[:put "a" 3 "z"]])
+        (let [records (vec (if/open-tx-log lmdb base-id))]
+          (is (= 3 (count records)))
+          (is (every? #(contains? % :wal/tx-id) records))
+          (is (every? #(contains? % :wal/ops) records))
+          (is (= (set (range (inc base-id) (+ base-id 4)))
+                 (set (map :wal/tx-id records))))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-open-tx-log-range
+  (let [dir  (u/tmp-dir (str "kv-wal-txlog-range-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                              :kv-wal? true})]
+    (try
+      (if/open-dbi lmdb "a")
+      (let [base-id ^long (last-wal-id lmdb)]
+        (if/transact-kv lmdb [[:put "a" 1 "x"]])
+        (if/transact-kv lmdb [[:put "a" 2 "y"]])
+        (if/transact-kv lmdb [[:put "a" 3 "z"]])
+        ;; Read only the first two records
+        (let [records (vec (if/open-tx-log lmdb base-id (+ base-id 2)))]
+          (is (= 2 (count records)))
+          (is (= #{(+ base-id 1) (+ base-id 2)}
+                 (set (map :wal/tx-id records)))))
+        ;; Read from middle
+        (let [records (vec (if/open-tx-log lmdb (+ base-id 1)))]
+          (is (= 2 (count records)))
+          (is (= #{(+ base-id 2) (+ base-id 3)}
+                 (set (map :wal/tx-id records))))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-open-tx-log-empty
+  (let [dir  (u/tmp-dir (str "kv-wal-txlog-empty-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                              :kv-wal? true})]
+    (try
+      (if/open-dbi lmdb "a")
+      (if/transact-kv lmdb [[:put "a" 1 "x"]])
+      (let [committed (last-wal-id lmdb)
+            records   (vec (if/open-tx-log lmdb committed))]
+        (is (empty? records)))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-open-tx-log-wal-disabled
+  (let [dir  (u/tmp-dir (str "kv-wal-txlog-disabled-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
+    (try
+      (if/open-dbi lmdb "a")
+      (if/transact-kv lmdb [[:put "a" 1 "x"]])
+      (let [records (vec (if/open-tx-log lmdb 0))]
+        (is (empty? records)))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-gc-wal-segments-basic
+  (let [dir  (u/tmp-dir (str "kv-wal-gc-basic-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
+                              :kv-wal?                true
+                              :wal-segment-max-bytes  1})]
+    (try
+      (if/open-dbi lmdb "a")
+      ;; Write enough txs to force segment rotation (max 1 byte per segment)
+      (dotimes [i 5]
+        (if/transact-kv lmdb [[:put "a" i (str "v" i)]]))
+      ;; Should have multiple segment files
+      (let [files-before (count (wal/segment-files dir))]
+        (is (> files-before 1))
+        ;; Advance indexed watermark via replay
+        (binding [c/*trusted-apply* true
+                  c/*bypass-wal*    true]
+          (if/transact-kv lmdb c/kv-info
+                          [[:put c/last-indexed-wal-tx-id 0]
+                           [:put c/applied-wal-tx-id 0]]
+                          :data :data))
+        (if/flush-kv-indexer! lmdb)
+        ;; Now GC should delete old segments
+        (let [result (if/gc-wal-segments! lmdb)]
+          (is (pos? (:deleted result)))
+          (is (pos? (:retained result)))
+          ;; Active segment should always remain
+          (is (>= (count (wal/segment-files dir)) 1))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-gc-wal-segments-retain
+  (let [dir  (u/tmp-dir (str "kv-wal-gc-retain-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
+                              :kv-wal?                true
+                              :wal-segment-max-bytes  1})]
+    (try
+      (if/open-dbi lmdb "a")
+      (dotimes [i 5]
+        (if/transact-kv lmdb [[:put "a" i (str "v" i)]]))
+      ;; Advance indexed watermark
+      (binding [c/*trusted-apply* true
+                c/*bypass-wal*    true]
+        (if/transact-kv lmdb c/kv-info
+                        [[:put c/last-indexed-wal-tx-id 0]
+                         [:put c/applied-wal-tx-id 0]]
+                        :data :data))
+      (if/flush-kv-indexer! lmdb)
+      ;; retain-wal-id = 0 should prevent GC from deleting anything
+      ;; since gc watermark = min(indexed, retain) = 0
+      (let [result (if/gc-wal-segments! lmdb 0)]
+        (is (zero? (:deleted result))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-gc-wal-segments-active-segment
+  (let [dir  (u/tmp-dir (str "kv-wal-gc-active-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                              :kv-wal? true})]
+    (try
+      (if/open-dbi lmdb "a")
+      (if/transact-kv lmdb [[:put "a" 1 "x"]])
+      ;; With only one segment, GC should never delete it
+      (binding [c/*trusted-apply* true
+                c/*bypass-wal*    true]
+        (if/transact-kv lmdb c/kv-info
+                        [[:put c/last-indexed-wal-tx-id 0]
+                         [:put c/applied-wal-tx-id 0]]
+                        :data :data))
+      (if/flush-kv-indexer! lmdb)
+      (let [result (if/gc-wal-segments! lmdb)]
+        (is (zero? (:deleted result)))
+        (is (= 1 (:retained result)))
+        (is (= 1 (count (wal/segment-files dir)))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))

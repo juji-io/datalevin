@@ -272,7 +272,18 @@ values;")
   (visit-key-sample
     [db dbi-name indices budget step visitor k-range k-type]
     [db dbi-name indices budget step visitor k-range k-type raw-pred?]
-    "visit a key range, presumably for side effects of vistor call"))
+    "visit a key range, presumably for side effects of vistor call")
+  (open-tx-log
+    [db from-wal-id]
+    [db from-wal-id upto-wal-id]
+    "Return a seq of WAL transaction records after from-wal-id (exclusive).
+     Each record is a map with :wal/tx-id and :wal/ops keys.
+     Returns empty seq if WAL is not enabled or no records exist.")
+  (gc-wal-segments!
+    [db]
+    [db retain-wal-id]
+    "Delete WAL segments that are fully below the GC watermark.
+     Returns {:deleted <count> :retained <count>}."))
 
 (defprotocol IAdmin
   "Some administrative functions"

@@ -532,6 +532,61 @@
       :committed-wal-tx-id committed
       :drained?            (= indexed committed)})))
 
+(defn open-tx-log
+  "Return a seq of WAL transaction records starting after `from-wal-id`
+   (exclusive). Each record is a map:
+     {:wal/tx-id <long>, :wal/ops [{:op :put|:del|:put-list|:del-list
+                                     :dbi <string> :k <bytes> :v <bytes>
+                                     :kt <keyword> :vt <keyword>} ...]}
+   Returns empty seq if WAL is not enabled or no records exist after from-wal-id.
+   Without `upto-wal-id`, reads up to last committed."
+  ([lmdb from-wal-id]
+   (open-tx-log lmdb from-wal-id nil))
+  ([lmdb from-wal-id upto-wal-id]
+   (if-not (kv-wal-enabled? lmdb)
+     ()
+     (let [committed (long (:last-committed-wal-tx-id
+                             (kv-wal-watermarks lmdb)))
+           upto      (if (some? upto-wal-id)
+                       (min (long upto-wal-id) committed)
+                       committed)]
+       (wal/read-wal-records (env-dir lmdb) from-wal-id upto)))))
+
+(defn gc-wal-segments!
+  "Delete WAL segments that are fully below the GC watermark.
+   A segment is deletable only if every record in it has
+   wal-id <= min(last-indexed-wal-tx-id, retain-wal-id).
+
+   `retain-wal-id` is the minimum wal-id that must be retained (e.g. the
+   lowest wal-id a replica still needs). If omitted, uses last-indexed-wal-tx-id.
+
+   Returns {:deleted <count> :retained <count>}."
+  ([lmdb]
+   (gc-wal-segments! lmdb nil))
+  ([lmdb retain-wal-id]
+   (if-not (kv-wal-enabled? lmdb)
+     {:deleted 0 :retained 0}
+     (let [wm         (kv-wal-watermarks lmdb)
+           indexed-id (long (:last-indexed-wal-tx-id wm))
+           gc-wm      (if (some? retain-wal-id)
+                         (min indexed-id (long retain-wal-id))
+                         indexed-id)
+           files      (wal/segment-files (env-dir lmdb))]
+       (if (or (nil? files) (empty? files))
+         {:deleted 0 :retained 0}
+         (let [active-file (last files)
+               deleted     (volatile! (long 0))
+               retained    (volatile! (long 0))]
+           (doseq [^java.io.File f files]
+             (if (identical? f active-file)
+               (vswap! retained u/long-inc)
+               (let [max-id (long (wal/segment-max-wal-id f))]
+                 (if (<= max-id gc-wm)
+                   (do (.delete f)
+                       (vswap! deleted u/long-inc))
+                   (vswap! retained u/long-inc)))))
+           {:deleted @deleted :retained @retained}))))))
+
 ;; for shutting down various executors when the last LMDB exits
 (defonce lmdb-dirs (atom #{}))
 

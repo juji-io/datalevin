@@ -349,7 +349,8 @@
   [dir segment-id]
   (format "%s%ssegment-%016d.wal" (wal-dir-path dir) u/+separator+ segment-id))
 
-(defn- segment-files
+(defn segment-files
+  "Return a sorted seq of WAL segment files in the given directory."
   [dir]
   (let [wal-dir (io/file (wal-dir-path dir))]
     (when (.exists wal-dir)
@@ -471,6 +472,19 @@
         {:last-wal-id     last-id
          :last-segment-id last-seg
          :last-segment-ms last-time}))))
+
+(defn segment-max-wal-id
+  "Return the highest wal-id in a segment file, or 0 if empty."
+  [^File f]
+  (let [path (.getAbsolutePath f)]
+    (with-open [in (DataInputStream. (io/input-stream path))]
+      (loop [max-id 0]
+        (let [rec (try
+                    (read-record in)
+                    (catch EOFException _ ::eof))]
+          (if (= rec ::eof)
+            max-id
+            (recur (long (:wal/tx-id rec)))))))))
 
 (def ^:private wal-meta-slot-size 64)
 (def ^:private wal-meta-payload-off 9)

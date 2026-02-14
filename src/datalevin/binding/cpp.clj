@@ -2420,6 +2420,16 @@
       (prune-kv-committed-overlay! this (:indexed-wal-tx-id res))
       res))
 
+  (open-tx-log [this from-wal-id]
+    (l/open-tx-log this from-wal-id))
+  (open-tx-log [this from-wal-id upto-wal-id]
+    (l/open-tx-log this from-wal-id upto-wal-id))
+
+  (gc-wal-segments! [this]
+    (l/gc-wal-segments! this))
+  (gc-wal-segments! [this retain-wal-id]
+    (l/gc-wal-segments! this retain-wal-id))
+
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]

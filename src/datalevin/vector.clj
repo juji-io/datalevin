@@ -324,7 +324,8 @@
                       ^Map search-opts
                       ^ReentrantReadWriteLock vec-lock
                       ^String domain
-                      shadow]              ; volatile! nil or shadow map
+                      shadow               ; volatile! nil or shadow map
+                      dirty?]              ; volatile! boolean — true when index mutated since last checkpoint
   IVectorIndex
   (add-vec [_ vec-ref vec-data]
     (let [vec-id  (.incrementAndGet max-vec)
@@ -346,6 +347,7 @@
                       c/*trusted-apply* true]
               (i/transact-kv
                 lmdb [(l/kv-tx :put vecs-dbi vec-ref vec-id :data :id)]))))
+      (vreset! dirty? true)
       vec-id))
 
   (get-vec [_ vec-ref]
@@ -383,12 +385,14 @@
           (.remove vecs id))
         (binding [c/*bypass-wal*    true
                   c/*trusted-apply* true]
-          (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)])))))
+          (i/transact-kv lmdb [(l/kv-tx :del vecs-dbi vec-ref)]))))
+    (vreset! dirty? true))
 
   (persist-vecs [this]
-    (when-not @closed?
+    (when (and (not @closed?) @dirty?)
       (.commit-vec-tx this)
-      (checkpoint-to-lmdb lmdb index domain)))
+      (checkpoint-to-lmdb lmdb index domain)
+      (vreset! dirty? false)))
 
   (close-vecs [this]
     (let [wlock (.writeLock vec-lock)]
@@ -599,7 +603,8 @@
                      search-opts
                      (ReentrantReadWriteLock.)
                      domain
-                     (volatile! nil)))))
+                     (volatile! nil)
+                     (volatile! false)))))
 
 (defn new-vector-index
   [lmdb opts]
@@ -625,6 +630,7 @@
                  (.-search-opts old)
                  (ReentrantReadWriteLock.)
                  (.-domain old)
-                 (.-shadow old)))
+                 (.-shadow old)
+                 (.-dirty? old)))
 
 (defn attr-domain [attr] (s/replace (u/keyword->string attr) "/" "_"))

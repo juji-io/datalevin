@@ -6,9 +6,10 @@
 - [WAL] Write Ahead Log (WAL) mode for both KV and Datalog transactions, as well
   as secondary indices. When enabled, transaction returns success after WAL is
   sync'ed to disk. Persistence to DLMDB is done later at checkpoint. This
-  increases write speed while keeping durability guarantees. In memory overlay
-  serves queries for non-checkpointed data. WAL will be the bases for
-  replication, crash recovery and high availability.
+  increases write speed while keeping durability guarantees. In-memory overlay
+  serves queries for yet-checkpointed data.
+- [WAL] Log access function `open-tx-log`
+- [WAL] Log cleanup function `gc-wal-segments!`
 
 ### Improved
 - [Vector] Moved vector index persistence into DLMDB.
