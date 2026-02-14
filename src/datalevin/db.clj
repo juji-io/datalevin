@@ -670,18 +670,23 @@
     (s/open dir schema opts)))
 
 (defn new-db
-  [^IStore store]
-  (let [db (map->DB
-             {:store         store
-              :max-eid       (init-max-eid store)
-              :max-tx        (max-tx store)
-              :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
-              :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
-              :pull-patterns (LRUCache. 64)})]
-    (swap! dbs assoc (db-name store) db)
-    (ensure-cache store (last-modified store))
-    (start-sampling store)
-    db))
+  ([^IStore store] (new-db store nil))
+  ([^IStore store info]
+   (let [info (or info
+                  (when (instance? datalevin.remote.DatalogStore store)
+                    (r/db-info store)))
+         db   (map->DB
+                {:store         store
+                 :max-eid       (if info (:max-eid info) (init-max-eid store))
+                 :max-tx        (if info (:max-tx info) (max-tx store))
+                 :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
+                 :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
+                 :pull-patterns (LRUCache. 64)})]
+     (swap! dbs assoc (db-name store) db)
+     (ensure-cache store
+                   (if info (:last-modified info) (last-modified store)))
+     (start-sampling store)
+     db)))
 
 (defn transfer
   [^DB old store]
@@ -1808,20 +1813,27 @@
         tx-time (System/currentTimeMillis)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
-        (let [res (r/tx-data store initial-es simulated?)
+        (let [res     (r/tx-data store initial-es simulated?)
+              db-info (when (map? res) (:db-info res))
+              res     (if db-info (dissoc res :db-info) res)
               [tx-data tempids max-eid new-attributes]
               (remote-tx-result res)]
           (when-not simulated?
-            (invalidate-cache store tx-data (last-modified store)))
-          (cond-> (assoc initial-report
-                         :db-after (-> (new-db store)
-                                       (assoc :max-eid max-eid)
-                                       (#(if simulated?
-                                           (update % :max-tx u/long-inc)
-                                           %)))
-                         :tx-data tx-data
-                         :tempids tempids)
-            (seq new-attributes) (assoc :new-attributes new-attributes)))
+            (invalidate-cache store tx-data
+                              (if db-info
+                                (:last-modified db-info)
+                                (last-modified store))))
+          (let [info (when db-info
+                       (assoc db-info :max-eid max-eid))]
+            (cond-> (assoc initial-report
+                           :db-after (-> (new-db store info)
+                                         (assoc :max-eid max-eid)
+                                         (#(if simulated?
+                                             (update % :max-tx u/long-inc)
+                                             %)))
+                           :tx-data tx-data
+                           :tempids tempids)
+              (seq new-attributes) (assoc :new-attributes new-attributes))))
         (catch Exception e
           (if (:resized (ex-data e))
             (throw e)

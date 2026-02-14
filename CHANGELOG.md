@@ -10,11 +10,13 @@
   serves queries for yet-checkpointed data.
 - [WAL] Log access function `open-tx-log`
 - [WAL] Log cleanup function `gc-wal-segments!`
+- [Datalog] Support migration from default EDN blob to a specific data type.
 
 ### Improved
-- [Vector] Moved vector index persistence into DLMDB.
-- [Datalog] Full-text and idoc indices are within the same atomic transaction as
-  Datalog indices.
+- [Vector] Moved vector index persistence inside DLMDB.
+- [Datalog] Full-text and idoc indices are now using the same atomic transaction
+  as Datalog indices.
+- [Server] Reduce the number of round trips needed for a transaction.
 
 ## 0.10.5 (2026-02-08)
 
