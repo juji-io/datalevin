@@ -369,6 +369,18 @@
 
 (defn sync [db] (when-let [d (get-kv db)] (d/sync d)))
 
+(defn open-tx-log
+  ([db from-wal-id]
+   (when-let [d (get-kv db)] (into [] (d/open-tx-log d from-wal-id))))
+  ([db from-wal-id upto-wal-id]
+   (when-let [d (get-kv db)] (into [] (d/open-tx-log d from-wal-id upto-wal-id)))))
+
+(defn gc-wal-segments!
+  ([db]
+   (when-let [d (get-kv db)] (d/gc-wal-segments! d)))
+  ([db retain-wal-id]
+   (when-let [d (get-kv db)] (d/gc-wal-segments! d retain-wal-id))))
+
 (defn get-env-flags [db] (when-let [d (get-kv db)] (d/get-env-flags d)))
 
 (defn set-env-flags [db ks on-off]
@@ -896,6 +908,8 @@
    'entries                   entries
    'open-transact-kv          open-transact-kv
    'sync                      sync
+   'open-tx-log               open-tx-log
+   'gc-wal-segments!          gc-wal-segments!
    'set-env-flags             set-env-flags
    'get-env-flags             get-env-flags
    'close-transact-kv         close-transact-kv
