@@ -57,6 +57,71 @@ It is still useful to manually batch transaction data in user code, as the
 effect of auto batching and manual batching compounds. The compound batching
 effect in KV transaction is more pronounced than in Datalog transaction.
 
+## WAL Transaction Mode
+
+Datalevin also supports a write-ahead-log (WAL) transaction mode for KV
+and Datalog stores. WAL mode is opt-in and is disabled by default.
+
+Enable WAL for KV:
+
+```clojure
+(require '[datalevin.core :as d])
+
+(def kv (d/open-kv "/tmp/my-kvdb" {:kv-wal? true}))
+```
+
+Enable WAL for Datalog:
+
+```clojure
+(require '[datalevin.core :as d])
+
+(def conn (d/create-conn "/tmp/mydb" {} {:datalog-wal? true}))
+
+```
+
+In WAL mode:
+
+* committed transactions are appended to files under `<db-dir>/wal`
+* reads see recent committed writes immediately through an in-memory overlay,
+  even before those writes are replayed into LMDB base pages
+* replay/indexer advances the base state and prunes covered overlay entries
+* on reopen, Datalevin rebuilds overlay state from un-indexed WAL records so
+  committed WAL tail data remains visible
+* a background WAL checkpoint runs periodically (default every 300 seconds) to
+  flush indexer progress and GC old WAL segments
+
+WAL operations exposed by the public API:
+
+* `kv-wal-watermarks`: current committed/indexed WAL watermarks
+* `flush-kv-indexer!`: replay WAL into base (optionally bounded by WAL id)
+* `open-tx-log`: stream WAL transaction records
+* `kv-wal-metrics`: overlay/indexer/segment metrics
+* `gc-wal-segments!`: delete old fully-indexed WAL segments by retention policy
+
+Example:
+
+```clojure
+(let [wm0 (d/kv-wal-watermarks kv)]
+  ;; Replay all committed WAL records into LMDB base
+  (d/flush-kv-indexer! kv)
+  ;; Read WAL records after a given wal-id
+  (d/open-tx-log kv (:last-indexed-wal-tx-id wm0)))
+```
+
+Useful WAL tuning options (passed via `open-kv` opts, or `:kv-opts` in Datalog):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `:wal-sync-mode` | `:fdatasync` | WAL fsync mode: `:fsync`, `:fdatasync`, or `:none` |
+| `:wal-group-commit` | `100` | Sync WAL after this many records (lower = stronger durability) |
+| `:wal-group-commit-ms` | `10` | Force a WAL sync after this delay, even under low write rates |
+| `:wal-meta-flush-max-txs` | `1024` | Flush durable WAL metadata after this many committed txs |
+| `:wal-meta-flush-max-ms` | `100` | Max delay before flushing durable WAL metadata |
+| `:wal-segment-max-bytes` | `256 MiB` | Rotate WAL segment when size threshold is reached |
+| `:wal-segment-max-ms` | `300000` | Rotate WAL segment when age threshold is reached |
+| `:wal-retention-bytes` | `1 GiB` | GC threshold for total WAL size |
+| `:wal-retention-ms` | `7 days` | GC threshold for WAL segment age |
+
 ## Non-durable Environment Flags
 
 Datalevin write transactions by default are guranteed to be durable, i.e. no
