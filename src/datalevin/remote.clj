@@ -384,6 +384,8 @@
 
   (kv-wal-watermarks [_]
     (cl/normal-request client :kv-wal-watermarks [db-name] writing?))
+  (kv-wal-metrics [_]
+    (cl/normal-request client :kv-wal-metrics [db-name] writing?))
 
   (flush-kv-indexer! [_]
     (cl/normal-request client :flush-kv-indexer! [db-name] writing?))

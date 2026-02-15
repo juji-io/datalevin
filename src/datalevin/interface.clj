@@ -151,6 +151,12 @@
     [db upto-wal-id]
     "Replay KV WAL to advance indexed watermark and return:
      `{:indexed-wal-tx-id <id> :committed-wal-tx-id <id> :drained? <bool>}`.")
+  (kv-wal-metrics [db]
+    "Return WAL overlay/indexer/segment metrics:
+     `:overlay-entries`, `:private-overlay-entries`, `:indexer-lag`,
+     `:segment-count`, `:segment-bytes`, `:gc-eligible-segment-count`,
+     `:gc-eligible-segment-bytes`, `:indexer-last-flush-duration-ms`, and
+     `:indexer-ms-since-last-flush`.")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]

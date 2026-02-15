@@ -1052,6 +1052,10 @@ Only usable for debug output.
   When `upto-wal-id` is provided, replay is bounded by that WAL id."}
   flush-kv-indexer! i/flush-kv-indexer!)
 
+(def ^{:arglists '([db])
+       :doc      "Return KV WAL overlay/indexer/segment telemetry."}
+  kv-wal-metrics i/kv-wal-metrics)
+
 (def ^{:arglists '([db from-wal-id]
                    [db from-wal-id upto-wal-id])
        :doc      "Return a seq of WAL transaction records starting after `from-wal-id`

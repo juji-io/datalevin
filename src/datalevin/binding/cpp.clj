@@ -763,42 +763,49 @@
 
 (defn- key-in-k-range?
   [^bytes kbs range-type ^bytes low ^bytes high]
-  (let [^long c-low  (when low (b/compare-bytes kbs low))
-        ^long c-high (when high (b/compare-bytes kbs high))]
+  (let [c-low  (when low (long (b/compare-bytes kbs low)))
+        c-high (when high (long (b/compare-bytes kbs high)))
+        c1     (or c-low c-high)]
     (case range-type
       (:all :all-back)                   true
-      (:at-least :at-least-back)         (>= c-low 0)
-      (:at-most :at-most-back)           (<= c-low 0)
-      (:closed :closed-back)             (and (>= c-low 0) (<= c-high 0))
-      (:closed-open :closed-open-back)   (and (>= c-low 0) (< c-high 0))
-      (:greater-than :greater-than-back) (> c-low 0)
-      (:less-than :less-than-back)       (< c-low 0)
-      (:open :open-back)                 (and (> c-low 0) (< c-high 0))
-      (:open-closed :open-closed-back)   (and (> c-low 0) (<= c-high 0))
+      (:at-least :at-least-back)         (>= ^long c1 0)
+      (:at-most :at-most-back)           (<= ^long c1 0)
+      (:closed :closed-back)             (and (>= ^long c-low 0) (<= ^long c-high 0))
+      (:closed-open :closed-open-back)   (and (>= ^long c-low 0) (< ^long c-high 0))
+      (:greater-than :greater-than-back) (> ^long c1 0)
+      (:less-than :less-than-back)       (< ^long c1 0)
+      (:open :open-back)                 (and (> ^long c-low 0) (< ^long c-high 0))
+      (:open-closed :open-closed-back)   (and (> ^long c-low 0) (<= ^long c-high 0))
       false)))
 
 (defn- wal-op->overlay-entry
-  [{:keys [op dbi k v kt vt dupsort? k-bytes]}]
+  [{:keys [op dbi k v kt vt dupsort? k-bytes raw?]}]
   (when dbi
-    (let [kbs (or k-bytes (encode-kv-bytes k (normalize-kv-type kt)))]
+    (let [kbs (if raw?
+                k
+                (or k-bytes (encode-kv-bytes k (normalize-kv-type kt))))]
       (case op
         :put      (if dupsort?
                     (let [tm  ^TreeMap (empty-sorted-byte-map)
-                          vbs (encode-kv-bytes v (normalize-kv-type vt))]
+                          vbs (if raw? v
+                                  (encode-kv-bytes v (normalize-kv-type vt)))]
                       (.put tm vbs :overlay-sentinel)
                       [dbi kbs (->ListOverlayEntry false tm)])
-                    [dbi kbs (encode-kv-bytes v (normalize-kv-type vt))])
+                    [dbi kbs (if raw? v
+                                 (encode-kv-bytes v (normalize-kv-type vt)))])
         :del      (if dupsort?
                     [dbi kbs (->ListOverlayEntry true (empty-sorted-byte-map))]
                     [dbi kbs :overlay-deleted])
         :put-list (let [tm  ^TreeMap (empty-sorted-byte-map)
-                        vt' (normalize-kv-type vt)]
-                    (doseq [vi v]
+                        vt' (normalize-kv-type vt)
+                        vs  (if raw? (b/deserialize v) v)]
+                    (doseq [vi vs]
                       (.put tm (encode-kv-bytes vi vt') :overlay-sentinel))
                     [dbi kbs (->ListOverlayEntry false tm)])
         :del-list (let [tm  ^TreeMap (empty-sorted-byte-map)
-                        vt' (normalize-kv-type vt)]
-                    (doseq [vi v]
+                        vt' (normalize-kv-type vt)
+                        vs  (if raw? (b/deserialize v) v)]
+                    (doseq [vi vs]
                       (.put tm (encode-kv-bytes vi vt') :overlay-tombstone-val))
                     [dbi kbs (->ListOverlayEntry false tm)])
         nil))))
@@ -860,6 +867,29 @@
          overlay-for-dbi kv-overlay-active? publish-kv-wal-meta!
          maybe-publish-kv-wal-meta!)
 
+(defn- overlay-entry-count
+  [overlay]
+  (reduce
+    (fn [^long acc ^ConcurrentSkipListMap m]
+      (if m
+        (+ acc (.size m))
+        acc))
+    0
+    (vals (or overlay {}))))
+
+(defn- update-private-overlay-entries!
+  [^Rtx wtxn overlay]
+  (let [lmdb (.-lmdb wtxn)]
+    (vswap! (.-info lmdb) assoc
+            :kv-overlay-private-entries
+            (overlay-entry-count overlay))))
+
+(defn- reset-private-overlay!
+  [^Rtx wtxn]
+  (when-let [^clojure.lang.Volatile ov-ref (.-kv-overlay-private wtxn)]
+    (vreset! ov-ref {})
+    (vswap! (.-info (.-lmdb wtxn)) assoc :kv-overlay-private-entries 0)))
+
 (defn- get-kv-info-id [lmdb k] (i/get-value lmdb c/kv-info k :data :data))
 
 (defn- read-kv-wal-meta [lmdb] (wal/read-wal-meta (env-dir lmdb)))
@@ -868,9 +898,10 @@
   [^Rtx wtxn ops]
   (let [delta (overlay-delta-by-dbi ops)]
     (when (seq delta)
-      (let [current (or (some-> (.-kv-overlay-private wtxn) deref) {})
-            merged  (merge-overlay-delta current delta)]
-        (vreset! (.-kv-overlay-private wtxn) merged)))))
+      (when-let [^clojure.lang.Volatile ov-ref (.-kv-overlay-private wtxn)]
+        (let [merged (merge-overlay-delta (or @ov-ref {}) delta)]
+          (vreset! ov-ref merged)
+          (update-private-overlay-entries! wtxn merged)))))) 
 
 (defn- merge-single-overlay-maps
   "Merge private overlay map on top of committed for a single DBI.
@@ -2018,6 +2049,16 @@
         (when (.isOpen ch)
           (let [sync-mode (or (:wal-sync-mode @info) c/*wal-sync-mode*)]
             (try (wal/sync-channel! ch sync-mode) (catch Exception _ nil)))))
+      ;; Flush WAL meta so reopen recovers the correct committed watermark
+      (when (:kv-wal? @info)
+        (when-let [wal-id (:last-committed-wal-tx-id @info)]
+          (when (pos? ^long wal-id)
+            (try (publish-kv-wal-meta! this wal-id
+                                       (System/currentTimeMillis))
+                 (catch Exception e
+                   (binding [*out* *err*]
+                     (println "WARNING: Failed to flush WAL meta on close")
+                     (stt/print-stack-trace e)))))))
       (wal/close-segment-channel! (:wal-channel @info))
       (swap! l/lmdb-dirs disj (env-dir this))
       (when (zero? (count @l/lmdb-dirs))
@@ -2244,16 +2285,17 @@
                   wal-id    (:wal-id wal-entry)
                   tx-time   (:tx-time wal-entry)]
               (when wal-id
-                (run-writer-step! :step-4
-                                  #(publish-kv-wal-watermarks!
-                                     this wal-id tx-time))
-                (run-writer-step! :step-5
-                                  #(publish-kv-committed-overlay!
-                                     this wal-id (:ops wal-entry)))
-                (run-writer-step! :step-6 (fn [] nil))
-                (run-writer-step! :step-7
-                                  #(publish-kv-overlay-watermark!
-                                     this wal-id)))
+                (locking write-txn
+                  (run-writer-step! :step-4
+                                    #(publish-kv-wal-watermarks!
+                                       this wal-id tx-time))
+                  (run-writer-step! :step-5
+                                    #(publish-kv-committed-overlay!
+                                       this wal-id (:ops wal-entry)))
+                  (run-writer-step! :step-6 (fn [] nil))
+                  (run-writer-step! :step-7
+                                    #(publish-kv-overlay-watermark!
+                                       this wal-id))))
               (if (or aborted? wal-enabled?)
                 (.abort txn)
                 (try
@@ -2282,8 +2324,7 @@
                 (maybe-flush-kv-indexer-on-pressure! this))
               (when (.-wal-ops wtxn)
                 (vreset! (.-wal-ops wtxn) []))
-              (when (.-kv-overlay-private wtxn)
-                (vreset! (.-kv-overlay-private wtxn) {}))
+              (reset-private-overlay! wtxn)
               (if aborted? :aborted :committed))
             (catch Exception e
               (when (and wal-enabled? (not aborted?))
@@ -2306,8 +2347,7 @@
       (vreset! (.-aborted? wtxn) true)
       (when (.-wal-ops wtxn)
         (vreset! (.-wal-ops wtxn) []))
-      (when (.-kv-overlay-private wtxn)
-        (vreset! (.-kv-overlay-private wtxn) {}))
+      (reset-private-overlay! wtxn)
       (vreset! write-txn wtxn)
       nil))
 
@@ -2447,11 +2487,14 @@
       (when (.isOpen ch)
         (try (.force ch true) (catch Exception _ nil))))
     (let [res (l/flush-kv-indexer! this upto-wal-id)]
-      (vswap! (.-info this) assoc
-              :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
-              :applied-wal-tx-id (or (get-kv-info-id this c/applied-wal-tx-id)
-                                     0))
-      (prune-kv-committed-overlay! this (:indexed-wal-tx-id res))
+      ;; Hold write-txn lock while updating watermarks and pruning overlay
+      ;; so we don't race with a concurrent publish-kv-committed-overlay!.
+      (locking write-txn
+        (vswap! (.-info this) assoc
+                :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
+                :applied-wal-tx-id (or (get-kv-info-id this c/applied-wal-tx-id)
+                                       0))
+        (prune-kv-committed-overlay! this (:indexed-wal-tx-id res)))
       res))
 
   (open-tx-log [this from-wal-id]
@@ -2979,7 +3022,9 @@
               :wal-segment-id seg-id
               :wal-segment-created-ms seg-created
               :wal-segment-bytes seg-bytes))
-    (catch Exception _ nil)))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (raise "Fail to read WAL info: " e {:dir (env-dir lmdb)}))))
 
 (defn- refresh-kv-wal-meta-info!
   [^CppLMDB lmdb]
@@ -3251,9 +3296,12 @@
                                         :wal-meta-pending-txs 0
                                         :wal-meta-last-flush-ms now-ms
                                         :wal-last-sync-ms now-ms
+                                        :wal-indexer-last-flush-ms now-ms
+                                        :wal-indexer-last-flush-duration-ms 0
                                         :kv-overlay-committed-by-tx
                                         (empty-overlay-committed-map)
                                         :kv-overlay-by-dbi {}
+                                        :kv-overlay-private-entries 0
                                         :overlay-published-wal-tx-id 0})
                           key-compress (assoc :key-compress key-compress)
                           val-compress (assoc :val-compress val-compress))
@@ -3302,7 +3350,16 @@
                   :overlay-published-wal-tx-id 0)
           (when kv-wal?
             (refresh-kv-wal-info! lmdb)
-            (refresh-kv-wal-meta-info! lmdb))
+            (refresh-kv-wal-meta-info! lmdb)
+            ;; Rebuild in-memory overlay from un-indexed WAL records so
+            ;; committed writes are visible immediately after reopen.
+            (let [inf       @(.-info lmdb)
+                  committed (long (or (:last-committed-wal-tx-id inf) 0))
+                  indexed   (long (or (:last-indexed-wal-tx-id inf) 0))]
+              (when (> committed indexed)
+                (doseq [rec (wal/read-wal-records dir indexed committed)]
+                  (publish-kv-committed-overlay!
+                    lmdb (long (:wal/tx-id rec)) (:wal/ops rec))))))
           (set-max-val-size lmdb (max-val-size lmdb))
           (set-key-compressor lmdb k-comp)
           (set-val-compressor lmdb v-comp)

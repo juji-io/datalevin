@@ -3,20 +3,22 @@
 ## WIP
 
 ### Added
-- [WAL] Write Ahead Log (WAL) mode for both KV and Datalog transactions, as well
-  as secondary indices. When enabled, transaction returns success after WAL is
-  sync'ed to disk. Persistence to DLMDB is done later at checkpoint. This
-  increases write speed while keeping durability guarantees. In-memory overlay
-  serves queries for yet-checkpointed data.
+- [WAL] Write Ahead Log (WAL) mode for both KV and Datalog transactions. When
+  enabled, transaction returns success after WAL is sync'ed to disk. Persistence
+  to DLMDB is done later at checkpoint. This increases write speed while keeping
+  durability guarantees. In-memory overlay serves queries for yet-checkpointed
+  data.
 - [WAL] Log access function `open-tx-log`
 - [WAL] Log cleanup function `gc-wal-segments!`
-- [Datalog] Support migration from default EDN blob to a specific data type.
+- [WAL] Log overlay/indexer/segment telemetry `kv-wal-metrics`
+- [Datalog] Support atomic migration from default EDN blob to a specific data
+  type when `update-schema`.
 
 ### Improved
 - [Vector] Moved vector index persistence inside DLMDB.
 - [Datalog] Full-text and idoc indices are now using the same atomic transaction
   as Datalog indices.
-- [Server] Reduce the number of round trips needed for a transaction.
+- [Server] Reduce the number of network round trips needed for a transaction.
 
 ## 0.10.5 (2026-02-08)
 

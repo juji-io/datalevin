@@ -1200,6 +1200,7 @@
    'stat
    'entries
    'kv-wal-watermarks
+   'kv-wal-metrics
    'flush-kv-indexer!
    'open-tx-log
    'gc-wal-segments!
@@ -2036,6 +2037,10 @@
 (defn- kv-wal-watermarks
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler kv-wal-watermarks)))
+
+(defn- kv-wal-metrics
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler kv-wal-metrics)))
 
 (defn- flush-kv-indexer!
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

@@ -381,6 +381,20 @@
   ([db retain-wal-id]
    (when-let [d (get-kv db)] (d/gc-wal-segments! d retain-wal-id))))
 
+(defn kv-wal-watermarks
+  [db]
+  (when-let [d (get-kv db)] (d/kv-wal-watermarks d)))
+
+(defn flush-kv-indexer!
+  ([db]
+   (when-let [d (get-kv db)] (d/flush-kv-indexer! d)))
+  ([db upto-wal-id]
+   (when-let [d (get-kv db)] (d/flush-kv-indexer! d upto-wal-id))))
+
+(defn kv-wal-metrics
+  [db]
+  (when-let [d (get-kv db)] (d/kv-wal-metrics d)))
+
 (defn get-env-flags [db] (when-let [d (get-kv db)] (d/get-env-flags d)))
 
 (defn set-env-flags [db ks on-off]
@@ -909,6 +923,9 @@
    'open-transact-kv          open-transact-kv
    'sync                      sync
    'open-tx-log               open-tx-log
+   'kv-wal-watermarks         kv-wal-watermarks
+   'flush-kv-indexer!         flush-kv-indexer!
+   'kv-wal-metrics            kv-wal-metrics
    'gc-wal-segments!          gc-wal-segments!
    'set-env-flags             set-env-flags
    'get-env-flags             get-env-flags

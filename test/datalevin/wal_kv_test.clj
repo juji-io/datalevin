@@ -62,8 +62,8 @@
     (try
       (if/open-dbi lmdb "a")
       (if/transact-kv lmdb [[:put "a" 1 "x"]])
-      (is (= {:last-committed-wal-tx-id 0
-              :last-indexed-wal-tx-id   0
+      (is (= {:last-committed-wal-tx-id  0
+              :last-indexed-wal-tx-id    0
               :last-committed-user-tx-id 0}
              (if/kv-wal-watermarks lmdb)))
       (finally
@@ -107,9 +107,9 @@
       (if/open-dbi lmdb "a")
       (let [base-id (last-wal-id lmdb)
             ex      (try
-                      (binding [c/*failpoint* {:step :step-3
+                      (binding [c/*failpoint* {:step  :step-3
                                                :phase :before
-                                               :fn #(throw (ex-info "fp-before" {}))}]
+                                               :fn    #(throw (ex-info "fp-before" {}))}]
                         (if/transact-kv lmdb [[:put "a" 1 "x"]]))
                       nil
                       (catch Exception e e))]
@@ -245,7 +245,7 @@
                             [:del "a" 1]])
       (let [committed-id (last-wal-id lmdb)]
         (is (= committed-id (:last-committed-wal-tx-id
-                              (if/kv-wal-watermarks lmdb))))
+                             (if/kv-wal-watermarks lmdb))))
         (binding [c/*trusted-apply* true
                   c/*bypass-wal*    true]
           (if/transact-kv lmdb c/kv-info
@@ -264,7 +264,7 @@
         (is (= committed-id (if/get-value lmdb c/kv-info
                                           c/applied-wal-tx-id :data :data)))
         (is (= committed-id (:last-committed-wal-tx-id
-                              (if/kv-wal-watermarks lmdb))))
+                             (if/kv-wal-watermarks lmdb))))
 
         ;; Replay must not append additional WAL records.
         (is (= committed-id (count (wal/read-wal-records dir 0 committed-id))))
@@ -291,7 +291,7 @@
       ;; Reset watermarks to simulate base lagging behind WAL.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
       (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
@@ -303,6 +303,50 @@
       (is (= [2 3] (if/get-list lmdb "list" "a" :string :long)))
       (finally
         (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest kv-wal-reopen-overlay-rebuild-test
+  (let [dir (u/tmp-dir (str "kv-wal-reopen-" (UUID/randomUUID)))]
+    (try
+      ;; Session 1: write data, do NOT flush, close.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                  :kv-wal? true})]
+        (if/open-dbi lmdb "a")
+        (if/open-list-dbi lmdb "l")
+        (if/transact-kv lmdb [[:put "a" 1 "x"]
+                               [:put "a" 2 "y"]
+                               [:put-list "l" 10 [100 200 300] :long :long]])
+        (if/transact-kv lmdb [[:del "a" 1]
+                               [:put "a" 3 "z"]
+                               [:del-list "l" 10 [200] :long :long]])
+        ;; Verify data visible via overlay before close.
+        (is (nil? (if/get-value lmdb "a" 1)))
+        (is (= "y" (if/get-value lmdb "a" 2)))
+        (is (= "z" (if/get-value lmdb "a" 3)))
+        (is (= [100 300] (if/get-list lmdb "l" 10 :long :long)))
+        ;; Watermarks: committed > indexed (un-flushed).
+        (let [wm (if/kv-wal-watermarks lmdb)]
+          (is (> (:last-committed-wal-tx-id wm)
+                 (:last-indexed-wal-tx-id wm))))
+        (if/close-kv lmdb))
+
+      ;; Session 2: reopen — overlay should be rebuilt from WAL.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                  :kv-wal? true})]
+        (if/open-dbi lmdb "a")
+        (if/open-list-dbi lmdb "l")
+        ;; Committed writes must be visible immediately after reopen.
+        (is (nil? (if/get-value lmdb "a" 1)) "deleted key invisible after reopen")
+        (is (= "y" (if/get-value lmdb "a" 2)) "put visible after reopen")
+        (is (= "z" (if/get-value lmdb "a" 3)) "put visible after reopen")
+        (is (= [100 300] (if/get-list lmdb "l" 10 :long :long))
+            "list ops visible after reopen")
+        ;; Range queries should also work.
+        (is (= [[2 "y"] [3 "z"]]
+               (vec (if/get-range lmdb "a" [:all] :data :data)))
+            "get-range after reopen")
+        (if/close-kv lmdb))
+      (finally
         (u/delete-files dir)))))
 
 (deftest kv-wal-dbi-guard-test
@@ -357,10 +401,10 @@
         (u/delete-files dir2)))))
 
 (deftest kv-wal-memory-pressure-flush-test
-  (let [dir   (u/tmp-dir (str "kv-wal-mem-pressure-" (UUID/randomUUID)))
-        lmdb  (l/open-kv dir {:flags      (conj c/default-env-flags :nosync)
-                              :kv-wal?    true
-                              :spill-opts {:spill-threshold 1}})]
+  (let [dir  (u/tmp-dir (str "kv-wal-mem-pressure-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags      (conj c/default-env-flags :nosync)
+                             :kv-wal?    true
+                             :spill-opts {:spill-threshold 1}})]
     (try
       (if/open-dbi lmdb "a")
       (let [base-id       ^long (last-wal-id lmdb)
@@ -391,7 +435,7 @@
       ;; Simulate a pre-separation marker store: legacy key exists, new key absent.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
       (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:del c/applied-wal-tx-id]
                          [:put c/legacy-applied-tx-id 0]
@@ -492,15 +536,15 @@
       ;; Replay catches base up and prunes committed overlay <= indexed watermark.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
       (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
                         :data :data))
       (let [committed-id (last-wal-id lmdb)]
-        (is (= {:indexed-wal-tx-id committed-id
+        (is (= {:indexed-wal-tx-id   committed-id
                 :committed-wal-tx-id committed-id
-                :drained? true}
+                :drained?            true}
                (if/flush-kv-indexer! lmdb))))
 
       ;; With pruned overlay, clearing base again leaves no values visible.
@@ -614,15 +658,15 @@
       ;; Replay catches base up and prunes committed overlay <= indexed watermark.
       ;; Use trusted apply to avoid emitting WAL records for kv-info setup.
       (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                c/*bypass-wal*    true]
         (if/transact-kv lmdb c/kv-info
                         [[:put c/last-indexed-wal-tx-id 0]
                          [:put c/applied-wal-tx-id 0]]
                         :data :data))
       (let [committed-id (last-wal-id lmdb)]
-        (is (= {:indexed-wal-tx-id committed-id
+        (is (= {:indexed-wal-tx-id   committed-id
                 :committed-wal-tx-id committed-id
-                :drained? true}
+                :drained?            true}
                (if/flush-kv-indexer! lmdb))))
 
       ;; With pruned overlay, clearing base again leaves no values visible.
@@ -684,6 +728,27 @@
         (u/delete-files dir)
         (u/delete-files dir2)))))
 
+(deftest kv-wal-metrics-test
+  (let [dir  (u/tmp-dir (str "kv-wal-metrics-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                             :kv-wal? true})]
+    (try
+      (if/open-dbi lmdb "a")
+      (if/transact-kv lmdb [[:put "a" 1 "x"]])
+      (if/transact-kv lmdb [[:put "a" 2 "y"]])
+      (let [metrics-before (l/kv-wal-metrics lmdb)]
+        (is (pos? (:indexer-lag metrics-before)))
+        (is (pos? (:overlay-entries metrics-before)))
+        (is (>= (:segment-count metrics-before) 1))
+        (l/flush-kv-indexer! lmdb)
+        (let [metrics-after (l/kv-wal-metrics lmdb)]
+          (is (<= (:indexer-lag metrics-after) (:indexer-lag metrics-before)))
+          (is (<= (:overlay-entries metrics-after) (:overlay-entries metrics-before)))
+          (is (>= (:segment-count metrics-after) 1))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
 (deftest kv-wal-admin-test
   (let [dir  (u/tmp-dir (str "datalevin-kv-wal-admin-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
@@ -729,7 +794,7 @@
    cleanly through both LMDB and the WAL codec."
   (gen/one-of
     [(gen/tuple gen/large-integer gen/large-integer
-               (gen/return :long) (gen/return :long))
+                (gen/return :long) (gen/return :long))
      (gen/tuple (gen/not-empty gen/string-alphanumeric)
                 (gen/not-empty gen/string-alphanumeric)
                 (gen/return :string) (gen/return :string))
@@ -845,11 +910,11 @@
                                :kv-wal? true})]
       (try
         (if/open-dbi lmdb "a")
-        (let [base-id (last-wal-id lmdb)
+        (let [base-id  (last-wal-id lmdb)
               ;; Deduplicate: last-write-wins per key
-              put-map (reduce (fn [m [k v]] (assoc m k v)) {} puts)
+              put-map  (reduce (fn [m [k v]] (assoc m k v)) {} puts)
               ;; Transaction 1: put all keys
-              _       (if/transact-kv lmdb
+              _        (if/transact-kv lmdb
                         (mapv (fn [[k v]] [:put "a" k v :long :string]) puts))
               ;; Pick roughly half the unique keys to delete
               all-keys (keys put-map)
@@ -898,17 +963,31 @@
    collision probability between base and overlay."
   (gen/choose 0 30))
 
+(def ^:private gen-large-long
+  "Large longs (0–1000) to exercise broader key domains."
+  (gen/choose 0 1000))
+
 ;; --- Non-dupsort helpers ---
 
 (def ^:private gen-key-iter-op
   (gen/one-of
     [(gen/fmap (fn [[k v]] {:op :put :k k :v v})
-              (gen/tuple gen-small-long gen-small-long))
+               (gen/tuple gen-small-long gen-small-long))
      (gen/fmap (fn [k] {:op :del :k k})
-              gen-small-long)]))
+               gen-small-long)]))
 
 (def ^:private gen-key-iter-ops
   (gen/not-empty (gen/vector gen-key-iter-op 1 30)))
+
+(def ^:private gen-key-iter-op-large
+  (gen/one-of
+    [(gen/fmap (fn [[k v]] {:op :put :k k :v v})
+               (gen/tuple gen-large-long gen-large-long))
+     (gen/fmap (fn [k] {:op :del :k k})
+               gen-large-long)]))
+
+(def ^:private gen-key-iter-ops-large
+  (gen/not-empty (gen/vector gen-key-iter-op-large 20 200)))
 
 (defn- apply-key-iter-ops
   "Apply put/del ops to a sorted-map reference model (key → value)."
@@ -957,9 +1036,9 @@
     (is (= (vec ref-map) @visited) "visit :all"))
   ;; Parametric :closed range
   (when (>= (count ref-map) 2)
-    (let [ks  (vec (keys ref-map))
-          lo  (first ks)
-          hi  (last ks)]
+    (let [ks (vec (keys ref-map))
+          lo (first ks)
+          hi (last ks)]
       (is (= (vec (subseq ref-map >= lo <= hi))
              (vec (if/get-range lmdb dbi [:closed lo hi] :long :long)))
           "get-range :closed")
@@ -982,7 +1061,7 @@
      ops2 gen-key-iter-ops]
     (let [dir  (u/tmp-dir (str "kv-wal-fuzz-ki-" (UUID/randomUUID)))
           lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                                :kv-wal? true})]
+                               :kv-wal? true})]
       (try
         (if/open-dbi lmdb "a")
 
@@ -993,7 +1072,7 @@
 
           ;; Phase 2: replay to base, prune overlay, add new overlay
           (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                    c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
@@ -1003,6 +1082,38 @@
           (if/transact-kv lmdb (kv-ops->txn "a" ops2))
           (let [ref2 (apply-key-iter-ops ref1 ops2)]
             (verify-key-iter lmdb "a" ref2)))
+        true
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+(test/defspec kv-wal-fuzz-key-iter-large-test
+  80
+  (prop/for-all
+    [ops1 gen-key-iter-ops-large
+     ops2 gen-key-iter-ops-large
+     ops3 gen-key-iter-ops-large]
+    (let [dir  (u/tmp-dir (str "kv-wal-fuzz-ki-large-" (UUID/randomUUID)))
+          lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                               :kv-wal? true})]
+      (try
+        (if/open-dbi lmdb "a")
+        (if/transact-kv lmdb (kv-ops->txn "a" ops1))
+        (let [ref1 (apply-key-iter-ops (sorted-map) ops1)]
+          (verify-key-iter lmdb "a" ref1)
+          (binding [c/*trusted-apply* true
+                    c/*bypass-wal*    true]
+            (if/transact-kv lmdb c/kv-info
+                            [[:put c/last-indexed-wal-tx-id 0]
+                             [:put c/applied-wal-tx-id 0]]
+                            :data :data))
+          (if/flush-kv-indexer! lmdb)
+          (if/transact-kv lmdb (kv-ops->txn "a" ops2))
+          (let [ref2 (apply-key-iter-ops ref1 ops2)]
+            (verify-key-iter lmdb "a" ref2)
+            (if/transact-kv lmdb (kv-ops->txn "a" ops3))
+            (let [ref3 (apply-key-iter-ops ref2 ops3)]
+              (verify-key-iter lmdb "a" ref3))))
         true
         (finally
           (if/close-kv lmdb)
@@ -1025,6 +1136,22 @@
 
 (def ^:private gen-list-iter-ops
   (gen/not-empty (gen/vector gen-list-iter-op 1 20)))
+
+(def ^:private gen-list-iter-op-large
+  (gen/frequency
+    [[5 (gen/fmap (fn [[k vs]]
+                    {:op :put-list :k k :vs (vec (distinct vs))})
+                  (gen/tuple gen-large-long
+                             (gen/not-empty (gen/vector gen-large-long 1 10))))]
+     [3 (gen/fmap (fn [[k vs]]
+                    {:op :del-list :k k :vs (vec (distinct vs))})
+                  (gen/tuple gen-large-long
+                             (gen/not-empty (gen/vector gen-large-long 1 6))))]
+     [2 (gen/fmap (fn [k] {:op :wipe :k k})
+                  gen-large-long)]]))
+
+(def ^:private gen-list-iter-ops-large
+  (gen/not-empty (gen/vector gen-list-iter-op-large 15 80)))
 
 (defn- apply-list-iter-ops
   "Apply list ops to a sorted-map of key → sorted-set-of-values."
@@ -1049,7 +1176,7 @@
                         (when (seq m) (rseq m))
                         (seq m))]
           (for [[k vs] key-seq
-                v (if val-back? (rseq vs) (seq vs))]
+                v      (if val-back? (rseq vs) (seq vs))]
             [k v])))))
 
 (defn- list-ops->txn [dbi ops]
@@ -1087,14 +1214,50 @@
         "visit-list-range :all :all"))
   ;; Parametric value sub-range for a key that exists
   (when (seq ref-map)
-    (let [[k vs] (first ref-map)
-          v-lo   (first vs)
-          v-hi   (last vs)
+    (let [[k vs]   (first ref-map)
+          v-lo     (first vs)
+          v-hi     (last vs)
           expected (vec (for [v (subseq vs >= v-lo <= v-hi)] [k v]))]
       (is (= expected
              (vec (if/list-range lmdb dbi [:closed k k] :long
                                  [:closed v-lo v-hi] :long)))
-          "list-range :closed key :closed val"))))
+          "list-range :closed key :closed val"))
+    ;; Single-bound value ranges for a key with >= 3 values
+    (when-let [[k vs] (first (filter (fn [[_ s]] (>= (count s) 3)) ref-map))]
+      (let [mid (nth (vec vs) (quot (count vs) 2))]
+        (is (= (vec (for [v (subseq vs >= mid)] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:at-least mid] :long)))
+            "list-range :at-least val")
+        (is (= (vec (for [v (subseq vs <= mid)] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:at-most mid] :long)))
+            "list-range :at-most val")
+        (is (= (vec (for [v (subseq vs > mid)] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:greater-than mid] :long)))
+            "list-range :greater-than val")
+        (is (= (vec (for [v (subseq vs < mid)] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:less-than mid] :long)))
+            "list-range :less-than val")
+        ;; Back variants
+        (is (= (vec (for [v (reverse (subseq vs >= mid))] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:at-least-back mid] :long)))
+            "list-range :at-least-back val")
+        (is (= (vec (for [v (reverse (subseq vs <= mid))] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:at-most-back mid] :long)))
+            "list-range :at-most-back val")
+        (is (= (vec (for [v (reverse (subseq vs > mid))] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:greater-than-back mid] :long)))
+            "list-range :greater-than-back val")
+        (is (= (vec (for [v (reverse (subseq vs < mid))] [k v]))
+               (vec (if/list-range lmdb dbi [:closed k k] :long
+                                   [:less-than-back mid] :long)))
+            "list-range :less-than-back val")))))
 
 (defn- verify-list-key-range-iter
   "Verify list-key-range iteration (wrap-list-key-range-full-val-iterable)."
@@ -1129,7 +1292,7 @@
      ops2 gen-list-iter-ops]
     (let [dir  (u/tmp-dir (str "kv-wal-fuzz-li-" (UUID/randomUUID)))
           lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                                :kv-wal? true})]
+                               :kv-wal? true})]
       (try
         (if/open-list-dbi lmdb "l")
 
@@ -1141,7 +1304,7 @@
 
           ;; Phase 2: replay to base, prune overlay, add new overlay
           (binding [c/*trusted-apply* true
-                  c/*bypass-wal*    true]
+                    c/*bypass-wal*    true]
             (if/transact-kv lmdb c/kv-info
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
@@ -1157,6 +1320,40 @@
           (if/close-kv lmdb)
           (u/delete-files dir))))))
 
+(test/defspec kv-wal-fuzz-list-iter-large-test
+  80
+  (prop/for-all
+    [ops1 gen-list-iter-ops-large
+     ops2 gen-list-iter-ops-large
+     ops3 gen-list-iter-ops-large]
+    (let [dir  (u/tmp-dir (str "kv-wal-fuzz-li-large-" (UUID/randomUUID)))
+          lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                               :kv-wal? true})]
+      (try
+        (if/open-list-dbi lmdb "l")
+        (if/transact-kv lmdb (list-ops->txn "l" ops1))
+        (let [ref1 (apply-list-iter-ops (sorted-map) ops1)]
+          (verify-list-iter lmdb "l" ref1)
+          (verify-list-key-range-iter lmdb "l" ref1)
+          (binding [c/*trusted-apply* true
+                    c/*bypass-wal*    true]
+            (if/transact-kv lmdb c/kv-info
+                            [[:put c/last-indexed-wal-tx-id 0]
+                             [:put c/applied-wal-tx-id 0]]
+                            :data :data))
+          (if/flush-kv-indexer! lmdb)
+          (if/transact-kv lmdb (list-ops->txn "l" ops2))
+          (let [ref2 (apply-list-iter-ops ref1 ops2)]
+            (verify-list-iter lmdb "l" ref2)
+            (verify-list-key-range-iter lmdb "l" ref2)
+            (if/transact-kv lmdb (list-ops->txn "l" ops3))
+            (let [ref3 (apply-list-iter-ops ref2 ops3)]
+              (verify-list-iter lmdb "l" ref3)
+              (verify-list-key-range-iter lmdb "l" ref3))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
 ;; ---------------------------------------------------------------------------
 ;; TX-Log API tests
 ;; ---------------------------------------------------------------------------
@@ -1164,7 +1361,7 @@
 (deftest test-open-tx-log-basic
   (let [dir  (u/tmp-dir (str "kv-wal-txlog-basic-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                              :kv-wal? true})]
+                             :kv-wal? true})]
     (try
       (if/open-dbi lmdb "a")
       (let [base-id ^long (last-wal-id lmdb)]
@@ -1182,9 +1379,9 @@
         (u/delete-files dir)))))
 
 (deftest test-open-tx-log-range
-  (let [dir  (u/tmp-dir (str "kv-wal-txlog-range-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                              :kv-wal? true})]
+(let [dir  (u/tmp-dir (str "kv-wal-txlog-range-" (UUID/randomUUID)))
+      lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                           :kv-wal? true})]
     (try
       (if/open-dbi lmdb "a")
       (let [base-id ^long (last-wal-id lmdb)]
