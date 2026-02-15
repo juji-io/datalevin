@@ -839,19 +839,6 @@
         (assoc m dbi merged)))
     (or overlay {}) delta))
 
-(defn- merge-overlay-delta!
-  "Merge delta into overlay in-place (mutates existing ConcurrentSkipListMaps).
-   Only creates new maps for previously-unseen DBIs."
-  [overlay delta]
-  (reduce-kv
-    (fn [m dbi dbi-delta]
-      (let [existing?                     (contains? m dbi)
-            ^ConcurrentSkipListMap merged (or (get m dbi)
-                                              (empty-overlay-keys-map))]
-        (doseq [[k entry] dbi-delta]
-          (.put merged k (merge-overlay-entry (.get merged k) entry)))
-        (if existing? m (assoc m dbi merged))))
-    (or overlay {}) delta))
 
 (defn- rebuild-overlay-by-dbi
   [committed-by-tx]
@@ -861,7 +848,7 @@
     {} committed-by-tx))
 
 (declare ensure-wal-channel! append-kv-wal-record! refresh-kv-wal-info!
-         refresh-kv-wal-meta-info! publish-kv-wal-watermarks!
+         refresh-kv-wal-meta-info!
          publish-kv-committed-overlay! publish-kv-overlay-watermark!
          prune-kv-committed-overlay! private-overlay-by-dbi
          overlay-for-dbi kv-overlay-active? publish-kv-wal-meta!
@@ -1833,20 +1820,28 @@
 
 (defn- wal-checkpoint!
   "Flush WAL to base LMDB, persist vector indices, and GC old segments."
-  [lmdb]
+  [lmdb info]
   (try
     (i/flush-kv-indexer! lmdb)
     (doseq [idx (keep @l/vector-indices (u/list-files (i/env-dir lmdb)))]
       (i/persist-vecs idx))
     (i/gc-wal-segments! lmdb)
-    (catch Exception _)))
+    (vswap! info assoc :wal-checkpoint-fail-count 0)
+    (catch Exception e
+      (let [n (long (vswap! info update :wal-checkpoint-fail-count
+                            (fnil inc 0)))]
+        (when (or (= n 1) (zero? (mod n 10)))
+          (binding [*out* *err*]
+            (println (str "WARNING: WAL checkpoint failed ("
+                         n " consecutive failure(s))"))
+            (stt/print-stack-trace e)))))))
 
 (defn- start-scheduled-wal-checkpoint
   [info lmdb]
   (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
         fut       (.scheduleWithFixedDelay
                     scheduler
-                    ^Runnable #(wal-checkpoint! lmdb)
+                    ^Runnable #(wal-checkpoint! lmdb info)
                     ^long c/wal-checkpoint-interval
                     ^long c/wal-checkpoint-interval
                     TimeUnit/SECONDS)]
@@ -2049,6 +2044,10 @@
         (when (.isOpen ch)
           (let [sync-mode (or (:wal-sync-mode @info) c/*wal-sync-mode*)]
             (try (wal/sync-channel! ch sync-mode) (catch Exception _ nil)))))
+      ;; Promote synced watermark after final sync
+      (when (:kv-wal? @info)
+        (when-let [committed (:last-committed-wal-tx-id @info)]
+          (vswap! info assoc :last-synced-wal-tx-id committed)))
       ;; Flush WAL meta so reopen recovers the correct committed watermark
       (when (:kv-wal? @info)
         (when-let [wal-id (:last-committed-wal-tx-id @info)]
@@ -2286,9 +2285,7 @@
                   tx-time   (:tx-time wal-entry)]
               (when wal-id
                 (locking write-txn
-                  (run-writer-step! :step-4
-                                    #(publish-kv-wal-watermarks!
-                                       this wal-id tx-time))
+                  (run-writer-step! :step-4 (fn [] nil))
                   (run-writer-step! :step-5
                                     #(publish-kv-committed-overlay!
                                        this wal-id (:ops wal-entry)))
@@ -2968,16 +2965,19 @@
           ch           (ensure-wal-channel! lmdb dir seg-id)]
       (.write ^FileChannel ch (ByteBuffer/wrap record))
       (when sync? (wal/sync-channel! ch sync-mode))
-      (vswap! (.-info lmdb) assoc
-              :wal-next-tx-id wal-id
-              :last-committed-wal-tx-id wal-id
-              :last-committed-user-tx-id wal-id
-              :committed-last-modified-ms now-ms
-              :wal-segment-id seg-id
-              :wal-segment-created-ms seg-start-ms
-              :wal-segment-bytes (+ ^long seg-bytes record-bytes)
-              :wal-unsynced-count (if sync? 0 unsynced)
-              :wal-last-sync-ms (if sync? now-ms last-sync-ms))
+      (vswap! (.-info lmdb)
+              (fn [m]
+                (cond-> (assoc m
+                               :wal-next-tx-id wal-id
+                               :last-committed-wal-tx-id wal-id
+                               :last-committed-user-tx-id wal-id
+                               :committed-last-modified-ms now-ms
+                               :wal-segment-id seg-id
+                               :wal-segment-created-ms seg-start-ms
+                               :wal-segment-bytes (+ ^long seg-bytes record-bytes)
+                               :wal-unsynced-count (if sync? 0 unsynced)
+                               :wal-last-sync-ms (if sync? now-ms last-sync-ms))
+                  sync? (assoc :last-synced-wal-tx-id wal-id))))
       {:wal-id  wal-id
        :tx-time now-ms
        :ops     ops})))
@@ -3015,6 +3015,7 @@
               :wal-next-tx-id next-id
               :applied-wal-tx-id applied-id
               :last-committed-wal-tx-id committed-id
+              :last-synced-wal-tx-id committed-id
               :last-indexed-wal-tx-id indexed-id
               :last-committed-user-tx-id user-id
               :committed-last-modified-ms committed-ms
@@ -3043,14 +3044,6 @@
               :wal-meta-last-flush-ms now-ms
               :wal-meta-pending-txs 0))))
 
-(defn- publish-kv-wal-watermarks!
-  [^CppLMDB lmdb wal-id tx-time]
-  (vswap! (.-info lmdb) assoc
-          :wal-next-tx-id wal-id
-          :last-committed-wal-tx-id wal-id
-          :last-committed-user-tx-id wal-id
-          :committed-last-modified-ms tx-time))
-
 (defn- publish-kv-committed-overlay!
   [^CppLMDB lmdb wal-id ops]
   (let [delta (overlay-delta-by-dbi ops)]
@@ -3059,7 +3052,7 @@
             ^ConcurrentSkipListMap committed-by-tx
             (or (:kv-overlay-committed-by-tx info)
                 (empty-overlay-committed-map))
-            by-dbi (merge-overlay-delta!
+            by-dbi (merge-overlay-delta
                      (:kv-overlay-by-dbi info) delta)]
         (.put committed-by-tx wal-id delta)
         (vswap! (.-info lmdb) assoc
@@ -3121,13 +3114,18 @@
 (defn- publish-kv-wal-meta!
   [^CppLMDB lmdb wal-id now-ms]
   (let [info      @(.-info lmdb)
+        ;; Only persist watermarks that have been durably synced to avoid
+        ;; claiming records are committed when they may be lost on crash.
+        synced-id ^long (or (:last-synced-wal-tx-id info) 0)
+        durable-id (min ^long wal-id synced-id)
         seg-id    (or (:wal-segment-id info) 0)
         indexed   (or (:last-indexed-wal-tx-id info) 0)
-        user-id   (or (:last-committed-user-tx-id info) wal-id)
+        user-id   (or (:last-committed-user-tx-id info) durable-id)
         commit-ms (or (:committed-last-modified-ms info) now-ms)
-        snapshot  {c/last-committed-wal-tx-id   wal-id
+        snapshot  {c/last-committed-wal-tx-id   durable-id
                    c/last-indexed-wal-tx-id     indexed
-                   c/last-committed-user-tx-id  user-id
+                   c/last-committed-user-tx-id  (min ^long user-id
+                                                     ^long durable-id)
                    c/committed-last-modified-ms commit-ms
                    :wal/last-segment-id         seg-id
                    :wal/enabled?                true}
@@ -3170,7 +3168,10 @@
           (when (and (>= ^long pressure ^long threshold)
                      (> ^long committed ^long indexed))
             (i/flush-kv-indexer! lmdb)))))
-    (catch Exception _ nil)))
+    (catch Exception e
+      (binding [*out* *err*]
+        (println "WARNING: WAL memory-pressure flush failed")
+        (stt/print-stack-trace e)))))
 
 (defn- key-range-list-count-fast
   [lmdb dbi-name [range-type k1 k2] k-type cap]

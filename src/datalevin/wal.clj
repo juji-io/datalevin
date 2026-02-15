@@ -417,20 +417,23 @@
               _user-start (read-u64 din)
               _user-end   (read-u64 din)
               user-count  (read-u32 din)
-              _entries    (dotimes [_ user-count]
-                            (read-u64 din)
-                            (read-u64 din)
-                            (let [^int meta-len (read-u32 din)]
-                              (when (pos? meta-len)
-                                (read-bytes din meta-len)))
-                            (read-u32 din)
-                            (read-u32 din))
+              tx-time     (long
+                            (loop [i 0 t 0]
+                              (if (< i user-count)
+                                (let [_uid   (read-u64 din)
+                                      tt     (read-u64 din)
+                                      ^int ml (read-u32 din)]
+                                  (when (pos? ml) (read-bytes din ml))
+                                  (read-u32 din)
+                                  (read-u32 din)
+                                  (recur (inc i) (long (max (long t) (long tt)))))
+                                t)))
               op-count    ^int (read-u32 din)
               ops         (loop [i 0 acc []]
                             (if (< i op-count)
                               (recur (inc i) (conj acc (decode-kv-op din)))
                               acc))]
-          {:wal/tx-id wal-id :wal/ops ops})))))
+          {:wal/tx-id wal-id :wal/tx-time tx-time :wal/ops ops})))))
 
 (defn read-wal-records
   [dir from-id upto-id]
@@ -468,21 +471,25 @@
       (if-let [^File f (first fs)]
         (let [seg-id (long (or (parse-segment-id f) 0))
               path   (.getAbsolutePath f)
-              cur-id (or (with-segment-data-input
-                           path
-                           (fn [in]
-                             (loop [cid last-id]
-                               (let [rec (try
-                                           (read-record in)
-                                           (catch EOFException _ ::eof))]
-                                 (if (= rec ::eof)
-                                   cid
-                                   (recur (long (:wal/tx-id rec))))))))
-                         last-id)]
+              [cur-id cur-time]
+              (or (with-segment-data-input
+                    path
+                    (fn [in]
+                      (loop [cid last-id
+                             ctime last-time]
+                        (let [rec (try
+                                    (read-record in)
+                                    (catch EOFException _ ::eof))]
+                          (if (= rec ::eof)
+                            [cid ctime]
+                            (recur (long (:wal/tx-id rec))
+                                   (max ctime
+                                        (long (:wal/tx-time rec)))))))))
+                  [last-id last-time])]
           (recur (next fs)
                  (long cur-id)
                  (max last-seg seg-id)
-                 (max last-time (.lastModified f))))
+                 (long cur-time)))
         {:last-wal-id     last-id
          :last-segment-id last-seg
          :last-segment-ms last-time}))))

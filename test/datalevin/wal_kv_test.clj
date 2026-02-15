@@ -214,6 +214,7 @@
                     dir
                     {:flags                  (conj c/default-env-flags :nosync)
                      :kv-wal?                true
+                     :wal-group-commit       1
                      :wal-meta-flush-max-txs 3
                      :wal-meta-flush-max-ms  60000})
         meta-path (str dir u/+separator+ c/wal-dir u/+separator+
