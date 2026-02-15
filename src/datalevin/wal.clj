@@ -17,7 +17,7 @@
    [datalevin.util :as u])
   (:import
    [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
-    DataOutputStream EOFException File]
+    DataOutputStream EOFException File FileNotFoundException]
    [java.util.zip CRC32C]
    [java.util Arrays]
    [java.nio ByteBuffer]
@@ -87,8 +87,15 @@
 (defn- byte->flag
   [b]
   (or (wal-id->flag (int (bit-and (int b) 0xFF)))
-      (u/raise "Unknown WAL flag tag"
-               {:error :wal/invalid-flag-tag :tag b})))
+       (u/raise "Unknown WAL flag tag"
+                {:error :wal/invalid-flag-tag :tag b})))
+
+(defn- with-segment-data-input
+  [path f]
+  (try
+    (with-open [^DataInputStream in (DataInputStream. (io/input-stream path))]
+      (f in))
+    (catch FileNotFoundException _)))
 
 (defn- normalize-flags
   [flags]
@@ -433,18 +440,22 @@
       (mapcat
         (fn [^File f]
           (let [path (.getAbsolutePath f)]
-            (with-open [in (DataInputStream. (io/input-stream path))]
-              (loop [acc (transient [])]
-                (let [rec (try
-                            (read-record in)
-                            (catch EOFException _ ::eof))]
-                  (if (= rec ::eof)
-                    (persistent! acc)
-                    (let [wal-id (long (:wal/tx-id rec))]
-                      (cond
-                        (<= wal-id from-id) (recur acc)
-                        (<= wal-id upto-id) (recur (conj! acc rec))
-                        :else               (persistent! acc)))))))))
+            (or
+             (with-segment-data-input
+               path
+               (fn [in]
+                 (loop [acc (transient [])]
+                   (let [rec (try
+                               (read-record in)
+                               (catch EOFException _ ::eof))]
+                     (if (= rec ::eof)
+                       (persistent! acc)
+                       (let [wal-id (long (:wal/tx-id rec))]
+                         (cond
+                           (<= wal-id from-id) (recur acc)
+                           (<= wal-id upto-id) (recur (conj! acc rec))
+                           :else               (persistent! acc))))))))
+             [])))
         (segment-files dir)))))
 
 (defn scan-last-wal
@@ -457,14 +468,17 @@
       (if-let [^File f (first fs)]
         (let [seg-id (long (or (parse-segment-id f) 0))
               path   (.getAbsolutePath f)
-              cur-id (with-open [in (DataInputStream. (io/input-stream path))]
-                       (loop [cid last-id]
-                         (let [rec (try
-                                     (read-record in)
-                                     (catch EOFException _ ::eof))]
-                           (if (= rec ::eof)
-                             cid
-                             (recur (long (:wal/tx-id rec)))))))]
+              cur-id (or (with-segment-data-input
+                           path
+                           (fn [in]
+                             (loop [cid last-id]
+                               (let [rec (try
+                                           (read-record in)
+                                           (catch EOFException _ ::eof))]
+                                 (if (= rec ::eof)
+                                   cid
+                                   (recur (long (:wal/tx-id rec))))))))
+                         last-id)]
           (recur (next fs)
                  (long cur-id)
                  (max last-seg seg-id)
@@ -477,14 +491,17 @@
   "Return the highest wal-id in a segment file, or 0 if empty."
   [^File f]
   (let [path (.getAbsolutePath f)]
-    (with-open [in (DataInputStream. (io/input-stream path))]
-      (loop [max-id 0]
-        (let [rec (try
-                    (read-record in)
-                    (catch EOFException _ ::eof))]
-          (if (= rec ::eof)
-            max-id
-            (recur (long (:wal/tx-id rec)))))))))
+    (or (with-segment-data-input
+          path
+          (fn [in]
+            (loop [max-id 0]
+              (let [rec (try
+                          (read-record in)
+                          (catch EOFException _ ::eof))]
+                (if (= rec ::eof)
+                  max-id
+                  (recur (long (:wal/tx-id rec))))))))
+        0)))
 
 (def ^:private wal-meta-slot-size 64)
 (def ^:private wal-meta-payload-off 9)

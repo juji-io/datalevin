@@ -22,6 +22,7 @@
    [datalevin.migrate :as m]
    [datalevin.validate :as vld]
    [datalevin.wal :as wal]
+   [datalevin.spill :as sp]
    [datalevin.scan :as scan]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
@@ -266,7 +267,8 @@
          wrap-key-iterable wrap-list-iterable
          wrap-list-key-range-full-val-iterable wrap-list-full-val-iterable
          overlay-iterate-key overlay-iterate-list
-         overlay-iterate-list-key-range-val-full)
+         overlay-iterate-list-key-range-val-full
+         maybe-flush-kv-indexer-on-pressure!)
 
 (defn- val-size
   [x]
@@ -2276,6 +2278,8 @@
                     :step-8
                     #(maybe-publish-kv-wal-meta! this wal-id))
                   (catch Exception _ nil)))
+              (when wal-id
+                (maybe-flush-kv-indexer-on-pressure! this))
               (when (.-wal-ops wtxn)
                 (vreset! (.-wal-ops wtxn) []))
               (when (.-kv-overlay-private wtxn)
@@ -2362,6 +2366,8 @@
                   (maybe-publish-kv-wal-meta! this wal-id)
                   (vld/check-failpoint :step-8 :after)
                   (catch Exception _ nil)))
+              (when wal-id
+                (maybe-flush-kv-indexer-on-pressure! this))
               :transacted)
             (catch Exception e
               (refresh-kv-wal-info! this)
@@ -3104,6 +3110,22 @@
                        (>= (- ^long now-ms ^long last-flush) ^long flush-ms))]
     (when due?
       (publish-kv-wal-meta! lmdb wal-id now-ms))))
+
+(defn- maybe-flush-kv-indexer-on-pressure!
+  [^CppLMDB lmdb]
+  (try
+    (let [info @(.-info lmdb)]
+      (when (:kv-wal? info)
+        (sp/memory-updater)
+        (let [pressure  @sp/memory-pressure
+              threshold (or (get-in info [:spill-opts :spill-threshold])
+                            c/default-spill-threshold)
+              committed (or (:last-committed-wal-tx-id info) 0)
+              indexed   (or (:last-indexed-wal-tx-id info) 0)]
+          (when (and (>= ^long pressure ^long threshold)
+                     (> ^long committed ^long indexed))
+            (i/flush-kv-indexer! lmdb)))))
+    (catch Exception _ nil)))
 
 (defn- key-range-list-count-fast
   [lmdb dbi-name [range-type k1 k2] k-type cap]

@@ -5,6 +5,7 @@
    [datalevin.bits :as b]
    [datalevin.wal :as wal]
    [datalevin.interface :as if]
+   [datalevin.spill :as sp]
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.test.core :as tdc :refer [db-fixture]]
@@ -354,6 +355,29 @@
         (if/close-kv lmdb2)
         (u/delete-files dir)
         (u/delete-files dir2)))))
+
+(deftest kv-wal-memory-pressure-flush-test
+  (let [dir   (u/tmp-dir (str "kv-wal-mem-pressure-" (UUID/randomUUID)))
+        lmdb  (l/open-kv dir {:flags      (conj c/default-env-flags :nosync)
+                              :kv-wal?    true
+                              :spill-opts {:spill-threshold 1}})]
+    (try
+      (if/open-dbi lmdb "a")
+      (let [base-id       ^long (last-wal-id lmdb)
+            prev-pressure @sp/memory-pressure]
+        (try
+          (vreset! sp/memory-pressure 1)
+          (if/open-transact-kv lmdb)
+          (if/transact-kv lmdb [[:put "a" 1 "x"]])
+          (is (= :committed (if/close-transact-kv lmdb)))
+          (let [wm (if/kv-wal-watermarks lmdb)]
+            (is (= (inc base-id) (:last-committed-wal-tx-id wm)))
+            (is (= (inc base-id) (:last-indexed-wal-tx-id wm))))
+          (finally
+            (vreset! sp/memory-pressure prev-pressure))))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
 
 (deftest kv-wal-replay-legacy-applied-marker-fallback-test
   (let [dir  (u/tmp-dir (str "kv-wal-replay-legacy-applied-" (UUID/randomUUID)))
