@@ -40,9 +40,8 @@
                       nil
                       (catch Exception e e))]
         (is (instance? clojure.lang.ExceptionInfo ex))
-        (if (= step :step-4)
-          (is (nil? (if/get-value lmdb "a" 1)))
-          (is (= "x" (if/get-value lmdb "a" 1))))
+        ;; WAL record is durable after step-3; recovery replays into overlay
+        (is (= "x" (if/get-value lmdb "a" 1)))
         (is (= (u/long-inc base-id) (last-wal-id lmdb)))
 
         ;; After post-commit failure, WAL ids must continue from durable state.
@@ -135,8 +134,9 @@
                       nil
                       (catch Exception e e))]
         (is (instance? clojure.lang.ExceptionInfo ex))
-        ;; Step-3 failpoint after commit must not roll back durable effects.
-        (is (nil? (if/get-value lmdb "a" 1)))
+        ;; Step-3 failpoint after WAL append — data is durable on disk and
+        ;; recovery replays the WAL into the overlay, so it is visible.
+        (is (= "x" (if/get-value lmdb "a" 1)))
         (is (= (inc base-id) (last-wal-id lmdb)))
 
         ;; After post-commit failure, subsequent tx should continue from next WAL id.
@@ -526,7 +526,7 @@
       (is (= [[1 "x"] [3 "z"]]
              (->> (if/range-seq lmdb "a" [:all] :data :data false
                                 {:batch-size 1})
-                  (apply concat)
+                  seq
                   vec)))
       (let [sampled (volatile! [])]
         (if/visit-key-sample lmdb "a" (long-array [0 1]) 0 0
@@ -784,6 +784,215 @@
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Concurrent read/write tests
+;; ---------------------------------------------------------------------------
+
+(deftest kv-wal-concurrent-read-during-writes-test
+  (testing "Readers see a consistent snapshot while writers commit"
+    (let [dir    (u/tmp-dir (str "kv-wal-conc-rw-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                  :kv-wal? true})
+          n-txs  100
+          errors (atom [])
+          stop?  (atom false)]
+      (try
+        (if/open-dbi lmdb "a")
+        ;; Reader thread: continuously reads all keys and checks that
+        ;; every key that exists has the value matching its key number.
+        ;; A partially-visible transaction would show a key with the
+        ;; wrong value or show key N without key N-1 (monotonicity).
+        (let [reader
+              (future
+                (try
+                  (loop [reads 0]
+                    (when-not @stop?
+                      (let [pairs (vec (if/get-range lmdb "a" [:all]
+                                                     :long :long))]
+                        ;; Every [k v] must satisfy v = k (our write pattern)
+                        (doseq [[k v] pairs]
+                          (when (not= k v)
+                            (swap! errors conj
+                                   {:type :value-mismatch :k k :v v
+                                    :read-num reads})))
+                        ;; Keys must be a contiguous prefix 0..max
+                        (when (seq pairs)
+                          (let [ks (mapv first pairs)]
+                            (when (not= ks (vec (range (count ks))))
+                              (swap! errors conj
+                                     {:type :non-contiguous :keys ks
+                                      :read-num reads})))))
+                      (recur (inc reads))))
+                  (catch Exception e
+                    (swap! errors conj {:type :reader-exception
+                                        :msg  (.getMessage e)}))))]
+          ;; Writer: commit keys 0..n-txs-1, one per transaction
+          (dotimes [i n-txs]
+            (if/transact-kv lmdb [[:put "a" (long i) (long i) :long :long]]))
+          (reset! stop? true)
+          @reader
+          ;; Final verification: all keys present
+          (is (= (vec (map (fn [i] [i i]) (range n-txs)))
+                 (vec (if/get-range lmdb "a" [:all] :long :long))))
+          (is (empty? @errors)
+              (str "Concurrent reader saw inconsistency: "
+                   (first @errors))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+(deftest kv-wal-concurrent-read-during-flush-test
+  (testing "Reads remain consistent while flush+prune runs concurrently"
+    (let [dir    (u/tmp-dir (str "kv-wal-conc-flush-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                  :kv-wal? true})
+          n-txs  50
+          errors (atom [])
+          stop?  (atom false)]
+      (try
+        (if/open-dbi lmdb "a")
+        ;; Seed data into overlay
+        (dotimes [i n-txs]
+          (if/transact-kv lmdb [[:put "a" (long i) (long i) :long :long]]))
+        ;; Reader: continuously verify all n-txs keys are visible
+        (let [reader
+              (future
+                (try
+                  (loop [reads 0]
+                    (when-not @stop?
+                      (let [cnt (if/range-count lmdb "a" [:all] :long)]
+                        ;; Count must never drop below n-txs once all
+                        ;; writes are committed (overlay or base).
+                        (when (< cnt n-txs)
+                          (swap! errors conj
+                                 {:type :missing-keys :count cnt
+                                  :expected n-txs :read-num reads})))
+                      (recur (inc reads))))
+                  (catch Exception e
+                    (swap! errors conj {:type :reader-exception
+                                        :msg  (.getMessage e)}))))]
+          ;; Flush in the foreground — moves data from overlay to base
+          (if/flush-kv-indexer! lmdb)
+          ;; Write more data post-flush (goes into fresh overlay)
+          (dotimes [i 20]
+            (if/transact-kv lmdb [[:put "a" (long (+ n-txs i))
+                                   (long (+ n-txs i)) :long :long]]))
+          (reset! stop? true)
+          @reader
+          (is (= (+ n-txs 20)
+                 (if/range-count lmdb "a" [:all] :long)))
+          (is (empty? @errors)
+              (str "Reader saw inconsistency during flush: "
+                   (first @errors))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+(deftest kv-wal-concurrent-multithread-writers-readers-test
+  (testing "Multiple reader threads with sequential writers"
+    (let [dir      (u/tmp-dir (str "kv-wal-conc-mt-" (UUID/randomUUID)))
+          lmdb     (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                    :kv-wal? true})
+          n-txs    80
+          n-readers 4
+          errors   (atom [])
+          stop?    (atom false)]
+      (try
+        (if/open-dbi lmdb "a")
+        ;; Launch multiple reader threads
+        (let [readers
+              (vec
+                (for [rid (range n-readers)]
+                  (future
+                    (try
+                      (loop []
+                        (when-not @stop?
+                          ;; Point reads: if a key exists, its value must match
+                          (let [k (long (rand-int n-txs))]
+                            (when-let [v (if/get-value lmdb "a" k :long :long)]
+                              (when (not= k v)
+                                (swap! errors conj
+                                       {:type :point-read-mismatch
+                                        :reader rid :k k :v v}))))
+                          ;; Range read: values must match keys
+                          (doseq [[k v] (if/get-range lmdb "a" [:all]
+                                                      :long :long)]
+                            (when (not= k v)
+                              (swap! errors conj
+                                     {:type :range-mismatch
+                                      :reader rid :k k :v v})))
+                          (recur)))
+                      (catch Exception e
+                        (swap! errors conj
+                               {:type :reader-exception :reader rid
+                                :msg  (.getMessage e)}))))))]
+          ;; Writer: sequential transactions
+          (dotimes [i n-txs]
+            (if/transact-kv lmdb [[:put "a" (long i) (long i) :long :long]]))
+          (reset! stop? true)
+          (doseq [r readers] @r)
+          (is (= (vec (map (fn [i] [i i]) (range n-txs)))
+                 (vec (if/get-range lmdb "a" [:all] :long :long))))
+          (is (empty? @errors)
+              (str "Multi-reader saw inconsistency: "
+                   (first @errors))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
+
+(deftest kv-wal-concurrent-list-read-during-writes-test
+  (testing "Dupsort overlay reads consistent during concurrent writes"
+    (let [dir    (u/tmp-dir (str "kv-wal-conc-list-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                  :kv-wal? true})
+          n-txs  50
+          errors (atom [])
+          stop?  (atom false)]
+      (try
+        (if/open-list-dbi lmdb "l")
+        ;; Reader: continuously reads the list for key "k" and verifies
+        ;; that the returned values are a sorted subset of 0..n-txs-1
+        (let [reader
+              (future
+                (try
+                  (loop [reads 0]
+                    (when-not @stop?
+                      (let [vals (into [] (if/get-list lmdb "l" "k"
+                                                       :string :long))
+                            cnt  (count vals)]
+                        ;; Values must be monotonically non-decreasing
+                        (when (> cnt 1)
+                          (when-not (every? (fn [[a b]] (<= ^long a ^long b))
+                                            (partition 2 1 vals))
+                            (swap! errors conj
+                                   {:type :unsorted :vals vals
+                                    :read-num reads})))
+                        ;; Each value must be in range [0, n-txs)
+                        (doseq [v vals]
+                          (when-not (and (>= ^long v 0) (< ^long v n-txs))
+                            (swap! errors conj
+                                   {:type :out-of-range :v v
+                                    :read-num reads}))))
+                      (recur (inc reads))))
+                  (catch Exception e
+                    (swap! errors conj {:type :reader-exception
+                                        :msg  (.getMessage e)}))))]
+          ;; Writer: add values one at a time to the list
+          (dotimes [i n-txs]
+            (if/transact-kv lmdb [[:put-list "l" "k" [(long i)]
+                                   :string :long]]))
+          (reset! stop? true)
+          @reader
+          ;; Final: all values present
+          (is (= (vec (range n-txs))
+                 (vec (if/get-list lmdb "l" "k" :string :long))))
+          (is (empty? @errors)
+              (str "List reader saw inconsistency: "
+                   (first @errors))))
+        (finally
+          (if/close-kv lmdb)
+          (u/delete-files dir))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Generative / fuzz tests

@@ -95,7 +95,7 @@
   (try
     (with-open [^DataInputStream in (DataInputStream. (io/input-stream path))]
       (f in))
-    (catch FileNotFoundException _)))
+    (catch java.io.IOException _)))
 
 (defn- normalize-flags
   [flags]
@@ -183,6 +183,32 @@
             (bf/set-tl-buffer new-buf)
             (recur new-buf)))))))
 
+(defn- encode-to-buf
+  "Encode value x with type t into the thread-local ByteBuffer.
+  Returns the buffer flipped and ready to read (position=0, limit=encoded-len).
+  Avoids allocating a byte array — caller can write directly from backing array."
+  ^ByteBuffer [x t]
+  (let [t (or t :data)]
+    (loop [^ByteBuffer buf (bf/get-tl-buffer)]
+      (let [ok (try
+                 (b/put-bf buf x t)
+                 true
+                 (catch Exception e
+                   (if (instance? java.nio.BufferOverflowException e)
+                     false
+                     (throw e))))]
+        (if ok
+          buf
+          (let [new-buf (ByteBuffer/allocate (* 2 (.capacity buf)))]
+            (bf/set-tl-buffer new-buf)
+            (recur new-buf)))))))
+
+(defn- write-buf!
+  "Write the readable portion of a heap ByteBuffer to a DataOutputStream.
+  Does not allocate — writes directly from the backing array."
+  [^DataOutputStream out ^ByteBuffer buf]
+  (.write out (.array buf) (.position buf) (.remaining buf)))
+
 (defn- dbi-name-bytes
   ^bytes [dbi-name]
   (.getBytes ^String dbi-name StandardCharsets/UTF_8))
@@ -226,13 +252,15 @@
         k-len         (alength k-bs)]
     (case op
       :put
-      (let [v-type  (normalize-type vt)
-            ^bytes v-bs (encode-bits v v-type)
-            v-len   (alength v-bs)]
+      (do
         (.writeByte out (int op-kv-put))
         (write-u16 out dbi-len) (write-bytes! out dbi-bs)
         (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
-        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        ;; Encode value into TL buffer and write directly — no byte[] alloc
+        (let [v-type       (normalize-type vt)
+              ^ByteBuffer vbuf (encode-to-buf v v-type)]
+          (write-type! out v-type) (write-u32 out (.remaining vbuf))
+          (write-buf! out vbuf))
         (write-flags! out flags))
 
       :del
@@ -243,23 +271,29 @@
         (write-flags! out flags))
 
       :put-list
-      (let [v-type  (normalize-type vt)
-            ^bytes v-bs (encode-bits v :data)
-            v-len   (alength v-bs)]
+      (do
         (.writeByte out (int op-kv-put-list))
         (write-u16 out dbi-len) (write-bytes! out dbi-bs)
         (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
-        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        ;; The value list is Nippy-encoded as a collection (:data), but
+        ;; the type tag records the *element* type so that WAL replay
+        ;; can re-encode individual elements into the overlay with the
+        ;; correct DBI value type.
+        (let [v-type       (normalize-type vt)
+              ^ByteBuffer vbuf (encode-to-buf v :data)]
+          (write-type! out v-type) (write-u32 out (.remaining vbuf))
+          (write-buf! out vbuf))
         (write-flags! out flags))
 
       :del-list
-      (let [v-type  (normalize-type vt)
-            ^bytes v-bs (encode-bits v :data)
-            v-len   (alength v-bs)]
+      (do
         (.writeByte out (int op-kv-del-list))
         (write-u16 out dbi-len) (write-bytes! out dbi-bs)
         (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
-        (write-type! out v-type) (write-u32 out v-len) (write-bytes! out v-bs)
+        (let [v-type       (normalize-type vt)
+              ^ByteBuffer vbuf (encode-to-buf v :data)]
+          (write-type! out v-type) (write-u32 out (.remaining vbuf))
+          (write-buf! out vbuf))
         (write-flags! out flags))
 
       (u/raise "Unsupported KV WAL op" {:error :wal/invalid-op :op op}))))
@@ -450,7 +484,8 @@
                  (loop [acc (transient [])]
                    (let [rec (try
                                (read-record in)
-                               (catch EOFException _ ::eof))]
+                               (catch EOFException _ ::eof)
+                               (catch Exception _ ::eof))]
                      (if (= rec ::eof)
                        (persistent! acc)
                        (let [wal-id (long (:wal/tx-id rec))]
@@ -479,7 +514,8 @@
                              ctime last-time]
                         (let [rec (try
                                     (read-record in)
-                                    (catch EOFException _ ::eof))]
+                                    (catch EOFException _ ::eof)
+                                    (catch Exception _ ::eof))]
                           (if (= rec ::eof)
                             [cid ctime]
                             (recur (long (:wal/tx-id rec))
@@ -495,19 +531,41 @@
          :last-segment-ms last-time}))))
 
 (defn segment-max-wal-id
-  "Return the highest wal-id in a segment file, or 0 if empty."
+  "Return the highest wal-id in a segment file, or 0 if empty.
+  Skips record bodies — only reads headers + first 8 bytes (wal-id) per record.
+  Returns the last good wal-id on corruption (bad magic, checksum, etc.)."
   [^File f]
   (let [path (.getAbsolutePath f)]
     (or (with-segment-data-input
           path
-          (fn [in]
+          (fn [^DataInputStream in]
             (loop [max-id 0]
-              (let [rec (try
-                          (read-record in)
-                          (catch EOFException _ ::eof))]
-                (if (= rec ::eof)
+              (let [result
+                    (try
+                      (let [^bytes magic (read-bytes in 4)]
+                        (when-not (Arrays/equals magic ^bytes wal-record-magic)
+                          (u/raise "Bad WAL record magic"
+                                   {:error :wal/bad-magic}))
+                        (let [_version  (.readUnsignedByte in)
+                              _flags    (.readUnsignedByte in)
+                              body-len  (read-u32 in)
+                              _checksum (read-u32 in)
+                              ;; wal-id is the first 8 bytes of body
+                              wal-id   (.readLong in)
+                              skip-len (- (long body-len) 8)]
+                          ;; skip rest of body — loop because
+                          ;; skipBytes may not skip the full amount
+                          (loop [remaining skip-len]
+                            (when (pos? remaining)
+                              (recur (- remaining
+                                        (.skipBytes in
+                                                    (int remaining))))))
+                          wal-id))
+                      (catch EOFException _ ::eof)
+                      (catch Exception _ ::eof))]
+                (if (= result ::eof)
                   max-id
-                  (recur (long (:wal/tx-id rec))))))))
+                  (recur (long result)))))))
         0)))
 
 (def ^:private wal-meta-slot-size 64)
@@ -640,9 +698,15 @@
                      (.toPath f)
                      (into-array StandardOpenOption
                                  [StandardOpenOption/CREATE
-                                  StandardOpenOption/WRITE
-                                  StandardOpenOption/TRUNCATE_EXISTING]))]
-      (.write ch (ByteBuffer/wrap payload))
+                                  StandardOpenOption/WRITE]))]
+      ;; Write in-place at fixed offsets instead of truncating first.
+      ;; TRUNCATE_EXISTING would destroy both slots before writing,
+      ;; so a crash between truncation and write completion could
+      ;; lose all meta.  Fixed-offset overwrites preserve the
+      ;; untouched slot if the process dies mid-write.
+      (let [buf (ByteBuffer/wrap payload)]
+        (.position ch 0)
+        (.write ch buf))
       (when metadata? (sync-channel! ch c/*wal-sync-mode*)))
     (when (and (not existed?) metadata?)
       (try
@@ -684,3 +748,5 @@
   [dir segment-id wal-id user-tx-id tx-time ops sync-mode]
   (append-record-bytes!
     dir segment-id (record-bytes wal-id user-tx-id tx-time ops) sync-mode))
+
+

@@ -692,3 +692,18 @@
                   (l/val-iterator (l/iterate-list-val-full dbi rtx cur))]
         (get-list* lmdb iter k kt vt))
       (raise "Fail to get a list: " e {:dbi dbi-name :key k}))))
+
+(defn get-first-list-val
+  "Get only the first value for a key in a list DBI, using the merged
+  (base + overlay) iterator. O(1) instead of materializing all values."
+  [lmdb dbi-name k kt vt ignore-key?]
+  (when k
+    (scan
+      (with-open [^AutoCloseable iter
+                  (l/val-iterator (l/iterate-list-val-full dbi rtx cur))]
+        (when (l/seek-key iter k kt)
+          (let [v (b/read-buffer (l/next-val iter) vt)]
+            (if ignore-key?
+              (if v v true)
+              [(b/expected-return k kt) v]))))
+      (raise "Fail to get first list val: " e {:dbi dbi-name :key k}))))
