@@ -111,6 +111,7 @@
   (writing? [db] "return true if this db should use write-txn")
   (write-txn [db]
     "return deref'able object that is the write-txn or a mutex for locking")
+  (kv-info [db] "return the volatile holding the kv-info map")
   (mark-write [db] "return a new db what uses write-txn")
   (reset-write [db] "Reset buffers for writing"))
 

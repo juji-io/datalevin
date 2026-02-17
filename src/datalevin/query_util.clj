@@ -11,7 +11,10 @@
   "Some utility functions for Datalog query processing"
   (:require
    [clojure.string :as str]
-   [datalevin.util :as u :refer [cond+ raise]]))
+   [datalevin.util :as u :refer [cond+ raise]]
+   [datalevin.constants :as c])
+  (:import
+   [datalevin.utl LRUCache]))
 
 (def ^{:dynamic true
        :doc     "List of symbols in current pattern that might potentiall be resolved to refs"}
@@ -105,6 +108,19 @@
        (symbol? (first form))
        (#{'quote 'clojure.core/quote} (first form))
        (= 2 (count form))))
+
+(def ^:dynamic *plan-cache* (LRUCache. c/query-result-cache-size))
+
+(def ^:dynamic *explain* nil)
+
+(def ^:dynamic *start-time* nil)
+
+(defprotocol IStep
+  (-type [step] "return the type of step as a keyword")
+  (-execute [step db source] "execute query step and return tuples")
+  (-execute-pipe [step db source sink] "execute as part of pipeline")
+  (-sample [step db source] "sample the step, not all steps implement")
+  (-explain [step context] "explain the query step"))
 
 (defn collect-vars [clause]
   (let [vars (volatile! #{})]

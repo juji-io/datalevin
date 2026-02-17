@@ -10,6 +10,7 @@
    [clojure.walk :as walk]
    [datalevin.core :as d]
    [datalevin.query :as sut]
+   [datalevin.planner :as pl]
    [datalevin.constants :as c]
    [datalevin.interpret :as i]
    [datalevin.parser :as dp]
@@ -580,13 +581,13 @@
     (testing "range combinations"
       (are [intervals]
           (let [ranges (to-range intervals)
-                combined (sut/combine-ranges ranges)
+                combined (pl/combine-ranges ranges)
                 flipped (walk/postwalk
                           #(case %
                              :db.value/sysMax 20
                              :db.value/sysMin 0
                              %)
-                          (sut/flip-ranges combined))]
+                          (pl/flip-ranges combined))]
             (= (select ranges)
                (select combined)
                (set/difference vset (select flipped))))
@@ -610,7 +611,7 @@
                 r2 (to-range vs2)
                 r3 (to-range vs3)]
             (= (set/intersection (select r1) (select r2) (select r3))
-               (select (sut/intersect-ranges r1 r2 r3))))
+               (select (pl/intersect-ranges r1 r2 r3))))
         [[1 6] [7 12]]         [[2 5] [8 11]] [[3 4] [9 10]]
         [[1 6] [7 12] [13 17]] [[2 5] [8 11]] [[3 4] [9 10]]
         [[1 3]]                [[1 4]]        [[2 6]]
@@ -626,7 +627,7 @@
      targets (gen/vector-distinct gen/nat {:num-elements 5})]
     (let [ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
                           bases offsets)
-          combined  (sut/combine-ranges ranges)
+          combined  (pl/combine-ranges ranges)
           in-range? (fn [ranges target]
                       (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))]
       (is (every? true?
@@ -1212,7 +1213,7 @@
                            [?e :name "Ivan"]
                            [?e :aka ?unused]]
             parsed       (dp/parse-query query)
-            replacements (#'sut/unused-var-replacements parsed)
+            replacements (pl/unused-var-replacements parsed)
             placeholder  (get replacements '?unused)]
         (is (contains? replacements '?unused))
         (is (clojure.string/starts-with? (name placeholder)
@@ -1231,7 +1232,7 @@
                            [?e :age ?a]
                            [(+ ?a 1) ?unused]]
             parsed       (dp/parse-query query)
-            replacements (#'sut/unused-var-replacements parsed)]
+            replacements (pl/unused-var-replacements parsed)]
         (is (= '_ (get replacements '?unused)))
         (is (not (.contains (str (:late-clauses (d/explain {:run? false} query db)))
                             "?unused")))

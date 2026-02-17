@@ -433,7 +433,14 @@
           _flags   (.readUnsignedByte in)
           body-len (read-u32 in)
           checksum (read-u32 in)
-          body     (read-bytes in body-len)
+          body     (let [bs (byte-array body-len)
+                         bytes-read (.read in bs)]
+                     (when (not= bytes-read body-len)
+                       (u/raise "WAL record truncated - possible crash during write"
+                                {:error    :wal/truncated
+                                 :expected body-len
+                                 :actual   bytes-read}))
+                     bs)
           actual   (crc32c body 0 body-len)]
       (when (not= checksum actual)
         (u/raise "WAL record checksum mismatch"
