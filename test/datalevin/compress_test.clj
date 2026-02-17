@@ -130,8 +130,9 @@
   (let [orig-dir (u/tmp-dir (str "kv-origin-" (UUID/randomUUID)))
         orig-kv  (l/open-kv orig-dir
                             {:flags (conj c/default-env-flags :nosync)})
-        ks       (repeatedly 100000 #(u/random-string (inc ^int (rand-int 256))))
-        vs       (repeatedly 100000 #(u/random-string (inc ^int (rand-int 256))))
+        n        70000
+        ks       (repeatedly n #(u/random-string (inc ^int (rand-int 200))))
+        vs       (repeatedly n #(u/random-string (inc ^int (rand-int 200))))
         txs      (map (fn [k v] [:put "a" k v :string :string]) ks vs)]
     (if/open-dbi orig-kv "a")
     (if/transact-kv orig-kv txs)

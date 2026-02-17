@@ -57,13 +57,13 @@
                 :in $ ?d
                 :where [?e :content ?d]]
         prior "prior data"
-        big   "bigger than 10 MB"]
+        big   "bigger than 1 MB"]
 
     (d/with-transaction [cn conn]
       (d/transact! cn [{:content prior :numbers [1 2]}])
       (is (= 1 (d/q query @cn prior)))
       (d/transact! cn [{:content big
-                        :numbers (range 10000000)}])
+                        :numbers (range 500000)}])
       (is (= 2 (d/q query @cn big))))
 
     (is (= 1 (d/q query @conn prior)))

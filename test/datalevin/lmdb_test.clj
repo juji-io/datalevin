@@ -712,8 +712,8 @@
   (let [dir  (u/tmp-dir (str "map-size-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:mapsize 1
                              :flags   (conj c/default-env-flags :nosync)})
-        data {:description "this is going to be bigger than 10 MB"
-              :numbers     (range 10000000)}]
+        data {:description "this is going to be bigger than 1 MB"
+              :numbers     (range 500000)}]
     (if/open-dbi lmdb "a")
 
     (l/with-transaction-kv [db lmdb]

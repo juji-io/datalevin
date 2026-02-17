@@ -15,7 +15,8 @@
   (:import
    [java.util UUID]
    [datalevin.db DB]
-   [datalevin.storage Store]))
+   [datalevin.storage Store]
+   [java.util.concurrent Executors Callable]))
 
 (use-fixtures :each db-fixture)
 
@@ -833,6 +834,126 @@
         (finally
           (d/close-kv lmdb)
           (u/delete-files dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Test: Concurrent writes stress test for WAL mode
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-concurrent-writes-stress-test
+  (let [dir     (u/tmp-dir (str "dl-wal-conc-write-" (UUID/randomUUID)))
+        conn    (dl-wal-conn dir {:instance/id
+                                  {:db/valueType   :db.type/long
+                                   :db/unique      :db.unique/identity
+                                   :db/cardinality :db.cardinality/one}})
+        n-threads 5
+        n-per     100]
+    (try
+      (testing "concurrent transact! with WAL"
+        (dorun (pmap #(d/transact! conn [{:instance/id %}])
+                     (range (* n-threads n-per))))
+        (is (= (* n-threads n-per)
+               (count (d/q '[:find ?e :where [?e :instance/id _]] @conn))))
+        (is (= (* n-threads n-per)
+               (d/q '[:find (count ?e) . :where [?e :instance/id _]] @conn))))
+
+      (testing "data correct after flush"
+        (d/flush-kv-indexer! (conn-lmdb conn))
+        (is (= (* n-threads n-per)
+               (d/q '[:find (count ?e) . :where [?e :instance/id _]] @conn))))
+
+      (finally
+        (d/close conn)
+        (u/delete-files dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Test: Concurrent reads + writes with with-transaction in WAL mode
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-concurrent-read-write-stress-test
+  (let [dir     (u/tmp-dir (str "dl-wal-conc-rw-" (UUID/randomUUID)))
+        conn    (dl-wal-conn dir {})
+        q+      '[:find ?v .
+                  :in $ ?i ?j
+                  :where [?e :i+j ?v] [?e :i ?i] [?e :j ?j]]
+        q*      '[:find ?v .
+                  :in $ ?i ?j
+                  :where [?e :i*j ?v] [?e :i ?i] [?e :j ?j]]
+        trials  (atom 0)
+        n-threads 5
+        n-iters   50
+        futures (mapv (fn [^long i]
+                        (future
+                          (dotimes [j n-iters]
+                            (d/transact! conn [{:i+j (+ i j) :i i :j j}])
+                            (d/with-transaction [cn conn]
+                              (is (= (+ i j) (d/q q+ (d/db cn) i j)))
+                              (swap! trials u/long-inc)
+                              (d/transact! cn [{:i*j (* i j) :i i :j j}])
+                              (is (= (* i j) (d/q q* (d/db cn) i j)))))))
+                      (range n-threads))]
+    (try
+      (doseq [f futures] @f)
+
+      (testing "all trials completed"
+        (is (= (* n-threads n-iters) @trials)))
+
+      (testing "all datoms present"
+        ;; each iteration creates 2 entities with 3 attrs each = 6 datoms
+        (is (= (* 6 n-threads n-iters)
+               (count (d/datoms @conn :eav)))))
+
+      (testing "query correctness after concurrent writes"
+        (dorun (for [i (range n-threads) j (range n-iters)]
+                 (do (is (= (+ ^long i ^long j) (d/q q+ @conn i j)))
+                     (is (= (* ^long i ^long j) (d/q q* @conn i j)))))))
+
+      (testing "data survives flush"
+        (d/flush-kv-indexer! (conn-lmdb conn))
+        (dorun (for [i (range n-threads) j (range n-iters)]
+                 (do (is (= (+ ^long i ^long j) (d/q q+ @conn i j)))
+                     (is (= (* ^long i ^long j) (d/q q* @conn i j)))))))
+
+      (finally
+        (d/close conn)
+        (u/delete-files dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Test: Concurrent reads during writes in WAL mode
+;; ---------------------------------------------------------------------------
+(deftest dl-wal-concurrent-readers-test
+  (let [dir  (u/tmp-dir (str "dl-wal-conc-read-" (UUID/randomUUID)))
+        conn (dl-wal-conn dir {:id {:db/unique :db.unique/identity}})
+        n    200]
+    (try
+      ;; Seed data
+      (d/transact! conn (mapv (fn [i] {:id i :value (* i 10)}) (range n)))
+
+      (testing "concurrent reads are consistent during writes"
+        (let [writer (future
+                       (dotimes [i n]
+                         (d/transact! conn [{:id (+ n i) :value (* (+ n i) 10)}])))
+              readers (mapv (fn [_]
+                              (future
+                                (dotimes [i n]
+                                  (let [v (d/q '[:find ?v .
+                                                 :in $ ?i
+                                                 :where [?e :id ?i] [?e :value ?v]]
+                                               @conn i)]
+                                    (is (= (* i 10) v))))))
+                            (range 5))]
+          @writer
+          (doseq [r readers] @r)))
+
+      (testing "all data present after concurrent activity"
+        (is (= (* 2 n)
+               (d/q '[:find (count ?e) . :where [?e :id _]] @conn))))
+
+      (testing "data correct after flush"
+        (d/flush-kv-indexer! (conn-lmdb conn))
+        (is (= (* 2 n)
+               (d/q '[:find (count ?e) . :where [?e :id _]] @conn))))
+
+      (finally
+        (d/close conn)
+        (u/delete-files dir)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Test 17: Vector index file-spool mode (forced by low buffer threshold)
