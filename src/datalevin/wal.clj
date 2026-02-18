@@ -11,19 +11,24 @@
   "Write Ahead Log (WAL)"
   (:require
    [clojure.java.io :as io]
+   [clojure.stacktrace :as stt]
+   [clojure.string :as s]
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
-   [datalevin.util :as u])
+   [datalevin.util :as u :refer [raise]]
+   [datalevin.interface :as i])
   (:import
    [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
-    DataOutputStream EOFException File FileNotFoundException]
+    DataOutputStream EOFException File]
    [java.util.zip CRC32C]
    [java.util Arrays]
-   [java.nio ByteBuffer]
+   [java.nio ByteBuffer BufferOverflowException]
    [java.nio.channels FileChannel]
    [java.nio.file StandardOpenOption]
-   [java.nio.charset StandardCharsets]))
+   [java.nio.charset StandardCharsets]
+   [java.util.concurrent TimeUnit ScheduledExecutorService
+    ScheduledFuture]))
 
 (def ^:const wal-format-major 1)
 (def ^:const wal-format-minor 0)
@@ -174,7 +179,7 @@
                      (b/put-bf buf x t)
                      (b/get-bytes (.duplicate buf))
                      (catch Exception e
-                       (if (instance? java.nio.BufferOverflowException e)
+                       (if (instance? BufferOverflowException e)
                          ::overflow
                          (throw e))))]
         (if (not= result ::overflow)
@@ -194,7 +199,7 @@
                  (b/put-bf buf x t)
                  true
                  (catch Exception e
-                   (if (instance? java.nio.BufferOverflowException e)
+                   (if (instance? BufferOverflowException e)
                      false
                      (throw e))))]
         (if ok
@@ -245,6 +250,7 @@
   "Encode and write a single KV op directly to the output stream."
   [^DataOutputStream out op-map]
   (let [{:keys [op dbi k v kt vt flags k-bytes dbi-bytes]} op-map
+
         ^bytes dbi-bs (or dbi-bytes (dbi-name-bytes dbi))
         k-type        (normalize-type kt)
         ^bytes k-bs   (or k-bytes (encode-bits k k-type))
@@ -256,8 +262,7 @@
         (.writeByte out (int op-kv-put))
         (write-u16 out dbi-len) (write-bytes! out dbi-bs)
         (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
-        ;; Encode value into TL buffer and write directly — no byte[] alloc
-        (let [v-type       (normalize-type vt)
+        (let [v-type           (normalize-type vt)
               ^ByteBuffer vbuf (encode-to-buf v v-type)]
           (write-type! out v-type) (write-u32 out (.remaining vbuf))
           (write-buf! out vbuf))
@@ -279,7 +284,7 @@
         ;; the type tag records the *element* type so that WAL replay
         ;; can re-encode individual elements into the overlay with the
         ;; correct DBI value type.
-        (let [v-type       (normalize-type vt)
+        (let [v-type           (normalize-type vt)
               ^ByteBuffer vbuf (encode-to-buf v :data)]
           (write-type! out v-type) (write-u32 out (.remaining vbuf))
           (write-buf! out vbuf))
@@ -290,7 +295,7 @@
         (.writeByte out (int op-kv-del-list))
         (write-u16 out dbi-len) (write-bytes! out dbi-bs)
         (write-type! out k-type) (write-u16 out k-len) (write-bytes! out k-bs)
-        (let [v-type       (normalize-type vt)
+        (let [v-type           (normalize-type vt)
               ^ByteBuffer vbuf (encode-to-buf v :data)]
           (write-type! out v-type) (write-u32 out (.remaining vbuf))
           (write-buf! out vbuf))
@@ -433,13 +438,14 @@
           _flags   (.readUnsignedByte in)
           body-len (read-u32 in)
           checksum (read-u32 in)
-          body     (let [bs (byte-array body-len)
+          body     (let [bs         (byte-array body-len)
                          bytes-read (.read in bs)]
                      (when (not= bytes-read body-len)
-                       (u/raise "WAL record truncated - possible crash during write"
-                                {:error    :wal/truncated
-                                 :expected body-len
-                                 :actual   bytes-read}))
+                       (u/raise
+                         "WAL record truncated - possible crash during write"
+                         {:error    :wal/truncated
+                          :expected body-len
+                          :actual   bytes-read}))
                      bs)
           actual   (crc32c body 0 body-len)]
       (when (not= checksum actual)
@@ -458,17 +464,16 @@
               _user-start (read-u64 din)
               _user-end   (read-u64 din)
               user-count  (read-u32 din)
-              tx-time     (long
-                            (loop [i 0 t 0]
-                              (if (< i user-count)
-                                (let [_uid   (read-u64 din)
-                                      tt     (read-u64 din)
-                                      ^int ml (read-u32 din)]
-                                  (when (pos? ml) (read-bytes din ml))
-                                  (read-u32 din)
-                                  (read-u32 din)
-                                  (recur (inc i) (long (max (long t) (long tt)))))
-                                t)))
+              tx-time     (loop [i 0 t 0]
+                            (if (< i ^int user-count)
+                              (let [_uid    (read-u64 din)
+                                    tt      (read-u64 din)
+                                    ^int ml (read-u32 din)]
+                                (when (pos? ml) (read-bytes din ml))
+                                (read-u32 din)
+                                (read-u32 din)
+                                (recur (inc i) (max (long t) (long tt))))
+                              t))
               op-count    ^int (read-u32 din)
               ops         (loop [i 0 acc []]
                             (if (< i op-count)
@@ -756,4 +761,312 @@
   (append-record-bytes!
     dir segment-id (record-bytes wal-id user-tx-id tx-time ops) sync-mode))
 
+(defn ensure-wal-channel!
+  "Return a cached FileChannel for the given segment, opening a new one if
+  needed (or if the segment rotated). Closes the old channel on rotation.
+  Expects lmdb to have .-info volatile and dir to be the env directory."
+  [lmdb dir ^long seg-id]
+  (let [info            @(.-info lmdb)
+        ^FileChannel ch (:wal-channel info)
+        ^long ch-seg    (or (:wal-channel-segment-id info) -1)]
+    (if (and ch (.isOpen ch) (= ch-seg seg-id))
+      ch
+      (do (close-segment-channel! ch)
+          (let [new-ch (open-segment-channel dir seg-id)]
+            (vswap! (.-info lmdb) assoc
+                    :wal-channel new-ch
+                    :wal-channel-segment-id seg-id)
+            new-ch)))))
 
+(defn append-kv-wal-record!
+  "Append a WAL record for KV operations. Returns map with :wal-id, :tx-time, :ops.
+  Expects lmdb to have .-info volatile and implement env-dir protocol."
+  [lmdb ops tx-time]
+  (when (seq ops)
+    (let [start-ms (or tx-time (System/currentTimeMillis))
+          dir      (i/env-dir lmdb)]
+      (locking (.-info lmdb)
+        (let [info             @(.-info lmdb)
+              max-bytes        (or (:wal-segment-max-bytes info)
+                                   c/*wal-segment-max-bytes*)
+              max-ms           (or (:wal-segment-max-ms info)
+                                   c/*wal-segment-max-ms*)
+              sync-mode        (or (:wal-sync-mode info)
+                                   c/*wal-sync-mode*)
+              group-size       (or (:wal-group-commit info)
+                                   c/*wal-group-commit*)
+              group-ms         (or (:wal-group-commit-ms info)
+                                   c/*wal-group-commit-ms*)
+              wal-id           (u/long-inc (or (:wal-next-tx-id info) 0))
+              user-tx-id       wal-id
+              record           (record-bytes wal-id user-tx-id tx-time ops)
+              record-bytes     (alength ^bytes record)
+              seg-id           (or (:wal-segment-id info) 1)
+              seg-bytes        (or (:wal-segment-bytes info) 0)
+              seg-start-ms     (or (:wal-segment-created-ms info) start-ms)
+              rotate?          (or (>= (+ ^long seg-bytes record-bytes)
+                                       ^long max-bytes)
+                                   (>= (- ^long start-ms ^long seg-start-ms)
+                                       ^long max-ms))
+              new-seg-id       (if rotate? (u/long-inc seg-id) seg-id)
+              new-seg-start-ms (if rotate? start-ms seg-start-ms)
+              new-seg-bytes    (if rotate? 0 seg-bytes)
+              unsynced         (u/long-inc (or (:wal-unsynced-count info) 0))
+              last-sync-ms     (or (:wal-last-sync-ms info) 0)
+              elapsed-ms       (if (pos? ^long last-sync-ms)
+                                 (- (System/currentTimeMillis)
+                                    ^long last-sync-ms)
+                                 0)
+              sync?            (or rotate?
+                                   (>= ^long unsynced ^long group-size)
+                                   (and (pos? ^long group-ms)
+                                        (>= ^long elapsed-ms ^long group-ms)))
+              ch
+              (if rotate?
+                (let [^FileChannel old-ch (:wal-channel info)]
+                  (when (and old-ch (.isOpen old-ch))
+                    (sync-channel! old-ch sync-mode)
+                    (close-segment-channel! old-ch))
+                  ;; Open new segment channel
+                  (let [new-ch (open-segment-channel dir new-seg-id)]
+                    (vswap! (.-info lmdb) assoc
+                            :wal-channel new-ch
+                            :wal-channel-segment-id new-seg-id)
+                    new-ch))
+                ;; No rotation - use existing or open current segment
+                (ensure-wal-channel! lmdb dir new-seg-id))
+              now-ms           (System/currentTimeMillis)]
+          (.write ^FileChannel ch (ByteBuffer/wrap record))
+          (when sync? (sync-channel! ch sync-mode))
+          (vswap! (.-info lmdb)
+                  (fn [current-info]
+                    (cond->
+                        (assoc current-info
+                               :wal-next-tx-id wal-id
+                               :last-committed-wal-tx-id wal-id
+                               :last-committed-user-tx-id wal-id
+                               :committed-last-modified-ms now-ms
+                               :wal-segment-id new-seg-id
+                               :wal-segment-created-ms new-seg-start-ms
+                               :wal-segment-bytes
+                               (+ ^long new-seg-bytes record-bytes)
+                               :wal-unsynced-count (if sync? 0 unsynced)
+                               :wal-last-sync-ms (if sync? now-ms last-sync-ms))
+                      sync? (assoc :last-synced-wal-tx-id wal-id))))
+          {:wal-id  wal-id
+           :tx-time now-ms
+           :ops     ops})))))
+
+(defn- get-kv-info-id
+  "Get a value from the kv-info dbi."
+  [lmdb k]
+  (i/get-value lmdb c/kv-info k :data :data))
+
+(defn read-kv-wal-meta
+  "Read WAL metadata for the given LMDB instance."
+  [lmdb]
+  (read-wal-meta (i/env-dir lmdb)))
+
+(defn refresh-kv-wal-info!
+  "Refresh WAL info from metadata or by scanning segments.
+  Expects lmdb to have .-info volatile and implement env-dir and get-value."
+  [lmdb]
+  (try
+    (let [dir          (i/env-dir lmdb)
+          now-ms       (System/currentTimeMillis)
+          meta         (read-wal-meta dir)
+          scanned      (when-not meta (scan-last-wal dir))
+          committed-id ^long (or (get meta c/last-committed-wal-tx-id)
+                                 (:last-wal-id scanned)
+                                 0)
+          indexed-id   ^long (or (get-kv-info-id lmdb c/last-indexed-wal-tx-id)
+                                 (get meta c/last-indexed-wal-tx-id)
+                                 0)
+          committed-ms ^long (or (get meta c/committed-last-modified-ms) 0)
+          user-id      ^long (or (get meta c/last-committed-user-tx-id)
+                                 committed-id)
+          next-id      committed-id
+          applied-id   ^long (or (get-kv-info-id lmdb c/applied-wal-tx-id)
+                                 (get-kv-info-id lmdb c/legacy-applied-tx-id)
+                                 0)
+          seg-id       ^long (or (get meta :wal/last-segment-id)
+                                 (:last-segment-id scanned)
+                                 1)
+          seg-file     (io/file (segment-path dir seg-id))
+          seg-bytes    (if (.exists seg-file) (.length seg-file) 0)
+          seg-created  ^long (or (:last-segment-ms scanned)
+                                 (when (.exists seg-file)
+                                   (.lastModified seg-file))
+                                 now-ms)]
+      (vswap! (.-info lmdb) assoc
+              :wal-next-tx-id next-id
+              :applied-wal-tx-id applied-id
+              :last-committed-wal-tx-id committed-id
+              :last-synced-wal-tx-id committed-id
+              :last-indexed-wal-tx-id indexed-id
+              :last-committed-user-tx-id user-id
+              :committed-last-modified-ms committed-ms
+              :overlay-published-wal-tx-id committed-id
+              :wal-segment-id seg-id
+              :wal-segment-created-ms seg-created
+              :wal-segment-bytes seg-bytes))
+    (catch java.nio.file.AccessDeniedException e
+      (stt/print-stack-trace e)
+      (raise "WAL directory permission denied"
+             {:error :wal/permission-denied
+              :dir   (i/env-dir lmdb)}))
+    (catch java.io.IOException e
+      (stt/print-stack-trace e)
+      ;; Possibly transient - could retry
+      (raise "WAL I/O error"
+             {:error     :wal/io-error
+              :retryable true
+              :dir       (i/env-dir lmdb)}))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      ;; Check for corruption indicators
+      (let [msg (ex-message e)]
+        (if (or (s/includes? msg "checksum")
+                (s/includes? msg "magic")
+                (s/includes? msg "truncated"))
+          (raise "WAL corruption detected"
+                 {:error :wal/corruption
+                  :fatal true
+                  :dir   (i/env-dir lmdb)})
+          (raise "WAL read error"
+                 {:error :wal/unknown
+                  :dir   (i/env-dir lmdb)}))))))
+
+(defn refresh-kv-wal-meta-info!
+  "Refresh WAL metadata info (timestamps, revision).
+  Expects lmdb to have .-info volatile and use read-kv-wal-meta."
+  [lmdb]
+  (let [now-ms (System/currentTimeMillis)]
+    (if-let [meta (read-kv-wal-meta lmdb)]
+      (let [^long last-ms (or (get meta c/committed-last-modified-ms) 0)]
+        (vswap! (.-info lmdb) assoc
+                :wal-meta-revision
+                (or (get meta c/wal-meta-revision) 0)
+                :wal-meta-last-modified-ms last-ms
+                :wal-meta-last-flush-ms (if (pos? last-ms) last-ms now-ms)
+                :wal-meta-pending-txs 0))
+      (vswap! (.-info lmdb) assoc
+              :wal-meta-revision 0
+              :wal-meta-last-modified-ms 0
+              :wal-meta-last-flush-ms now-ms
+              :wal-meta-pending-txs 0))))
+
+(defn publish-kv-wal-meta!
+  "Publish WAL metadata to persistent storage.
+  Expects lmdb to have .-info volatile and implement env-dir."
+  [lmdb wal-id now-ms]
+  (let [info       @(.-info lmdb)
+        ;; Only persist watermarks that have been durably synced to avoid
+        ;; claiming records are committed when they may be lost on crash.
+        synced-id  (or (:last-synced-wal-tx-id info) 0)
+        durable-id (min ^long wal-id ^long synced-id)
+        seg-id     (or (:wal-segment-id info) 0)
+        indexed    (or (:last-indexed-wal-tx-id info) 0)
+        user-id    (or (:last-committed-user-tx-id info) durable-id)
+        commit-ms  (or (:committed-last-modified-ms info) now-ms)
+        snapshot   {c/last-committed-wal-tx-id   durable-id
+                    c/last-indexed-wal-tx-id     indexed
+                    c/last-committed-user-tx-id  (min ^long user-id
+                                                      ^long durable-id)
+                    c/committed-last-modified-ms commit-ms
+                    :wal/last-segment-id         seg-id
+                    :wal/enabled?                true}
+        meta'      (publish-wal-meta! (i/env-dir lmdb) snapshot)
+        rev        (or (:wal-meta-revision meta') 0)]
+    (vswap! (.-info lmdb) assoc
+            :wal-meta-revision rev
+            :wal-meta-last-modified-ms now-ms
+            :wal-meta-last-flush-ms now-ms
+            :wal-meta-pending-txs 0)
+    meta'))
+
+(defn maybe-publish-kv-wal-meta!
+  "Conditionally publish WAL metadata based on thresholds.
+  Expects lmdb to have .-info volatile."
+  [lmdb wal-id]
+  (let [now-ms     (System/currentTimeMillis)
+        info'      (vswap! (.-info lmdb) update :wal-meta-pending-txs
+                           (fnil u/long-inc 0))
+        pending    (or (:wal-meta-pending-txs info') 0)
+        flush-txs  (max 1 (long (or (:wal-meta-flush-max-txs info')
+                                    c/*wal-meta-flush-max-txs*)))
+        flush-ms   (max 0 (long (or (:wal-meta-flush-max-ms info')
+                                    c/*wal-meta-flush-max-ms*)))
+        last-flush (or (:wal-meta-last-flush-ms info') 0)
+        due?       (or (>= ^long pending ^long flush-txs)
+                       (>= (- ^long now-ms ^long last-flush) ^long flush-ms))]
+    (when due?
+      (publish-kv-wal-meta! lmdb wal-id now-ms))))
+
+(defn wal-checkpoint!
+  "Flush WAL to base LMDB, persist vector indices, and GC old segments.
+  Expects lmdb to support ILMDB protocol operations.
+  The vector-indices-atom parameter should be the atom containing the vector
+  indices map."
+  [lmdb info vector-indices-atom]
+  (try
+    (i/flush-kv-indexer! lmdb)
+    (doseq [idx (keep @vector-indices-atom (u/list-files (i/env-dir lmdb)))]
+      (i/persist-vecs idx))
+    (i/gc-wal-segments! lmdb)
+    (vswap! info assoc :wal-checkpoint-fail-count 0)
+    (catch Exception e
+      (let [n (long (vswap! info update :wal-checkpoint-fail-count
+                            (fnil inc 0)))]
+        (when (or (= n 1) (zero? ^long (mod n 10)))
+          (binding [*out* *err*]
+            (println (str "WARNING: WAL checkpoint failed ("
+                          n " consecutive failure(s))"))
+            (stt/print-stack-trace e)))))))
+
+(defn start-scheduled-wal-checkpoint
+  "Start scheduled background WAL checkpointing.
+  The vector-indices-atom parameter should be the atom containing the vector
+  indices map."
+  [info lmdb vector-indices-atom]
+  (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
+        fut       (.scheduleWithFixedDelay
+                    scheduler
+                    ^Runnable #(wal-checkpoint! lmdb info vector-indices-atom)
+                    ^long c/wal-checkpoint-interval
+                    ^long c/wal-checkpoint-interval
+                    TimeUnit/SECONDS)]
+    (vswap! info assoc :scheduled-wal-checkpoint fut)))
+
+(defn stop-scheduled-wal-checkpoint
+  "Stop scheduled WAL checkpointing."
+  [info]
+  (when-let [fut ^ScheduledFuture (:scheduled-wal-checkpoint @info)]
+    (.cancel fut true)
+    (vswap! info dissoc :scheduled-wal-checkpoint)))
+
+(defn maybe-flush-kv-indexer-on-pressure!
+  "Flush WAL indexer when memory pressure is detected.
+  Expects lmdb to have .-info volatile and support i/flush-kv-indexer!."
+  [lmdb]
+  (try
+    (let [info @(.-info lmdb)]
+      (when (:kv-wal? info)
+        (require 'datalevin.spill)
+        (let [sp-memory-updater  (resolve 'datalevin.spill/memory-updater)
+              sp-memory-pressure (resolve 'datalevin.spill/memory-pressure)
+              _                  (when sp-memory-updater (@sp-memory-updater))
+              pressure-val       (if sp-memory-pressure
+                                   (deref @sp-memory-pressure)
+                                   0)
+              threshold          (or (get-in info [:spill-opts :spill-threshold])
+                                     c/default-spill-threshold)
+              committed          (or (:last-committed-wal-tx-id info) 0)
+              indexed            (or (:last-indexed-wal-tx-id info) 0)]
+          (when (and (>= ^long pressure-val ^long threshold)
+                     (> ^long committed ^long indexed))
+            (i/flush-kv-indexer! lmdb)))))
+    (catch Exception e
+      (binding [*out* *err*]
+        (println "WARNING: WAL memory-pressure flush failed")
+        (stt/print-stack-trace e)))))

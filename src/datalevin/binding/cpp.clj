@@ -22,14 +22,13 @@
    [datalevin.migrate :as m]
    [datalevin.validate :as vld]
    [datalevin.wal :as wal]
-   [datalevin.spill :as sp]
    [datalevin.scan :as scan]
    [datalevin.overlay :as ol]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
             transact-kv get-range range-filter stat key-compressor
-            val-compressor set-max-val-size max-val-size get-value
-            set-key-compressor set-val-compressor key-range list-range
+            val-compressor set-max-val-size max-val-size
+            set-key-compressor set-val-compressor
             bf-compress bf-uncompress]]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting ICompress
@@ -48,13 +47,13 @@
     ScheduledFuture]
    [java.lang AutoCloseable]
    [java.io File]
-   [java.util Iterator HashMap ArrayDeque Map$Entry]
+   [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
    [java.nio.channels FileChannel]
    [java.nio.charset StandardCharsets]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
-   [clojure.lang IObj Seqable IReduceInit]))
+   [clojure.lang IObj]))
 
 (defn- version-file
   [^File dir]
@@ -224,12 +223,14 @@
     (when (zero? ^long @depth)
       (.reset txn))
     this)
-
   (renew [this]
     (when (zero? ^long @depth)
       (.renew txn))
     (vswap! depth u/long-inc)
-    this))
+    this)
+  (private-overlay [this] (.-kv-overlay-private this))
+  (kp [this] (.-kp this))
+  (vp [this] (.-vp this)))
 
 (defn- v-bf
   [^BufVal vp lmdb rtx]
@@ -699,13 +700,7 @@
           (vld/validate-kv-tx-data tx validate?)))
       tx-data)))
 
-(declare ensure-wal-channel! append-kv-wal-record! refresh-kv-wal-info!
-         refresh-kv-wal-meta-info! publish-kv-wal-meta!
-         maybe-publish-kv-wal-meta!)
-
 (defn- get-kv-info-id [lmdb k] (i/get-value lmdb c/kv-info k :data :data))
-
-(defn- read-kv-wal-meta [lmdb] (wal/read-wal-meta (env-dir lmdb)))
 
 (defn- run-writer-step!
   [step f]
@@ -772,40 +767,7 @@
     (.cancel ^ScheduledFuture fut true)
     (vreset! scheduled-sync nil)))
 
-(defn- wal-checkpoint!
-  "Flush WAL to base LMDB, persist vector indices, and GC old segments."
-  [lmdb info]
-  (try
-    (i/flush-kv-indexer! lmdb)
-    (doseq [idx (keep @l/vector-indices (u/list-files (i/env-dir lmdb)))]
-      (i/persist-vecs idx))
-    (i/gc-wal-segments! lmdb)
-    (vswap! info assoc :wal-checkpoint-fail-count 0)
-    (catch Exception e
-      (let [n (long (vswap! info update :wal-checkpoint-fail-count
-                            (fnil inc 0)))]
-        (when (or (= n 1) (zero? (mod n 10)))
-          (binding [*out* *err*]
-            (println (str "WARNING: WAL checkpoint failed ("
-                         n " consecutive failure(s))"))
-            (stt/print-stack-trace e)))))))
 
-(defn- start-scheduled-wal-checkpoint
-  [info lmdb]
-  (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
-        fut       (.scheduleWithFixedDelay
-                    scheduler
-                    ^Runnable #(wal-checkpoint! lmdb info)
-                    ^long c/wal-checkpoint-interval
-                    ^long c/wal-checkpoint-interval
-                    TimeUnit/SECONDS)]
-    (vswap! info assoc :scheduled-wal-checkpoint fut)))
-
-(defn- stop-scheduled-wal-checkpoint
-  [info]
-  (when-let [fut ^ScheduledFuture (:scheduled-wal-checkpoint @info)]
-    (.cancel fut true)
-    (vswap! info dissoc :scheduled-wal-checkpoint)))
 
 (defn- copy-version-file
   [lmdb dest]
@@ -894,13 +856,13 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
-      (stop-scheduled-wal-checkpoint info)
+      (wal/stop-scheduled-wal-checkpoint info)
       ;; Sync any unsynced WAL records before closing — force at least
       ;; fdatasync regardless of configured sync mode so that the
       ;; watermark promotion below is truthful after unclean shutdown.
       (when-let [^FileChannel ch (:wal-channel @info)]
         (when (.isOpen ch)
-          (let [sync-mode (or (:wal-sync-mode @info) c/*wal-sync-mode*)
+          (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
                 close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
             (try (wal/sync-channel! ch close-mode) (catch Exception _ nil)))))
       ;; Promote synced watermark after final sync
@@ -911,8 +873,8 @@
       (when (:kv-wal? @info)
         (when-let [wal-id (:last-committed-wal-tx-id @info)]
           (when (pos? ^long wal-id)
-            (try (publish-kv-wal-meta! this wal-id
-                                       (System/currentTimeMillis))
+            (try (wal/publish-kv-wal-meta! this wal-id
+                                           (System/currentTimeMillis))
                  (catch Exception e
                    (binding [*out* *err*]
                      (println "WARNING: Failed to flush WAL meta on close")
@@ -1135,13 +1097,12 @@
           (try
             (let [wal-entry (when (seq ops)
                               (vld/check-failpoint :step-3 :before)
-                              (let [entry (append-kv-wal-record!
+                              (let [entry (wal/append-kv-wal-record!
                                             this (vec ops)
                                             (System/currentTimeMillis))]
                                 (vld/check-failpoint :step-3 :after)
                                 entry))
-                  wal-id    (:wal-id wal-entry)
-                  tx-time   (:tx-time wal-entry)]
+                  wal-id    (:wal-id wal-entry)]
               (when wal-id
                 (locking write-txn
                   (run-writer-step! :step-4 (fn [] nil))
@@ -1175,18 +1136,18 @@
                 (try
                   (run-writer-step!
                     :step-8
-                    #(maybe-publish-kv-wal-meta! this wal-id))
+                    #(wal/maybe-publish-kv-wal-meta! this wal-id))
                   (catch Exception _ nil)))
               (when wal-id
-                (maybe-flush-kv-indexer-on-pressure! this))
+                (wal/maybe-flush-kv-indexer-on-pressure! this))
               (when (.-wal-ops wtxn)
                 (vreset! (.-wal-ops wtxn) []))
               (ol/reset-private-overlay! wtxn info)
               (if aborted? :aborted :committed))
             (catch Exception e
               (when (and wal-enabled? (not aborted?))
-                (refresh-kv-wal-info! this)
-                (refresh-kv-wal-meta-info! this)
+                (wal/refresh-kv-wal-info! this)
+                (wal/refresh-kv-wal-meta-info! this)
                 (ol/recover-kv-overlay! info write-txn (env-dir this)))
               (when-let [^Txn t (.-txn wtxn)]
                 (try
@@ -1241,7 +1202,7 @@
                   ops        (if max-val-op (conj ops max-val-op) ops)
                   wal-entry  (when (seq ops)
                                (vld/check-failpoint :step-3 :before)
-                               (let [entry (append-kv-wal-record!
+                               (let [entry (wal/append-kv-wal-record!
                                              this ops
                                              (System/currentTimeMillis))]
                                  (vld/check-failpoint :step-3 :after)
@@ -1261,15 +1222,15 @@
                 (vld/check-failpoint :step-7 :after)
                 (try
                   (vld/check-failpoint :step-8 :before)
-                  (maybe-publish-kv-wal-meta! this wal-id)
+                  (wal/maybe-publish-kv-wal-meta! this wal-id)
                   (vld/check-failpoint :step-8 :after)
                   (catch Exception _ nil)))
               (when wal-id
-                (maybe-flush-kv-indexer-on-pressure! this))
+                (wal/maybe-flush-kv-indexer-on-pressure! this))
               :transacted)
             (catch Exception e
-              (refresh-kv-wal-info! this)
-              (refresh-kv-wal-meta-info! this)
+              (wal/refresh-kv-wal-info! this)
+              (wal/refresh-kv-wal-meta-info! this)
               (ol/recover-kv-overlay! info write-txn (env-dir this))
               (if-let [edata (ex-data e)]
                 (raise "Fail to transact to LMDB: " e edata)
@@ -1321,8 +1282,8 @@
               (catch Exception e
                 (when one-shot? (.close txn))
                 (when (and one-shot? wal-enabled?)
-                  (refresh-kv-wal-info! this)
-                  (refresh-kv-wal-meta-info! this))
+                  (wal/refresh-kv-wal-info! this)
+                  (wal/refresh-kv-wal-meta-info! this))
                 (if-let [edata (ex-data e)]
                   (raise "Fail to transact to LMDB: " e edata)
                   (raise "Fail to transact to LMDB: " e {})))))))))
@@ -1770,206 +1731,6 @@
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
 
-(defn- ensure-wal-channel!
-  "Return a cached FileChannel for the given segment, opening a new one if
-  needed (or if the segment rotated). Closes the old channel on rotation."
-  [^CppLMDB lmdb dir ^long seg-id]
-  (let [info            @(.-info lmdb)
-        ^FileChannel ch (:wal-channel info)
-        ^long ch-seg    (or (:wal-channel-segment-id info) -1)]
-    (if (and ch (.isOpen ch) (= ch-seg seg-id))
-      ch
-      (do (wal/close-segment-channel! ch)
-          (let [new-ch (wal/open-segment-channel dir seg-id)]
-            (vswap! (.-info lmdb) assoc
-                    :wal-channel new-ch
-                    :wal-channel-segment-id seg-id)
-            new-ch)))))
-
-(defn- append-kv-wal-record!
-  [^CppLMDB lmdb ops tx-time]
-  (when (seq ops)
-    (let [now-ms       (or tx-time (System/currentTimeMillis))
-          dir          (env-dir lmdb)]
-      (locking (.-info lmdb)
-        (let [info         @(.-info lmdb)
-              max-bytes    (or (:wal-segment-max-bytes info)
-                               c/*wal-segment-max-bytes*)
-              max-ms       (or (:wal-segment-max-ms info)
-                               c/*wal-segment-max-ms*)
-              sync-mode    (or (:wal-sync-mode info)
-                               c/*wal-sync-mode*)
-              group-size   (or (:wal-group-commit info)
-                               c/*wal-group-commit*)
-              group-ms     (or (:wal-group-commit-ms info)
-                               c/*wal-group-commit-ms*)
-              wal-id       (u/long-inc (or (:wal-next-tx-id info) 0))
-              user-tx-id   wal-id
-              record       (wal/record-bytes wal-id user-tx-id tx-time ops)
-              record-bytes (alength ^bytes record)
-              seg-id       (or (:wal-segment-id info) 1)
-              seg-bytes    (or (:wal-segment-bytes info) 0)
-              seg-start-ms (or (:wal-segment-created-ms info) now-ms)
-              rotate?      (or (>= (+ ^long seg-bytes record-bytes)
-                                   ^long max-bytes)
-                               (>= (- ^long now-ms ^long seg-start-ms)
-                                   ^long max-ms))
-              new-seg-id   (if rotate? (u/long-inc seg-id) seg-id)
-              new-seg-start-ms (if rotate? now-ms seg-start-ms)
-              new-seg-bytes    (if rotate? 0 seg-bytes)
-              unsynced     (u/long-inc (or (:wal-unsynced-count info) 0))
-              last-sync-ms (or (:wal-last-sync-ms info) 0)
-              sync?        (or rotate?
-                               (>= ^long unsynced ^long group-size)
-                               (and (pos? ^long group-ms)
-                                    (pos? ^long last-sync-ms)
-                                    (>= (- ^long now-ms ^long last-sync-ms)
-                                        ^long group-ms)))
-              ch           (ensure-wal-channel! lmdb dir new-seg-id)]
-          (.write ^FileChannel ch (ByteBuffer/wrap record))
-          (when sync? (wal/sync-channel! ch sync-mode))
-          ;; Use vswap! to merge updates without losing channel changes
-          (vswap! (.-info lmdb)
-                  (fn [current-info]
-                    (cond-> (assoc current-info
-                                   :wal-next-tx-id wal-id
-                                   :last-committed-wal-tx-id wal-id
-                                   :last-committed-user-tx-id wal-id
-                                   :committed-last-modified-ms now-ms
-                                   :wal-segment-id new-seg-id
-                                   :wal-segment-created-ms new-seg-start-ms
-                                   :wal-segment-bytes (+ ^long new-seg-bytes record-bytes)
-                                   :wal-unsynced-count (if sync? 0 unsynced)
-                                   :wal-last-sync-ms (if sync? now-ms last-sync-ms))
-                      sync? (assoc :last-synced-wal-tx-id wal-id))))
-          {:wal-id  wal-id
-           :tx-time now-ms
-           :ops     ops})))))
-
-(defn- refresh-kv-wal-info!
-  [^CppLMDB lmdb]
-  (try
-    (let [dir          (env-dir lmdb)
-          now-ms       (System/currentTimeMillis)
-          meta         (wal/read-wal-meta dir)
-          scanned      (when-not meta (wal/scan-last-wal dir))
-          committed-id ^long (or (get meta c/last-committed-wal-tx-id)
-                                 (:last-wal-id scanned)
-                                 0)
-          indexed-id   ^long (or (get-kv-info-id lmdb c/last-indexed-wal-tx-id)
-                                 (get meta c/last-indexed-wal-tx-id)
-                                 0)
-          committed-ms ^long (or (get meta c/committed-last-modified-ms) 0)
-          user-id      ^long (or (get meta c/last-committed-user-tx-id)
-                                 committed-id)
-          next-id      committed-id
-          applied-id   ^long (or (get-kv-info-id lmdb c/applied-wal-tx-id)
-                                 (get-kv-info-id lmdb c/legacy-applied-tx-id)
-                                 0)
-          seg-id       ^long (or (get meta :wal/last-segment-id)
-                                 (:last-segment-id scanned)
-                                 1)
-          seg-file     (io/file (wal/segment-path dir seg-id))
-          seg-bytes    (if (.exists seg-file) (.length seg-file) 0)
-          seg-created  ^long (or (:last-segment-ms scanned)
-                                 (when (.exists seg-file)
-                                   (.lastModified seg-file))
-                                 now-ms)]
-      (vswap! (.-info lmdb) assoc
-              :wal-next-tx-id next-id
-              :applied-wal-tx-id applied-id
-              :last-committed-wal-tx-id committed-id
-              :last-synced-wal-tx-id committed-id
-              :last-indexed-wal-tx-id indexed-id
-              :last-committed-user-tx-id user-id
-              :committed-last-modified-ms committed-ms
-              :overlay-published-wal-tx-id committed-id
-              :wal-segment-id seg-id
-              :wal-segment-created-ms seg-created
-              :wal-segment-bytes seg-bytes))
-    (catch Exception e
-      (stt/print-stack-trace e)
-      (raise "Fail to read WAL info: " e {:dir (env-dir lmdb)}))))
-
-(defn- refresh-kv-wal-meta-info!
-  [^CppLMDB lmdb]
-  (let [now-ms (System/currentTimeMillis)]
-    (if-let [meta (read-kv-wal-meta lmdb)]
-      (let [^long last-ms (or (get meta c/committed-last-modified-ms) 0)]
-        (vswap! (.-info lmdb) assoc
-                :wal-meta-revision
-                (or (get meta c/wal-meta-revision) 0)
-                :wal-meta-last-modified-ms last-ms
-                :wal-meta-last-flush-ms (if (pos? last-ms) last-ms now-ms)
-                :wal-meta-pending-txs 0))
-      (vswap! (.-info lmdb) assoc
-              :wal-meta-revision 0
-              :wal-meta-last-modified-ms 0
-              :wal-meta-last-flush-ms now-ms
-              :wal-meta-pending-txs 0))))
-
-(defn- publish-kv-wal-meta!
-  [^CppLMDB lmdb wal-id now-ms]
-  (let [info      @(.-info lmdb)
-        ;; Only persist watermarks that have been durably synced to avoid
-        ;; claiming records are committed when they may be lost on crash.
-        synced-id ^long (or (:last-synced-wal-tx-id info) 0)
-        durable-id (min ^long wal-id synced-id)
-        seg-id    (or (:wal-segment-id info) 0)
-        indexed   (or (:last-indexed-wal-tx-id info) 0)
-        user-id   (or (:last-committed-user-tx-id info) durable-id)
-        commit-ms (or (:committed-last-modified-ms info) now-ms)
-        snapshot  {c/last-committed-wal-tx-id   durable-id
-                   c/last-indexed-wal-tx-id     indexed
-                   c/last-committed-user-tx-id  (min ^long user-id
-                                                     ^long durable-id)
-                   c/committed-last-modified-ms commit-ms
-                   :wal/last-segment-id         seg-id
-                   :wal/enabled?                true}
-        meta'     (wal/publish-wal-meta! (env-dir lmdb) snapshot)
-        rev       (or (:wal-meta-revision meta') 0)]
-    (vswap! (.-info lmdb) assoc
-            :wal-meta-revision rev
-            :wal-meta-last-modified-ms now-ms
-            :wal-meta-last-flush-ms now-ms
-            :wal-meta-pending-txs 0)
-    meta'))
-
-(defn- maybe-publish-kv-wal-meta!
-  [^CppLMDB lmdb wal-id]
-  (let [now-ms     (System/currentTimeMillis)
-        info'      (vswap! (.-info lmdb) update :wal-meta-pending-txs
-                           (fnil u/long-inc 0))
-        pending    (or (:wal-meta-pending-txs info') 0)
-        flush-txs  (max 1 (long (or (:wal-meta-flush-max-txs info')
-                                    c/*wal-meta-flush-max-txs*)))
-        flush-ms   (max 0 (long (or (:wal-meta-flush-max-ms info')
-                                    c/*wal-meta-flush-max-ms*)))
-        last-flush (or (:wal-meta-last-flush-ms info') 0)
-        due?       (or (>= ^long pending ^long flush-txs)
-                       (>= (- ^long now-ms ^long last-flush) ^long flush-ms))]
-    (when due?
-      (publish-kv-wal-meta! lmdb wal-id now-ms))))
-
-(defn- maybe-flush-kv-indexer-on-pressure!
-  [^CppLMDB lmdb]
-  (try
-    (let [info @(.-info lmdb)]
-      (when (:kv-wal? info)
-        (sp/memory-updater)
-        (let [pressure  @sp/memory-pressure
-              threshold (or (get-in info [:spill-opts :spill-threshold])
-                            c/default-spill-threshold)
-              committed (or (:last-committed-wal-tx-id info) 0)
-              indexed   (or (:last-indexed-wal-tx-id info) 0)]
-          (when (and (>= ^long pressure ^long threshold)
-                     (> ^long committed ^long indexed))
-            (i/flush-kv-indexer! lmdb)))))
-    (catch Exception e
-      (binding [*out* *err*]
-        (println "WARNING: WAL memory-pressure flush failed")
-        (stt/print-stack-trace e)))))
-
 (defn- key-range-list-count-fast
   [lmdb dbi-name [range-type k1 k2] k-type cap]
   (scan/scan
@@ -2147,8 +1908,8 @@
                   :kv-overlay-by-dbi {}
                   :overlay-published-wal-tx-id 0)
           (when kv-wal?
-            (refresh-kv-wal-info! lmdb)
-            (refresh-kv-wal-meta-info! lmdb)
+            (wal/refresh-kv-wal-info! lmdb)
+            (wal/refresh-kv-wal-meta-info! lmdb)
             (ol/recover-kv-overlay! (l/kv-info lmdb) (l/write-txn lmdb)
                                     (env-dir lmdb)))
           (set-max-val-size lmdb (max-val-size lmdb))
@@ -2158,7 +1919,7 @@
                             (Thread. #(close-kv lmdb)))
           (start-scheduled-sync (.-scheduled-sync lmdb) dir env)
           (when kv-wal?
-            (start-scheduled-wal-checkpoint (l/kv-info lmdb) lmdb))))
+            (wal/start-scheduled-wal-checkpoint (l/kv-info lmdb) lmdb l/vector-indices))))
       lmdb)
     (catch Exception e
       (stt/print-stack-trace e)

@@ -15,6 +15,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop])
   (:import
+   [java.io FileOutputStream]
    [java.util UUID]))
 
 (use-fixtures :each db-fixture)
@@ -54,6 +55,59 @@
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))
+
+(defn- assert-kv-wal-crash-recovery-on-reopen
+  [step phase durable?]
+  (let [dir      (u/tmp-dir (str "kv-wal-crash-" (name step) "-" (name phase)
+                                 "-" (UUID/randomUUID)))
+        base-id  (volatile! 0)
+        expected (if durable? "x" nil)]
+    (try
+      ;; Session 1: inject failpoint and simulate crash by forcing caller-visible
+      ;; failure at a writer step.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (try
+          (if/open-dbi lmdb "a")
+          (let [start-id (last-wal-id lmdb)
+                ex       (try
+                           (binding [c/*failpoint* {:step  step
+                                                    :phase phase
+                                                    :fn    #(throw (ex-info "fp-crash" {}))}]
+                             (if/transact-kv lmdb [[:put "a" 1 "x"]]))
+                           nil
+                           (catch Exception e e))]
+            (vreset! base-id start-id)
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= expected (if/get-value lmdb "a" 1))))
+          (finally
+            (if/close-kv lmdb))))
+
+      ;; Session 2: reopen and verify persisted state is recovered.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (try
+          (let [expected-id (if durable? (u/long-inc @base-id) @base-id)
+                recovered-id (last-wal-id lmdb)]
+            (is (= expected-id recovered-id))
+            (if/open-dbi lmdb "a")
+            (is (= expected (if/get-value lmdb "a" 1)))
+            (let [after-open-id (last-wal-id lmdb)]
+              (is (>= after-open-id recovered-id))
+              (if/transact-kv lmdb [[:put "a" 2 "y"]])
+              (is (> (last-wal-id lmdb) after-open-id)))
+            (is (= "y" (if/get-value lmdb "a" 2))))
+          (finally
+            (if/close-kv lmdb))))
+      (finally
+        (u/delete-files dir)))))
+
+(defn- append-partial-record!
+  [^java.io.File f record]
+  ;; Write only a small prefix so the record header itself is incomplete.
+  (let [n (max 1 (min 8 (dec (alength ^bytes record))))]
+    (with-open [out (FileOutputStream. f true)]
+      (.write out record 0 n))))
 
 (deftest kv-wal-disabled-by-default-test
   (let [dir  (u/tmp-dir (str "kv-wal-default-" (UUID/randomUUID)))
@@ -182,6 +236,67 @@
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))
+
+(deftest kv-wal-crash-recovery-reopen-matrix-test
+  (doseq [[step phase durable?]
+          [[:step-3 :before false]
+           [:step-3 :after true]
+           [:step-4 :before true]
+           [:step-4 :after true]
+           [:step-5 :before true]
+           [:step-5 :after true]
+           [:step-6 :before true]
+           [:step-6 :after true]
+           [:step-7 :before true]
+           [:step-7 :after true]]]
+    (testing (str "reopen recovery at " (name step) " " (name phase))
+      (assert-kv-wal-crash-recovery-on-reopen step phase durable?))))
+
+(deftest kv-wal-recover-from-truncated-tail-test
+  (doseq [remove-meta? [false true]]
+    (let [dir          (u/tmp-dir (str "kv-wal-crash-tail-"
+                                       (if remove-meta? "scan" "meta") "-"
+                                       (UUID/randomUUID)))
+          committed-id (volatile! 0)]
+      (try
+        ;; Session 1: create two committed WAL records.
+        (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                   :kv-wal? true})]
+          (try
+            (if/open-dbi lmdb "a")
+            (if/transact-kv lmdb [[:put "a" 1 "x"]])
+            (if/transact-kv lmdb [[:put "a" 2 "y"]])
+            (vreset! committed-id (last-wal-id lmdb))
+            (finally
+              (if/close-kv lmdb))))
+
+        ;; Simulate crash during append of the next WAL record.
+        (let [segment    (last (wal/segment-files dir))
+              next-wal   (u/long-inc @committed-id)
+              bad-record (wal/record-bytes
+                           next-wal next-wal (System/currentTimeMillis)
+                           [{:op  :put
+                             :dbi "a"
+                             :k   3
+                             :v   "z"}])]
+          (is segment)
+          (append-partial-record! segment bad-record)
+          (when remove-meta?
+            (.delete (io/file (wal/wal-meta-path dir)))))
+
+        ;; Session 2: reopen should ignore truncated tail and recover prefix.
+        (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                   :kv-wal? true})]
+          (try
+            (is (= @committed-id (last-wal-id lmdb)))
+            (if/open-dbi lmdb "a")
+            (is (= "x" (if/get-value lmdb "a" 1)))
+            (is (= "y" (if/get-value lmdb "a" 2)))
+            (is (nil? (if/get-value lmdb "a" 3)))
+            (finally
+              (if/close-kv lmdb))))
+        (finally
+          (u/delete-files dir))))))
 
 (deftest kv-wal-meta-publish-test
   (let [dir       (u/tmp-dir (str "kv-wal-meta-" (UUID/randomUUID)))
@@ -846,7 +961,7 @@
   (testing "Reads remain consistent while flush+prune runs concurrently"
     (let [dir    (u/tmp-dir (str "kv-wal-conc-flush-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
-                                  :kv-wal? true})
+                                 :kv-wal? true})
           n-txs  50
           errors (atom [])
           stop?  (atom false)]
@@ -864,10 +979,10 @@
                       (let [cnt (if/range-count lmdb "a" [:all] :long)]
                         ;; Count must never drop below n-txs once all
                         ;; writes are committed (overlay or base).
-                        (when (< cnt n-txs)
+                        (when (< ^long cnt n-txs)
                           (swap! errors conj
-                                 {:type :missing-keys :count cnt
-                                  :expected n-txs :read-num reads})))
+                                 {:type     :missing-keys :count    cnt
+                                  :expected n-txs         :read-num reads})))
                       (recur (inc reads))))
                   (catch Exception e
                     (swap! errors conj {:type :reader-exception

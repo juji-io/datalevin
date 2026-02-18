@@ -46,7 +46,10 @@
 (defprotocol IRtx
   (reset [this] "reset a read only transaction")
   (renew [this] "renew a read only transaction")
-  (read-only? [this] "is this a read only transaction"))
+  (read-only? [this] "is this a read only transaction")
+  (private-overlay [this] "return the private overlay")
+  (kp [this] "return the key pointer")
+  (vp [this] "return the value pointer"))
 
 (defprotocol ICompress
   (key-bf [this] "return the working buffer for key compression")
@@ -525,14 +528,14 @@
   ([lmdb]
    (flush-kv-indexer! lmdb nil))
   ([lmdb upto-wal-id]
-   (let [start-ms (System/currentTimeMillis)
-         res      (replay-kv-wal! lmdb upto-wal-id)
-         end-ms   (System/currentTimeMillis)
-         duration (- end-ms start-ms)
-         info     (env-opts lmdb)
+   (let [start-ms  (System/currentTimeMillis)
+         res       (replay-kv-wal! lmdb upto-wal-id)
+         end-ms    (System/currentTimeMillis)
+         duration  (- end-ms start-ms)
+         info      (env-opts lmdb)
          committed (long (or (:last-committed-wal-tx-id info) 0))
          indexed   (long (or (:to res) 0))]
-     (vswap! (.-info lmdb) assoc
+     (vswap! (kv-info lmdb) assoc
              :wal-indexer-last-flush-duration-ms duration
              :wal-indexer-last-flush-ms end-ms)
      {:indexed-wal-tx-id   indexed
@@ -572,34 +575,33 @@
 (defn kv-wal-metrics
   "Report WAL overlay/indexer/segment diagnostics."
   [lmdb]
-  (let [info           (env-opts lmdb)
-        committed      (long (or (:last-committed-wal-tx-id info) 0))
-        indexed        (long (or (:last-indexed-wal-tx-id info) 0))
-        lag            (max 0 (- committed indexed))
+  (let [info            (env-opts lmdb)
+        committed       (long (or (:last-committed-wal-tx-id info) 0))
+        indexed         (long (or (:last-indexed-wal-tx-id info) 0))
+        lag             (max 0 (- committed indexed))
         committed-count (overlay-entry-count (:kv-overlay-by-dbi info))
         private-count   (long (or (:kv-overlay-private-entries info) 0))
-        dir            (env-dir lmdb)
-        segments       (or (wal/segment-files dir) [])
-        segment-count (count segments)
-        segment-bytes (reduce
-                        (fn [^long acc ^File f] (+ acc (.length f)))
-                        0
-                        segments)
-        eligible-wm indexed
+        dir             (env-dir lmdb)
+        segments        (or (wal/segment-files dir) [])
+        segment-count   (count segments)
+        segment-bytes   (reduce
+                          (fn [^long acc ^File f] (+ acc (.length f)))
+                          0
+                          segments)
+        eligible-wm     indexed
         [eligible-count eligible-bytes]
         (reduce
           (fn [[cnt bytes] ^File f]
             (let [max-id (wal/segment-max-wal-id f)]
-              (if (<= max-id eligible-wm)
-                [(inc cnt) (+ bytes (.length f))]
+              (if (<= ^long max-id ^long eligible-wm)
+                [(u/long-inc cnt) (+ ^int bytes (.length f))]
                 [cnt bytes])))
-          [0 0]
-          segments)
-        last-flush-ms (long (or (:wal-indexer-last-flush-ms info) 0))
-        last-duration (long (or (:wal-indexer-last-flush-duration-ms info) 0))
-        since-last (if (pos? last-flush-ms)
-                     (max 0 (- (System/currentTimeMillis) last-flush-ms))
-                     0)]
+          [0 0] segments)
+        last-flush-ms   (long (or (:wal-indexer-last-flush-ms info) 0))
+        last-duration   (long (or (:wal-indexer-last-flush-duration-ms info) 0))
+        since-last      (if (pos? last-flush-ms)
+                          (max 0 (- (System/currentTimeMillis) last-flush-ms))
+                          0)]
     {:overlay-entries                committed-count
      :private-overlay-entries        private-count
      :indexer-lag                    lag

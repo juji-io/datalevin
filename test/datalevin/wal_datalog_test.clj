@@ -924,12 +924,12 @@
         n    200]
     (try
       ;; Seed data
-      (d/transact! conn (mapv (fn [i] {:id i :value (* i 10)}) (range n)))
+      (d/transact! conn (mapv (fn [i] {:id i :value (* ^long i 10)}) (range n)))
 
       (testing "concurrent reads are consistent during writes"
-        (let [writer (future
-                       (dotimes [i n]
-                         (d/transact! conn [{:id (+ n i) :value (* (+ n i) 10)}])))
+        (let [writer  (future
+                        (dotimes [i n]
+                          (d/transact! conn [{:id (+ n i) :value (* (+ n i) 10)}])))
               readers (mapv (fn [_]
                               (future
                                 (dotimes [i n]

@@ -11,7 +11,6 @@
   (:require
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
-   [datalevin.constants :as c]
    [datalevin.interface :as i
     :refer [get-value get-range key-range list-range]]
    [datalevin.lmdb :as l]
@@ -25,7 +24,8 @@
     IListRandKeyValIterator]
    [java.lang AutoCloseable]
    [java.nio ByteBuffer BufferOverflowException]
-   [java.util Comparator Iterator TreeMap Map$Entry NavigableMap SortedMap]
+   [java.util Comparator Iterator TreeMap Map$Entry NavigableMap SortedMap
+    Collections]
    [java.util.concurrent ConcurrentSkipListMap]))
 
 (defn normalize-kv-type [t] (or t :data))
@@ -209,7 +209,7 @@
   "Reset the private overlay on a write-txn. Takes the write-txn (Rtx)
    and the info volatile of the lmdb."
   [wtxn info-vol]
-  (when-let [^clojure.lang.Volatile ov-ref (.-kv-overlay-private wtxn)]
+  (when-let [ov-ref (l/private-overlay wtxn)]
     (vreset! ov-ref {})
     (vswap! info-vol assoc :kv-overlay-private-entries 0)))
 
@@ -217,7 +217,7 @@
   [wtxn info-vol ops]
   (let [delta (overlay-delta-by-dbi ops)]
     (when (seq delta)
-      (when-let [^clojure.lang.Volatile ov-ref (.-kv-overlay-private wtxn)]
+      (when-let [ov-ref (l/private-overlay wtxn)]
         (let [merged (merge-overlay-delta (or @ov-ref {}) delta)]
           (vreset! ov-ref merged)
           (update-private-overlay-entries! wtxn info-vol merged))))))
@@ -276,8 +276,8 @@
 
 (defn prune-kv-committed-overlay!
   [info-vol upto-wal-id]
-  (let [^long upto (or upto-wal-id 0)]
-    (when (pos? upto)
+  (let [upto (or upto-wal-id 0)]
+    (when (pos? ^long upto)
       (vswap! info-vol
               (fn [m]
                 (let [^ConcurrentSkipListMap committed-by-tx
@@ -287,10 +287,10 @@
                     (.isEmpty committed-by-tx)
                     m
 
-                    (> ^long (.firstKey committed-by-tx) upto)
+                    (> ^long (.firstKey committed-by-tx) ^long upto)
                     m
 
-                    (<= ^long (.lastKey committed-by-tx) upto)
+                    (<= ^long (.lastKey committed-by-tx) ^long upto)
                     (assoc m
                            :kv-overlay-committed-by-tx
                            (empty-overlay-committed-map)
@@ -311,7 +311,7 @@
   [info-map write-txn-atom]
   (when (:kv-wal? info-map)
     (when-let [wtxn @write-txn-atom]
-      (when-let [v (.-kv-overlay-private wtxn)]
+      (when-let [v (l/private-overlay wtxn)]
         @v))))
 
 (defn overlay-for-dbi
@@ -614,16 +614,17 @@
                               cmp           (if desc-v? (- cmp) cmp)]
                           (cond
                             (neg? cmp) ;; base val first
-                            (do (vreset! vm-iter
-                                         (let [used (volatile! false)]
-                                           (reify Iterator
-                                             (hasNext [_]
-                                               (or (not @used) (.hasNext vi)))
-                                             (next [_]
-                                               (if @used
-                                                 (.next vi)
-                                                 (do (vreset! used true) ve))))))
-                                (vreset! adv-base true) bkv)
+                            (do
+                              (vreset! vm-iter
+                                       (let [used (volatile! false)]
+                                         (reify Iterator
+                                           (hasNext [_]
+                                             (or (not @used) (.hasNext vi)))
+                                           (next [_]
+                                             (if @used
+                                               (.next vi)
+                                               (do (vreset! used true) ve))))))
+                              (vreset! adv-base true) bkv)
 
                             (pos? cmp) ;; overlay val first
                             (if tomb?
@@ -1126,7 +1127,7 @@
 (defn lmdb-key-exists?
   "Check if raw key bytes exist in LMDB (bypassing overlay). O(log n)."
   [dbi rtx ^bytes kbs]
-  (let [^BufVal kp (.-kp rtx)
+  (let [^BufVal kp     (l/kp rtx)
         ^ByteBuffer bf (.inBuf kp)]
     (.clear bf)
     (b/put-buffer bf kbs :raw)
@@ -1137,7 +1138,7 @@
 (defn lmdb-rank-of-raw-key
   "Get LMDB B-tree rank for raw key bytes. O(log n). Returns nil if not found."
   [dbi rtx ^bytes kbs]
-  (let [^BufVal kp (.-kp rtx)
+  (let [^BufVal kp     (l/kp rtx)
         ^ByteBuffer bf (.inBuf kp)]
     (.clear bf)
     (b/put-buffer bf kbs :raw)
@@ -1151,8 +1152,8 @@
   (let [^RangeContext ctx (l/range-info rtx :less-than k nil k-type)]
     (DTLV/dtlv_key_range_count
       (.ptr cur)
-      (.ptr ^BufVal (.-kp rtx))
-      (.ptr ^BufVal (.-vp rtx))
+      (.ptr ^BufVal (l/kp rtx))
+      (.ptr ^BufVal (l/vp rtx))
       DTLV/DTLV_TRUE DTLV/DTLV_TRUE DTLV/DTLV_TRUE
       (when-let [^BufVal bf (.-start-bf ctx)] (.ptr bf))
       (when-let [^BufVal bf (.-stop-bf ctx)] (.ptr bf)))))
@@ -1218,18 +1219,19 @@
         (let [;; Classify overlay entries -- O(m log n)
               additions   (java.util.TreeMap. ^Comparator b/bytes-cmp)
               del-ranks   (java.util.ArrayList.)
-              _           (when (and ov (not (.isEmpty ov)))
-                            (let [iter (.iterator (.entrySet ov))]
-                              (while (.hasNext iter)
-                                (let [^Map$Entry e (.next iter)
-                                      kbs          (.getKey e)
-                                      oval         (.getValue e)]
-                                  (if (identical? oval :overlay-deleted)
-                                    (when-let [lr (lmdb-rank-of-raw-key dbi rtx kbs)]
-                                      (.add del-ranks (long lr)))
-                                    (when-not (lmdb-key-exists? dbi rtx kbs)
-                                      (.put additions kbs true)))))))
-              _           (java.util.Collections/sort del-ranks)
+              _
+              (when (and ov (not (.isEmpty ov)))
+                (let [iter (.iterator (.entrySet ov))]
+                  (while (.hasNext iter)
+                    (let [^Map$Entry e (.next iter)
+                          kbs          (.getKey e)
+                          oval         (.getValue e)]
+                      (if (identical? oval :overlay-deleted)
+                        (when-let [lr (lmdb-rank-of-raw-key dbi rtx kbs)]
+                          (.add del-ranks (long lr)))
+                        (when-not (lmdb-key-exists? dbi rtx kbs)
+                          (.put additions kbs true)))))))
+              _           (Collections/sort del-ranks)
               add-entries
               (let [iter (.iterator (.entrySet additions))]
                 (loop [ai  (long 0)
@@ -1242,7 +1244,7 @@
                                                (b/read-buffer
                                                  (ByteBuffer/wrap akbs) k-type)
                                                k-type))
-                          idx          (java.util.Collections/binarySearch
+                          idx          (Collections/binarySearch
                                          del-ranks lmdb-below)
                           dels-below   (long (if (neg? idx)
                                                (- (- idx) 1)
@@ -1264,9 +1266,9 @@
                     lmdb-n (long (i/entries lmdb dbi-name))
                     dels-below-lr
                     (fn [^long lr]
-                      (let [idx (java.util.Collections/binarySearch
+                      (let [idx (Collections/binarySearch
                                   del-ranks lr)]
-                        (long (if (neg? idx) (- (- idx) 1) idx))))
+                        (if (neg? idx) (- (- idx) 1) idx)))
                     adds-below-mr
                     (fn [^long mr]
                       (loop [lo (int 0) hi (int n-add)]
@@ -1290,9 +1292,9 @@
                               del?     (and ov (identical? (.get ov kbs)
                                                            :overlay-deleted))
                               db       (dels-below-lr mid)
-                              base     (- mid db)
+                              base     (- mid ^long db)
                               ab       (adds-below-mr base)
-                              mr       (+ base ab)]
+                              mr       (+ base ^long ab)]
                           (cond
                             (and (not del?) (= mr target-rank))
                             (let [k (b/read-buffer
