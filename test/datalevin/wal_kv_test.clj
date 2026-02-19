@@ -24,6 +24,10 @@
   [lmdb]
   (:last-committed-wal-tx-id (if/kv-wal-watermarks lmdb)))
 
+(defn- strictly-increasing?
+  [xs]
+  (every? true? (map < xs (rest xs))))
+
 (defn- assert-kv-wal-post-commit-failpoint
   [step phase]
   (let [dir  (u/tmp-dir (str "kv-wal-fp-" (name step) "-" (name phase) "-"
@@ -304,6 +308,7 @@
                     dir
                     {:flags                  (conj c/default-env-flags :nosync)
                      :kv-wal?                true
+                     :wal-group-commit       1
                      :wal-meta-flush-max-txs 1
                      :wal-meta-flush-max-ms  60000})
         meta-path (str dir u/+separator+ c/wal-dir u/+separator+ c/wal-meta-file)]
@@ -510,6 +515,42 @@
                (vec (if/get-range lmdb "a" [:all] :data :data)))
             "get-range after reopen")
         (if/close-kv lmdb))
+      (finally
+        (u/delete-files dir)))))
+
+(deftest kv-wal-tx-id-monotonic-across-reopen-test
+  (let [dir (u/tmp-dir (str "kv-wal-id-monotonic-reopen-" (UUID/randomUUID)))]
+    (try
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (try
+          (if/open-dbi lmdb "a")
+          (if/transact-kv lmdb [[:put "a" 1 "x"]])
+          (if/transact-kv lmdb [[:put "a" 2 "y"]])
+          (if/transact-kv lmdb [[:put "a" 3 "z"]])
+          (finally
+            (if/close-kv lmdb))))
+
+      (let [ids-session1 (mapv :wal/tx-id (wal/read-wal-records dir 0 Long/MAX_VALUE))
+            lmdb         (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                         :kv-wal? true})]
+        (try
+          (if/open-dbi lmdb "a")
+          (if/transact-kv lmdb [[:put "a" 4 "w"]])
+          (let [ids-after-reopen (mapv :wal/tx-id
+                                       (wal/read-wal-records
+                                         dir 0 Long/MAX_VALUE))]
+            (is (seq ids-session1))
+            (is (seq ids-after-reopen))
+            (is (strictly-increasing? ids-session1)
+                (str "session1 WAL tx-ids must be strictly increasing: "
+                     ids-session1))
+            (is (strictly-increasing? ids-after-reopen)
+                (str "WAL tx-ids must be strictly increasing after reopen: "
+                     ids-after-reopen))
+            (is (> (last ids-after-reopen) (last ids-session1))))
+          (finally
+            (if/close-kv lmdb))))
       (finally
         (u/delete-files dir)))))
 

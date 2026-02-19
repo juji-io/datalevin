@@ -1793,22 +1793,27 @@
     (raise "Fail to count (slow) list in key range: " e {:dbi dbi-name})))
 
 (defn- init-info
-  [^CppLMDB lmdb new-info]
-  (transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info))
-  (let [dbis (into {}
-                   (map (fn [[[_ dbi-name] opts]] [dbi-name opts]))
-                   (get-range lmdb c/kv-info
-                              [:closed
-                               [:dbis :db.value/sysMin]
-                               [:dbis :db.value/sysMax]]
-                              [:keyword :string]))
-        info (into {}
-                   (range-filter lmdb c/kv-info
-                                 (fn [kv]
-                                   (let [b (b/read-buffer (l/k kv) :byte)]
-                                     (not= b c/type-hete-tuple)))
-                                 [:all]))]
-    (vreset! (.-info lmdb) (assoc info :dbis dbis))))
+  ([^CppLMDB lmdb new-info]
+   (init-info lmdb new-info false))
+  ([^CppLMDB lmdb new-info bypass-wal?]
+   (if bypass-wal?
+     (binding [c/*bypass-wal* true]
+       (transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info)))
+     (transact-kv lmdb c/kv-info (map (fn [[k v]] [:put k v]) new-info)))
+   (let [dbis (into {}
+                    (map (fn [[[_ dbi-name] opts]] [dbi-name opts]))
+                    (get-range lmdb c/kv-info
+                               [:closed
+                                [:dbis :db.value/sysMin]
+                                [:dbis :db.value/sysMax]]
+                               [:keyword :string]))
+         info (into {}
+                    (range-filter lmdb c/kv-info
+                                  (fn [kv]
+                                    (let [b (b/read-buffer (l/k kv) :byte)]
+                                      (not= b c/type-hete-tuple)))
+                                  [:all]))]
+     (vreset! (.-info lmdb) (assoc info :dbis dbis)))))
 
 (defn- open-kv*
   [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?
@@ -1911,11 +1916,22 @@
                                 (.exists (io/file dir c/valcode-file-name)))
                        (cp/load-val-compressor
                          (str dir u/+separator+ c/valcode-file-name)))]
-          (init-info lmdb (dissoc info
-                                  :kv-wal?
-                                  :kv-overlay-committed-by-tx
-                                  :kv-overlay-by-dbi
-                                  :overlay-published-wal-tx-id))
+          ;; Refresh WAL watermarks before any open-time kv-info writes, so
+          ;; init-info cannot append from default tx-id state on reopen.
+          (when kv-wal?
+            (wal/refresh-kv-wal-info! lmdb)
+            (wal/refresh-kv-wal-meta-info! lmdb))
+          (let [reopen-wal? (and kv-wal?
+                                 (pos? (long
+                                         (or (:last-committed-wal-tx-id
+                                               @(l/kv-info lmdb))
+                                             0))))]
+            (init-info lmdb (dissoc info
+                                    :kv-wal?
+                                    :kv-overlay-committed-by-tx
+                                    :kv-overlay-by-dbi
+                                    :overlay-published-wal-tx-id)
+                       reopen-wal?))
           (vswap! (l/kv-info lmdb) assoc
                   :kv-wal? (boolean kv-wal?)
                   :kv-overlay-committed-by-tx (ol/empty-overlay-committed-map)
