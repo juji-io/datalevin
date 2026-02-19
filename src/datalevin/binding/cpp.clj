@@ -1307,7 +1307,10 @@
   (sync [_ force] (.sync env force))
 
   (kv-wal-watermarks [this]
-    (l/kv-wal-watermarks this))
+    (wal/kv-wal-watermarks this))
+
+  (kv-wal-metrics [this]
+    (wal/kv-wal-metrics this))
 
   (flush-kv-indexer! [this]
     (.flush-kv-indexer! this nil))
@@ -1317,7 +1320,7 @@
     (when-let [^FileChannel ch (:wal-channel @info)]
       (when (.isOpen ch)
         (try (.force ch true) (catch Exception _ nil))))
-    (let [res (l/flush-kv-indexer! this upto-wal-id)]
+    (let [res (wal/flush-kv-indexer! this upto-wal-id)]
       ;; Hold write-txn lock while updating watermarks and pruning overlay
       ;; so we don't race with a concurrent publish-kv-committed-overlay!.
       (locking write-txn
@@ -1329,14 +1332,14 @@
       res))
 
   (open-tx-log [this from-wal-id]
-    (l/open-tx-log this from-wal-id))
+    (wal/open-tx-log this from-wal-id))
   (open-tx-log [this from-wal-id upto-wal-id]
-    (l/open-tx-log this from-wal-id upto-wal-id))
+    (wal/open-tx-log this from-wal-id upto-wal-id))
 
   (gc-wal-segments! [this]
-    (l/gc-wal-segments! this))
+    (wal/gc-wal-segments! this))
   (gc-wal-segments! [this retain-wal-id]
-    (l/gc-wal-segments! this retain-wal-id))
+    (wal/gc-wal-segments! this retain-wal-id))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))

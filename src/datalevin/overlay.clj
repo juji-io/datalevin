@@ -187,7 +187,9 @@
       (merge-overlay-delta m delta))
     {} committed-by-tx))
 
-(defn overlay-entry-count
+;; ---- Overlay lifecycle functions ----
+
+(defn- overlay-entry-count
   [overlay]
   (reduce
     (fn [^long acc ^ConcurrentSkipListMap m]
@@ -196,8 +198,6 @@
         acc))
     0
     (vals (or overlay {}))))
-
-;; ---- Overlay lifecycle functions ----
 
 (defn update-private-overlay-entries!
   [wtxn info-vol overlay]

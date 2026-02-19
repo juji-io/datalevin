@@ -16,13 +16,14 @@
    [clojure.walk :as w]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
-   [datalevin.query-util :as qu :refer [IStep -type -execute -execute-pipe -sample -explain]]
+   [datalevin.query-util :as qu
+    :refer [IStep -execute -execute-pipe -explain]]
    [datalevin.relation :as r]
    [datalevin.join :as j]
    [datalevin.rules :as rules]
    [datalevin.storage]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [cond+ raise conjv concatv map+]]
+   [datalevin.util :as u :refer [cond+ raise concatv map+]]
    [datalevin.inline :refer [update assoc]]
    [datalevin.spill :as sp]
    [datalevin.pipe :as p]
@@ -42,9 +43,9 @@
    [datalevin.db DB]
    [datalevin.relation Relation]
    [datalevin.storage Store]
-   [datalevin.parser And BindColl BindIgnore BindScalar BindTuple Constant
-    DefaultSrc FindColl FindRel FindScalar FindTuple Function Or PlainSymbol
-    RulesVar SrcVar Variable Pattern Predicate Not RuleExpr]
+   [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
+    FindColl FindRel FindScalar FindTuple Function PlainSymbol
+    RulesVar SrcVar Variable Pattern]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *query-cache* (LRUCache. c/query-result-cache-size))
@@ -1878,13 +1879,13 @@
           (merge-deps [x y]
             (if (or (:all? x) (:all? y))
               {:all? true}
-              {:all? false
+              {:all?  false
                :attrs (into (:attrs x #{}) (:attrs y #{}))}))
           (pattern-deps [parsed-q]
             (let [patterns (dp/collect #(instance? Pattern %) (:qwhere parsed-q))]
-              (loop [ps      patterns
-                     attrs   (transient #{})
-                     all?    false]
+              (loop [ps    patterns
+                     attrs (transient #{})
+                     all?  false]
                 (cond
                   all?
                   {:all? true}
@@ -1893,15 +1894,15 @@
                   {:all? false :attrs (persistent! attrs)}
 
                   :else
-                  (let [^Pattern p   (first ps)
-                        attr-term (nth (:pattern p) 1 nil)]
+                  (let [^Pattern p (first ps)
+                        attr-term  (nth (:pattern p) 1 nil)]
                     (cond
                       (instance? Constant attr-term)
                       (recur (rest ps) (conj! attrs (:value ^Constant attr-term))
                              false)
 
-                      ;; Variable / placeholder in attribute position means query may
-                      ;; touch arbitrary attributes.
+                      ;; Variable / placeholder in attribute position means query
+                      ;; may touch arbitrary attributes.
                       :else
                       (recur nil attrs true)))))))
           (tuple-fn-deps [parsed-q]

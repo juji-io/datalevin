@@ -326,12 +326,12 @@
 (deftest kv-wal-meta-monotonic-publish-test
   (let [dir      (u/tmp-dir (str "kv-wal-meta-monotonic-" (UUID/randomUUID)))
         snapshot (fn [wal-id]
-                   {c/last-committed-wal-tx-id wal-id
-                    c/last-indexed-wal-tx-id wal-id
-                    c/last-committed-user-tx-id wal-id
-                    c/committed-last-modified-ms (+ 1000 wal-id)
-                    :wal/last-segment-id (quot wal-id 10)
-                    :wal/enabled? true})]
+                   {c/last-committed-wal-tx-id   wal-id
+                    c/last-indexed-wal-tx-id     wal-id
+                    c/last-committed-user-tx-id  wal-id
+                    c/committed-last-modified-ms (+ 1000 ^long wal-id)
+                    :wal/last-segment-id         (quot ^long wal-id 10)
+                    :wal/enabled?                true})]
     (try
       (wal/publish-wal-meta! dir (snapshot 100))
       ;; Late stale publisher must not move on-disk watermarks backward.
@@ -350,12 +350,12 @@
   (let [dir      (u/tmp-dir (str "kv-wal-meta-concurrent-" (UUID/randomUUID)))
         ids      (range 1 65)
         snapshot (fn [wal-id]
-                   {c/last-committed-wal-tx-id wal-id
-                    c/last-indexed-wal-tx-id wal-id
-                    c/last-committed-user-tx-id wal-id
-                    c/committed-last-modified-ms (+ 1000 wal-id)
-                    :wal/last-segment-id (quot wal-id 10)
-                    :wal/enabled? true})]
+                   {c/last-committed-wal-tx-id   wal-id
+                    c/last-indexed-wal-tx-id     wal-id
+                    c/last-committed-user-tx-id  wal-id
+                    c/committed-last-modified-ms (+ 1000 ^long wal-id)
+                    :wal/last-segment-id         (quot ^long wal-id 10)
+                    :wal/enabled?                true})]
     (try
       (->> ids
            (mapv #(future (wal/publish-wal-meta! dir (snapshot %))))
@@ -365,8 +365,8 @@
         (is (= max-id (get meta c/last-committed-wal-tx-id)))
         (is (= max-id (get meta c/last-indexed-wal-tx-id)))
         (is (= max-id (get meta c/last-committed-user-tx-id)))
-        (is (= (+ 1000 max-id) (get meta c/committed-last-modified-ms)))
-        (is (= (quot max-id 10) (get meta :wal/last-segment-id)))
+        (is (= (+ 1000 ^long max-id) (get meta c/committed-last-modified-ms)))
+        (is (= (quot ^long max-id 10) (get meta :wal/last-segment-id)))
         (is (= (count ids) (long (or (get meta c/wal-meta-revision) 0)))))
       (finally
         (u/delete-files dir)))))
@@ -421,7 +421,7 @@
         (is (nil? (if/get-value lmdb c/kv-info
                                 c/applied-wal-tx-id :data :data)))
 
-        (let [res (l/replay-kv-wal! lmdb)]
+        (let [res (wal/replay-kv-wal! lmdb)]
           (is (= {:from 0 :to committed-id :applied committed-id} res)))
         (is (= committed-id (if/get-value lmdb c/kv-info
                                           c/last-indexed-wal-tx-id :data :data)))
@@ -463,7 +463,7 @@
 
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:from 0 :to committed-id :applied committed-id}
-               (l/replay-kv-wal! lmdb))))
+               (wal/replay-kv-wal! lmdb))))
       (is (= [2 3] (if/get-list lmdb "list" "a" :string :long)))
       (finally
         (if/close-kv lmdb)
@@ -547,17 +547,17 @@
                           :data :data))
 
         (is (= {:from 0 :to base-id :applied base-id}
-               (l/replay-kv-wal! lmdb base-id)))
+               (wal/replay-kv-wal! lmdb base-id)))
         (is (= base-id (if/get-value lmdb c/kv-info
                                      c/last-indexed-wal-tx-id :data :data)))
         (is (= base-id (if/get-value lmdb c/kv-info
                                      c/applied-wal-tx-id :data :data)))
 
         (is (= {:from base-id :to base-id :applied 0}
-               (l/replay-kv-wal! lmdb base-id)))
+               (wal/replay-kv-wal! lmdb base-id)))
 
         (is (= {:from 0 :to 0 :applied 0}
-               (l/replay-kv-wal! lmdb2))))
+               (wal/replay-kv-wal! lmdb2))))
       (finally
         (if/close-kv lmdb)
         (if/close-kv lmdb2)
@@ -608,7 +608,7 @@
 
       (let [committed-id (last-wal-id lmdb)]
         (is (= {:from 0 :to committed-id :applied committed-id}
-               (l/replay-kv-wal! lmdb)))
+               (wal/replay-kv-wal! lmdb)))
         (is (= committed-id
                (if/get-value lmdb c/kv-info c/applied-wal-tx-id :data :data)))
         (is (= committed-id
@@ -857,7 +857,7 @@
           (is (= {:last-committed-wal-tx-id  committed-id
                   :last-indexed-wal-tx-id    0
                   :last-committed-user-tx-id committed-id}
-                 (l/kv-wal-watermarks lmdb)))
+                 (wal/kv-wal-watermarks lmdb)))
 
           (binding [c/*trusted-apply* true
                     c/*bypass-wal*    true]
@@ -868,24 +868,24 @@
           (is (= {:indexed-wal-tx-id   partial-id
                   :committed-wal-tx-id committed-id
                   :drained?            false}
-                 (l/flush-kv-indexer! lmdb partial-id)))
+                 (wal/flush-kv-indexer! lmdb partial-id)))
           (is (= {:indexed-wal-tx-id   committed-id
                   :committed-wal-tx-id committed-id
                   :drained?            true}
-                 (l/flush-kv-indexer! lmdb)))
+                 (wal/flush-kv-indexer! lmdb)))
           (is (= {:last-committed-wal-tx-id  committed-id
                   :last-indexed-wal-tx-id    committed-id
                   :last-committed-user-tx-id committed-id}
-                 (l/kv-wal-watermarks lmdb)))))
+                 (wal/kv-wal-watermarks lmdb)))))
 
       (is (= {:last-committed-wal-tx-id  0
               :last-indexed-wal-tx-id    0
               :last-committed-user-tx-id 0}
-             (l/kv-wal-watermarks lmdb2)))
+             (wal/kv-wal-watermarks lmdb2)))
       (is (= {:indexed-wal-tx-id   0
               :committed-wal-tx-id 0
               :drained?            true}
-             (l/flush-kv-indexer! lmdb2)))
+             (wal/flush-kv-indexer! lmdb2)))
       (finally
         (if/close-kv lmdb)
         (if/close-kv lmdb2)
@@ -900,12 +900,12 @@
       (if/open-dbi lmdb "a")
       (if/transact-kv lmdb [[:put "a" 1 "x"]])
       (if/transact-kv lmdb [[:put "a" 2 "y"]])
-      (let [metrics-before (l/kv-wal-metrics lmdb)]
+      (let [metrics-before (wal/kv-wal-metrics lmdb)]
         (is (pos? (:indexer-lag metrics-before)))
         (is (pos? (:overlay-entries metrics-before)))
         (is (>= (:segment-count metrics-before) 1))
-        (l/flush-kv-indexer! lmdb)
-        (let [metrics-after (l/kv-wal-metrics lmdb)]
+        (wal/flush-kv-indexer! lmdb)
+        (let [metrics-after (wal/kv-wal-metrics lmdb)]
           (is (<= (:indexer-lag metrics-after) (:indexer-lag metrics-before)))
           (is (<= (:overlay-entries metrics-after) (:overlay-entries metrics-before)))
           (is (>= (:segment-count metrics-after) 1))))
@@ -939,11 +939,11 @@
           (is (= {:indexed-wal-tx-id   partial-id
                   :committed-wal-tx-id committed-id
                   :drained?            false}
-                 (l/flush-kv-indexer! lmdb partial-id)))
+                 (wal/flush-kv-indexer! lmdb partial-id)))
           (is (= {:indexed-wal-tx-id   committed-id
                   :committed-wal-tx-id committed-id
                   :drained?            true}
-                 (l/flush-kv-indexer! lmdb)))))
+                 (wal/flush-kv-indexer! lmdb)))))
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))
@@ -1258,7 +1258,7 @@
                             [[:put c/last-indexed-wal-tx-id 0]
                              [:put c/applied-wal-tx-id 0]]
                             :data :data))
-          (let [replay-res (l/replay-kv-wal! lmdb)]
+          (let [replay-res (wal/replay-kv-wal! lmdb)]
             (is (= final-id (:applied replay-res))
                 "Replay should apply up to the committed WAL id"))
           (let [vals-after-replay

@@ -1,3 +1,12 @@
+;;
+;; Copyright (c) Huahai Yang, Nikita Prokopov. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://opensource.org/license/epl-2-0)
+;; which can be found in the file LICENSE at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+;;
 (ns ^:no-doc datalevin.planner
   "Datalog query planner and optimizer"
   (:refer-clojure :exclude [update assoc])
@@ -13,29 +22,24 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [cond+ raise conjv concatv map+]]
    [datalevin.inline :refer [update assoc]]
-   [datalevin.spill :as sp]
    [datalevin.pipe :as p]
    [datalevin.parser :as dp]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.interface :refer [av-size]])
   (:import
-   [datalevin.query Context Plan Node Link OrJoinLink Clause
-    InitStep MergeScanStep LinkStep HashJoinStep OrJoinStep]
+   [datalevin.query Plan Node Link OrJoinLink Clause InitStep MergeScanStep
+    LinkStep HashJoinStep OrJoinStep]
    [datalevin.utl LikeFSM LRUCache]
    [datalevin.db DB]
    [datalevin.storage Store]
-   [datalevin.parser And BindColl BindIgnore BindScalar BindTuple Constant
-    DefaultSrc FindColl FindRel FindScalar FindTuple Function Or PlainSymbol
-    RulesVar SrcVar Variable Pattern Predicate Not RuleExpr]
-   [java.util Arrays List Comparator HashMap]
-   [java.util.concurrent ConcurrentHashMap ExecutorService Executors Future
-    Callable]
+   [datalevin.parser And BindColl  BindScalar BindTuple Constant
+    DefaultSrc Function Or Variable Pattern Predicate Not RuleExpr]
+   [java.util Arrays List]
+   [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (declare estimate-hash-join-cost)
-
-;; Utility functions needed by the planner (originally in query.clj)
 
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
@@ -57,7 +61,7 @@
 (defn- dot-call
   [^String fname ^objects args]
   (clojure.lang.Reflector/invokeInstanceMethod
-    (aget args 0) fname (java.util.Arrays/copyOfRange args 1 (alength args))))
+    (aget args 0) fname (Arrays/copyOfRange args 1 (alength args))))
 
 (defn- opt-apply
   [f args]
@@ -1694,10 +1698,10 @@
 
 (defn count-or-join-follows
   "Execute or-join on input tuples and count output size."
-  [or-join-exec-fn db sources rules tuples {:keys [clause bound-var free-vars tgt-attr]}
-   bound-idx]
+  [or-join-exec-fn db sources rules tuples
+   {:keys [clause bound-var free-vars tgt-attr]} bound-idx]
   (let [result (or-join-exec-fn db sources rules tuples clause bound-var
-                                 bound-idx free-vars tgt-attr)]
+                                bound-idx free-vars tgt-attr)]
     (.size ^List result)))
 
 (defn estimate-or-join-size
@@ -1713,16 +1717,16 @@
     (estimate-round
       (cond
         (< 0 ssize)
-        (let [^long size (count-or-join-follows or-join-exec-fn db sources rules sample link
-                                                bound-idx)
-              ratio      (max (double (/ size ssize))
-                              ^double c/magic-or-join-ratio)]
+        (let [size  (count-or-join-follows or-join-exec-fn db sources rules
+                                           sample link bound-idx)
+              ratio (max (double (/ ^long size ssize))
+                         ^double c/magic-or-join-ratio)]
           (.put ratios ratio-key ratio)
           (* ^long prev-size ratio))
 
         (< 0 rsize)
-        (let [^long size (count-or-join-follows or-join-exec-fn db sources rules result link
-                                                bound-idx)
+        (let [^long size (count-or-join-follows or-join-exec-fn db sources
+                                                rules result link bound-idx)
               ratio      (/ size rsize)]
           (.put ratios ratio-key ratio)
           size)
@@ -1735,13 +1739,14 @@
             (* ^long prev-size ^double c/magic-or-join-ratio))))))
 
 (defn estimate-join-size
-  [or-join-exec-fn db sources rules link-e link ratios prev-plan index new-base-plan]
+  [or-join-exec-fn db sources rules link-e link ratios prev-plan index
+   new-base-plan]
   (let [prev-size (:size prev-plan)
         steps     (:steps new-base-plan)]
     (case (:type link)
       :ref     [nil (estimate-scan-v-size prev-size steps)]
-      :or-join (let [or-size (estimate-or-join-size or-join-exec-fn db sources rules ratios
-                                                    prev-plan link)]
+      :or-join (let [or-size (estimate-or-join-size or-join-exec-fn db sources
+                                                    rules ratios prev-plan link)]
                  ;; or-join doesn't have new-base-plan steps to merge
                  [or-size or-size])
       ;; :_ref and :val-eq
@@ -1795,10 +1800,11 @@
       (if (< ^long c2 ^long c1) p2 p1))))
 
 (defn or-join-plan
-  [or-join-exec-fn base-plans new-e db sources rules ratios prev-plan link last-step new-key
-   link-e]
+  [or-join-exec-fn base-plans new-e db sources rules ratios prev-plan link
+   last-step new-key link-e]
   (let [new-base  (base-plans [new-e])
-        or-size   (estimate-or-join-size or-join-exec-fn db sources rules ratios prev-plan link)
+        or-size   (estimate-or-join-size or-join-exec-fn db sources rules
+                                         ratios prev-plan link)
         cur-steps (or-join-plan* db sources rules last-step link new-key
                                  new-base)
         or-cost   (estimate-e-plan-cost (:size prev-plan) or-size cur-steps)]
@@ -1808,17 +1814,18 @@
            (- ^long (find-index link-e (:strata last-step))))))
 
 (defn binary-plan*
-  [or-join-exec-fn db sources rules base-plans ratios prev-plan link-e new-e link new-key]
+  [or-join-exec-fn db sources rules base-plans ratios prev-plan link-e new-e
+   link new-key]
   (let [last-step (peek (:steps prev-plan))
         index     (index-by-link (:cols last-step) link-e link)
         link-type (:type link)]
     (if (identical? :or-join link-type)
-      (or-join-plan or-join-exec-fn base-plans new-e db sources rules ratios prev-plan link
-                    last-step new-key link-e)
+      (or-join-plan or-join-exec-fn base-plans new-e db sources rules ratios
+                    prev-plan link last-step new-key link-e)
       (let [new-base (base-plans [new-e])
             [e-size result-size]
-            (estimate-join-size or-join-exec-fn db sources rules link-e link ratios prev-plan
-                                index new-base)]
+            (estimate-join-size or-join-exec-fn db sources rules link-e link
+                                ratios prev-plan index new-base)]
         (if (and (#{:_ref :val-eq} link-type) new-base)
           (let [link-plan (e-plan db prev-plan index link-e link new-key
                                   new-base e-size result-size)]
@@ -1831,7 +1838,8 @@
                   result-size))))))
 
 (defn binary-plan
-  [or-join-exec-fn db sources rules nodes base-plans ratios prev-plan link-e new-e new-key]
+  [or-join-exec-fn db sources rules nodes base-plans ratios prev-plan link-e
+   new-e new-key]
   (let [last-step     (peek (:steps prev-plan))
         seen-or-joins (or (:seen-or-joins last-step) #{})
         links         (get-in nodes [link-e :links])
@@ -1843,8 +1851,8 @@
                              (not (contains? seen-or-joins (:clause %))))))
               links)
         candidates
-        (mapv #(binary-plan* or-join-exec-fn db sources rules base-plans ratios prev-plan
-                             link-e new-e % new-key)
+        (mapv #(binary-plan* or-join-exec-fn db sources rules base-plans ratios
+                             prev-plan link-e new-e % new-key)
               filtered-links)]
     (when (seq candidates)
       (apply u/min-key-comp (juxt :recency :cost :size) candidates))))
@@ -1863,8 +1871,9 @@
                   (let [new-key  (conj prev-key new-e)
                         cur-plan (t new-key)
                         new-plan
-                        (binary-plan or-join-exec-fn db sources rules nodes base-plans
-                                     ratios prev-plan link-e new-e new-key)]
+                        (binary-plan or-join-exec-fn db sources rules nodes
+                                     base-plans ratios prev-plan link-e new-e
+                                     new-key)]
                     (if new-plan
                       (if (or (nil? cur-plan)
                               (identical? new-plan
@@ -1924,8 +1933,8 @@
                                   (long (u/n-permutations n 2)))]
             (.add tables base-plans)
             (dotimes [i n-1]
-              (let [plans (plans or-join-exec-fn db sources rules nodes pairs base-plans
-                                 (.get tables i) ratios)]
+              (let [plans (plans or-join-exec-fn db sources rules nodes pairs
+                                 base-plans (.get tables i) ratios)]
                 (if (< pn (count plans))
                   (.add tables (shrink-space plans))
                   (.add tables plans))))
