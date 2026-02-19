@@ -302,6 +302,54 @@
         (finally
           (u/delete-files dir))))))
 
+(deftest kv-wal-replay-rejects-duplicate-or-backward-id-test
+  (let [dir (u/tmp-dir (str "kv-wal-replay-order-" (UUID/randomUUID)))]
+    (try
+      ;; Session 1: write two committed WAL records.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (try
+          (if/open-dbi lmdb "a")
+          (if/transact-kv lmdb [[:put "a" 1 "x"]])
+          (if/transact-kv lmdb [[:put "a" 2 "y"]])
+          (finally
+            (if/close-kv lmdb))))
+
+      ;; Inject a duplicate/backward WAL id at tail: [1 2 1].
+      (let [segment     (last (wal/segment-files dir))
+            segment-id  (or (and segment (wal/parse-segment-id segment)) 1)
+            duplicate-1 (wal/record-bytes
+                          1 1 (System/currentTimeMillis)
+                          [{:op  :put
+                            :dbi "a"
+                            :k   99
+                            :v   "dup"}])]
+        (is segment)
+        (wal/append-record-bytes! dir segment-id duplicate-1 :none))
+
+      ;; Session 2: replay must fail before applying duplicate id 1.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (try
+          (if/open-dbi lmdb "a")
+          (let [ex (try
+                     (if/flush-kv-indexer! lmdb)
+                     nil
+                     (catch Exception e e))
+                data (when ex (ex-data ex))]
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= :wal/out-of-order (:error data)))
+            (is (= 1 (:wal-tx-id data)))
+            (is (pos? (long (:applied-wal data))))
+            (is (= (inc (long (:applied-wal data)))
+                   (long (:expected-wal-tx-id data))))
+            (is (< (long (:wal-tx-id data))
+                   (long (:expected-wal-tx-id data)))))
+          (finally
+            (if/close-kv lmdb))))
+      (finally
+        (u/delete-files dir)))))
+
 (deftest kv-wal-meta-publish-test
   (let [dir       (u/tmp-dir (str "kv-wal-meta-" (UUID/randomUUID)))
         lmdb      (l/open-kv
@@ -514,6 +562,32 @@
         (is (= [[2 "y"] [3 "z"]]
                (vec (if/get-range lmdb "a" [:all] :data :data)))
             "get-range after reopen")
+        (if/close-kv lmdb))
+      (finally
+        (u/delete-files dir)))))
+
+(deftest kv-wal-reopen-overlay-rebuild-dupsort-put-test
+  (let [dir (u/tmp-dir (str "kv-wal-reopen-dupsort-put-" (UUID/randomUUID)))]
+    (try
+      ;; Session 1: use :put (not :put-list) on dupsort DBI, clear base, close.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (if/open-list-dbi lmdb "l")
+        (if/transact-kv lmdb [[:put "l" "k" 10 :string :long]
+                              [:put "l" "k" 20 :string :long]])
+        (if/clear-dbi lmdb "l")
+        ;; Visible via overlay in session 1.
+        (is (= [10 20] (vec (if/get-list lmdb "l" "k" :string :long))))
+        (if/close-kv lmdb))
+
+      ;; Session 2: reopen — overlay recovery must preserve dupsort semantics.
+      (let [lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                                 :kv-wal? true})]
+        (if/open-list-dbi lmdb "l")
+        (is (= [10 20] (vec (if/get-list lmdb "l" "k" :string :long)))
+            ":put WAL ops on dupsort DBI survive reopen before indexer catch-up")
+        (is (= [["k" 10] ["k" 20]]
+               (vec (if/get-range lmdb "l" [:all] :string :long))))
         (if/close-kv lmdb))
       (finally
         (u/delete-files dir)))))

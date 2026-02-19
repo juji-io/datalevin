@@ -119,52 +119,63 @@
     (merge-list-overlay-entry existing incoming)
     incoming))
 
+(defn- resolve-op-dupsort?
+  [dbis dbi dupsort?]
+  (if (some? dupsort?)
+    (boolean dupsort?)
+    (boolean (get-in dbis [dbi :flags :dupsort]))))
+
 (defn wal-op->overlay-entry
-  [{:keys [op dbi k v kt vt dupsort? k-bytes raw?]}]
-  (when dbi
-    (let [kbs (if raw?
-                k
-                (or k-bytes (encode-kv-bytes k (normalize-kv-type kt))))]
-      (case op
-        :put      (if dupsort?
-                    (let [tm  ^TreeMap (empty-sorted-byte-map)
-                          vbs (if raw? v
-                                  (encode-kv-bytes v (normalize-kv-type vt)))]
-                      (.put tm vbs :overlay-sentinel)
-                      [dbi kbs (->ListOverlayEntry false tm)])
-                    [dbi kbs (if raw? v
-                                 (encode-kv-bytes v (normalize-kv-type vt)))])
-        :del      (if dupsort?
-                    [dbi kbs (->ListOverlayEntry true (empty-sorted-byte-map))]
-                    [dbi kbs :overlay-deleted])
-        :put-list (let [tm  ^TreeMap (empty-sorted-byte-map)
-                        vt' (normalize-kv-type vt)
-                        vs  (if raw? (b/deserialize v) v)]
-                    (doseq [vi vs]
-                      (.put tm (encode-kv-bytes vi vt') :overlay-sentinel))
-                    [dbi kbs (->ListOverlayEntry false tm)])
-        :del-list (let [tm  ^TreeMap (empty-sorted-byte-map)
-                        vt' (normalize-kv-type vt)
-                        vs  (if raw? (b/deserialize v) v)]
-                    (doseq [vi vs]
-                      (.put tm (encode-kv-bytes vi vt') :overlay-tombstone-val))
-                    [dbi kbs (->ListOverlayEntry false tm)])
-        nil))))
+  ([op]
+   (wal-op->overlay-entry nil op))
+  ([dbis {:keys [op dbi k v kt vt dupsort? k-bytes raw?]}]
+   (when dbi
+     (let [kbs      (if raw?
+                      k
+                      (or k-bytes (encode-kv-bytes k (normalize-kv-type kt))))
+           dupsort? (resolve-op-dupsort? dbis dbi dupsort?)]
+       (case op
+         :put      (if dupsort?
+                     (let [tm  ^TreeMap (empty-sorted-byte-map)
+                           vbs (if raw? v
+                                   (encode-kv-bytes v (normalize-kv-type vt)))]
+                       (.put tm vbs :overlay-sentinel)
+                       [dbi kbs (->ListOverlayEntry false tm)])
+                     [dbi kbs (if raw? v
+                                  (encode-kv-bytes v (normalize-kv-type vt)))])
+         :del      (if dupsort?
+                     [dbi kbs (->ListOverlayEntry true (empty-sorted-byte-map))]
+                     [dbi kbs :overlay-deleted])
+         :put-list (let [tm  ^TreeMap (empty-sorted-byte-map)
+                         vt' (normalize-kv-type vt)
+                         vs  (if raw? (b/deserialize v) v)]
+                     (doseq [vi vs]
+                       (.put tm (encode-kv-bytes vi vt') :overlay-sentinel))
+                     [dbi kbs (->ListOverlayEntry false tm)])
+         :del-list (let [tm  ^TreeMap (empty-sorted-byte-map)
+                         vt' (normalize-kv-type vt)
+                         vs  (if raw? (b/deserialize v) v)]
+                     (doseq [vi vs]
+                       (.put tm (encode-kv-bytes vi vt') :overlay-tombstone-val))
+                     [dbi kbs (->ListOverlayEntry false tm)])
+         nil)))))
 
 (defn overlay-delta-by-dbi
-  [ops]
-  (reduce
-    (fn [m op]
-      (if-let [[dbi kbs entry] (wal-op->overlay-entry op)]
-        (let [^ConcurrentSkipListMap dbi-delta
-              (or (get m dbi) (empty-overlay-keys-map))]
-          (.put dbi-delta kbs
-                (merge-overlay-entry (.get dbi-delta kbs) entry))
-          (if (contains? m dbi)
-            m
-            (assoc m dbi dbi-delta)))
-        m))
-    {} ops))
+  ([ops]
+   (overlay-delta-by-dbi nil ops))
+  ([dbis ops]
+   (reduce
+     (fn [m op]
+       (if-let [[dbi kbs entry] (wal-op->overlay-entry dbis op)]
+         (let [^ConcurrentSkipListMap dbi-delta
+               (or (get m dbi) (empty-overlay-keys-map))]
+           (.put dbi-delta kbs
+                 (merge-overlay-entry (.get dbi-delta kbs) entry))
+           (if (contains? m dbi)
+             m
+             (assoc m dbi dbi-delta)))
+         m))
+     {} ops)))
 
 (defn merge-overlay-delta
   "Create a new overlay by copying existing maps and merging delta."
@@ -215,7 +226,7 @@
 
 (defn publish-kv-private-overlay!
   [wtxn info-vol ops]
-  (let [delta (overlay-delta-by-dbi ops)]
+  (let [delta (overlay-delta-by-dbi (:dbis @info-vol) ops)]
     (when (seq delta)
       (when-let [ov-ref (l/private-overlay wtxn)]
         (let [merged (merge-overlay-delta (or @ov-ref {}) delta)]
@@ -238,11 +249,11 @@
   "Publish committed overlay delta. Takes the info volatile and the
    write-txn atom for locking."
   [info-vol write-txn-atom wal-id ops]
-  (let [delta (overlay-delta-by-dbi ops)]
-    (when (seq delta)
-      (locking write-txn-atom
-        (let [info   @info-vol
-              ^ConcurrentSkipListMap committed-by-tx
+  (locking write-txn-atom
+    (let [info   @info-vol
+          delta  (overlay-delta-by-dbi (:dbis info) ops)]
+      (when (seq delta)
+        (let [^ConcurrentSkipListMap committed-by-tx
               (or (:kv-overlay-committed-by-tx info)
                   (empty-overlay-committed-map))
               by-dbi (merge-overlay-delta

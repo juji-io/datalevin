@@ -51,7 +51,8 @@
 (def ^:const wal-type-tuple-tag (byte 0x00))
 
 (def ^:private wal-flag-keywords
-  [:nooverwrite :nodupdata :current :reserve :append :appenddup :multiple])
+  [:nooverwrite :nodupdata :current :reserve :append :appenddup :multiple
+   :dupsort])
 
 (def ^:private wal-flag->id
   (zipmap wal-flag-keywords
@@ -253,13 +254,15 @@
 (defn- write-kv-op!
   "Encode and write a single KV op directly to the output stream."
   [^DataOutputStream out op-map]
-  (let [{:keys [op dbi k v kt vt flags k-bytes dbi-bytes]} op-map
+  (let [{:keys [op dbi k v kt vt flags dupsort? k-bytes dbi-bytes]} op-map
 
         ^bytes dbi-bs (or dbi-bytes (dbi-name-bytes dbi))
         k-type        (normalize-type kt)
         ^bytes k-bs   (or k-bytes (encode-bits k k-type))
         dbi-len       (alength dbi-bs)
-        k-len         (alength k-bs)]
+        k-len         (alength k-bs)
+        flags         (cond-> (normalize-flags flags)
+                        dupsort? (conj :dupsort))]
     (case op
       :put
       (do
@@ -317,30 +320,42 @@
         k-len   (read-u16 in)
         k-bs    (read-bytes in k-len)]
     (case opcode
-      0x10 (let [v-type (read-type in)
-                 v-len  (read-u32 in)
-                 v-bs   (read-bytes in v-len)
-                 flags  (read-flags in)]
+      0x10 (let [v-type    (read-type in)
+                 v-len     (read-u32 in)
+                 v-bs      (read-bytes in v-len)
+                 flags     (read-flags in)
+                 dupsort?  (boolean (some #{:dupsort} flags))
+                 wal-flags (seq (remove #{:dupsort} flags))]
              (cond-> {:op :put :dbi dbi :k k-bs :kt k-type
                       :v v-bs :vt v-type :raw? true}
-               (seq flags) (assoc :flags flags)))
-      0x11 (let [flags (read-flags in)]
+               dupsort?      (assoc :dupsort? true)
+               wal-flags     (assoc :flags (vec wal-flags))))
+      0x11 (let [flags     (read-flags in)
+                 dupsort?  (boolean (some #{:dupsort} flags))
+                 wal-flags (seq (remove #{:dupsort} flags))]
              (cond-> {:op :del :dbi dbi :k k-bs :kt k-type :raw? true}
-               (seq flags) (assoc :flags flags)))
-      0x16 (let [v-type (read-type in)
-                 v-len  (read-u32 in)
-                 v-bs   (read-bytes in v-len)
-                 flags  (read-flags in)]
+               dupsort?      (assoc :dupsort? true)
+               wal-flags     (assoc :flags (vec wal-flags))))
+      0x16 (let [v-type    (read-type in)
+                 v-len     (read-u32 in)
+                 v-bs      (read-bytes in v-len)
+                 flags     (read-flags in)
+                 dupsort?  (boolean (some #{:dupsort} flags))
+                 wal-flags (seq (remove #{:dupsort} flags))]
              (cond-> {:op :put-list :dbi dbi :k k-bs :kt k-type
                       :v v-bs :vt v-type :raw? true}
-               (seq flags) (assoc :flags flags)))
-      0x17 (let [v-type (read-type in)
-                 v-len  (read-u32 in)
-                 v-bs   (read-bytes in v-len)
-                 flags  (read-flags in)]
+               dupsort?      (assoc :dupsort? true)
+               wal-flags     (assoc :flags (vec wal-flags))))
+      0x17 (let [v-type    (read-type in)
+                 v-len     (read-u32 in)
+                 v-bs      (read-bytes in v-len)
+                 flags     (read-flags in)
+                 dupsort?  (boolean (some #{:dupsort} flags))
+                 wal-flags (seq (remove #{:dupsort} flags))]
              (cond-> {:op :del-list :dbi dbi :k k-bs :kt k-type
                       :v v-bs :vt v-type :raw? true}
-               (seq flags) (assoc :flags flags)))
+               dupsort?      (assoc :dupsort? true)
+               wal-flags     (assoc :flags (vec wal-flags))))
       (u/raise "Unknown WAL opcode" {:error  :wal/invalid-opcode
                                      :opcode opcode}))))
 
@@ -1235,6 +1250,10 @@
 (defn- wal-op->kv-tx
   [op]
   (let [{:keys [op dbi k v kt vt flags raw?]} op
+        flags                                (when (seq flags)
+                                               (let [fs (vec (remove #{:dupsort}
+                                                                      flags))]
+                                                 (when (seq fs) fs)))
         ;; When raw?, keys are already serialized byte arrays;
         ;; replay them with :raw type to avoid decode/re-encode.
         [k kt]                                (if raw? [k :raw] [k kt])
@@ -1340,12 +1359,14 @@
                             {:error     :wal/missing-record
                              :wal-tx-id target-id}))
                  (doseq [rec records]
-                   (let [wal-id (long (:wal/tx-id rec))
-                         ops    (:wal/ops rec)]
-                     (when (> wal-id (unchecked-inc (long @applied-id)))
+                   (let [wal-id       (long (:wal/tx-id rec))
+                         ops          (:wal/ops rec)
+                         expected-wal (unchecked-inc (long @applied-id))]
+                     (when (not= wal-id expected-wal)
                        (u/raise "KV WAL replay out of order"
                                 {:error       :wal/out-of-order
                                  :applied-wal @applied-id
+                                 :expected-wal-tx-id expected-wal
                                  :wal-tx-id   wal-id
                                  :start-id    start-id
                                  :target-id   target-id
