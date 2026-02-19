@@ -113,6 +113,12 @@
     (with-open [out (FileOutputStream. f true)]
       (.write out record 0 n))))
 
+(defn- append-invalid-magic-tail!
+  [^java.io.File f]
+  (with-open [out (FileOutputStream. f true)]
+    ;; `read-record` rejects this immediately with :wal/bad-magic.
+    (.write out (byte-array [0 0 0 0]))))
+
 (deftest kv-wal-disabled-by-default-test
   (let [dir  (u/tmp-dir (str "kv-wal-default-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
@@ -255,6 +261,50 @@
            [:step-7 :after true]]]
     (testing (str "reopen recovery at " (name step) " " (name phase))
       (assert-kv-wal-crash-recovery-on-reopen step phase durable?))))
+
+(deftest kv-wal-reopen-fails-on-overlay-recovery-error-test
+  (let [dir  (u/tmp-dir (str "kv-wal-reopen-overlay-recover-fail-"
+                             (UUID/randomUUID)))
+        opts {:flags                  (conj c/default-env-flags :nosync)
+              :kv-wal?                true
+              :wal-meta-flush-max-txs 1
+              :wal-meta-flush-max-ms  60000}]
+    (try
+      ;; Session 1: create a valid committed record, then advertise one more
+      ;; committed WAL id and append an unreadable tail.
+      (let [lmdb (l/open-kv dir opts)]
+        (try
+          (if/open-dbi lmdb "a")
+          (if/transact-kv lmdb [[:put "a" 1 "x"]])
+          (let [good-id  (last-wal-id lmdb)
+                bad-id   (inc good-id)
+                segment  (last (wal/segment-files dir))
+                segment-id (or (some-> segment wal/parse-segment-id) 1)]
+            (is segment)
+            (append-invalid-magic-tail! segment)
+            (wal/publish-wal-meta!
+              dir
+              {c/last-committed-wal-tx-id   bad-id
+               c/last-indexed-wal-tx-id     0
+               c/last-committed-user-tx-id  bad-id
+               c/committed-last-modified-ms (System/currentTimeMillis)
+               :wal/last-segment-id         segment-id
+               :wal/enabled?                true}))
+          (finally
+            (if/close-kv lmdb))))
+
+      ;; Session 2: reopen must fail; silent partial overlay recovery is unsafe.
+      (let [opened (volatile! nil)
+            ex     (try
+                     (vreset! opened (l/open-kv dir opts))
+                     nil
+                     (catch Exception e e))]
+        (when @opened
+          (if/close-kv @opened))
+        (is (instance? clojure.lang.ExceptionInfo ex))
+        (is (re-find #"Fail to open database" (ex-message ex))))
+      (finally
+        (u/delete-files dir)))))
 
 (deftest kv-wal-recover-from-truncated-tail-test
   (doseq [remove-meta? [false true]]

@@ -270,20 +270,30 @@
 (defn recover-kv-overlay!
   "Rebuild committed overlay from un-indexed WAL records."
   [info-vol write-txn-atom dir]
-  (try
+  (locking write-txn-atom
     (let [inf       @info-vol
           committed (long (or (:last-committed-wal-tx-id inf) 0))
           indexed   (long (or (:last-indexed-wal-tx-id inf) 0))]
       (when (> committed indexed)
-        ;; Reset overlay to empty before replaying
-        (vswap! info-vol assoc
-                :kv-overlay-committed-by-tx (empty-overlay-committed-map)
-                :kv-overlay-by-dbi {})
-        (doseq [rec (wal/read-wal-records dir indexed committed)]
-          (publish-kv-committed-overlay!
-            info-vol write-txn-atom
-            (long (:wal/tx-id rec)) (:wal/ops rec)))))
-    (catch Exception _ nil)))
+        (try
+          (let [dbis            (:dbis inf)
+                committed-by-tx (empty-overlay-committed-map)
+                by-dbi          (volatile! {})]
+            (doseq [rec (wal/read-wal-records dir indexed committed)]
+              (let [wal-id (long (:wal/tx-id rec))
+                    delta  (overlay-delta-by-dbi dbis (:wal/ops rec))]
+                (when (seq delta)
+                  (.put committed-by-tx wal-id delta)
+                  (vreset! by-dbi (merge-overlay-delta @by-dbi delta)))))
+            (vswap! info-vol assoc
+                    :kv-overlay-committed-by-tx committed-by-tx
+                    :kv-overlay-by-dbi @by-dbi))
+          (catch Exception e
+            (raise "Fail to recover KV overlay from WAL: " e
+                   {:error                    :kv-overlay/recover-failed
+                    :dir                      dir
+                    :last-indexed-wal-tx-id   indexed
+                    :last-committed-wal-tx-id committed})))))))
 
 (defn prune-kv-committed-overlay!
   [info-vol upto-wal-id]
