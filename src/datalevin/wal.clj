@@ -22,16 +22,19 @@
    [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
     DataOutputStream EOFException File]
    [java.util.zip CRC32C]
-   [java.util Arrays]
-   [java.nio ByteBuffer BufferOverflowException]
-   [java.nio.channels FileChannel]
-   [java.nio.file StandardOpenOption]
-   [java.nio.charset StandardCharsets]
-   [java.util.concurrent TimeUnit ScheduledExecutorService
-    ScheduledFuture]))
+   [java.util Arrays Collections WeakHashMap]
+    [java.nio ByteBuffer BufferOverflowException]
+    [java.nio.channels FileChannel]
+    [java.nio.file StandardOpenOption]
+    [java.nio.charset StandardCharsets]
+    [java.util.concurrent TimeUnit ScheduledExecutorService
+     ScheduledFuture]
+    [com.github.luben.zstd Zstd]))
 
 (def ^:const wal-format-major 1)
 (def ^:const wal-format-minor 0)
+(def ^:const wal-compression-threshold 1024)
+(def ^:const wal-compression-level 3)
 (def ^:private wal-record-magic (byte-array [(byte 0x44) (byte 0x4C)
                                              (byte 0x57) (byte 0x4C)]))
 (def ^:private wal-meta-magic (byte-array [(byte 0x44) (byte 0x4C)
@@ -341,6 +344,25 @@
                                      :opcode opcode}))))
 
 (def ^:const ^:private record-header-size 14)
+(def ^:private ^:const flag-compressed 0x01)
+
+(defn- compress-body
+  "Compress body bytes using zstd if compression is beneficial.
+   Returns [compressed-bytes compressed?]"
+  [^bytes body]
+  (if (> (alength body) wal-compression-threshold)
+    (let [compressed (Zstd/compress body wal-compression-level)
+          body-len   (alength body)
+          comp-len   (alength compressed)]
+      (if (< comp-len body-len)
+        [compressed true]
+        [body false]))
+    [body false]))
+
+(defn- decompress-body
+  "Decompress body bytes using zstd. Returns decompressed bytes."
+  [^bytes compressed ^long uncompressed-size]
+  (Zstd/decompress compressed uncompressed-size))
 
 (def ^:private ^ThreadLocal tl-record-bos
   (ThreadLocal/withInitial
@@ -353,13 +375,7 @@
         ^ByteArrayOutputStream bos (.get tl-record-bos)
         _        (.reset bos)
         out      (DataOutputStream. bos)]
-    ;; header with placeholders for body-len and checksum
-    (write-bytes! out wal-record-magic)
-    (.writeByte out (int wal-format-major))
-    (.writeByte out 0)
-    (write-u32 out 0)                          ;; body-len placeholder
-    (write-u32 out 0)                          ;; checksum placeholder
-    ;; body
+    ;; Build body first (without header)
     (write-u64 out wal-id)
     (write-u64 out user-tx-id)
     (write-u64 out user-tx-id)
@@ -374,13 +390,24 @@
     (doseq [op ops]
       (write-kv-op! out op))
     (.close out)
-    (let [buf      (.toByteArray bos)
-          body-len (- (alength buf) record-header-size)
-          checksum (crc32c buf record-header-size body-len)
-          bb       (ByteBuffer/wrap buf)]
-      ;; patch body-len at offset 6 and checksum at offset 10
-      (.putInt bb 6 (unchecked-int body-len))
-      (.putInt bb 10 (unchecked-int checksum))
+    (let [body-raw (.toByteArray bos)
+          ;; Compress body if beneficial
+          [body compressed?] (compress-body body-raw)
+          body-len   (alength body)
+          ;; Build full record with header
+          total-len  (+ record-header-size body-len)
+          buf        (byte-array total-len)
+          bb         (ByteBuffer/wrap buf)]
+      ;; Write header
+      (.put bb ^bytes wal-record-magic)
+      (.put bb (byte wal-format-major))
+      (.put bb (byte (if compressed? flag-compressed 0)))
+      (.putInt bb body-len)
+      ;; Calculate checksum over body only
+      (let [checksum (crc32c body 0 body-len)]
+        (.putInt bb checksum))
+      ;; Write body
+      (System/arraycopy body 0 buf record-header-size body-len)
       buf)))
 
 (defn wal-dir-path
@@ -434,20 +461,15 @@
   (let [^bytes magic (read-bytes in 4)]
     (when (not (Arrays/equals magic ^bytes wal-record-magic))
       (u/raise "Bad WAL record magic" {:error :wal/bad-magic}))
-    (let [version  (.readUnsignedByte in)
-          _flags   (.readUnsignedByte in)
-          body-len (read-u32 in)
-          checksum (read-u32 in)
-          body     (let [bs         (byte-array body-len)
-                         bytes-read (.read in bs)]
-                     (when (not= bytes-read body-len)
-                       (u/raise
-                         "WAL record truncated - possible crash during write"
-                         {:error    :wal/truncated
-                          :expected body-len
-                          :actual   bytes-read}))
-                     bs)
-          actual   (crc32c body 0 body-len)]
+    (let [version     (.readUnsignedByte in)
+          flags       (.readUnsignedByte in)
+          body-len    (read-u32 in)
+          checksum    (read-u32 in)
+          compressed? (not= 0 (bit-and flags flag-compressed))
+          body        (let [bs (byte-array body-len)]
+                        (.readFully in bs)
+                        bs)
+          actual      (crc32c body 0 body-len)]
       (when (not= checksum actual)
         (u/raise "WAL record checksum mismatch"
                  {:error    :wal/bad-checksum
@@ -458,33 +480,43 @@
                  {:error    :wal/bad-version
                   :expected wal-format-major
                   :actual   version}))
-      (with-open [bin (ByteArrayInputStream. body)
-                  din (DataInputStream. bin)]
-        (let [wal-id      (read-u64 din)
-              _user-start (read-u64 din)
-              _user-end   (read-u64 din)
-              user-count  (read-u32 din)
-              tx-time     (loop [i 0 t 0]
-                            (if (< i ^int user-count)
-                              (let [_uid    (read-u64 din)
-                                    tt      (read-u64 din)
-                                    ^int ml (read-u32 din)]
-                                (when (pos? ml) (read-bytes din ml))
-                                (read-u32 din)
-                                (read-u32 din)
-                                (recur (inc i) (max (long t) (long tt))))
-                              t))
-              op-count    ^int (read-u32 din)
-              ops         (loop [i 0 acc []]
-                            (if (< i op-count)
-                              (recur (inc i) (conj acc (decode-kv-op din)))
-                              acc))]
-          {:wal/tx-id wal-id :wal/tx-time tx-time :wal/ops ops})))))
+      ;; Decompress if needed - original size is stored in zstd frame header
+      (let [body (if compressed?
+                   (let [orig-size (Zstd/getFrameContentSize body)]
+                     (decompress-body body orig-size))
+                   body)]
+        (with-open [bin (ByteArrayInputStream. body)
+                    din (DataInputStream. bin)]
+          (let [wal-id      (read-u64 din)
+                _user-start (read-u64 din)
+                _user-end   (read-u64 din)
+                user-count  (read-u32 din)
+                tx-time     (loop [i 0 t 0]
+                              (if (< i ^int user-count)
+                                (let [_uid    (read-u64 din)
+                                      tt      (read-u64 din)
+                                      ^int ml (read-u32 din)]
+                                  (when (pos? ml) (read-bytes din ml))
+                                  (read-u32 din)
+                                  (read-u32 din)
+                                  (recur (inc i) (max (long t) (long tt))))
+                                t))
+                op-count    ^int (read-u32 din)
+                ops         (loop [i 0 acc []]
+                              (if (< i op-count)
+                                 (recur (inc i) (conj acc (decode-kv-op din)))
+                                 acc))]
+             {:wal/tx-id wal-id :wal/tx-time tx-time :wal/ops ops}))))))
+
+(declare find-start-segment)
 
 (defn read-wal-records
   [dir from-id upto-id]
   (let [from-id (long (or from-id 0))
-        upto-id (long (or upto-id Long/MAX_VALUE))]
+        upto-id (long (or upto-id Long/MAX_VALUE))
+        all-files (segment-files dir)
+        ;; Skip segments whose max WAL ID is <= from-id.
+        relevant-files (find-start-segment all-files from-id)]
     (lazy-seq
       (mapcat
         (fn [^File f]
@@ -496,8 +528,7 @@
                  (loop [acc (transient [])]
                    (let [rec (try
                                (read-record in)
-                               (catch EOFException _ ::eof)
-                               (catch Exception _ ::eof))]
+                               (catch EOFException _ ::eof))]
                      (if (= rec ::eof)
                        (persistent! acc)
                        (let [wal-id (long (:wal/tx-id rec))]
@@ -506,7 +537,7 @@
                            (<= wal-id upto-id) (recur (conj! acc rec))
                            :else               (persistent! acc))))))))
              [])))
-        (segment-files dir)))))
+        relevant-files))))
 
 (defn scan-last-wal
   [dir]
@@ -527,7 +558,13 @@
                         (let [rec (try
                                     (read-record in)
                                     (catch EOFException _ ::eof)
-                                    (catch Exception _ ::eof))]
+                                    (catch Exception e
+                                      (binding [*out* *err*]
+                                        (println (str "WAL parse error in segment "
+                                                      path
+                                                      " (stopping scan at last good record): "
+                                                      (.getMessage e))))
+                                      ::eof))]
                           (if (= rec ::eof)
                             [cid ctime]
                             (recur (long (:wal/tx-id rec))
@@ -542,10 +579,25 @@
          :last-segment-id last-seg
          :last-segment-ms last-time}))))
 
-(defn segment-max-wal-id
-  "Return the highest wal-id in a segment file, or 0 if empty.
-  Skips record bodies — only reads headers + first 8 bytes (wal-id) per record.
-  Returns the last good wal-id on corruption (bad magic, checksum, etc.)."
+;;
+;; Per-segment max-WAL-ID cache keyed by [absolute-path file-size].
+;; File-size auto-invalidates entries for the active (still-growing) segment;
+;; call evict-segment-max-id-cache! when a segment is deleted by GC.
+;;
+(def ^:private ^java.util.concurrent.ConcurrentHashMap segment-max-id-cache
+  (java.util.concurrent.ConcurrentHashMap.))
+
+(defn evict-segment-max-id-cache!
+  "Remove the cached max-WAL-ID entry for f. Must be called before deleting
+  a segment file so stale entries don't survive GC."
+  [^File f]
+  (.remove segment-max-id-cache (.getAbsolutePath f)))
+
+(defn- scan-segment-max-wal-id
+  "Scan a segment file and return its highest WAL ID, or 0 if empty/unreadable.
+  For uncompressed records reads only the 8-byte wal-id then skips the rest of
+  the body, avoiding a full-body read. Compressed records are decompressed in
+  full because the wal-id is not addressable before decompression."
   [^File f]
   (let [path (.getAbsolutePath f)]
     (or (with-segment-data-input
@@ -558,20 +610,33 @@
                         (when-not (Arrays/equals magic ^bytes wal-record-magic)
                           (u/raise "Bad WAL record magic"
                                    {:error :wal/bad-magic}))
-                        (let [_version  (.readUnsignedByte in)
-                              _flags    (.readUnsignedByte in)
-                              body-len  (read-u32 in)
-                              _checksum (read-u32 in)
-                              ;; wal-id is the first 8 bytes of body
-                              wal-id   (.readLong in)
-                              skip-len (- (long body-len) 8)]
-                          ;; skip rest of body — loop because
-                          ;; skipBytes may not skip the full amount
-                          (loop [remaining skip-len]
-                            (when (pos? remaining)
-                              (recur (- remaining
-                                        (.skipBytes in
-                                                    (int remaining))))))
+                        (let [_version    (.readUnsignedByte in)
+                              flags       (.readUnsignedByte in)
+                              body-len    (read-u32 in)
+                              _checksum   (read-u32 in)
+                              compressed? (not= 0 (bit-and flags flag-compressed))
+                              wal-id
+                              (if compressed?
+                                ;; Compressed: must read and decompress full body.
+                                (let [body (let [bs (byte-array body-len)]
+                                             (.readFully in bs)
+                                             bs)]
+                                  (.getLong
+                                    (ByteBuffer/wrap
+                                      (decompress-body
+                                        body
+                                        (Zstd/getFrameContentSize body)))))
+                                ;; Uncompressed: read wal-id (first 8 bytes) then
+                                ;; skip the rest — no need to buffer the full body.
+                                (let [id (.readLong in)
+                                      to-skip (- body-len 8)]
+                                  (when (pos? to-skip)
+                                    (loop [rem to-skip]
+                                      (when (pos? rem)
+                                        (let [n (.skip in rem)]
+                                          (when (pos? n)
+                                            (recur (- rem n)))))))
+                                  id))]
                           wal-id))
                       (catch EOFException _ ::eof)
                       (catch Exception _ ::eof))]
@@ -579,6 +644,37 @@
                   max-id
                   (recur (long result)))))))
         0)))
+
+(defn segment-max-wal-id
+  "Return the highest wal-id in a segment file, or 0 if empty/unreadable.
+  Results are cached by (path, file-size). A growing active segment is
+  re-scanned whenever its size has changed; deleted segments should be
+  evicted via evict-segment-max-id-cache! before deletion."
+  [^File f]
+  (let [path  (.getAbsolutePath f)
+        fsize (.length f)
+        entry (.get segment-max-id-cache path)]
+    (if (and entry (= ^long (nth entry 0) fsize))
+      (nth entry 1)
+      (let [max-id (scan-segment-max-wal-id f)]
+        (.put segment-max-id-cache path [fsize max-id])
+        max-id))))
+
+(defn- find-start-segment
+  "Find the first segment file that contains WAL IDs > from-id.
+  Opens each segment to read its max WAL ID, skipping any whose
+  highest ID is <= from-id. This is correct regardless of how many
+  transactions a single segment holds (e.g. with large 256 MB segments
+  a single file may span thousands of WAL IDs, so an ID-ratio heuristic
+  would incorrectly discard valid data)."
+  [files from-id]
+  (let [from-id (long from-id)]
+    (if (<= from-id 0)
+      files
+      (drop-while
+       (fn [^File f]
+         (<= (long (segment-max-wal-id f)) from-id))
+       files))))
 
 (def ^:private wal-meta-slot-size 64)
 (def ^:private wal-meta-payload-off 9)
@@ -591,6 +687,35 @@
 (def ^:private wal-meta-off-format-minor 50)
 (def ^:private wal-meta-off-enabled 51)
 (def ^:private wal-meta-off-last-segment 52)
+(def ^:private ^java.util.Map wal-meta-publish-locks
+  (Collections/synchronizedMap (WeakHashMap.)))
+
+(defn- wal-meta-publish-lock
+  ^Object [dir]
+  (let [path (wal-meta-path dir)]
+    (or (.get wal-meta-publish-locks path)
+        (locking wal-meta-publish-locks
+          (or (.get wal-meta-publish-locks path)
+              (let [lock (Object.)]
+                (.put wal-meta-publish-locks path lock)
+                lock))))))
+
+(defn- merge-wal-meta-snapshot
+  [existing snapshot]
+  (let [max-field (fn [k]
+                    (max ^long (long (or (get existing k) 0))
+                         ^long (long (or (get snapshot k) 0))))
+        committed (max-field c/last-committed-wal-tx-id)
+        indexed   (min ^long committed ^long (max-field c/last-indexed-wal-tx-id))
+        user      (min ^long committed
+                       ^long (max-field c/last-committed-user-tx-id))]
+    (-> (merge existing snapshot)
+        (assoc c/last-committed-wal-tx-id committed
+               c/last-indexed-wal-tx-id indexed
+               c/last-committed-user-tx-id user
+               c/committed-last-modified-ms
+               (max-field c/committed-last-modified-ms)
+               :wal/last-segment-id (max-field :wal/last-segment-id)))))
 
 (defn- meta-slot-bytes
   [snapshot]
@@ -681,54 +806,70 @@
             b     b
             :else nil))))))
 
+(defn- write-fully!
+  "Write all bytes from buf to ch, looping until the buffer is exhausted.
+  FileChannel.write(ByteBuffer) is not guaranteed to write all remaining bytes
+  in a single call (e.g. on network-mounted or compressed filesystems)."
+  [^FileChannel ch ^ByteBuffer buf]
+  (while (.hasRemaining buf)
+    (.write ch buf)))
+
 (defn publish-wal-meta!
   [dir snapshot]
   (u/file (wal-dir-path dir))
-  (let [f          (io/file (wal-meta-path dir))
-        existed?   (.exists f)
-        existing   (read-wal-meta dir)
-        rev        (u/long-inc (or (get existing c/wal-meta-revision) 0))
-        merged     (merge existing snapshot
-                          {c/wal-meta-revision rev
-                           :wal/enabled?       true
-                           :wal-format-major   wal-format-major
-                           :wal-format-minor   wal-format-minor})
-        slot-bytes (meta-slot-bytes merged)
-        empty-slot (byte-array 64)
-        use-a?     (odd? rev)
-        slot-a     (if use-a?
-                     slot-bytes
-                     (if existing (meta-slot-bytes existing) empty-slot))
-        slot-b     (if use-a?
-                     (if existing (meta-slot-bytes existing) empty-slot)
-                     slot-bytes)
-        payload    (byte-array 128)
-        metadata?  (not= c/*wal-sync-mode* :none)]
-    (System/arraycopy slot-a 0 payload 0 64)
-    (System/arraycopy slot-b 0 payload 64 64)
-    (with-open [ch (FileChannel/open
-                     (.toPath f)
-                     (into-array StandardOpenOption
-                                 [StandardOpenOption/CREATE
-                                  StandardOpenOption/WRITE]))]
-      ;; Write in-place at fixed offsets instead of truncating first.
-      ;; TRUNCATE_EXISTING would destroy both slots before writing,
-      ;; so a crash between truncation and write completion could
-      ;; lose all meta.  Fixed-offset overwrites preserve the
-      ;; untouched slot if the process dies mid-write.
-      (let [buf (ByteBuffer/wrap payload)]
-        (.position ch 0)
-        (.write ch buf))
-      (when metadata? (sync-channel! ch c/*wal-sync-mode*)))
-    (when (and (not existed?) metadata?)
-      (try
-        (with-open [dch (FileChannel/open
-                          (.toPath (io/file (wal-dir-path dir)))
-                          (into-array StandardOpenOption
-                                      [StandardOpenOption/READ]))]
-          (sync-channel! dch c/*wal-sync-mode*))
-        (catch Exception _ nil)))
-    merged))
+  (locking (wal-meta-publish-lock dir)
+    (let [f          (io/file (wal-meta-path dir))
+          existed?   (.exists f)
+          existing   (read-wal-meta dir)
+          rev        (u/long-inc (or (get existing c/wal-meta-revision) 0))
+          merged     (assoc (merge-wal-meta-snapshot existing snapshot)
+                            c/wal-meta-revision rev
+                            :wal/enabled? true
+                            :wal-format-major wal-format-major
+                            :wal-format-minor wal-format-minor)
+          slot-bytes (meta-slot-bytes merged)
+          empty-slot (byte-array 64)
+          use-a?     (odd? rev)
+          slot-a     (if use-a?
+                       slot-bytes
+                       (if existing (meta-slot-bytes existing) empty-slot))
+          slot-b     (if use-a?
+                       (if existing (meta-slot-bytes existing) empty-slot)
+                       slot-bytes)
+          payload    (byte-array 128)
+          metadata?  (not= c/*wal-sync-mode* :none)]
+      (System/arraycopy slot-a 0 payload 0 64)
+      (System/arraycopy slot-b 0 payload 64 64)
+      (with-open [ch (FileChannel/open
+                       (.toPath f)
+                       (into-array StandardOpenOption
+                                   [StandardOpenOption/CREATE
+                                    StandardOpenOption/WRITE]))]
+        ;; Write in-place at fixed offsets instead of truncating first.
+        ;; TRUNCATE_EXISTING would destroy both slots before writing,
+        ;; so a crash between truncation and write completion could
+        ;; lose all meta.  Fixed-offset overwrites preserve the
+        ;; untouched slot if the process dies mid-write.
+        (let [buf (ByteBuffer/wrap payload)]
+          (.position ch 0)
+          (write-fully! ch buf))
+        (when metadata? (sync-channel! ch c/*wal-sync-mode*)))
+       (when (and (not existed?) metadata?)
+         (try
+           (with-open [dch (FileChannel/open
+                             (.toPath (io/file (wal-dir-path dir)))
+                             (into-array StandardOpenOption
+                                         [StandardOpenOption/READ]))]
+             ;; Always sync directory on creation using fdatasync.
+             ;; This ensures directory entry is persisted on filesystems with
+             ;; delayed allocation (e.g., ext4), even when sync mode is :none.
+             (sync-channel! dch :fdatasync))
+           (catch Exception e
+             (raise "Failed to sync WAL directory"
+                    {:error :wal/dir-sync-failed
+                     :dir (wal-dir-path dir)
+                     :exception e}))))
+       merged)))
 
 (defn open-segment-channel
   "Open a FileChannel for a WAL segment. Caller is responsible for closing."
@@ -744,17 +885,27 @@
 
 (defn append-record-bytes!
   "Append a WAL record. When ch is provided, uses it directly (caller manages
-  lifecycle). When ch is nil, opens and closes a channel per call."
+  lifecycle). When ch is nil, opens and closes a channel per call.
+  If an exception occurs when using a provided channel, the channel is closed
+  to prevent further use in an unknown state."
   ([dir segment-id ^bytes record sync-mode]
    (u/file (wal-dir-path dir))
    (with-open [^FileChannel ch (open-channel (segment-path dir segment-id))]
-     (.write ch (ByteBuffer/wrap record))
+     (write-fully! ch (ByteBuffer/wrap record))
      (sync-channel! ch sync-mode))
    (alength ^bytes record))
   ([^FileChannel ch ^bytes record sync-mode]
-   (.write ch (ByteBuffer/wrap record))
-   (sync-channel! ch sync-mode)
-   (alength ^bytes record)))
+   (try
+     (write-fully! ch (ByteBuffer/wrap record))
+     (sync-channel! ch sync-mode)
+     (alength ^bytes record)
+     (catch Exception e
+       ;; Close the channel to prevent further use in an unknown state
+       (close-segment-channel! ch)
+       (raise "WAL write failed, channel closed"
+              {:error :wal/write-failed
+               :channel-open (.isOpen ch)
+               :exception e})))))
 
 (defn append-kv-record!
   [dir segment-id wal-id user-tx-id tx-time ops sync-mode]
@@ -836,8 +987,12 @@
                 ;; No rotation - use existing or open current segment
                 (ensure-wal-channel! lmdb dir new-seg-id))
               now-ms           (System/currentTimeMillis)]
-          (.write ^FileChannel ch (ByteBuffer/wrap record))
-          (when sync? (sync-channel! ch sync-mode))
+          (write-fully! ch (ByteBuffer/wrap record))
+          ;; Sync if needed. On rotation the old segment was already synced
+          ;; before closing, but the record was written to the NEW segment,
+          ;; so that channel must be synced here too.
+          (when sync?
+            (sync-channel! ch sync-mode))
           (vswap! (.-info lmdb)
                   (fn [current-info]
                     (cond->

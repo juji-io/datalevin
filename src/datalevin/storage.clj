@@ -27,7 +27,7 @@
    [datalevin.async :as a]
    [datalevin.index :as idx
     :refer [value-type datom->indexable index->dbi index->ktype index->vtype
-            index->k index->v gt->datom retrieved->v]]
+            index->k index->v gt->datom retrieved->v encode-giant-datom]]
    [datalevin.validate :as vld]
    [datalevin.interface
     :refer [transact-kv get-range get-first get-value visit-list-sample
@@ -1440,10 +1440,11 @@
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
     (when giant?
       (.advance-max-gt store)
-      (let [gd [e attr v]]
+      (let [gd [e attr v]
+            {:keys [value vtype]} (encode-giant-datom (apply d/datom gd))]
         (.put giants gd max-gt)
-        (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
-                              :id :data [:append]))))
+        (.add txs (lmdb/kv-tx :put c/giants max-gt value
+                              :id vtype [:append]))))
     (when (identical? vt :db.type/vec)
       (.add vi-ds [(conjv (props :db.vec/domains) (v/attr-domain attr))
                    (if giant? [:g [max-gt v]] [:a [e aid v]])]))

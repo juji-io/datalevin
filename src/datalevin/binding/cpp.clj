@@ -860,15 +860,26 @@
       ;; Sync any unsynced WAL records before closing — force at least
       ;; fdatasync regardless of configured sync mode so that the
       ;; watermark promotion below is truthful after unclean shutdown.
-      (when-let [^FileChannel ch (:wal-channel @info)]
-        (when (.isOpen ch)
-          (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
-                close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
-            (try (wal/sync-channel! ch close-mode) (catch Exception _ nil)))))
-      ;; Promote synced watermark after final sync
-      (when (:kv-wal? @info)
-        (when-let [committed (:last-committed-wal-tx-id @info)]
-          (vswap! info assoc :last-synced-wal-tx-id committed)))
+      (let [sync-ok?
+            (when-let [^FileChannel ch (:wal-channel @info)]
+              (when (.isOpen ch)
+                (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
+                      close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
+                  (try
+                    (wal/sync-channel! ch close-mode)
+                    true
+                    (catch Exception e
+                      (binding [*out* *err*]
+                        (println "WARNING: WAL sync failed on close; not promoting synced watermark")
+                        (stt/print-stack-trace e))
+                      false)))))]
+        ;; Only promote synced watermark when the close-time sync actually succeeded.
+        ;; A failed sync means some committed records may not be on disk, so
+        ;; last-synced-wal-tx-id must not advance — publish-kv-wal-meta! uses
+        ;; min(committed, synced) as the durable watermark.
+        (when (and (:kv-wal? @info) sync-ok?)
+          (when-let [committed (:last-committed-wal-tx-id @info)]
+            (vswap! info assoc :last-synced-wal-tx-id committed))))
       ;; Flush WAL meta so reopen recovers the correct committed watermark
       (when (:kv-wal? @info)
         (when-let [wal-id (:last-committed-wal-tx-id @info)]

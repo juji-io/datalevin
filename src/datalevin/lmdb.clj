@@ -481,7 +481,8 @@
                           (long (min committed-id upto-id)))]
        (if (<= target-id from-id)
          {:from from-id :to target-id :applied 0}
-         (let [applied-count (volatile! 0)]
+         (let [applied-count (volatile! 0)
+              applied-id    (volatile! 0)]
            (binding [c/*trusted-apply* true
                      c/*bypass-wal*   true]
              (with-transaction-kv [db lmdb]
@@ -490,7 +491,7 @@
                                                    (kv-info-id db
                                                                c/legacy-applied-tx-id)
                                                    0))
-                     applied-id          (volatile! initial-applied)
+                     _                   (vreset! applied-id initial-applied)
                      start-id            (long (max from-id initial-applied))
                      records         (wal/read-wal-records (env-dir db)
                                                            start-id target-id)]
@@ -513,11 +514,11 @@
                      (vreset! applied-id wal-id)
                      (vswap! applied-count u/long-inc)))
                  (transact-kv db c/kv-info
-                              (cond-> [[:put c/last-indexed-wal-tx-id target-id]]
+                              (cond-> [[:put c/last-indexed-wal-tx-id @applied-id]]
                                 (or (nil? initial-applied-wal)
                                     (> (long @applied-id) initial-applied))
                                 (conj [:put c/applied-wal-tx-id @applied-id]))))))
-           {:from from-id :to target-id :applied @applied-count}))))))
+           {:from from-id :to @applied-id :applied @applied-count}))))))
 
 (defn flush-kv-indexer!
   "Catch up KV indexer watermark to committed WAL via replay and return:
@@ -666,7 +667,8 @@
                          over-size? (> ^long @running-bytes max-bytes)
                          over-age?  (> age-ms max-age-ms)]
                      (if (or over-size? over-age?)
-                       (do (.delete f)
+                       (do (wal/evict-segment-max-id-cache! f)
+                           (.delete f)
                            (vswap! running-bytes
                                    (fn [^long v] (- v fsize)))
                            (vswap! deleted u/long-inc))

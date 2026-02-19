@@ -13,6 +13,9 @@
 - [WAL] Log overlay/indexer/segment telemetry `kv-wal-metrics`
 - [Datalog] Support atomic migration from default EDN blob to a specific data
   type when `update-schema`.
+- [Datalog] Giants DBI is compressed when the value is greater than
+  `datalevin.constants/*giants-zstd-threshold*`, default is 1024 bytes.
+- [Platform] Support FreeBSD on AMD64 [Thx @markusalbertgraf]
 
 ### Improved
 - [Vector] Moved vector index persistence inside DLMDB.

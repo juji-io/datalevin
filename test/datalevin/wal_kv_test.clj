@@ -323,6 +323,54 @@
         (if/close-kv lmdb)
         (u/delete-files dir)))))
 
+(deftest kv-wal-meta-monotonic-publish-test
+  (let [dir      (u/tmp-dir (str "kv-wal-meta-monotonic-" (UUID/randomUUID)))
+        snapshot (fn [wal-id]
+                   {c/last-committed-wal-tx-id wal-id
+                    c/last-indexed-wal-tx-id wal-id
+                    c/last-committed-user-tx-id wal-id
+                    c/committed-last-modified-ms (+ 1000 wal-id)
+                    :wal/last-segment-id (quot wal-id 10)
+                    :wal/enabled? true})]
+    (try
+      (wal/publish-wal-meta! dir (snapshot 100))
+      ;; Late stale publisher must not move on-disk watermarks backward.
+      (wal/publish-wal-meta! dir (snapshot 50))
+      (let [meta (wal/read-wal-meta dir)]
+        (is (= 100 (get meta c/last-committed-wal-tx-id)))
+        (is (= 100 (get meta c/last-indexed-wal-tx-id)))
+        (is (= 100 (get meta c/last-committed-user-tx-id)))
+        (is (= 1100 (get meta c/committed-last-modified-ms)))
+        (is (= 10 (get meta :wal/last-segment-id)))
+        (is (= 2 (long (or (get meta c/wal-meta-revision) 0)))))
+      (finally
+        (u/delete-files dir)))))
+
+(deftest kv-wal-meta-concurrent-publish-test
+  (let [dir      (u/tmp-dir (str "kv-wal-meta-concurrent-" (UUID/randomUUID)))
+        ids      (range 1 65)
+        snapshot (fn [wal-id]
+                   {c/last-committed-wal-tx-id wal-id
+                    c/last-indexed-wal-tx-id wal-id
+                    c/last-committed-user-tx-id wal-id
+                    c/committed-last-modified-ms (+ 1000 wal-id)
+                    :wal/last-segment-id (quot wal-id 10)
+                    :wal/enabled? true})]
+    (try
+      (->> ids
+           (mapv #(future (wal/publish-wal-meta! dir (snapshot %))))
+           (run! deref))
+      (let [meta   (wal/read-wal-meta dir)
+            max-id (apply max ids)]
+        (is (= max-id (get meta c/last-committed-wal-tx-id)))
+        (is (= max-id (get meta c/last-indexed-wal-tx-id)))
+        (is (= max-id (get meta c/last-committed-user-tx-id)))
+        (is (= (+ 1000 max-id) (get meta c/committed-last-modified-ms)))
+        (is (= (quot max-id 10) (get meta :wal/last-segment-id)))
+        (is (= (count ids) (long (or (get meta c/wal-meta-revision) 0)))))
+      (finally
+        (u/delete-files dir)))))
+
 (deftest kv-wal-meta-flush-cadence-test
   (let [dir       (u/tmp-dir (str "kv-wal-meta-cadence-" (UUID/randomUUID)))
         lmdb      (l/open-kv

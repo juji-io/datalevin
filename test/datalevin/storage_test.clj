@@ -272,6 +272,25 @@
       (if/close store'))
     (u/delete-files dir)))
 
+(deftest giants-zstd-compression-test
+  (let [dir   (u/tmp-dir (str "datalevin-giants-zstd-test-" (UUID/randomUUID)))
+        store (sut/open
+                dir nil
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+        v     (apply str (repeat 12000 "giant-value-"))
+        d     (d/datom c/e0 :a v)]
+    (try
+      (if/load-datoms store [d])
+      (is (= [d] (if/fetch store d)))
+      (let [[gt raw] (if/get-first (.-lmdb ^Store store)
+                                   c/giants [:all] :id :raw)
+            sig      (mapv #(bit-and (int %) 0xFF) (take 4 raw))]
+        (is (= c/g0 gt))
+        (is (= [0x44 0x4C 0x47 0x5A] sig)))
+      (finally
+        (if/close store)
+        (u/delete-files dir)))))
+
 (deftest normal-data-test
   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
         store (sut/open
