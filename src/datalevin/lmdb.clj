@@ -46,6 +46,7 @@
   (reset [this] "reset a read only transaction")
   (renew [this] "renew a read only transaction")
   (read-only? [this] "is this a read only transaction")
+  (txn [this] "return the underlying read-only transaction")
   (private-overlay [this] "return the private overlay")
   (kp [this] "return the key pointer")
   (vp [this] "return the value pointer"))

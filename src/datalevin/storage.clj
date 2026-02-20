@@ -12,7 +12,7 @@
   (:refer-clojure :exclude [update assoc])
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
-   [datalevin.binding.cpp]
+   [datalevin.kv]
    [datalevin.inline :refer [update assoc]]
    [datalevin.util :as u :refer [conjs conjv]]
    [datalevin.relation :as r]

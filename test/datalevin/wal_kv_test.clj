@@ -3,6 +3,7 @@
    [clojure.java.io :as io]
    [datalevin.lmdb :as l]
    [datalevin.bits :as b]
+   [datalevin.overlay :as ol]
    [datalevin.wal :as wal]
    [datalevin.interface :as if]
    [datalevin.spill :as sp]
@@ -294,15 +295,15 @@
             (if/close-kv lmdb))))
 
       ;; Session 2: reopen must fail; silent partial overlay recovery is unsafe.
-      (let [opened (volatile! nil)
-            ex     (try
-                     (vreset! opened (l/open-kv dir opts))
-                     nil
-                     (catch Exception e e))]
+      (let [opened (volatile! nil)]
+        (binding [*out* (java.io.StringWriter.)
+                  *err* (java.io.StringWriter.)]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"Fail to open database"
+                                (vreset! opened (l/open-kv dir opts)))))
         (when @opened
           (if/close-kv @opened))
-        (is (instance? clojure.lang.ExceptionInfo ex))
-        (is (re-find #"Fail to open database" (ex-message ex))))
+        (is (nil? @opened)))
       (finally
         (u/delete-files dir)))))
 
@@ -947,7 +948,7 @@
                                          [:all] :long))))
       (is (= 4 (if/list-range-count lmdb "l" [:all] :string [:all] :long)))
       (is (= 2 (if/list-range-count lmdb "l" [:all] :string [:all] :long 2)))
-      (is (= 2 (if/key-range-list-count lmdb "l" [:all] :string)))
+      (is (= 4 (if/key-range-list-count lmdb "l" [:all] :string)))
       (is (= 1 (if/key-range-list-count lmdb "l" [:all] :string 1)))
       (is (= [["a" 6]]
              (vec (if/list-range-filter lmdb "l"
@@ -1002,6 +1003,35 @@
       (if/clear-dbi lmdb "l")
       (is (nil? (if/get-value lmdb "l" "a" :string :long)))
       (is (empty? (if/get-range lmdb "l" [:all] :string :long)))
+      (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest kv-wal-native-counts-do-not-materialize-ranges-test
+  (let [dir  (u/tmp-dir (str "kv-wal-native-counts-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                             :kv-wal? true})]
+    (try
+      (if/open-list-dbi lmdb "l")
+      (if/put-list-items lmdb "l" "a" [1 2 3] :string :long)
+      (if/put-list-items lmdb "l" "b" [4 5] :string :long)
+      (if/del-list-items lmdb "l" "a" [2] :string :long)
+      (if/put-list-items lmdb "l" "c" [6] :string :long)
+      ;; Force reliance on WAL overlay state.
+      (if/clear-dbi lmdb "l")
+
+      (with-redefs [if/key-range  (fn [& _]
+                                    (throw (ex-info "unexpected key-range"
+                                                    {})))
+                    if/list-range (fn [& _]
+                                    (throw (ex-info "unexpected list-range"
+                                                    {})))]
+        (is (= 3 (if/key-range-count lmdb "l" [:all] :string)))
+        (is (= 5 (if/key-range-list-count lmdb "l" [:all] :string)))
+        (is (= 4 (if/list-range-count lmdb "l" [:all] :string
+                                      [:closed 1 5] :long)))
+        (is (= 2 (if/list-range-count lmdb "l" [:all] :string
+                                      [:greater-than 3] :long 2))))
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))

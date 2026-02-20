@@ -27,7 +27,7 @@
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.bits :as b]
-   [datalevin.binding.cpp]
+   [datalevin.kv]
    [datalevin.datafy]))
 
 ;; Entities

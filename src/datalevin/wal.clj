@@ -838,61 +838,63 @@
     (.write ch buf)))
 
 (defn publish-wal-meta!
-  [dir snapshot]
-  (u/file (wal-dir-path dir))
-  (locking (wal-meta-publish-lock dir)
-    (let [f          (io/file (wal-meta-path dir))
-          existed?   (.exists f)
-          existing   (read-wal-meta dir)
-          rev        (u/long-inc (or (get existing c/wal-meta-revision) 0))
-          merged     (assoc (merge-wal-meta-snapshot existing snapshot)
-                            c/wal-meta-revision rev
-                            :wal/enabled? true
-                            :wal-format-major wal-format-major
-                            :wal-format-minor wal-format-minor)
-          slot-bytes (meta-slot-bytes merged)
-          empty-slot (byte-array 64)
-          use-a?     (odd? rev)
-          slot-a     (if use-a?
-                       slot-bytes
-                       (if existing (meta-slot-bytes existing) empty-slot))
-          slot-b     (if use-a?
-                       (if existing (meta-slot-bytes existing) empty-slot)
-                       slot-bytes)
-          payload    (byte-array 128)
-          metadata?  (not= c/*wal-sync-mode* :none)]
-      (System/arraycopy slot-a 0 payload 0 64)
-      (System/arraycopy slot-b 0 payload 64 64)
-      (with-open [ch (FileChannel/open
-                       (.toPath f)
-                       (into-array StandardOpenOption
-                                   [StandardOpenOption/CREATE
-                                    StandardOpenOption/WRITE]))]
-        ;; Write in-place at fixed offsets instead of truncating first.
-        ;; TRUNCATE_EXISTING would destroy both slots before writing,
-        ;; so a crash between truncation and write completion could
-        ;; lose all meta.  Fixed-offset overwrites preserve the
-        ;; untouched slot if the process dies mid-write.
-        (let [buf (ByteBuffer/wrap payload)]
-          (.position ch 0)
-          (write-fully! ch buf))
-        (when metadata? (sync-channel! ch c/*wal-sync-mode*)))
-       (when (and (not existed?) metadata?)
-         (try
-           (with-open [dch (FileChannel/open
-                             (.toPath (io/file (wal-dir-path dir)))
-                             (into-array StandardOpenOption
-                                         [StandardOpenOption/READ]))]
-             ;; Always sync directory on creation using fdatasync.
-             ;; This ensures directory entry is persisted on filesystems with
-             ;; delayed allocation (e.g., ext4), even when sync mode is :none.
-             (sync-channel! dch :fdatasync))
-           (catch Exception e
-             (raise "Failed to sync WAL directory"
-                    {:error :wal/dir-sync-failed
-                     :dir (wal-dir-path dir)
-                     :exception e}))))
-       merged)))
+  ([dir snapshot]
+   (publish-wal-meta! dir snapshot c/*wal-sync-mode*))
+  ([dir snapshot sync-mode]
+   (u/file (wal-dir-path dir))
+   (locking (wal-meta-publish-lock dir)
+     (let [f          (io/file (wal-meta-path dir))
+           existed?   (.exists f)
+           existing   (read-wal-meta dir)
+           rev        (u/long-inc (or (get existing c/wal-meta-revision) 0))
+           merged     (assoc (merge-wal-meta-snapshot existing snapshot)
+                             c/wal-meta-revision rev
+                             :wal/enabled? true
+                             :wal-format-major wal-format-major
+                             :wal-format-minor wal-format-minor)
+           slot-bytes (meta-slot-bytes merged)
+           empty-slot (byte-array 64)
+           use-a?     (odd? rev)
+           slot-a     (if use-a?
+                        slot-bytes
+                        (if existing (meta-slot-bytes existing) empty-slot))
+           slot-b     (if use-a?
+                        (if existing (meta-slot-bytes existing) empty-slot)
+                        slot-bytes)
+           payload    (byte-array 128)
+           metadata?  (not= sync-mode :none)]
+       (System/arraycopy slot-a 0 payload 0 64)
+       (System/arraycopy slot-b 0 payload 64 64)
+       (with-open [ch (FileChannel/open
+                        (.toPath f)
+                        (into-array StandardOpenOption
+                                    [StandardOpenOption/CREATE
+                                     StandardOpenOption/WRITE]))]
+         ;; Write in-place at fixed offsets instead of truncating first.
+         ;; TRUNCATE_EXISTING would destroy both slots before writing,
+         ;; so a crash between truncation and write completion could
+         ;; lose all meta.  Fixed-offset overwrites preserve the
+         ;; untouched slot if the process dies mid-write.
+         (let [buf (ByteBuffer/wrap payload)]
+           (.position ch 0)
+           (write-fully! ch buf))
+         (when metadata? (sync-channel! ch sync-mode)))
+        (when (and (not existed?) metadata?)
+          (try
+            (with-open [dch (FileChannel/open
+                              (.toPath (io/file (wal-dir-path dir)))
+                              (into-array StandardOpenOption
+                                          [StandardOpenOption/READ]))]
+              ;; Always sync directory on creation using fdatasync.
+              ;; This ensures directory entry is persisted on filesystems with
+              ;; delayed allocation (e.g., ext4), even when sync mode is :none.
+              (sync-channel! dch :fdatasync))
+            (catch Exception e
+              (raise "Failed to sync WAL directory"
+                     {:error :wal/dir-sync-failed
+                      :dir (wal-dir-path dir)
+                      :exception e}))))
+        merged))))
 
 (defn open-segment-channel
   "Open a FileChannel for a WAL segment. Caller is responsible for closing."
@@ -1153,7 +1155,8 @@
                     c/committed-last-modified-ms commit-ms
                     :wal/last-segment-id         seg-id
                     :wal/enabled?                true}
-        meta'      (publish-wal-meta! (i/env-dir lmdb) snapshot)
+        sync-mode  (or (:wal-sync-mode info) c/*wal-sync-mode*)
+        meta'      (publish-wal-meta! (i/env-dir lmdb) snapshot sync-mode)
         rev        (or (:wal-meta-revision meta') 0)]
     (vswap! (l/kv-info lmdb) assoc
             :wal-meta-revision rev

@@ -10,7 +10,6 @@
   "Native binding using JavaCPP"
   (:refer-clojure :exclude [sync])
   (:require
-   [clojure.stacktrace :as stt]
    [clojure.java.io :as io]
    [clojure.string :as s]
    [datalevin.bits :as b]
@@ -21,9 +20,7 @@
    [datalevin.async :as a]
    [datalevin.migrate :as m]
    [datalevin.validate :as vld]
-   [datalevin.wal :as wal]
    [datalevin.scan :as scan]
-   [datalevin.overlay :as ol]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
             transact-kv get-range range-filter stat key-compressor
@@ -31,7 +28,7 @@
             set-key-compressor set-val-compressor
             bf-compress bf-uncompress]]
    [datalevin.lmdb :as l
-    :refer [open-kv IBuffer IRange IRtx IDB IKV IWriting ICompress
+    :refer [IBuffer IRange IRtx IDB IKV IWriting ICompress
             IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_envinfo DTLV$MDB_stat DTLV$dtlv_key_iter
@@ -44,14 +41,12 @@
    [datalevin.async IAsyncWork]
    [datalevin.utl BitOps]
    [java.util.concurrent TimeUnit ScheduledExecutorService
-    ScheduledFuture]
+    ScheduledFuture ConcurrentSkipListMap]
    [java.lang AutoCloseable]
    [java.io File]
    [java.util Iterator HashMap ArrayDeque]
    [java.util.function Supplier]
    [java.nio BufferOverflowException ByteBuffer]
-   [java.nio.channels FileChannel]
-   [java.nio.charset StandardCharsets]
    [org.bytedeco.javacpp SizeTPointer LongPointer]
    [clojure.lang IObj]))
 
@@ -218,6 +213,7 @@
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
+  (txn [_] txn)
   (reset [this]
     (vswap! depth u/long-dec)
     (when (zero? ^long @depth)
@@ -343,43 +339,27 @@
       (when-not (= rc DTLV/MDB_NOTFOUND)
         [(.outBuf kp) (.outBuf vp)])))
   (iterate-key [this rtx cur [range-type k1 k2] k-type]
-    (let [ctx  (l/range-info rtx range-type k1 k2 k-type)
-          base (->KeyIterable lmdb this cur rtx ctx)]
-      (if-let [ov (ol/overlay-for-dbi @(l/kv-info lmdb) (l/write-txn lmdb)
-                                       (.dbi-name this))]
-        (ol/overlay-iterate-key base ctx ov range-type)
-        base)))
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
+      (->KeyIterable lmdb this cur rtx ctx)))
   (iterate-key-sample [this rtx cur indices budget step [range-type k1 k2]
                        k-type]
     (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeySampleIterable lmdb this indices budget step cur rtx ctx)))
   (iterate-list [this rtx cur [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
-    (let [ctx  (l/list-range-info rtx k-range-type k1 k2 k-type
-                                  v-range-type v1 v2 v-type)
-          base (->ListIterable lmdb this cur rtx ctx)]
-      (if-let [ov (ol/overlay-for-dbi @(l/kv-info lmdb) (l/write-txn lmdb)
-                                       (.dbi-name this))]
-        (ol/overlay-iterate-list base ctx ov k-range-type v-range-type)
-        base)))
+    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+                                 v-range-type v1 v2 v-type)]
+      (->ListIterable lmdb this cur rtx ctx)))
   (iterate-list-sample [this rtx cur indices budget step [k-range-type k1 k2]
                         k-type]
     (let [ctx (l/range-info rtx k-range-type k1 k2 k-type)]
       (->ListSampleIterable lmdb this indices budget step cur rtx ctx)))
   (iterate-list-val-full [this rtx cur]
-    (let [base (->ListFullValIterable lmdb this cur rtx)]
-      (if-let [ov (ol/overlay-for-dbi @(l/kv-info lmdb) (l/write-txn lmdb)
-                                       (.dbi-name this))]
-        (ol/wrap-list-full-val-iterable base ov)
-        base)))
+    (->ListFullValIterable lmdb this cur rtx))
   (iterate-list-key-range-val-full [this rtx cur [range-type k1 k2]
                                     k-type]
-    (let [ctx  (l/range-info rtx range-type k1 k2 k-type)
-          base (->ListKeyRangeFullValIterable lmdb this cur rtx ctx)]
-      (if-let [ov (ol/overlay-for-dbi @(l/kv-info lmdb) (l/write-txn lmdb)
-                                       (.dbi-name this))]
-        (ol/overlay-iterate-list-key-range-val-full base ctx ov range-type)
-        base)))
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
+      (->ListKeyRangeFullValIterable lmdb this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -657,59 +637,6 @@
       (vld/validate-kv-tx-data tx validate?)
       (put-tx dbi txn tx))))
 
-(defn- dbi-dupsort?
-  [^HashMap dbis dbi-name]
-  (when dbi-name
-    (let [^DBI dbi (.get dbis dbi-name)]
-      (and dbi (.-dupsort? dbi)))))
-
-(defn- canonical-kv-op
-  ([^KVTxData tx fallback-dbi ^HashMap dbis]
-   (canonical-kv-op tx fallback-dbi dbis nil))
-  ([^KVTxData tx fallback-dbi ^HashMap dbis cached-dbi-bytes]
-   (let [dbi-name (or (.-dbi-name tx) fallback-dbi)
-         kt       (ol/normalize-kv-type (.-kt tx))]
-     {:op        (.-op tx)
-      :dbi       dbi-name
-      :k         (.-k tx)
-      :v         (.-v tx)
-      :kt        kt
-      :vt        (.-vt tx)
-      :flags     (.-flags tx)
-      :dupsort?  (dbi-dupsort? dbis dbi-name)
-      :k-bytes   (ol/encode-kv-bytes (.-k tx) kt)
-      :dbi-bytes (or cached-dbi-bytes
-                     (.getBytes ^String dbi-name StandardCharsets/UTF_8))})))
-
-(defn- validate-kv-txs!
-  [txs dbi-name kt vt ^HashMap dbis]
-  (if dbi-name
-    (let [^DBI dbi  (or (.get dbis dbi-name)
-                        (raise dbi-name " is not open" {}))
-          validate? (.-validate-data? dbi)
-          tx-data   (mapv #(l/->kv-tx-data % kt vt) txs)]
-      (doseq [tx tx-data]
-        (vld/validate-kv-tx-data tx validate?))
-      tx-data)
-    (let [tx-data (mapv l/->kv-tx-data txs)]
-      (doseq [^KVTxData tx tx-data]
-        (let [dbi-name  (.-dbi-name tx)
-              ^DBI dbi  (or (.get dbis dbi-name)
-                            (raise dbi-name " is not open" {}))
-              validate? (.-validate-data? dbi)]
-          (vld/validate-kv-tx-data tx validate?)))
-      tx-data)))
-
-(defn- get-kv-info-id [lmdb k] (i/get-value lmdb c/kv-info k :data :data))
-
-(defn- run-writer-step!
-  [step f]
-  (vld/check-failpoint step :before)
-  (vld/check-failpoint step :during)
-  (let [ret (f)]
-    (vld/check-failpoint step :after)
-    ret))
-
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
   (.put-key rtx k kt)
@@ -766,8 +693,6 @@
   (when-let [fut @scheduled-sync]
     (.cancel ^ScheduledFuture fut true)
     (vreset! scheduled-sync nil)))
-
-
 
 (defn- copy-version-file
   [lmdb dest]
@@ -856,41 +781,6 @@
   (close-kv [this]
     (when-not (.isClosed env)
       (stop-scheduled-sync scheduled-sync)
-      (wal/stop-scheduled-wal-checkpoint info)
-      ;; Sync any unsynced WAL records before closing — force at least
-      ;; fdatasync regardless of configured sync mode so that the
-      ;; watermark promotion below is truthful after unclean shutdown.
-      (let [sync-ok?
-            (when-let [^FileChannel ch (:wal-channel @info)]
-              (when (.isOpen ch)
-                (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
-                      close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
-                  (try
-                    (wal/sync-channel! ch close-mode)
-                    true
-                    (catch Exception e
-                      (binding [*out* *err*]
-                        (println "WARNING: WAL sync failed on close; not promoting synced watermark")
-                        (stt/print-stack-trace e))
-                      false)))))]
-        ;; Only promote synced watermark when the close-time sync actually succeeded.
-        ;; A failed sync means some committed records may not be on disk, so
-        ;; last-synced-wal-tx-id must not advance — publish-kv-wal-meta! uses
-        ;; min(committed, synced) as the durable watermark.
-        (when (and (:kv-wal? @info) sync-ok?)
-          (when-let [committed (:last-committed-wal-tx-id @info)]
-            (vswap! info assoc :last-synced-wal-tx-id committed))))
-      ;; Flush WAL meta so reopen recovers the correct committed watermark
-      (when (:kv-wal? @info)
-        (when-let [wal-id (:last-committed-wal-tx-id @info)]
-          (when (pos? ^long wal-id)
-            (try (wal/publish-kv-wal-meta! this wal-id
-                                           (System/currentTimeMillis))
-                 (catch Exception e
-                   (binding [*out* *err*]
-                     (println "WARNING: Failed to flush WAL meta on close")
-                     (stt/print-stack-trace e)))))))
-      (wal/close-segment-channel! (:wal-channel @info))
       (swap! l/lmdb-dirs disj (env-dir this))
       (when (zero? (count @l/lmdb-dirs))
         (a/shutdown-executor)
@@ -953,9 +843,7 @@
               db       (DBI. this dbi (new-pools) kp vp kc vc
                              dupsort? counted? validate-data?)]
           (when (not= dbi-name c/kv-info)
-            (vswap! info assoc-in [:dbis dbi-name] opts)
-            (transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
-                                        [:keyword :string])]))
+            (vswap! info assoc-in [:dbis dbi-name] opts))
           (.put dbis dbi-name db)
           db)
         (u/raise (str "Reached maximal number of DBI: " max-dbis) {}))))
@@ -992,8 +880,6 @@
         (Util/checkRc (DTLV/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
         (vswap! info update :dbis dissoc dbi-name)
-        (transact-kv this c/kv-info
-                     [[:del [:dbis dbi-name]]] [:keyword :string])
         (.remove dbis dbi-name)
         nil)
       (catch Exception e (raise "Fail to drop DBI: " dbi-name e {}))))
@@ -1098,69 +984,33 @@
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
-  (close-transact-kv [this]
+  (close-transact-kv [_]
     (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
-        (let [aborted?     @(.-aborted? wtxn)
-              wal-enabled? (and kv-wal (not c/*bypass-wal*))
-              ops          (when (and wal-enabled? (not aborted?))
-                             (seq @(.-wal-ops wtxn)))]
+        (let [aborted? @(.-aborted? wtxn)]
           (try
-            (let [wal-entry (when (seq ops)
-                              (vld/check-failpoint :step-3 :before)
-                              (let [entry (wal/append-kv-wal-record!
-                                            this (vec ops)
-                                            (System/currentTimeMillis))]
-                                (vld/check-failpoint :step-3 :after)
-                                entry))
-                  wal-id    (:wal-id wal-entry)]
-              (when wal-id
-                (locking write-txn
-                  (run-writer-step! :step-4 (fn [] nil))
-                  (run-writer-step! :step-5
-                                    #(ol/publish-kv-committed-overlay!
-                                       info write-txn wal-id
-                                       (:ops wal-entry)))
-                  (run-writer-step! :step-6 (fn [] nil))
-                  (run-writer-step! :step-7
-                                    #(ol/publish-kv-overlay-watermark!
-                                       info wal-id))))
-              (if (or aborted? wal-enabled?)
-                (.abort txn)
-                (try
-                  (.commit txn)
-                  (catch Util$MapFullException _
-                    (.close txn)
-                    (up-db-size env)
-                    (vreset! write-txn nil)
-                    (raise "DB resized" {:resized true}))
-                  (catch Exception e
-                    (.close txn)
-                    (vreset! write-txn nil)
-                    (raise "Fail to commit read/write transaction in LMDB: "
-                           e {}))))
-              (vreset! write-txn nil)
-              (.close txn)
-              ;; Step 8 (`wal/meta` checkpoint publish) is outside commit
-              ;; critical path; failures are non-fatal to the caller.
-              (when wal-id
-                (try
-                  (run-writer-step!
-                    :step-8
-                    #(wal/maybe-publish-kv-wal-meta! this wal-id))
-                  (catch Exception _ nil)))
-              (when wal-id
-                (wal/maybe-flush-kv-indexer-on-pressure! this))
-              (when (.-wal-ops wtxn)
-                (vreset! (.-wal-ops wtxn) []))
-              (ol/reset-private-overlay! wtxn info)
-              (if aborted? :aborted :committed))
+            (if aborted?
+              (.abort txn)
+              (try
+                (.commit txn)
+                (catch Util$MapFullException _
+                  (.close txn)
+                  (up-db-size env)
+                  (vreset! write-txn nil)
+                  (raise "DB resized" {:resized true}))
+                (catch Exception e
+                  (.close txn)
+                  (vreset! write-txn nil)
+                  (raise "Fail to commit read/write transaction in LMDB: "
+                         e {}))))
+            (vreset! write-txn nil)
+            (.close txn)
+            (if aborted? :aborted :committed)
             (catch Exception e
-              (when (and wal-enabled? (not aborted?))
-                (wal/refresh-kv-wal-info! this)
-                (wal/refresh-kv-wal-meta-info! this)
-                (ol/recover-kv-overlay! info write-txn (env-dir this)))
               (when-let [^Txn t (.-txn wtxn)]
+                (try
+                  (.abort t)
+                  (catch Exception _ nil))
                 (try
                   (.close t)
                   (catch Exception _ nil)))
@@ -1175,9 +1025,6 @@
   (abort-transact-kv [_]
     (when-let [^Rtx wtxn @write-txn]
       (vreset! (.-aborted? wtxn) true)
-      (when (.-wal-ops wtxn)
-        (vreset! (.-wal-ops wtxn) []))
-      (ol/reset-private-overlay! wtxn info)
       (vreset! write-txn wtxn)
       nil))
 
@@ -1189,115 +1036,40 @@
   (transact-kv [this dbi-name txs k-type v-type]
     (locking write-txn
       (.check-ready this)
-      (let [^Rtx rtx     @write-txn
-            one-shot?    (nil? rtx)
-            wal-enabled? (and kv-wal (not c/*bypass-wal*))
-            ^DBI dbi     (when dbi-name
-                           (or (.get dbis dbi-name)
-                               (raise dbi-name " is not open" {})))]
-        (if (and wal-enabled? one-shot?)
-          ;; Fast WAL one-shot path — no LMDB transaction needed
+      (let [^Rtx rtx  @write-txn
+            one-shot? (nil? rtx)
+            ^DBI dbi  (when dbi-name
+                        (or (.get dbis dbi-name)
+                            (raise dbi-name " is not open" {})))]
+        (let [^Txn txn (if one-shot?
+                         (Txn/create env)
+                         (.-txn rtx))]
           (try
-            (let [tx-data    (validate-kv-txs! txs dbi-name k-type v-type dbis)
-                  dbi-bs     (when dbi-name
-                               (.getBytes ^String dbi-name StandardCharsets/UTF_8))
-                  ops        (mapv #(canonical-kv-op % dbi-name dbis dbi-bs)
-                                   tx-data)
-                  max-val-op (when (:max-val-size-changed? @info)
-                               (let [tx (l/->kv-tx-data
-                                          [:put :max-val-size
-                                           (:max-val-size @info)]
-                                          nil nil)]
-                                 (vswap! info assoc :max-val-size-changed? false)
-                                 (canonical-kv-op tx c/kv-info dbis)))
-                  ops        (if max-val-op (conj ops max-val-op) ops)
-                  wal-entry  (when (seq ops)
-                               (vld/check-failpoint :step-3 :before)
-                               (let [entry (wal/append-kv-wal-record!
-                                             this ops
-                                             (System/currentTimeMillis))]
-                                 (vld/check-failpoint :step-3 :after)
-                                 entry))
-                  wal-id     (:wal-id wal-entry)]
-              (when wal-id
-                (vld/check-failpoint :step-4 :before)
-                (vld/check-failpoint :step-4 :after)
-                (vld/check-failpoint :step-5 :before)
-                (ol/publish-kv-committed-overlay! info write-txn wal-id
-                                                  (:ops wal-entry))
-                (vld/check-failpoint :step-5 :after)
-                (vld/check-failpoint :step-6 :before)
-                (vld/check-failpoint :step-6 :after)
-                (vld/check-failpoint :step-7 :before)
-                (ol/publish-kv-overlay-watermark! info wal-id)
-                (vld/check-failpoint :step-7 :after)
-                (try
-                  (vld/check-failpoint :step-8 :before)
-                  (wal/maybe-publish-kv-wal-meta! this wal-id)
-                  (vld/check-failpoint :step-8 :after)
-                  (catch Exception _ nil)))
-              (when wal-id
-                (wal/maybe-flush-kv-indexer-on-pressure! this))
-              :transacted)
+            (if dbi
+              (transact1* txs dbi txn k-type v-type)
+              (transact* txs dbis txn))
+            (when (:max-val-size-changed? @info)
+              (transact* [[:put c/kv-info :max-val-size
+                           (:max-val-size @info)]]
+                         dbis txn)
+              (vswap! info assoc :max-val-size-changed? false))
+            (when one-shot?
+              (.commit txn))
+            :transacted
+            (catch Util$MapFullException _
+              (.close txn)
+              (up-db-size env)
+              (if one-shot?
+                (.transact-kv this dbi-name txs k-type v-type)
+                (do
+                  (.reset-write this)
+                  (raise "DB resized" {:resized true}))))
             (catch Exception e
-              (wal/refresh-kv-wal-info! this)
-              (wal/refresh-kv-wal-meta-info! this)
-              (ol/recover-kv-overlay! info write-txn (env-dir this))
+              (when one-shot?
+                (.close txn))
               (if-let [edata (ex-data e)]
                 (raise "Fail to transact to LMDB: " e edata)
-                (raise "Fail to transact to LMDB: " e {}))))
-          ;; Standard path with LMDB transaction
-          (let [^Txn txn (if one-shot?
-                           (Txn/create env)
-                           (.-txn rtx))]
-            (try
-              (if (not wal-enabled?)
-                ;; Direct LMDB write — transact1*/transact* validate internally
-                (do
-                  (if dbi
-                    (transact1* txs dbi txn k-type v-type)
-                    (transact* txs dbis txn))
-                  (when (:max-val-size-changed? @info)
-                    (transact* [[:put c/kv-info :max-val-size
-                                 (:max-val-size @info)]]
-                               dbis txn)
-                    (vswap! info assoc :max-val-size-changed? false))
-                  (when one-shot? (.commit txn))
-                  :transacted)
-                ;; WAL inside open-transact-kv/close-transact-kv — needs validation + ops
-                (let [tx-data    (validate-kv-txs! txs dbi-name k-type v-type dbis)
-                      dbi-bs     (when dbi-name
-                                   (.getBytes ^String dbi-name StandardCharsets/UTF_8))
-                      ops        (->> tx-data
-                                      (mapv #(canonical-kv-op % dbi-name dbis dbi-bs))
-                                      vec)
-                      max-val-op (when (:max-val-size-changed? @info)
-                                   (let [tx (l/->kv-tx-data
-                                              [:put :max-val-size
-                                               (:max-val-size @info)]
-                                              nil nil)]
-                                     (vswap! info assoc :max-val-size-changed? false)
-                                     (canonical-kv-op tx c/kv-info dbis)))
-                      ops        (if max-val-op (conj ops max-val-op) ops)]
-                  (when (seq ops)
-                    (vswap! (.-wal-ops rtx) into ops)
-                    (ol/publish-kv-private-overlay! rtx info ops))
-                  :transacted))
-              (catch Util$MapFullException _
-                (.close txn)
-                (up-db-size env)
-                (if (and one-shot? (not wal-enabled?))
-                  (.transact-kv this dbi-name txs k-type v-type)
-                  (do (.reset-write this)
-                      (raise "DB resized" {:resized true}))))
-              (catch Exception e
-                (when one-shot? (.close txn))
-                (when (and one-shot? wal-enabled?)
-                  (wal/refresh-kv-wal-info! this)
-                  (wal/refresh-kv-wal-meta-info! this))
-                (if-let [edata (ex-data e)]
-                  (raise "Fail to transact to LMDB: " e edata)
-                  (raise "Fail to transact to LMDB: " e {})))))))))
+                (raise "Fail to transact to LMDB: " e {}))))))))
 
   (set-env-flags [_ ks on-off] (.setFlags env (kv-flags ks) (if on-off 1 0)))
 
@@ -1306,41 +1078,6 @@
   (sync [_] (.sync env 1))
   (sync [_ force] (.sync env force))
 
-  (kv-wal-watermarks [this]
-    (wal/kv-wal-watermarks this))
-
-  (kv-wal-metrics [this]
-    (wal/kv-wal-metrics this))
-
-  (flush-kv-indexer! [this]
-    (.flush-kv-indexer! this nil))
-  (flush-kv-indexer! [this upto-wal-id]
-    ;; Force-flush the cached WAL segment channel so that reads via a
-    ;; separate FileInputStream see all written data.
-    (when-let [^FileChannel ch (:wal-channel @info)]
-      (when (.isOpen ch)
-        (try (.force ch true) (catch Exception _ nil))))
-    (let [res (wal/flush-kv-indexer! this upto-wal-id)]
-      ;; Hold write-txn lock while updating watermarks and pruning overlay
-      ;; so we don't race with a concurrent publish-kv-committed-overlay!.
-      (locking write-txn
-        (vswap! (.-info this) assoc
-                :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
-                :applied-wal-tx-id (or (get-kv-info-id this c/applied-wal-tx-id)
-                                       0))
-        (ol/prune-kv-committed-overlay! info (:indexed-wal-tx-id res)))
-      res))
-
-  (open-tx-log [this from-wal-id]
-    (wal/open-tx-log this from-wal-id))
-  (open-tx-log [this from-wal-id upto-wal-id]
-    (wal/open-tx-log this from-wal-id upto-wal-id))
-
-  (gc-wal-segments! [this]
-    (wal/gc-wal-segments! this))
-  (gc-wal-segments! [this retain-wal-id]
-    (wal/gc-wal-segments! this retain-wal-id))
-
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
@@ -1348,21 +1085,12 @@
   (get-value [this dbi-name k k-type v-type]
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
-    (if kv-wal
-      (let [ret (ol/overlay-get-value this dbi-name k k-type v-type ignore-key?)]
-        (case ret
-          ::ol/overlay-miss
-          (scan/get-value this dbi-name k k-type v-type ignore-key?)
-          ::ol/overlay-tombstone nil
-          ret))
-      (scan/get-value this dbi-name k k-type v-type ignore-key?)))
+    (scan/get-value this dbi-name k k-type v-type ignore-key?))
 
   (get-rank [this dbi-name k]
     (.get-rank this dbi-name k :data))
   (get-rank [this dbi-name k k-type]
-    (if (ol/kv-overlay-active? @info write-txn dbi-name)
-      (ol/overlay-rank this dbi-name k k-type)
-      (scan/get-rank this dbi-name k k-type)))
+    (scan/get-rank this dbi-name k k-type))
 
   (get-by-rank [this dbi-name rank]
     (.get-by-rank this dbi-name rank :data :data true))
@@ -1371,9 +1099,7 @@
   (get-by-rank [this dbi-name rank k-type v-type]
     (.get-by-rank this dbi-name rank k-type v-type true))
   (get-by-rank [this dbi-name rank k-type v-type ignore-key?]
-    (if (ol/kv-overlay-active? @info write-txn dbi-name)
-      (ol/overlay-get-by-rank this dbi-name rank k-type v-type ignore-key?)
-      (scan/get-by-rank this dbi-name rank k-type v-type ignore-key?)))
+    (scan/get-by-rank this dbi-name rank k-type v-type ignore-key?))
 
   (sample-kv [this dbi-name n]
     (.sample-kv this dbi-name n :data :data true))
@@ -1382,9 +1108,7 @@
   (sample-kv [this dbi-name n k-type v-type]
     (.sample-kv this dbi-name n k-type v-type true))
   (sample-kv [this dbi-name n k-type v-type ignore-key?]
-    (if (ol/kv-overlay-active? @info write-txn dbi-name)
-      (ol/overlay-sample-kv this dbi-name n k-type v-type ignore-key?)
-      (scan/sample-kv this dbi-name n k-type v-type ignore-key?)))
+    (scan/sample-kv this dbi-name n k-type v-type ignore-key?))
 
   (get-first [this dbi-name k-range]
     (.get-first this dbi-name k-range :data :data false))
@@ -1429,38 +1153,36 @@
     (.key-range-count lmdb dbi-name k-range :data))
   (key-range-count [lmdb dbi-name k-range k-type]
     (.key-range-count lmdb dbi-name k-range k-type nil))
-  (key-range-count [lmdb dbi-name [range-type k1 k2 :as k-range] k-type cap]
-    (if kv-wal
-      (ol/wal-key-range-count lmdb dbi-name k-range k-type cap)
-      (scan/scan
-        (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
-              forward           (dtlv-bool (.-forward? ctx))
-              start             (dtlv-bool (.-include-start? ctx))
-              end               (dtlv-bool (.-include-stop? ctx))
-              sk                (dtlv-val (.-start-bf ctx))
-              ek                (dtlv-val (.-stop-bf ctx))]
-          (dtlv-c
-            (if cap
-              (DTLV/dtlv_key_range_count_cap
-                (.ptr ^Cursor cur) cap
+  (key-range-count [lmdb dbi-name [range-type k1 k2] k-type cap]
+    (scan/scan
+      (let [^RangeContext ctx (l/range-info rtx range-type k1 k2 k-type)
+            forward           (dtlv-bool (.-forward? ctx))
+            start             (dtlv-bool (.-include-start? ctx))
+            end               (dtlv-bool (.-include-stop? ctx))
+            sk                (dtlv-val (.-start-bf ctx))
+            ek                (dtlv-val (.-stop-bf ctx))]
+        (dtlv-c
+          (if cap
+            (DTLV/dtlv_key_range_count_cap
+              (.ptr ^Cursor cur) cap
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              forward start end sk ek)
+            (if (l/dlmdb?)
+              (let [flag (BitOps/intOr
+                           (if (.-include-start? ctx)
+                             (int DTLV/MDB_COUNT_LOWER_INCL) 0)
+                           (if (.-include-stop? ctx)
+                             (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
+                (with-open [total (LongPointer. 1)]
+                  (DTLV/mdb_range_count_keys
+                    (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
+                    sk ek flag total)
+                  (.get ^LongPointer total)))
+              (DTLV/dtlv_key_range_count
+                (.ptr ^Cursor cur)
                 (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-                forward start end sk ek)
-              (if (l/dlmdb?)
-                (let [flag (BitOps/intOr
-                             (if (.-include-start? ctx)
-                               (int DTLV/MDB_COUNT_LOWER_INCL) 0)
-                             (if (.-include-stop? ctx)
-                               (int DTLV/MDB_COUNT_UPPER_INCL) 0))]
-                  (with-open [total (LongPointer. 1)]
-                    (DTLV/mdb_range_count_keys
-                      (.get ^Txn (.-txn ^Rtx rtx)) (.get ^Dbi (.-db ^DBI dbi))
-                      sk ek flag total)
-                    (.get ^LongPointer total)))
-                (DTLV/dtlv_key_range_count
-                  (.ptr ^Cursor cur)
-                  (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-                  forward start end sk ek)))))
-        (raise "Fail to count key range: " e {:dbi dbi-name}))))
+                forward start end sk ek)))))
+      (raise "Fail to count key range: " e {:dbi dbi-name})))
 
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
@@ -1548,11 +1270,8 @@
       db dbi-name indices budget step visitor k-range k-type true))
   (visit-key-sample
     [db dbi-name indices budget step visitor k-range k-type raw-pred?]
-    (if (ol/kv-overlay-active? @info write-txn dbi-name)
-      (ol/overlay-visit-key-sample db dbi-name indices visitor k-range
-                                   k-type raw-pred?)
-      (scan/visit-key-sample
-        db dbi-name indices budget step visitor k-range k-type raw-pred?)))
+    (scan/visit-key-sample
+      db dbi-name indices budget step visitor k-range k-type raw-pred?))
 
   (open-list-dbi [this dbi-name {:keys [key-size val-size flags]
                                  :or   {key-size c/+max-key-size+
@@ -1590,55 +1309,40 @@
     (scan/visit-list this dbi-name visitor k kt vt raw-pred?))
 
   (list-count [lmdb dbi-name k kt]
-    (if kv-wal
+    (do
+      (.check-ready lmdb)
       (if k
-        (count (.get-list lmdb dbi-name k kt :raw))
-        0)
-      (do
-        (.check-ready lmdb)
-        (if k
-          (scan/scan
-            (list-count* rtx cur k kt)
-            (raise "Fail to count list: " e {:dbi dbi-name :k k}))
-          0))))
+        (scan/scan
+          (list-count* rtx cur k kt)
+          (raise "Fail to count list: " e {:dbi dbi-name :k k}))
+        0)))
 
   (near-list [lmdb dbi-name k v kt vt]
-    (if kv-wal
-      (when (and k v)
-        (scan/list-range-first-raw-v
-          lmdb dbi-name [:closed k k] kt [:at-least v] vt))
-      (do
-        (.check-ready lmdb)
-        (scan/scan
-          (near-list* rtx cur k kt v vt)
-          (raise "Fail to get an item that is near in a list: "
-                 e {:dbi dbi-name :k k :v v})))))
+    (do
+      (.check-ready lmdb)
+      (scan/scan
+        (near-list* rtx cur k kt v vt)
+        (raise "Fail to get an item that is near in a list: "
+               e {:dbi dbi-name :k k :v v}))))
 
   (in-list? [lmdb dbi-name k v kt vt]
-    (if kv-wal
+    (do
+      (.check-ready lmdb)
       (if (and k v)
-        (boolean (seq (.list-range lmdb dbi-name [:closed k k] kt
-                                   [:closed v v] vt)))
-        false)
-      (do
-        (.check-ready lmdb)
-        (if (and k v)
-          (scan/scan
-            (in-list?* rtx cur k kt v vt)
-            (raise "Fail to test if an item is in list: "
-                   e {:dbi dbi-name :k k :v v}))
-          false))))
+        (scan/scan
+          (in-list?* rtx cur k kt v vt)
+          (raise "Fail to test if an item is in list: "
+                 e {:dbi dbi-name :k k :v v}))
+        false)))
 
   (key-range-list-count [lmdb dbi-name k-range k-type]
     (.key-range-list-count lmdb dbi-name k-range k-type nil nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap]
     (.key-range-list-count lmdb dbi-name k-range k-type cap nil))
   (key-range-list-count [lmdb dbi-name k-range k-type cap budget]
-    (if kv-wal
-      (ol/wal-key-range-list-count lmdb dbi-name k-range k-type cap)
-      (if (l/dlmdb?)
-        (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
-        (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget))))
+    (if (l/dlmdb?)
+      (key-range-list-count-fast lmdb dbi-name k-range k-type cap)
+      (key-range-list-count-slow lmdb dbi-name k-range k-type cap budget)))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
@@ -1647,35 +1351,31 @@
     (.list-range-count lmdb dbi-name k-range kt v-range vt nil))
   (list-range-count [lmdb dbi-name [k-range-type k1 k2] k-type
                      [v-range-type v1 v2] v-type cap]
-    (if kv-wal
-      (ol/wal-list-range-count lmdb dbi-name
-                               [k-range-type k1 k2] k-type
-                               [v-range-type v1 v2] v-type cap)
-      (scan/scan
-        (let [[^RangeContext kctx ^RangeContext vctx]
-              (l/list-range-info rtx k-range-type k1 k2 k-type
-                                 v-range-type v1 v2 v-type)
-              kforward (dtlv-bool (.-forward? kctx))
-              kstart   (dtlv-bool (.-include-start? kctx))
-              kend     (dtlv-bool (.-include-stop? kctx))
-              sk       (dtlv-val (.-start-bf kctx))
-              ek       (dtlv-val (.-stop-bf kctx))
-              vforward (dtlv-bool (.-forward? vctx))
-              vstart   (dtlv-bool (.-include-start? vctx))
-              vend     (dtlv-bool (.-include-stop? vctx))
-              sv       (dtlv-val (.-start-bf vctx))
-              ev       (dtlv-val (.-stop-bf vctx))]
-          (dtlv-c
-            (if cap
-              (DTLV/dtlv_list_range_count_cap
-                (.ptr ^Cursor cur) cap
-                (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-                kforward kstart kend sk ek vforward vstart vend sv ev)
-              (DTLV/dtlv_list_range_count
-                (.ptr ^Cursor cur)
-                (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
-                kforward kstart kend sk ek vforward vstart vend sv ev))))
-        (raise "Fail to count list range: " e {:dbi dbi-name}))))
+    (scan/scan
+      (let [[^RangeContext kctx ^RangeContext vctx]
+            (l/list-range-info rtx k-range-type k1 k2 k-type
+                               v-range-type v1 v2 v-type)
+            kforward (dtlv-bool (.-forward? kctx))
+            kstart   (dtlv-bool (.-include-start? kctx))
+            kend     (dtlv-bool (.-include-stop? kctx))
+            sk       (dtlv-val (.-start-bf kctx))
+            ek       (dtlv-val (.-stop-bf kctx))
+            vforward (dtlv-bool (.-forward? vctx))
+            vstart   (dtlv-bool (.-include-start? vctx))
+            vend     (dtlv-bool (.-include-stop? vctx))
+            sv       (dtlv-val (.-start-bf vctx))
+            ev       (dtlv-val (.-stop-bf vctx))]
+        (dtlv-c
+          (if cap
+            (DTLV/dtlv_list_range_count_cap
+              (.ptr ^Cursor cur) cap
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              kforward kstart kend sk ek vforward vstart vend sv ev)
+            (DTLV/dtlv_list_range_count
+              (.ptr ^Cursor cur)
+              (.ptr ^BufVal (.-kp ^Rtx rtx)) (.ptr ^BufVal (.-vp ^Rtx rtx))
+              kforward kstart kend sk ek vforward vstart vend sv ev))))
+      (raise "Fail to count list range: " e {:dbi dbi-name})))
 
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))
@@ -1736,11 +1436,8 @@
                         k-type v-type true))
   (visit-list-sample
     [this dbi-name indices budget step visitor k-range kt vt raw-pred?]
-    (if (ol/kv-overlay-active? @info write-txn dbi-name)
-      (ol/overlay-visit-list-sample this dbi-name indices visitor k-range
-                                    kt vt raw-pred?)
-      (scan/visit-list-sample this dbi-name indices budget step visitor k-range
-                              kt vt raw-pred?)))
+    (scan/visit-list-sample this dbi-name indices budget step visitor k-range
+                            kt vt raw-pred?))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
@@ -1877,7 +1574,7 @@
                                         :wal-indexer-last-flush-ms now-ms
                                         :wal-indexer-last-flush-duration-ms 0
                                         :kv-overlay-committed-by-tx
-                                        (ol/empty-overlay-committed-map)
+                                        (ConcurrentSkipListMap.)
                                         :kv-overlay-by-dbi {}
                                         :kv-overlay-private-entries 0
                                         :overlay-published-wal-tx-id 0})
@@ -1908,7 +1605,7 @@
         (u/file (str dir u/+separator+ c/wal-dir)))
       (if temp?
         (u/delete-on-exit dir-file)
-        (let [k-comp (when (and key-compress
+          (let [k-comp (when (and key-compress
                                 (.exists (io/file dir c/keycode-file-name)))
                        (cp/load-key-compressor
                          (str dir u/+separator+ c/keycode-file-name)))
@@ -1916,47 +1613,28 @@
                                 (.exists (io/file dir c/valcode-file-name)))
                        (cp/load-val-compressor
                          (str dir u/+separator+ c/valcode-file-name)))]
-          ;; Refresh WAL watermarks before any open-time kv-info writes, so
-          ;; init-info cannot append from default tx-id state on reopen.
-          (when kv-wal?
-            (wal/refresh-kv-wal-info! lmdb)
-            (wal/refresh-kv-wal-meta-info! lmdb))
-          (let [reopen-wal? (and kv-wal?
-                                 (pos? (long
-                                         (or (:last-committed-wal-tx-id
-                                               @(l/kv-info lmdb))
-                                             0))))]
-            (init-info lmdb (dissoc info
-                                    :kv-wal?
-                                    :kv-overlay-committed-by-tx
-                                    :kv-overlay-by-dbi
-                                    :overlay-published-wal-tx-id)
-                       reopen-wal?))
+          (init-info lmdb (dissoc info
+                                  :kv-wal?
+                                  :kv-overlay-committed-by-tx
+                                  :kv-overlay-by-dbi
+                                  :overlay-published-wal-tx-id))
           (vswap! (l/kv-info lmdb) assoc
                   :kv-wal? (boolean kv-wal?)
-                  :kv-overlay-committed-by-tx (ol/empty-overlay-committed-map)
+                  :kv-overlay-committed-by-tx (ConcurrentSkipListMap.)
                   :kv-overlay-by-dbi {}
                   :overlay-published-wal-tx-id 0)
-          (when kv-wal?
-            (wal/refresh-kv-wal-info! lmdb)
-            (wal/refresh-kv-wal-meta-info! lmdb)
-            (ol/recover-kv-overlay! (l/kv-info lmdb) (l/write-txn lmdb)
-                                    (env-dir lmdb)))
           (set-max-val-size lmdb (max-val-size lmdb))
           (set-key-compressor lmdb k-comp)
           (set-val-compressor lmdb v-comp)
           (.addShutdownHook (Runtime/getRuntime)
                             (Thread. #(close-kv lmdb)))
-          (start-scheduled-sync (.-scheduled-sync lmdb) dir env)
-          (when kv-wal?
-            (wal/start-scheduled-wal-checkpoint (l/kv-info lmdb) lmdb l/vector-indices))))
+          (start-scheduled-sync (.-scheduled-sync lmdb) dir env)))
       lmdb)
     (catch Exception e
-      (stt/print-stack-trace e)
       (raise "Fail to open database: " e {:dir dir}))))
 
-(defmethod open-kv :cpp
-  ([dir] (open-kv dir {}))
+(defn open-cpp-kv
+  ([dir] (open-cpp-kv dir {}))
   ([dir opts]
    (assert (string? dir) "directory should be a string.")
    (let [dir-file  (u/file dir)
