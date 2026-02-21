@@ -120,16 +120,19 @@
     ;; `read-record` rejects this immediately with :wal/bad-magic.
     (.write out (byte-array [0 0 0 0]))))
 
-(deftest kv-wal-disabled-by-default-test
+(deftest kv-wal-enabled-by-default-test
   (let [dir  (u/tmp-dir (str "kv-wal-default-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (try
       (if/open-dbi lmdb "a")
       (if/transact-kv lmdb [[:put "a" 1 "x"]])
-      (is (= {:last-committed-wal-tx-id  0
-              :last-indexed-wal-tx-id    0
-              :last-committed-user-tx-id 0}
-             (if/kv-wal-watermarks lmdb)))
+      (let [{:keys [last-committed-wal-tx-id
+                    last-indexed-wal-tx-id
+                    last-committed-user-tx-id]}
+            (if/kv-wal-watermarks lmdb)]
+        (is (pos? last-committed-wal-tx-id))
+        (is (= last-committed-wal-tx-id last-committed-user-tx-id))
+        (is (<= 0 last-indexed-wal-tx-id last-committed-wal-tx-id)))
       (finally
         (if/close-kv lmdb)
         (u/delete-files dir)))))
@@ -797,8 +800,10 @@
                             [:put "a" 3 "z"]])
       (if/transact-kv lmdb [[:del "a" 2]])
 
-      ;; Simulate WAL tail visibility when base is stale.
-      (if/clear-dbi lmdb "a")
+      ;; Simulate WAL tail visibility when base is stale: clear base only,
+      ;; keep committed WAL overlay intact.
+      (binding [c/*bypass-wal* true]
+        (if/clear-dbi lmdb "a"))
       (is (= "x" (if/get-value lmdb "a" 1)))
       (is (nil? (if/get-value lmdb "a" 2)))
       (is (= "z" (if/get-value lmdb "a" 3)))
@@ -898,8 +903,10 @@
       (if/del-list-items lmdb "l" "b" :string)
       (if/put-list-items lmdb "l" "c" [7] :string :long)
 
-      ;; Simulate WAL tail visibility when base is stale.
-      (if/clear-dbi lmdb "l")
+      ;; Simulate WAL tail visibility when base is stale: clear base only,
+      ;; keep committed WAL overlay intact.
+      (binding [c/*bypass-wal* true]
+        (if/clear-dbi lmdb "l"))
       (is (= 1 (if/get-value lmdb "l" "a" :string :long)))
       (is (nil? (if/get-value lmdb "l" "b" :string :long)))
       (is (= [["a" 1] ["a" 3] ["a" 6] ["c" 7]]
@@ -1017,8 +1024,9 @@
       (if/put-list-items lmdb "l" "b" [4 5] :string :long)
       (if/del-list-items lmdb "l" "a" [2] :string :long)
       (if/put-list-items lmdb "l" "c" [6] :string :long)
-      ;; Force reliance on WAL overlay state.
-      (if/clear-dbi lmdb "l")
+      ;; Force reliance on WAL overlay state by clearing base only.
+      (binding [c/*bypass-wal* true]
+        (if/clear-dbi lmdb "l"))
 
       (with-redefs [if/key-range  (fn [& _]
                                     (throw (ex-info "unexpected key-range"
@@ -1986,7 +1994,8 @@
 
 (deftest test-open-tx-log-wal-disabled
   (let [dir  (u/tmp-dir (str "kv-wal-txlog-disabled-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                             :kv-wal? false})]
     (try
       (if/open-dbi lmdb "a")
       (if/transact-kv lmdb [[:put "a" 1 "x"]])
@@ -2026,6 +2035,38 @@
           ;; Active segment should always remain
           (is (>= (count (wal/segment-files dir)) 1))))
       (finally
+        (if/close-kv lmdb)
+        (u/delete-files dir)))))
+
+(deftest test-gc-wal-segments-delete-failure
+  (let [dir  (u/tmp-dir (str "kv-wal-gc-delete-fail-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:flags                  (conj c/default-env-flags :nosync)
+                             :kv-wal?                true
+                             :wal-segment-max-bytes  1
+                             :wal-retention-bytes    0
+                             :wal-retention-ms       0})
+        wal-dir (io/file (wal/wal-dir-path dir))]
+    (try
+      (if/open-dbi lmdb "a")
+      (dotimes [i 5]
+        (if/transact-kv lmdb [[:put "a" i (str "v" i)]]))
+      (binding [c/*trusted-apply* true
+                c/*bypass-wal*    true]
+        (if/transact-kv lmdb c/kv-info
+                        [[:put c/last-indexed-wal-tx-id 0]
+                         [:put c/applied-wal-tx-id 0]]
+                        :data :data))
+      (if/flush-kv-indexer! lmdb)
+      (let [files-before (vec (wal/segment-files dir))]
+        (is (> (count files-before) 1))
+        (is (.setWritable wal-dir false false))
+        (let [result (if/gc-wal-segments! lmdb)]
+          (is (zero? (:deleted result)))
+          (is (= (count files-before) (:retained result)))
+          (is (= (count files-before)
+                 (count (wal/segment-files dir))))))
+      (finally
+        (.setWritable wal-dir true false)
         (if/close-kv lmdb)
         (u/delete-files dir)))))
 

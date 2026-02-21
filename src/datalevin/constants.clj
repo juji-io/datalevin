@@ -507,8 +507,8 @@
 
 (def ^{:dynamic true :no-doc true
        :doc     "When true, append KV transactions to the on-disk WAL
-                 (`<db-dir>/wal`). This remains opt-in for rollout safety."}
-  *enable-kv-wal* false)
+                 (`<db-dir>/wal`). Enabled by default."}
+  *enable-kv-wal* true)
 
 (def ^{:dynamic true :no-doc true
        :doc     "When KV WAL is enabled, flush durable `wal/meta` after this

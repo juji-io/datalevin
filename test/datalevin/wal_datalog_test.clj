@@ -21,17 +21,32 @@
 (use-fixtures :each db-fixture)
 
 (defn- dl-wal-conn
-  "Create a Datalog connection with WAL enabled."
+  "Create a Datalog connection with default WAL settings."
   ([dir] (dl-wal-conn dir nil))
   ([dir schema]
    (d/create-conn dir schema
-                  {:datalog-wal? true
-                   :kv-opts {:flags (conj c/default-env-flags :nosync)}})))
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})))
 
 (defn- conn-lmdb
   "Get the LMDB instance from a Datalog connection."
   [conn]
   (.-lmdb ^Store (.-store ^DB @conn)))
+
+(deftest dl-wal-enabled-by-default-test
+  (let [dir  (u/tmp-dir (str "dl-wal-default-" (UUID/randomUUID)))
+        conn (d/create-conn dir
+                            {:name {:db/unique :db.unique/identity}}
+                            {:kv-opts {:flags (conj c/default-env-flags
+                                                    :nosync)}})]
+    (try
+      (is (true? (:kv-wal? (i/env-opts (conn-lmdb conn)))))
+      (d/transact! conn [{:name "Alice" :age 30}])
+      (is (= 30
+             (d/q '[:find ?a . :where [?e :name "Alice"] [?e :age ?a]]
+                  @conn)))
+      (finally
+        (d/close conn)
+        (u/delete-files dir)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Test 1: Basic CRUD with WAL
@@ -996,8 +1011,7 @@
                                     :db/unique    :db.unique/identity}
                   :chunk/embedding {:db/valueType :db.type/vec}}
           conn   (d/create-conn dir schema
-                                {:datalog-wal? true
-                                 :kv-opts      {:flags (conj c/default-env-flags
+                                {:kv-opts      {:flags (conj c/default-env-flags
                                                              :nosync)}
                                  :vector-opts  {:dimensions 3}})]
       (try

@@ -649,11 +649,19 @@
                               (let [id      (.readLong in)
                                     to-skip ^long (- ^long body-len 8)]
                                 (when (pos? to-skip)
-                                  (loop [rem to-skip]
-                                    (when (pos? rem)
-                                      (let [n (.skip in rem)]
-                                        (when (pos? n)
-                                          (recur (- rem n)))))))
+                                  (let [remaining
+                                        (loop [rem to-skip]
+                                          (if (pos? rem)
+                                            (let [n (.skip in rem)]
+                                              (if (pos? n)
+                                                (recur (- rem n))
+                                                rem))
+                                            0))]
+                                    ;; If we cannot skip the full record body,
+                                    ;; treat it as truncated EOF and ignore this
+                                    ;; partial tail record.
+                                    (when (pos? remaining)
+                                      (throw (EOFException.)))))
                                 id))]
                         wal-id))
                     (catch EOFException _ ::eof)
@@ -1039,7 +1047,8 @@
 (defn- get-kv-info-id
   "Get a value from the kv-info dbi."
   [lmdb k]
-  (i/get-value lmdb c/kv-info k :data :data))
+  (binding [c/*bypass-wal* true]
+    (i/get-value lmdb c/kv-info k :data :data)))
 
 (defn read-kv-wal-meta
   "Read WAL metadata for the given LMDB instance."
@@ -1054,43 +1063,83 @@
     (let [dir          (i/env-dir lmdb)
           now-ms       (System/currentTimeMillis)
           meta         (read-wal-meta dir)
-          scanned      (scan-last-wal dir)
-          meta-id      (get meta c/last-committed-wal-tx-id 0)
-          scanned-id   (or (:last-wal-id scanned) 0)
+          files        (or (segment-files dir) [])
+          ^File last-f (last files)
+          meta-id      (long (or (get meta c/last-committed-wal-tx-id) 0))
+          scanned-id   (if last-f
+                         (long (segment-max-wal-id last-f))
+                         0)
           committed-id ^long (max ^long meta-id ^long scanned-id)
-          indexed-id   ^long (or (get-kv-info-id lmdb c/last-indexed-wal-tx-id)
+          indexed-id   ^long (or (get-kv-info-id lmdb
+                                                 c/last-indexed-wal-tx-id)
                                  (get meta c/last-indexed-wal-tx-id)
                                  0)
-          meta-ms      (get meta c/committed-last-modified-ms 0)
-          scanned-ms   (or (:last-segment-ms scanned) 0)
+          meta-ms      (long (or (get meta c/committed-last-modified-ms) 0))
+          scanned-ms   (long (or (when last-f (.lastModified last-f)) 0))
           committed-ms ^long (max ^long meta-ms ^long scanned-ms)
-          meta-user    (get meta c/last-committed-user-tx-id 0)
+          meta-user    (long (or (get meta c/last-committed-user-tx-id) 0))
           user-id      ^long (if (pos? ^long meta-user) meta-user committed-id)
           next-id      committed-id
           applied-id   ^long (or (get-kv-info-id lmdb c/applied-wal-tx-id)
                                  (get-kv-info-id lmdb c/legacy-applied-tx-id)
                                  0)
-          meta-seg     (get meta :wal/last-segment-id 0)
-          scanned-seg  (or (:last-segment-id scanned) 0)
+          meta-seg     (long (or (get meta :wal/last-segment-id) 0))
+          scanned-seg  (long (or (some-> last-f parse-segment-id) 0))
           seg-id       ^long (max ^long meta-seg ^long scanned-seg 1)
           seg-file     (io/file (segment-path dir seg-id))
           seg-bytes    (if (.exists seg-file) (.length seg-file) 0)
-          seg-created  ^long (or (:last-segment-ms scanned)
-                                 (when (.exists seg-file)
+          seg-created  ^long (or (when (.exists seg-file)
                                    (.lastModified seg-file))
                                  now-ms)]
-      (vswap! (l/kv-info lmdb) assoc
-              :wal-next-tx-id next-id
-              :applied-wal-tx-id applied-id
-              :last-committed-wal-tx-id committed-id
-              :last-synced-wal-tx-id committed-id
-              :last-indexed-wal-tx-id indexed-id
-              :last-committed-user-tx-id user-id
-              :committed-last-modified-ms committed-ms
-              :overlay-published-wal-tx-id committed-id
-              :wal-segment-id seg-id
-              :wal-segment-created-ms seg-created
-              :wal-segment-bytes seg-bytes))
+      ;; Refresh can run concurrently with active writers (e.g. reader miss path).
+      ;; Never regress in-memory WAL counters/state from a partial/stale scan.
+      (vswap!
+        (l/kv-info lmdb)
+        (fn [cur]
+          (let [cur-next    (long (or (:wal-next-tx-id cur) 0))
+                cur-applied (long (or (:applied-wal-tx-id cur) 0))
+                cur-commit  (long (or (:last-committed-wal-tx-id cur) 0))
+                cur-synced  (long (or (:last-synced-wal-tx-id cur) 0))
+                cur-indexed (long (or (:last-indexed-wal-tx-id cur) 0))
+                cur-user    (long (or (:last-committed-user-tx-id cur) 0))
+                cur-ms      (long (or (:committed-last-modified-ms cur) 0))
+                cur-seg-id  (long (or (:wal-segment-id cur) 1))
+                cur-seg-by  (long (or (:wal-segment-bytes cur) 0))
+                cur-seg-ms  (long (or (:wal-segment-created-ms cur) 0))
+
+                next*       (max ^long next-id ^long cur-next)
+                commit*     (max ^long committed-id ^long cur-commit)
+                synced*     (min ^long commit*
+                                 ^long (max ^long committed-id ^long cur-synced))
+                indexed*    (min ^long commit*
+                                 ^long (max ^long indexed-id ^long cur-indexed))
+                applied*    (min ^long indexed*
+                                 ^long (max ^long applied-id ^long cur-applied))
+                user*       (min ^long commit*
+                                 ^long (max ^long user-id ^long cur-user))
+                commit-ms*  (max ^long committed-ms ^long cur-ms)
+                seg-id*     (max ^long seg-id ^long cur-seg-id)
+                seg-bytes*  (if (= seg-id* cur-seg-id)
+                              (if (= seg-id seg-id*)
+                                (max ^long seg-bytes ^long cur-seg-by)
+                                cur-seg-by)
+                              seg-bytes)
+                seg-ms*     (if (= seg-id* cur-seg-id)
+                              (if (= seg-id seg-id*)
+                                (max ^long seg-created ^long cur-seg-ms)
+                                cur-seg-ms)
+                              seg-created)]
+            (assoc cur
+                   :wal-next-tx-id next*
+                   :applied-wal-tx-id applied*
+                   :last-committed-wal-tx-id commit*
+                   :last-synced-wal-tx-id synced*
+                   :last-indexed-wal-tx-id indexed*
+                   :last-committed-user-tx-id user*
+                   :committed-last-modified-ms commit-ms*
+                   :wal-segment-id seg-id*
+                   :wal-segment-created-ms seg-ms*
+                   :wal-segment-bytes seg-bytes*)))))
     (catch java.nio.file.AccessDeniedException e
       (stt/print-stack-trace e)
       (raise "WAL directory permission denied"
@@ -1286,13 +1335,70 @@
               c/*bypass-wal*    true]
       (i/transact-kv db (mapv wal-op->kv-tx ops)))))
 
+(defn- dbi-name-from-kv-info-key
+  [k]
+  (when (and (vector? k)
+             (= 2 (count k))
+             (= :dbis (first k))
+             (string? (second k)))
+    (second k)))
+
+(defn- wal-recorded-dbi-opts
+  [records]
+  (reduce
+    (fn [m {:wal/keys [ops]}]
+      (reduce
+        (fn [acc {:keys [op dbi k v]}]
+          (if (= dbi c/kv-info)
+            (if-let [dbi-name (dbi-name-from-kv-info-key k)]
+              (case op
+                :put (if (map? v) (assoc acc dbi-name v) acc)
+                :del (dissoc acc dbi-name)
+                acc)
+              acc)
+            acc))
+        m
+        ops))
+    {}
+    records))
+
+(defn- dbi-open?
+  [lmdb dbi-name]
+  (try
+    (boolean (i/get-dbi lmdb dbi-name false))
+    (catch Exception _ false)))
+
+(defn- ensure-replay-dbis-open!
+  [lmdb records]
+  (let [wal-dbi-opts (wal-recorded-dbi-opts records)]
+    (binding [c/*trusted-apply* true
+              c/*bypass-wal*    true]
+      (doseq [dbi-name (into #{}
+                             (comp
+                               (mapcat :wal/ops)
+                               (keep :dbi)
+                               (remove #{c/kv-info}))
+                             records)]
+        (when-not (dbi-open? lmdb dbi-name)
+          (if-let [opts (or (i/dbi-opts lmdb dbi-name)
+                            (get wal-dbi-opts dbi-name)
+                            (i/get-value lmdb c/kv-info
+                                         [:dbis dbi-name]
+                                         [:keyword :string]
+                                         :data))]
+            (i/open-dbi lmdb dbi-name opts)
+            (u/raise "WAL replay references unknown DBI"
+                     {:error :wal/unknown-dbi
+                      :dbi   dbi-name})))))))
+
 (defn- kv-wal-enabled?
   [lmdb]
   (boolean (:kv-wal? (i/env-opts lmdb))))
 
 (defn- kv-info-id
   [lmdb k]
-  (i/get-value lmdb c/kv-info k :data :data))
+  (binding [c/*bypass-wal* true]
+    (i/get-value lmdb c/kv-info k :data :data)))
 
 (defn- kv-applied-id
   [lmdb]
@@ -1342,47 +1448,45 @@
                           (long (min committed-id upto-id)))]
        (if (<= target-id from-id)
          {:from from-id :to target-id :applied 0}
-         (let [applied-count (volatile! 0)
-               applied-id    (volatile! 0)]
+         (let [initial-applied-wal (kv-info-id lmdb c/applied-wal-tx-id)
+               initial-applied     (or initial-applied-wal
+                                       (kv-info-id lmdb c/legacy-applied-tx-id)
+                                       0)
+               start-id            (max ^long from-id ^long initial-applied)
+               records             (read-wal-records (i/env-dir lmdb)
+                                                     start-id target-id)
+               applied-count       (volatile! 0)
+               applied-id          (volatile! start-id)]
+           (when (and (> target-id start-id) (nil? (seq records)))
+             (u/raise "Missing KV WAL records during replay"
+                      {:error     :wal/missing-record
+                       :wal-tx-id target-id}))
+           (ensure-replay-dbis-open! lmdb records)
            (binding [c/*trusted-apply* true
                      c/*bypass-wal*    true]
              (l/with-transaction-kv [db lmdb]
-               (let [initial-applied-wal (kv-info-id db c/applied-wal-tx-id)
-
-                     initial-applied (or initial-applied-wal
-                                         (kv-info-id db
-                                                     c/legacy-applied-tx-id)
-                                         0)
-                     _               (vreset! applied-id initial-applied)
-                     start-id        (max ^long from-id ^long initial-applied)
-                     records         (read-wal-records (i/env-dir db)
-                                                       start-id target-id)]
-                 (when (and (> target-id start-id) (nil? (seq records)))
-                   (u/raise "Missing KV WAL records during replay"
-                            {:error     :wal/missing-record
-                             :wal-tx-id target-id}))
-                 (doseq [rec records]
-                   (let [wal-id       (long (:wal/tx-id rec))
-                         ops          (:wal/ops rec)
-                         expected-wal (unchecked-inc (long @applied-id))]
-                     (when (not= wal-id expected-wal)
-                       (u/raise "KV WAL replay out of order"
-                                {:error       :wal/out-of-order
-                                 :applied-wal @applied-id
-                                 :expected-wal-tx-id expected-wal
-                                 :wal-tx-id   wal-id
-                                 :start-id    start-id
-                                 :target-id   target-id
-                                 :applied-cnt @applied-count}))
-                     (apply-wal-kv-ops! db ops)
-                     (vreset! applied-id wal-id)
-                     (vswap! applied-count u/long-inc)))
-                 (i/transact-kv
-                   db c/kv-info
-                   (cond-> [[:put c/last-indexed-wal-tx-id @applied-id]]
-                     (or (nil? initial-applied-wal)
-                         (> (long @applied-id) ^long initial-applied))
-                     (conj [:put c/applied-wal-tx-id @applied-id]))))))
+               (doseq [rec records]
+                 (let [wal-id       (long (:wal/tx-id rec))
+                       ops          (:wal/ops rec)
+                       expected-wal (unchecked-inc (long @applied-id))]
+                   (when (not= wal-id expected-wal)
+                     (u/raise "KV WAL replay out of order"
+                              {:error       :wal/out-of-order
+                               :applied-wal @applied-id
+                               :expected-wal-tx-id expected-wal
+                               :wal-tx-id   wal-id
+                               :start-id    start-id
+                               :target-id   target-id
+                               :applied-cnt @applied-count}))
+                   (apply-wal-kv-ops! db ops)
+                   (vreset! applied-id wal-id)
+                   (vswap! applied-count u/long-inc)))
+               (i/transact-kv
+                 db c/kv-info
+                 (cond-> [[:put c/last-indexed-wal-tx-id @applied-id]]
+                   (or (nil? initial-applied-wal)
+                       (> (long @applied-id) ^long initial-applied))
+                   (conj [:put c/applied-wal-tx-id @applied-id])))))
            {:from from-id :to @applied-id :applied @applied-count}))))))
 
 (defn flush-kv-indexer!
@@ -1533,10 +1637,11 @@
                          over-age?  (> age-ms max-age-ms)]
                      (if (or over-size? over-age?)
                        (do (evict-segment-max-id-cache! f)
-                           (.delete f)
-                           (vswap! running-bytes
-                                   (fn [^long v] (- v fsize)))
-                           (vswap! deleted u/long-inc))
+                           (if (.delete f)
+                             (do (vswap! running-bytes
+                                         (fn [^long v] (- v fsize)))
+                                 (vswap! deleted u/long-inc))
+                             (vswap! retained u/long-inc)))
                        (vswap! retained u/long-inc)))
                    (vswap! retained u/long-inc)))))
            {:deleted @deleted :retained @retained}))))))

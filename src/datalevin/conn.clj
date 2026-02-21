@@ -344,14 +344,37 @@
   "Close the Datalog database, then clear all data, including schema."
   [conn]
   (let [store (.-store ^DB @conn)
-        lmdb  (if (instance? DatalogStore store)
+        remote? (instance? DatalogStore store)
+        lmdb  (if remote?
                 (let [dir (i/dir store)]
                   (close conn)
                   (open-kv dir))
-                (.-lmdb ^Store store))]
+                (.-lmdb ^Store store))
+        dir   (when-not remote?
+                (i/env-dir lmdb))
+        wal?  (if remote?
+                false
+                (boolean (:kv-wal? (i/env-opts lmdb))))]
     (try
-      (doseq [dbi [c/eav c/ave c/giants c/schema c/meta]]
-        (i/clear-dbi lmdb dbi))
+      ;; For remote stores, force WAL catch-up before clearing base DBIs.
+      ;; Otherwise reopening can replay historical WAL and resurrect data.
+      (when remote?
+        (i/flush-kv-indexer! lmdb))
+      (binding [c/*bypass-wal* true]
+        (doseq [dbi [c/eav c/ave c/giants c/schema c/meta]]
+          (i/clear-dbi lmdb dbi)))
+      ;; After a full clear, historical WAL is irrelevant. Reset replay markers
+      ;; in kv-info directly and drop WAL files to avoid replaying stale history
+      ;; when reopening this directory.
+      (when wal?
+        (binding [c/*bypass-wal* true]
+          (i/transact-kv lmdb c/kv-info
+                         [[:put c/last-indexed-wal-tx-id 0]
+                          [:put c/applied-wal-tx-id 0]
+                          [:put c/legacy-applied-tx-id 0]]
+                         :data :data)))
       (finally
         (db/remove-cache store)
-        (i/close-kv lmdb)))))
+        (i/close-kv lmdb)
+        (when wal?
+          (u/delete-files (str dir u/+separator+ c/wal-dir)))))))

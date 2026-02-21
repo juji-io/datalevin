@@ -339,7 +339,16 @@
       (doseq [dbi dbis]
         (if/drop-dbi lmdb dbi))
       (doseq [dbi dbis]
-        (if/clear-dbi lmdb dbi)))
+        ;; In WAL mode, clear-dbi may only clear base pages while historical WAL
+        ;; remains replayable. For CLI "drop --delete=false", emulate a durable
+        ;; clear by dropping and recreating the DBI with the same options.
+        (do
+          (if/open-dbi lmdb dbi)
+          (let [opts (or (if/dbi-opts lmdb dbi) {})]
+            (if/drop-dbi lmdb dbi)
+            (if/open-dbi lmdb dbi opts)))))
+    ;; Ensure metadata/data changes are materialized before close in WAL mode.
+    (if/flush-kv-indexer! lmdb)
     (if/close-kv lmdb)))
 
 (defn- dtlv-drop [{:keys [dir delete]} arguments]
@@ -382,18 +391,21 @@
              (BufferedWriter. (OutputStreamWriter. f)))
          d (when (and f nippy?) (DataOutputStream. f))
          o *out*]
-     (binding [*out* (or w o)]
+       (binding [*out* (or w o)]
        (cond
          list?      (let [lmdb (l/open-kv src-dir)]
+                      (if/flush-kv-indexer! lmdb)
                       (l/dump-dbis-list lmdb d)
                       (if/close-kv lmdb))
          datalog?   (let [conn (d/create-conn src-dir)]
                       (dump/dump-datalog conn d)
                       (d/close conn))
          all?       (let [lmdb (l/open-kv src-dir)]
+                      (if/flush-kv-indexer! lmdb)
                       (l/dump-all lmdb d)
                       (if/close-kv lmdb))
          (seq dbis) (let [lmdb (l/open-kv src-dir)]
+                      (if/flush-kv-indexer! lmdb)
                       (doseq [dbi dbis] (l/dump-dbi lmdb dbi d))
                       (if/close-kv lmdb))
          :else      (binding [*out* o] (println dump-help))))
@@ -432,9 +444,11 @@
        datalog? (dump/load-datalog dir in {} {} nippy?)
        dbi      (let [lmdb (l/open-kv dir)]
                   (l/load-dbi lmdb dbi in nippy?)
+                  (if/flush-kv-indexer! lmdb)
                   (if/close-kv lmdb))
        :else    (let [lmdb (l/open-kv dir)]
                   (l/load-all lmdb in nippy?)
+                  (if/flush-kv-indexer! lmdb)
                   (if/close-kv lmdb)))
      (when f (.close f)))))
 

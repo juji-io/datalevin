@@ -35,7 +35,8 @@
 
 (defn- overlay-active?
   [db dbi-name]
-  (ol/kv-overlay-active? @(l/kv-info db) (l/write-txn db) dbi-name))
+  (ol/kv-overlay-active? @(l/kv-info db) (l/write-txn db) dbi-name
+                         (l/writing? db)))
 
 (defn- dbi-opts!
   [db dbi-name]
@@ -129,7 +130,14 @@
               :step-8
               #(wal/maybe-publish-kv-wal-meta! db wal-id))
             (catch Exception _ nil))
-          (wal/maybe-flush-kv-indexer-on-pressure! db))
+          ;; Keep default commit path decoupled from replay/resize; only
+          ;; pressure-triggered catch-up may flush synchronously.
+          (try
+            (wal/maybe-flush-kv-indexer-on-pressure! db)
+            (catch Exception _ nil))
+          ;; Keep user-facing txn latency independent from LMDB replay/resize.
+          ;; WAL catch-up happens via background checkpointing or explicit flush.
+          nil)
         :transacted)
       (catch Exception e
         (wal/refresh-kv-wal-info! db)
@@ -206,7 +214,14 @@
                     :step-8
                     #(wal/maybe-publish-kv-wal-meta! db wal-id))
                   (catch Exception _ nil))
-                (wal/maybe-flush-kv-indexer-on-pressure! db))
+                ;; Keep default commit path decoupled from replay/resize; only
+                ;; pressure-triggered catch-up may flush synchronously.
+                (try
+                  (wal/maybe-flush-kv-indexer-on-pressure! db)
+                  (catch Exception _ nil))
+                ;; Keep user-facing txn latency independent from LMDB replay/resize.
+                ;; WAL catch-up happens via background checkpointing or explicit flush.
+                nil)
               (when (.-wal-ops wtxn)
                 (vreset! (.-wal-ops wtxn) []))
               (ol/reset-private-overlay! wtxn info)
@@ -244,34 +259,37 @@
   [db]
   (let [info (l/kv-info db)]
     (wal/stop-scheduled-wal-checkpoint info)
-    ;; Sync any unsynced WAL records before close so synced watermark is truthful.
-    (let [sync-ok?
-          (when-let [^FileChannel ch (:wal-channel @info)]
-            (when (.isOpen ch)
-              (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
-                    close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
-                (try
-                  (wal/sync-channel! ch close-mode)
-                  true
-                  (catch Exception e
-                    (binding [*out* *err*]
-                      (println "WARNING: WAL sync failed on close; not promoting synced watermark")
-                      (stt/print-stack-trace e))
-                    false)))))]
-      (when (and (:kv-wal? @info) sync-ok?)
-        (when-let [committed (:last-committed-wal-tx-id @info)]
-          (vswap! info assoc :last-synced-wal-tx-id committed))))
-    (when (:kv-wal? @info)
-      (when-let [wal-id (:last-committed-wal-tx-id @info)]
-        (when (pos? ^long wal-id)
-          (try
-            (wal/publish-kv-wal-meta! db wal-id (System/currentTimeMillis))
-            (catch Exception e
-              (binding [*out* *err*]
-                (println "WARNING: Failed to flush WAL meta on close")
-                (stt/print-stack-trace e)))))))
-    (wal/close-segment-channel! (:wal-channel @info))
-    (vswap! info dissoc :wal-runtime-ready?)))
+    (let [open? (try
+                  (not (i/closed-kv? db))
+                  (catch Throwable _ false))]
+      ;; Sync any unsynced WAL records before close so synced watermark is truthful.
+      (let [sync-ok?
+            (when-let [^FileChannel ch (:wal-channel @info)]
+              (when (.isOpen ch)
+                (let [sync-mode  (or (:wal-sync-mode @info) c/*wal-sync-mode*)
+                      close-mode (if (= sync-mode :none) :fdatasync sync-mode)]
+                  (try
+                    (wal/sync-channel! ch close-mode)
+                    true
+                    (catch Exception e
+                      (binding [*out* *err*]
+                        (println "WARNING: WAL sync failed on close; not promoting synced watermark")
+                        (stt/print-stack-trace e))
+                      false)))))]
+        (when (and (:kv-wal? @info) sync-ok? open?)
+          (when-let [committed (:last-committed-wal-tx-id @info)]
+            (vswap! info assoc :last-synced-wal-tx-id committed))))
+      (when (and (:kv-wal? @info) open?)
+        (when-let [wal-id (:last-committed-wal-tx-id @info)]
+          (when (pos? ^long wal-id)
+            (try
+              (wal/publish-kv-wal-meta! db wal-id (System/currentTimeMillis))
+              (catch Throwable e
+                (binding [*out* *err*]
+                  (println "WARNING: Failed to flush WAL meta on close")
+                  (stt/print-stack-trace e)))))))
+      (wal/close-segment-channel! (:wal-channel @info))
+      (vswap! info dissoc :wal-runtime-ready?))))
 
 (defn- init-kv-wal-runtime!
   [db]
@@ -284,6 +302,21 @@
           (ol/recover-kv-overlay! info (l/write-txn db) (i/env-dir db))
           (wal/start-scheduled-wal-checkpoint info db l/vector-indices)
           (vswap! info assoc :wal-runtime-ready? true))))))
+
+(defn- flush-kv-indexer-if-wal!
+  [db]
+  (when (and (kv-wal-enabled? db) (not c/*bypass-wal*))
+    (i/flush-kv-indexer! db)))
+
+(defn- sync-kv-overlay-on-miss!
+  [db]
+  (when (and (kv-wal-enabled? db)
+             (not c/*bypass-wal*)
+             (nil? @(l/write-txn db)))
+    (try
+      (ol/sync-kv-overlay! (l/kv-info db) (l/write-txn db) (i/env-dir db))
+      true
+      (catch Exception _ nil))))
 
 (declare wal-iterate-key
          wal-iterate-list
@@ -360,7 +393,8 @@
 
 (defn- overlay-map-for-dbi
   [db dbi]
-  (ol/overlay-for-dbi @(l/kv-info db) (l/write-txn db) (l/dbi-name dbi)))
+  (ol/overlay-for-dbi @(l/kv-info db) (l/write-txn db) (l/dbi-name dbi)
+                      (l/writing? db)))
 
 (defn- native-dbi
   [dbi]
@@ -454,9 +488,22 @@
       (let [ret (ol/overlay-get-value this dbi-name k k-type v-type
                                       ignore-key?)]
         (case ret
-          ::ol/overlay-miss
-          (scan/get-value this dbi-name k k-type v-type ignore-key?)
           ::ol/overlay-tombstone nil
+
+          ::ol/overlay-miss
+          (let [base (scan/get-value this dbi-name k k-type v-type ignore-key?)]
+            (if (some? base)
+              base
+              (do
+                (sync-kv-overlay-on-miss! this)
+                (let [ret' (ol/overlay-get-value this dbi-name k k-type v-type
+                                                 ignore-key?)]
+                  (case ret'
+                    ::ol/overlay-miss
+                    (scan/get-value this dbi-name k k-type v-type ignore-key?)
+                    ::ol/overlay-tombstone nil
+                    ret')))))
+
           ret))
       (scan/get-value this dbi-name k k-type v-type ignore-key?)))
 
@@ -567,10 +614,11 @@
       (locking (l/write-txn this)
         (vswap! (l/kv-info this) assoc
                 :last-indexed-wal-tx-id (:indexed-wal-tx-id res)
-                :applied-wal-tx-id (or (i/get-value this c/kv-info
-                                                    c/applied-wal-tx-id
-                                                    :data :data)
-                                       0))
+                :applied-wal-tx-id (binding [c/*bypass-wal* true]
+                                     (or (i/get-value this c/kv-info
+                                                      c/applied-wal-tx-id
+                                                      :data :data)
+                                         0)))
         (ol/prune-kv-committed-overlay! (l/kv-info this)
                                         (:indexed-wal-tx-id res)))
       res))
@@ -592,6 +640,9 @@
 (check-ready [db] (datalevin.interface/check-ready native))
 (clear-dbi
  [db dbi-name]
+ ;; In WAL mode, clear-dbi can be used to clear base LMDB state while
+ ;; preserving committed overlay visibility (e.g. replay/recovery tests).
+ ;; Do not force synchronous WAL catch-up here.
  (datalevin.interface/clear-dbi native dbi-name))
 (close-kv [db]
  (if (kv-wal-enabled? db)
@@ -604,13 +655,18 @@
    (wal-close-transact! db)
    (datalevin.interface/close-transact-kv native)))
 (closed-kv? [db] (datalevin.interface/closed-kv? native))
-(copy [db dest] (datalevin.interface/copy native dest))
+(copy
+ [db dest]
+ (flush-kv-indexer-if-wal! db)
+ (datalevin.interface/copy native dest))
 (copy
  [db dest compact?]
+ (flush-kv-indexer-if-wal! db)
  (datalevin.interface/copy native dest compact?))
 (dbi-opts [db dbi-name] (datalevin.interface/dbi-opts native dbi-name))
 (drop-dbi
  [db dbi-name]
+ (flush-kv-indexer-if-wal! db)
  (let [existing (datalevin.interface/dbi-opts native dbi-name)
        ret      (datalevin.interface/drop-dbi native dbi-name)]
    (when (and existing (not= dbi-name c/kv-info))
@@ -618,7 +674,18 @@
                    [[:del [:dbis dbi-name]]]
                    [:keyword :string]))
    ret))
-(entries [db dbi-name] (datalevin.interface/entries native dbi-name))
+(entries
+ [db dbi-name]
+ (if (kv-wal-enabled? db)
+   (try
+     (long
+      (or (if (dbi-dupsort? db dbi-name)
+            (ol/wal-list-range-count db dbi-name [:all] :raw [:all] :raw nil)
+            (ol/wal-key-range-count db dbi-name [:all] :raw nil))
+          0))
+     (catch Exception _
+       (datalevin.interface/entries native dbi-name)))
+   (datalevin.interface/entries native dbi-name)))
 (env-dir [db] (datalevin.interface/env-dir native))
 (env-opts [db] (datalevin.interface/env-opts native))
 (get-dbi
@@ -841,9 +908,21 @@
  [db c]
  (datalevin.interface/set-val-compressor native c))
 (stat [db] (datalevin.interface/stat native))
-(stat [db dbi-name] (datalevin.interface/stat native dbi-name))
-(sync [db] (datalevin.interface/sync native))
-(sync [db force] (datalevin.interface/sync native force))
+(stat
+ [db dbi-name]
+ (if (and dbi-name (kv-wal-enabled? db))
+   (do
+     (flush-kv-indexer-if-wal! db)
+     (datalevin.interface/stat native dbi-name))
+   (datalevin.interface/stat native dbi-name)))
+(sync
+ [db]
+ (flush-kv-indexer-if-wal! db)
+ (datalevin.interface/sync native))
+(sync
+ [db force]
+ (flush-kv-indexer-if-wal! db)
+ (datalevin.interface/sync native force))
 (val-compressor [db] (datalevin.interface/val-compressor native))
 (visit
  [db dbi-name visitor k-range]

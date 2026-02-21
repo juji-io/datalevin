@@ -316,14 +316,16 @@
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
+        lmdb (l/open-kv dir {:flags   (conj c/default-env-flags :nosync)
+                             :kv-wal? false})]
     (if/open-dbi lmdb "a")
     (if/transact-kv lmdb [[:put "a" :old 1]])
     (is (= 1 (if/get-value lmdb "a" :old)))
     (let [res (future
                 (let [lmdb2 (l/open-kv
                               dir
-                              {:flags (conj c/default-env-flags :nosync)})]
+                              {:flags   (conj c/default-env-flags :nosync)
+                               :kv-wal? false})]
                   (if/open-dbi lmdb2 "a")
                   (is (= 1 (if/get-value lmdb2 "a" :old)))
                   (if/transact-kv lmdb2 [[:put "a" :something 1]])

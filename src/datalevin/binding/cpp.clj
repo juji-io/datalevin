@@ -1548,6 +1548,7 @@
           flags         (if temp?
                           (conj flags :nosync)
                           flags)
+          kv-wal-enabled (if temp? false (boolean kv-wal?))
           ^Env env      (Env/create dir mapsize max-readers max-dbs
                                     (kv-flags flags))
           now-ms        (System/currentTimeMillis)
@@ -1557,7 +1558,7 @@
                                         :max-readers  max-readers
                                         :max-dbs      max-dbs
                                         :temp?        temp?
-                                        :kv-wal?      (boolean kv-wal?)
+                                        :kv-wal?      kv-wal-enabled
                                         :wal-meta-flush-max-txs
                                         wal-meta-flush-max-txs
                                         :wal-meta-flush-max-ms
@@ -1597,11 +1598,11 @@
                                    false
                                    nil
                                    nil
-                                   (boolean kv-wal?)
+                                   kv-wal-enabled
                                    nil)]
       (swap! l/lmdb-dirs conj dir)
       (open-dbi lmdb c/kv-info) ;; never compressed
-      (when kv-wal?
+      (when kv-wal-enabled
         (u/file (str dir u/+separator+ c/wal-dir)))
       (if temp?
         (u/delete-on-exit dir-file)
@@ -1619,7 +1620,7 @@
                                   :kv-overlay-by-dbi
                                   :overlay-published-wal-tx-id))
           (vswap! (l/kv-info lmdb) assoc
-                  :kv-wal? (boolean kv-wal?)
+                  :kv-wal? kv-wal-enabled
                   :kv-overlay-committed-by-tx (ConcurrentSkipListMap.)
                   :kv-overlay-by-dbi {}
                   :overlay-published-wal-tx-id 0)
