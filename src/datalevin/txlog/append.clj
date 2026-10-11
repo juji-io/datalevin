@@ -11,6 +11,7 @@
   (segment-id [batch])
   (channel [batch])
   (sync-manager [batch])
+  (ownership-token [batch] "The retained WAL span's claim, or nil for standalone appends.")
   (started-ms [batch])
   (deadline-ns [batch])
   (timeout-ms [batch])
@@ -19,13 +20,14 @@
 
 (deftype AppendBatch [^long lo ^long hi ^long sid ^FileChannel ch manager
                       ^long started ^long deadline ^long timeout
-                      ^boolean near-roll records]
+                      ^boolean near-roll records owner-token]
   IAppendBatch
   (first-lsn [_] lo)
   (last-lsn [_] hi)
   (segment-id [_] sid)
   (channel [_] ch)
   (sync-manager [_] manager)
+  (ownership-token [_] owner-token)
   (started-ms [_] started)
   (deadline-ns [_] deadline)
   (timeout-ms [_] timeout)
@@ -42,12 +44,14 @@
   "Own one immutable descriptor for consecutive, completely written records.
   records contains only physical coordinates, never request rows or results,
   so a retained descriptor cannot keep other callers' application state alive."
-  [lo sid ch manager started deadline timeout near-roll records]
-  (when (empty? records)
-    (throw (IllegalArgumentException. "An append batch must contain a record")))
-  (AppendBatch. (long lo) (+ (long lo) (dec (long (count records))))
-                (long sid) ch manager (long started) (long deadline)
-                (long timeout) (boolean near-roll) records))
+  ([lo sid ch manager started deadline timeout near-roll records]
+   (create lo sid ch manager started deadline timeout near-roll records nil))
+  ([lo sid ch manager started deadline timeout near-roll records owner-token]
+   (when (empty? records)
+     (throw (IllegalArgumentException. "An append batch must contain a record")))
+   (AppendBatch. (long lo) (+ (long lo) (dec (long (count records))))
+                 (long sid) ch manager (long started) (long deadline)
+                 (long timeout) (boolean near-roll) records owner-token)))
 
 (defn commit-info
   "Materialize the exact record's commit metadata only at an API/native boundary."

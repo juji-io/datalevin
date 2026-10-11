@@ -6,9 +6,9 @@
 
   Embedded KV and server admission use this wiring seam. It owns neither the
   WAL runtime nor the LMDB writer: the opener opens them, then this namespace
-  binds the WAL-only runtime control, builds the two branch adapters and the one
-  reusable WAL worker, and returns the collector with a close path that stops
-  the worker only after the collector has drained.
+  binds the WAL-only runtime control, builds the selected branch adapters and
+  one reusable WAL worker, and returns the collector with a close path that
+  stops the worker only after the collector has drained.
 
   The returned map supplies the collector executor and its close action."
   (:require [datalevin.tx-group.batch :as batch]
@@ -34,7 +34,8 @@
   - `:schedule-fn` overrides the fixed schedule selector (tests/diagnostics).
 
   Returns `{:executor :worker :wal-branch :native-branch :close!}`. `:close!`
-  stops the worker and must run only after collector quiescence."
+  stops the worker and must run only after collector quiescence. `:native-branch`
+  is nil when `:rmw-opts` selects direct native write capture."
   ([wal-state native-writer]
    (executor wal-state native-writer nil))
   ([wal-state native-writer
@@ -42,10 +43,12 @@
    (when (and wal-state runtime-control)
      (txlog/bind-runtime-control! wal-state runtime-control))
    (if-not wal-state
-     (let [native-branch (native/branch native-writer native-opts)
+     (let [native-branch (when-not rmw-opts
+                           (native/branch native-writer native-opts))
            native-rmw (when rmw-opts
                         (assoc (dissoc rmw-opts :encode-body :body-cost) :collect? true))
-           blind-exec (executor/create-native native-branch nil check-batch!)]
+           blind-exec (when-not rmw-opts
+                        (executor/create-native native-branch nil check-batch!))]
        {:executor (fn [batch]
                     (if native-rmw
                       (rmw/execute! native-writer nil nil (constantly nil)
@@ -54,30 +57,33 @@
         :native-branch native-branch
         :close! (constantly true)})
      (let [wal-branch (wal/branch wal-state)
-         next-lsn! #(long @(:next-lsn wal-state))
-         native-branch (native/branch native-writer native-opts)
-         w (apply worker/for-wal wal-branch (apply concat worker-opts))
-         policy! (executor/policy-runner wal-branch (:executor w) (:wake! w))
-         native-rmw (when rmw-opts
-                      (cond-> (assoc rmw-opts :collect? true :run-policy! policy!)
-                        (:write-metadata! native-opts)
-                        (assoc :write-metadata! (:write-metadata! native-opts))))
-         exec (executor/create wal-branch native-branch
-                               next-lsn!
-                               (cond-> {:wal-executor (:executor w)
-                                        :wake-maintenance! (:wake! w)}
-                                 schedule-fn (assoc :schedule-fn schedule-fn)
-                                 check-batch! (assoc :check-batch! check-batch!)))]
-     {:executor (fn [batch]
-                  (if native-rmw
-                    (rmw/execute! native-writer wal-branch
-                                  next-lsn! (:wake! w)
-                                  check-batch! native-rmw batch)
-                    (exec batch)))
-      :worker w
-      :wal-branch wal-branch
-      :native-branch native-branch
-      :close! (fn [] ((:close! w)))}))))
+           next-lsn! #(long @(:next-lsn wal-state))
+           native-branch (when-not rmw-opts
+                           (native/branch native-writer native-opts))
+           w (apply worker/for-wal wal-branch (apply concat worker-opts))
+           policy! (when rmw-opts
+                     (executor/policy-runner wal-branch (:executor w) (:wake! w)))
+           native-rmw (when rmw-opts
+                        (cond-> (assoc rmw-opts :collect? true :run-policy! policy!)
+                          (:write-metadata! native-opts)
+                          (assoc :write-metadata! (:write-metadata! native-opts))))
+           exec (when-not rmw-opts
+                  (executor/create wal-branch native-branch
+                                   next-lsn!
+                                   (cond-> {:wal-executor (:executor w)
+                                            :wake-maintenance! (:wake! w)}
+                                     schedule-fn (assoc :schedule-fn schedule-fn)
+                                     check-batch! (assoc :check-batch! check-batch!))))]
+       {:executor (fn [batch]
+                    (if native-rmw
+                      (rmw/execute! native-writer wal-branch
+                                    next-lsn! (:wake! w)
+                                    check-batch! native-rmw batch)
+                      (exec batch)))
+        :worker w
+        :wal-branch wal-branch
+        :native-branch native-branch
+        :close! (fn [] ((:close! w)))}))))
 
 (defn collector
   "Build the collector over a factory runtime. Returns

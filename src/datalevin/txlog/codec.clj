@@ -18,7 +18,7 @@
   (:import
    [java.nio ByteBuffer ByteOrder BufferOverflowException]
    [java.nio.charset StandardCharsets]
-   [java.util Arrays HashMap List Collection]
+   [java.util Arrays HashMap List Collection RandomAccess]
    [java.util.zip CRC32C]
    [datalevin.lmdb DatomKVTxData]
    [datalevin.utl RowRegions]
@@ -959,7 +959,7 @@
            out (if (= op :del) out
                    (-> out (bb-write-type! tl (.-vt row))
                        (bb-put-u32! tl (alength value)) (bb-put-bytes! tl value)))]
-       (bb-write-flags! out tl nil))
+       (bb-write-flags! out tl (.-flags row)))
 
      (instance? EncodedKVTxData row)
      (write-encoded-kv-row! tl bf row dbi-cache)
@@ -1337,32 +1337,36 @@
   Retain owned inputs without allocating or copying a combined payload. Equal
   HA terms imply equal header sizes, including for mixed format-1/format-2 rows."
   [bodies]
-  (when (zero? (count bodies))
-    (throw (IllegalArgumentException. "A WAL group cannot be empty")))
-  (let [;; The new collector already owns a sealed reference array. Keep it
-        ;; instead of rebuilding a vector on the WAL worker. Other callers
-        ;; retain the existing normalization of sequential inputs.
-        bodies (if (.isInstance object-array-class bodies) bodies (vec bodies))
-        ^bytes first-body (nth bodies 0)
-        bf (ByteBuffer/wrap first-body)
-        first-header (decode-commit-row-payload-prefix bf)
-        header-size (.position bf)]
-    (loop [index 1 size (long (alength first-body))
-           row-count (long (:op-count first-header)) major (long (:major first-header))]
-      (when (or (> size Integer/MAX_VALUE) (> row-count Integer/MAX_VALUE))
-        (raise "Prepared WAL group exceeds the record size limit"
-               {:type :txlog/payload-overflow :outcome :not-committed}))
-      (if (< index (count bodies))
-        (let [^bytes body (nth bodies index)
-              bf (ByteBuffer/wrap body)
-              header (decode-commit-row-payload-prefix bf)]
-          (when-not (= (:ha-term first-header) (:ha-term header))
-            (raise "Prepared WAL group contains different HA terms"
-                   {:type :txlog/mixed-terms :outcome :not-committed}))
-          (recur (inc index) (+ size (- (alength body) header-size))
-                 (+ row-count (long (:op-count header)))
-                 (max major (long (:major header)))))
-        (->CommitRowGroup bodies header-size size row-count major)))))
+  (let [;; Retain indexed carriers. Normalize linked/sequential inputs once so
+        ;; header validation and later gathering keep constant-time indexing.
+        bodies (if (or (.isInstance object-array-class bodies)
+                       (instance? clojure.lang.Indexed bodies)
+                       (and (instance? List bodies)
+                            (instance? RandomAccess bodies)))
+                 bodies (vec bodies))
+        body-count (count bodies)]
+    (when (zero? body-count)
+      (throw (IllegalArgumentException. "A WAL group cannot be empty")))
+    (let [^bytes first-body (nth bodies 0)
+          bf (ByteBuffer/wrap first-body)
+          first-header (decode-commit-row-payload-prefix bf)
+          header-size (.position bf)]
+      (loop [index 1 size (long (alength first-body))
+             row-count (long (:op-count first-header)) major (long (:major first-header))]
+        (when (or (> size Integer/MAX_VALUE) (> row-count Integer/MAX_VALUE))
+          (raise "Prepared WAL group exceeds the record size limit"
+                 {:type :txlog/payload-overflow :outcome :not-committed}))
+        (if (< index body-count)
+          (let [^bytes body (nth bodies index)
+                bf (ByteBuffer/wrap body)
+                header (decode-commit-row-payload-prefix bf)]
+            (when-not (= (:ha-term first-header) (:ha-term header))
+              (raise "Prepared WAL group contains different HA terms"
+                     {:type :txlog/mixed-terms :outcome :not-committed}))
+            (recur (inc index) (+ size (- (alength body) header-size))
+                   (+ row-count (long (:op-count header)))
+                   (max major (long (:major header)))))
+          (->CommitRowGroup bodies header-size size row-count major))))))
 
 (defn write-commit-row-group-header!
   "Write a combined payload header at the current position, advancing it.
@@ -1389,10 +1393,11 @@
 
 (defn combine-commit-row-payloads
   "Materialize prepared payloads as ordinary owned bytes for callers that need
-  them. Insertion uses the group regions directly; a single input is reused."
+  them. The result never aliases an input, including for a single payload.
+  Insertion uses the group regions directly."
   ^bytes [bodies]
   (if (= 1 (count bodies))
-    (first bodies)
+    (aclone ^bytes (nth bodies 0))
     (let [group (prepare-commit-row-group bodies)
           out (byte-array (int (:body-size group)))]
       (write-commit-row-group! (ByteBuffer/wrap out) group)

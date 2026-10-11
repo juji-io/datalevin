@@ -23,6 +23,7 @@
    [datalevin.txlog.recovery :as trec]
    [datalevin.txlog.segment :as tseg]
    [datalevin.txlog.transfer :as transfer]
+   [datalevin.txlog.weights :as weights]
    [datalevin.util :as u :refer [raise]]
    [taoensso.timbre :as log])
   (:import
@@ -30,7 +31,6 @@
    [java.nio ByteBuffer]
    [java.nio.channels FileChannel FileLock OverlappingFileLockException]
    [java.nio.file StandardOpenOption]
-   [java.util ArrayDeque]
    [java.util.concurrent.locks LockSupport ReentrantLock]
    [org.eclipse.collections.impl.list.mutable FastList]
 ))
@@ -472,9 +472,8 @@
                           ;; durability cost at append, so it does not collect here.
                           :collect-window-ns (if sync-on-write?
                                                0 sync-collect-window-ns)
-                          :track-trailing?   (not= :relaxed profile)
-                           ;; Prepared WAL batches use full-prefix accounting.
-                           :full-prefix?      (boolean (:wal-full-prefix? info))})
+                          ;; Prepared WAL batches use full-prefix accounting.
+                          :full-prefix?      (boolean (:wal-full-prefix? info))})
 
          :segment-roll-count                      (volatile! 0)
          :segment-roll-duration-ms                (volatile! 0)
@@ -1602,19 +1601,6 @@
   (let [token (claim-wal-ownership! state deadline-ns)]
     (try (f) (finally (release-wal-ownership! state token)))))
 
-(defn- release-held-wal-ownership!
-  "Release the ownership currently held by this runtime's append/policy span.
-
-  One span is active per environment, so the current owner is that span's own
-  claim. No-op when nothing is held."
-  [state]
-  (let [manager (:sync-manager state)
-        ^Object monitor (:monitor manager)]
-    (locking monitor
-      (when (some? @(:wal-owner manager))
-        (vreset! (:wal-owner manager) nil)
-        (.notifyAll monitor)))))
-
 (defn- complete-policy-holding!
   "Policy body for a caller that already holds exclusive WAL ownership."
   [state batch deadline-ns]
@@ -1628,7 +1614,7 @@
           (long @(:last-durable-lsn (:sync-manager state)))))))
 
 (defn- policy-outcome-error
-  "Classify a WAL policy-completion failure by the durability actually reached.
+  "Classify a failure after record writing by the durability actually reached.
 
   A failure before D reached this record's LSN leaves durability unknown
   (`:indeterminate`). A failure after D advanced, such as an after-sync hook,
@@ -1756,75 +1742,82 @@
                    :retryable? false})
            cause))
 
+(defn- fail-append!
+  "Fence the runtime and report an append failure without losing its cause or
+  outcome if a failure notification itself throws."
+  [state hooks cause error]
+  (when-let [fatal (:fatal-error state)] (vreset! fatal cause))
+  (try
+    (notify-runtime-failure! state error)
+    (when-let [mark (:mark-fatal! hooks)] (mark state cause))
+    (finally (throw error))))
+
 (defn append-prepared-batch-pending!
-  "Append a collected group as one record/LSN. Exclusively owned bodies from
+  "Append a collected group as one record/LSN. Prepared bodies from
   prepare-append-body contribute their encoded rows in request order. The
   preparation owner fixes expected-lsn; row serialization precedes collection
   for blind requests, and only the combined header is stamped at insertion.
   Byte writes stay serialized; durability ownership is acquired later.
   Return one shared append descriptor; register-appends! publishes it with all
-  roots/entries before advertising the prefix. Bodies must not be reused or
-  modified after handoff. No per-transaction durability receipts."
+  roots/entries before advertising the prefix. Inputs remain unchanged and may
+  be reused; callers must not modify them while insertion is in progress.
+  No per-transaction durability receipts."
   [state expected-lsn bodies {:keys [before-append! register-appends!] :as hooks}]
-  (when (zero? (count bodies))
-    (throw (IllegalArgumentException. "A prepared WAL batch cannot be empty")))
-  (with-wal-use state
-    (let [expected-lsn (long expected-lsn)
-          single? (= 1 (count bodies))
-          body (when single? (nth bodies 0))
-          group (when-not single? (tcodec/prepare-commit-row-group bodies))
-          now (System/currentTimeMillis)]
-      (maybe-roll-segment! state now)
-      (locking (or (:append-lock state) state)
-        (when-let [check (:check-admission! (control state))]
-          (check))
-        (when-let [error (some-> (:fatal-error state) deref)]
-          (throw (ex-info "Txn-log runtime is in fatal state" {:type :txlog/fatal} error)))
-        (when-let [check (:throw-if-fatal! hooks)] (check state))
-        (when-not (= expected-lsn (long @(:next-lsn state)))
-          (raise "Prepared WAL prefix changed before insertion"
-                 {:type :txlog/stale-preparation :outcome :not-committed}))
-        (let [^FileChannel ch @(:segment-channel state)
-              sid (long @(:segment-id state))
-              offset (long @(:segment-offset state))
-              manager (:sync-manager state)]
-          (ensure-sync-manager-healthy! manager)
-          (when before-append! (before-append! state))
-          (when single?
-            (tcodec/patch-commit-row-payload-header! body expected-lsn now))
-          (try
-            (let [result (if single?
-                           (tseg/write-record-at! ch offset body)
-                           (tseg/write-prepared-record-at! ch offset group expected-lsn now))
+  (let [body-count (count bodies)]
+    (when (zero? body-count)
+      (throw (IllegalArgumentException. "A prepared WAL batch cannot be empty")))
+    (with-wal-use state
+      (let [expected-lsn (long expected-lsn)
+            group (tcodec/prepare-commit-row-group bodies)
+            now (System/currentTimeMillis)]
+        (maybe-roll-segment! state now)
+        (locking (or (:append-lock state) state)
+          (when-let [check (:check-admission! (control state))]
+            (check))
+          (when-let [error (some-> (:fatal-error state) deref)]
+            (throw (ex-info "Txn-log runtime is in fatal state" {:type :txlog/fatal} error)))
+          (when-let [check (:throw-if-fatal! hooks)] (check state))
+          (when-not (= expected-lsn (long @(:next-lsn state)))
+            (raise "Prepared WAL prefix changed before insertion"
+                   {:type :txlog/stale-preparation :outcome :not-committed}))
+          (let [^FileChannel ch @(:segment-channel state)
+                sid (long @(:segment-id state))
+                offset (long @(:segment-offset state))
+                manager (:sync-manager state)]
+            (ensure-sync-manager-healthy! manager)
+            (when before-append! (before-append! state))
+            (let [result (try
+                           (tseg/write-prepared-record-at! ch offset group expected-lsn now)
+                           (catch Throwable e
+                             (fail-append! state hooks e
+                                           (if (runtime-control state)
+                                             (append-write-error expected-lsn sid offset e)
+                                             e))))
                   end (+ (long (:offset result)) (long (:size result)))
                   deadline (lifetime/deadline (:commit-wait-ms state))
                   batch (append/create expected-lsn sid ch manager now deadline
-                                       (:commit-wait-ms state) false [result])]
-              (vreset! (:segment-offset state) end)
-              (when-let [total (:retention-total-bytes state)]
-                (vreset! total (+ (long @total) (- end offset))))
-              (vreset! (:next-lsn state) (inc expected-lsn))
-              (mark-meta-dirty! state)
-              (when register-appends! (register-appends! state batch))
-              ;; One physical record still represents every logical request
-              ;; for the relaxed/adaptive group-commit threshold.
-              (append-sync-transition! manager expected-lsn now
-                                       {:force? (not= :relaxed (:durability-profile state))
-                                        :begin? false
-                                        :request-count (or (:request-count hooks)
-                                                           (count bodies))})
-              batch)
-            (catch Throwable e
-              (let [error (if (runtime-control state)
-                            (append-write-error expected-lsn sid offset e)
-                            e)]
-                (when-let [fatal (:fatal-error state)] (vreset! fatal e))
-                (try
-                  (notify-runtime-failure! state error)
-                  (when-let [mark (:mark-fatal! hooks)] (mark state e))
-                  ;; A notification failure cannot turn attempted WAL I/O into
-                  ;; a pre-append rejection or replace its original cause.
-                  (finally (throw error)))))))))))
+                                       (:commit-wait-ms state) false [result]
+                                       (::ownership-token hooks))]
+              (try
+                (vreset! (:segment-offset state) end)
+                (when-let [total (:retention-total-bytes state)]
+                  (vreset! total (+ (long @total) (- end offset))))
+                (vreset! (:next-lsn state) (inc expected-lsn))
+                (mark-meta-dirty! state)
+                (when register-appends! (register-appends! state batch))
+                ;; One physical record still represents every logical request
+                ;; for the relaxed/adaptive group-commit threshold.
+                (append-sync-transition! manager expected-lsn now
+                                         {:force? (not= :relaxed (:durability-profile state))
+                                          :begin? false
+                                          :request-count (or (:request-count hooks)
+                                                             body-count)})
+                batch
+                (catch Throwable e
+                  (fail-append! state hooks e
+                                (if (runtime-control state)
+                                  (policy-outcome-error batch e)
+                                  e)))))))))))
 
 (defn append-batch-pending!
   "Serialize and append a sealed preparation group as one record and LSN.
@@ -1864,7 +1857,8 @@
   The pair is one ownership span, so a maintenance force cannot claim ownership
   between the append and its policy completion: it waits for the span to finish,
   and relaxed policy completion is published before the force runs. Returns the
-  append descriptor. Requires a private WAL and a bound runtime control.
+  append descriptor carrying this span's ownership token. Requires a private WAL
+  and a bound runtime control.
 
   `deadline-ns` bounds the ownership wait with the batch's original deadline.
   When supplied, `phase-context` observes :wal-appended inside the ownership
@@ -1894,7 +1888,8 @@
      (try
        (let [batch (append-prepared-batch-pending!
                     state expected-lsn bodies
-                    {:request-count request-count
+                    {::ownership-token token
+                     :request-count request-count
                      :throw-if-fatal! (:throw-if-fatal! ctl)
                      :before-append! (:before-append! ctl)
                      :mark-fatal! (:mark-fatal! ctl)})]
@@ -1909,7 +1904,7 @@
          batch)
        (catch Throwable t
          (release-wal-ownership! state token)
-         ;; Record-writing failures already carry their indeterminate outcome.
+         ;; Failures during or after record writing already carry their outcome.
          ;; All other failures here precede this request's record write.
          (throw (if (:outcome (ex-data t))
                   t
@@ -1921,18 +1916,27 @@
 (defn finish-prepared-group!
   "Complete policy for an append from `begin-prepared-group!` and release the
   span's WAL ownership. Returns the durability status; see `complete-policy!`.
-  Ownership is released even when policy completion throws."
+  A stale or standalone append cannot finish another span. The span's claim is
+  released even when receipt validation or policy completion throws."
   [state batch deadline-ns]
-  (when-not (identical? (:sync-manager state) (append/sync-manager batch))
-    (raise "Txn-log append batch belongs to another runtime"
-           {:type :txlog/foreign-receipt}))
-  (append/record-info batch (append/last-lsn batch))
-  (try
-    (complete-policy-holding! state batch deadline-ns)
-    (catch Throwable t
-      (throw (policy-outcome-error batch t)))
-    (finally
-      (release-held-wal-ownership! state))))
+  (let [token (append/ownership-token batch)
+        manager (:sync-manager state)]
+    (try
+      (when-not (identical? manager (append/sync-manager batch))
+        (raise "Txn-log append batch belongs to another runtime"
+               {:type :txlog/foreign-receipt}))
+      (append/record-info batch (append/last-lsn batch))
+      (locking (:monitor manager)
+        (when-not (and (some? token)
+                       (identical? token @(:wal-owner manager)))
+          (raise "Txn-log append no longer owns its WAL span"
+                 {:type :txlog/stale-wal-ownership})))
+      (try
+        (complete-policy-holding! state batch deadline-ns)
+        (catch Throwable t
+          (throw (policy-outcome-error batch t))))
+      (finally
+        (release-wal-ownership! state token)))))
 
 (defn append-durable!
   [state rows hooks]
@@ -2084,14 +2088,19 @@
   deadline, or zero for the runtime's configured commit-wait window. Requires a
   bound runtime control and runs outside insertion/collector locks."
   [state deadline-ns]
-  (when (pending-sync? state)
-    (let [manager (:sync-manager state)
-          target (long @(:last-appended-lsn manager))]
-      (if (<= target (long @(:last-durable-lsn manager)))
-        (do (locking (:monitor manager)
-              (vreset! (:sync-requested? manager) false)
-              (vreset! (:sync-request-reason manager) nil))
-            nil)
+  (when-let [manager (:sync-manager state)]
+    (let [target (locking (:monitor manager)
+                   (when @(:sync-requested? manager)
+                     (let [appended (long @(:last-appended-lsn manager))
+                           durable (long @(:last-durable-lsn manager))]
+                       ;; Append publication uses this monitor too. Clear only
+                       ;; when the current prefix, rather than a stale target,
+                       ;; is durable.
+                       (if (<= appended durable)
+                         (do (vreset! (:sync-requested? manager) false)
+                             (vreset! (:sync-request-reason manager) nil))
+                         appended))))]
+      (when target
         (force-through! state target deadline-ns false)))))
 
 (declare request-sync-if-needed!)
@@ -2117,8 +2126,11 @@
           (boolean @(:sync-requested? manager)) (lifetime/nano-time)
           (and (pos? unsynced) (pos? group-commit-ms))
           (let [due-in-ms (- (+ (long @(:last-sync-ms manager)) group-commit-ms)
-                             (System/currentTimeMillis))]
-            (+ (lifetime/nano-time) (* 1000000 due-in-ms)))
+                             (System/currentTimeMillis))
+                now (lifetime/nano-time)]
+            (if (pos? due-in-ms)
+              (+ now (* 1000000 due-in-ms))
+              now))
           :else 0)))))
 
 (defn service-maintenance!
@@ -2213,46 +2225,14 @@
      :forced (avg-ms forced-total forced-count)
      :unknown (avg-ms unknown-total unknown-count)}))
 
-(def ^:private pending-lsn-queue-initial-capacity 256)
-
-(defn- pending-trailing-lsn
-  [{:keys [pending-lsn-queue
-           pending-lsn-head
-           pending-lsn-size]}]
-  (let [size (long @pending-lsn-size)]
-    (when (pos? size)
-      (let [^longs queue @pending-lsn-queue
-            capacity (long (alength queue))
-            head (long @pending-lsn-head)
-            idx (long (mod (+ head (dec size)) capacity))]
-        (long (aget queue (int idx)))))))
-
-(defn- drop-pending-through!
-  [{:keys [pending-lsn-queue
-           pending-lsn-head
-           pending-lsn-size]}
-   ^long durable-lsn]
-  (let [^longs queue @pending-lsn-queue
-        capacity (long (alength queue))]
-    (loop [head (long @pending-lsn-head)
-           size (long @pending-lsn-size)]
-      (if (and (pos? size)
-               (<= (long (aget queue (int head))) durable-lsn))
-        (recur (long (if (= (inc head) capacity) 0 (inc head)))
-               (dec size))
-        (do
-          (vreset! pending-lsn-head head)
-          (vreset! pending-lsn-size size)
-          size)))))
-
 (defn new-sync-manager
+  "Track appended/durable prefixes and logical group weights for sync policy."
   [{:keys [last-durable-lsn
            last-appended-lsn
            last-sync-ms
            group-commit
            group-commit-ms
            sync-adaptive?
-           track-trailing?
            full-prefix?
            collect-window-ns
            collect-stall-ns]
@@ -2262,7 +2242,6 @@
          group-commit 100
          group-commit-ms 100
          sync-adaptive? true
-         track-trailing? true
          full-prefix? false
          collect-window-ns 0
          collect-stall-ns sync-collect-stall-ns}}]
@@ -2286,7 +2265,6 @@
    :sync-adaptive? (boolean sync-adaptive?)
    ;; Full-prefix mode owns D as an LSN prefix and clears U when a captured-A
    ;; force confirms, so it retains no per-LSN weight tail.
-   :track-trailing? (boolean (and track-trailing? (not full-prefix?)))
    :full-prefix? full-prefix?
    :sync-count-by-reason (zero-sync-reason-array)
    :batched-sync-count (volatile! 0)
@@ -2295,12 +2273,8 @@
    :unsynced-count (volatile! pending0)
    ;; Physical LSNs remain unchanged. Only grouped private-WAL appends need
    ;; extra weights, retained until their own LSN is durably synced.
-   :pending-group-counts (ArrayDeque.)
+   :pending-group-counts (weights/create full-prefix?)
    :pending-group-extra-count (volatile! 0)
-   :pending-lsn-queue (volatile! (long-array pending-lsn-queue-initial-capacity))
-   :pending-lsn-head (volatile! 0)
-   :pending-lsn-tail (volatile! 0)
-   :pending-lsn-size (volatile! 0)
    :sync-requested? (volatile! false)
    :sync-request-reason (volatile! nil)
    :sync-in-progress? (volatile! false)
@@ -2335,7 +2309,6 @@
            forced-sync-count
            last-sync-reason
            unsynced-count
-           pending-lsn-size
            sync-requested?
            sync-request-reason
            sync-in-progress?
@@ -2366,7 +2339,6 @@
      :forced-sync-count (long @forced-sync-count)
      :last-sync-reason @last-sync-reason
      :unsynced-count (long @unsynced-count)
-     :pending-queue-size (long @pending-lsn-size)
      :sync-requested? (boolean @sync-requested?)
      :sync-request-reason @sync-request-reason
      :sync-in-progress? (boolean @sync-in-progress?)
@@ -2465,20 +2437,14 @@
   "Clear logical request weights when resetting the WAL recovery floor.
   The caller owns the sync manager or the runtime state guard."
   [manager]
-  (.clear ^ArrayDeque (:pending-group-counts manager))
+  (.clear ^datalevin.txlog.weights.WeightQueue (:pending-group-counts manager))
   (vreset! (:pending-group-extra-count manager) 0))
 
 (defn- drop-durable-group-counts!
   [manager ^long durable-lsn]
-  (let [^ArrayDeque queue (:pending-group-counts manager)
+  (let [^datalevin.txlog.weights.WeightQueue queue (:pending-group-counts manager)
         extra-count (:pending-group-extra-count manager)]
-    (loop [remaining (long @extra-count)]
-      (if-let [^longs entry (.peekFirst queue)]
-        (if (<= (aget entry 0) durable-lsn)
-          (do (.removeFirst queue)
-              (recur (- remaining (aget entry 1))))
-          (vreset! extra-count remaining))
-        (vreset! extra-count remaining)))))
+    (vreset! extra-count (- (long @extra-count) (.dropThrough queue durable-lsn)))))
 
 (defn- request-sync-on-append-under-monitor!
   [manager lsn now request-count]
@@ -2505,8 +2471,8 @@
                  time? :batch-time
                  :else nil)]
     (when (and (not (:full-prefix? manager)) (pos? extra-count))
-      (.addLast ^ArrayDeque (:pending-group-counts manager)
-                (long-array [lsn* extra-count]))
+      (.addWeight ^datalevin.txlog.weights.WeightQueue
+                  (:pending-group-counts manager) lsn* extra-count)
       (vreset! (:pending-group-extra-count manager)
                (+ (long @(:pending-group-extra-count manager)) extra-count)))
     (vreset! (:last-appended-lsn manager) new-appended)
@@ -2572,16 +2538,12 @@
         last-appended-lsn (long @(:last-appended-lsn manager))
         last-durable-lsn (long @(:last-durable-lsn manager))
         sync-requested? (boolean @(:sync-requested? manager))
-        sync-request-reason @(:sync-request-reason manager)
-        track-trailing? (boolean (:track-trailing? manager))]
+        sync-request-reason @(:sync-request-reason manager)]
     (if sync-in-progress?
       nil
       (if (and (> last-appended-lsn last-durable-lsn)
                (or (nil? lsn) (> (long lsn) last-durable-lsn)))
-        (let [target-lsn (long (if track-trailing?
-                                 (or (pending-trailing-lsn manager)
-                                     last-appended-lsn)
-                                 last-appended-lsn))
+        (let [target-lsn last-appended-lsn
               lsn* (when (some? lsn) (long lsn))]
           (if (and lsn* (> (long lsn*) (long target-lsn)))
             nil
@@ -2600,6 +2562,7 @@
           nil)))))
 
 (defn begin-sync!
+  "Claim a sync of the latest appended LSN under the manager monitor."
   ([manager]
    (begin-sync! manager nil))
   ([{:keys [monitor] :as manager} lsn]
@@ -2657,8 +2620,6 @@
     (vreset! (:last-sync-reason manager) reason*)
     (vreset! (:last-durable-lsn manager) durable)
     (vreset! (:last-sync-ms manager) (long now))
-    (when (boolean (:track-trailing? manager))
-      (drop-pending-through! manager durable))
     (vreset! (:unsynced-count manager) pending-after)
     (vreset! (:sync-in-progress? manager) false)
     (vreset! (:sync-requested? manager) keep-request?)

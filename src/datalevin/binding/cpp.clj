@@ -45,7 +45,7 @@
    [java.util.concurrent.atomic AtomicBoolean]
    [java.lang AutoCloseable]
    [java.io File]
-   [java.util HashMap Arrays Collection List ArrayList
+   [java.util HashMap Arrays Collection List ArrayList ArrayDeque
     Map$Entry]
    [java.nio BufferOverflowException ByteBuffer]
    [org.bytedeco.javacpp LongPointer]
@@ -80,6 +80,19 @@
 
 (def ^:dynamic *before-write-commit-fn*
   nil)
+
+(def ^:private ^ThreadLocal one-shot-writers
+  (proxy [ThreadLocal] []
+    (initialValue [] (ArrayDeque.))))
+
+(defn native-write-active?
+  "Whether this caller owns an active native writer, including one-shot writes
+   whose transaction is local to transact-kv rather than the shared slot."
+  [db]
+  (let [write-txn (l/write-txn db)]
+    (and (Thread/holdsLock write-txn)
+         (or (some? @write-txn)
+             (.contains ^ArrayDeque (.get one-shot-writers) write-txn)))))
 
 (def ^:dynamic *ave-multiple-write-observer*
   nil)
@@ -756,6 +769,8 @@
     (vswap! info assoc :max-val-size size :max-val-size-changed? true))
 
   (close-kv [this]
+    (when (native-write-active? this)
+      (throw (ex-info "Close KV outside its transaction" {})))
     (let [guard (:native-lifetime @info)]
      (if (and guard (not (lifetime/teardown-owner? guard)))
        (if-let [close! (:close-independent! @info)]
@@ -1118,7 +1133,9 @@
                                     (raise dbi-name " is not open" {})))
                     ^Txn txn  (if one-shot?
                                 (Txn/create env)
-                                (.-txn rtx))]
+                                (.-txn rtx))
+                    ^ArrayDeque active-writers (when one-shot? (.get one-shot-writers))]
+                (when active-writers (.push active-writers write-txn))
                 (try
                   (if prepared
                     (write/transact-prepared-ops* prepared dbis txn)
@@ -1147,7 +1164,9 @@
                     (if (or (= :ha/write-rejected (:error (ex-data e)))
                             (l/blind-unique-collision? e))
                       (throw e)
-                      (raise "Fail to transact to LMDB: " e {}))))))]
+                      (raise "Fail to transact to LMDB: " e {})))
+                  (finally
+                    (when active-writers (.pop active-writers))))))]
         (if (Thread/holdsLock write-txn)
           (do-transact prepared-one-shot)
           (locking write-txn
@@ -1553,7 +1572,8 @@
           (if (or (= :ha/write-rejected (:error (ex-data e)))
                   (l/blind-unique-collision? e))
             (throw e)
-            (raise "Fail to transact to LMDB: " e {})))))))
+            (throw (ex-info (str "Fail to transact to LMDB: " (pr-str e))
+                            {} e))))))))
 
 (defn- open-kv*
   [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?

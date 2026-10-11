@@ -62,7 +62,7 @@
         ;; deadline is serviced again.
         settled-deadline (volatile! 0)
         settled? (fn [deadline]
-                   (and (pos? (long deadline))
+                   (and (not (zero? (long deadline)))
                         (= (long deadline) (long @settled-deadline))))
         maintenance-deadline
         (fn []
@@ -71,8 +71,9 @@
                            (record-failure! t)
                            0))
                     0)))
+        ;; Zero is the only sentinel; absolute monotonic times may be negative.
         due? (fn [deadline]
-               (and (pos? (long deadline))
+               (and (not (zero? (long deadline)))
                     (<= (long deadline) (System/nanoTime))))
         service-now!
         (fn []
@@ -95,9 +96,12 @@
         ;; spinning, so close and queued tasks still make progress.
         park-until
         (fn [deadline]
-          (let [remaining (if (zero? (long deadline))
-                            (long idle-poll-ns)
-                            (max 0 (- (long deadline) (System/nanoTime))))]
+          (let [deadline (long deadline)
+                now (System/nanoTime)
+                remaining (cond
+                            (zero? deadline) (long idle-poll-ns)
+                            (<= deadline now) 0
+                            :else (- deadline now))]
             (LockSupport/parkNanos (Thread/currentThread)
                                    (min (max remaining (long settled-poll-ns))
                                         (long idle-poll-ns)))))

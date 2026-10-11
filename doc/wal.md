@@ -126,6 +126,20 @@ microseconds and trades isolated-write latency for sharing commit costs across
 nearby requests. A single synchronous producer still needs one durable commit
 per call. Actual wakeup time depends on the OS scheduler.
 
+Production embedded WAL collection bounds request counts, not payload bytes.
+At most 4,096 requests are admitted at once, and `:write-batch-size` limits the requests
+in one batch, capped at 4,096. A request can contain many rows or large values;
+its encoded rows, preparation buffers, WAL body and result do not count toward
+a payload-byte budget. Existing accepted transaction sizes are preserved.
+
+`:wal-pending-max-bytes`, `:write-batch-max-bytes` and `:wal-rmw-max-bytes` are
+internal prototype accounting options. The production opener validates their
+values, but they do not impose payload-byte limits on embedded KV or Datalog
+writes. Request-count limits therefore do not provide a total memory bound.
+Applications needing a memory bound must limit transaction sizes and concurrent
+submissions before calling the write APIs, including output from transaction
+functions and explicit transaction bodies.
+
 The idle collection window works with private WAL `:strict`/`:relaxed`,
 `:extra` Datalog writes, and durable non-WAL stores. Native commit and, in strict
 or extra WAL mode, WAL sync finish before any caller or transaction listener

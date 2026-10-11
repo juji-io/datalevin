@@ -12,7 +12,7 @@
    ^long key-offset ^long key-length ^long value-offset ^long value-length])
 
 (deftype OwnedKVTxData
-  [op ^String dbi ^bytes key ^bytes value kt vt])
+  [op ^String dbi ^bytes key ^bytes value kt vt flags])
 
 (deftype WriteBatch [^List rows ^FastList encoded arena])
 

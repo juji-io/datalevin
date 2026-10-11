@@ -15,26 +15,26 @@
             [datalevin.txlog.codec :as codec]
             [datalevin.tx-group.phase :as phase]
             [datalevin.util :as u])
-  (:import [datalevin.cpp Util$DTLVException]
+  (:import [clojure.lang ExceptionInfo]
            [datalevin.lmdb DatomKVTxData KVTxData]
            [datalevin.utl DeferredRows RowRegions]
-           [java.io IOException]
            [java.util ArrayList Arrays List]
            [java.util.function Supplier]))
 
-(defn clean-body-failure? [^Throwable t]
+(defn clean-body-failure?
+  "Only expected application/validation errors can cancel without fencing.
+   An expected wrapper must not hide an unexpected engine failure in its cause."
+  [^Throwable t]
   (or (and (l/explicit-transaction-timeout-error? t)
            (instance? InterruptedException (ex-cause t)))
-      (and (instance? Exception t)
-       (not (instance? IOException t))
-       (not (instance? Util$DTLVException t))
-       (not (instance? InterruptedException t))
-       (not (batch/pre-dispatch-cancellation? t))
-       (not (:resized (ex-data t)))
-       (not (#{:txlog/runtime-fenced :txlog/runtime-closed
-               :txlog/write-deadline-exceeded :txlog/write-interrupted}
-             (:error (ex-data t))))
-       (or (nil? (ex-cause t)) (clean-body-failure? (ex-cause t))))))
+      (and (or (instance? ExceptionInfo t)
+               (instance? IllegalArgumentException t))
+           (not (batch/pre-dispatch-cancellation? t))
+           (not (:resized (ex-data t)))
+           (not (#{:txlog/runtime-fenced :txlog/runtime-closed
+                   :txlog/write-deadline-exceeded :txlog/write-interrupted}
+                 (:error (ex-data t))))
+           (or (nil? (ex-cause t)) (clean-body-failure? (ex-cause t))))))
 
 (defn- owner-interruption
   [^Throwable t]

@@ -7,9 +7,11 @@
   Charges are conservative estimates of engine-owned storage, not measured
   object sizes. They exist so admission, batch selection and the shared
   workspace can be bounded with primitive arithmetic that performs no graph
-  walk and allocates no ledger. Every addition, product and rounding step is
-  checked, so an unrepresentable declaration fails instead of silently
-  wrapping.")
+  walk and allocates no ledger. The production embedded adapter charges only
+  request controls to preserve accepted input sizes; these payload charges and
+  byte limits are enforced by the private prototype. Every addition, product
+  and rounding step is checked, so an unrepresentable declaration fails instead
+  of silently wrapping.")
 
 (defn- overflow!
   [what ^long n]

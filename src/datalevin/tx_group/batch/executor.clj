@@ -289,6 +289,7 @@
                      lsn))]
          ;; Ordered preparation publishes the accepted member count, the final
          ;; schedule and the WAL bodies of every accepted member.
+         (batch/set-write-count! batch weight)
          (when-not (zero? weight)
            (batch/refresh-wal-bodies! batch)
            (when check-batch! (check-batch! batch)))

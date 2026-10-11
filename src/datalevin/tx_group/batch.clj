@@ -89,6 +89,8 @@
   (^void setReservedBytes [^long bytes])
   (^long acceptedCount [])
   (^void setAcceptedCount [^long accepted])
+  (^long writeCount [])
+  (^void setWriteCount [^long writes])
   (^boolean retired [])
   (^void setRetired []))
 
@@ -105,6 +107,7 @@
                 ^AtomicBoolean dispatched?
                 wal-status collector
                 ^long ^:unsynchronized-mutable accepted-count
+                ^long ^:unsynchronized-mutable write-count
                 ^boolean ^:unsynchronized-mutable retired?]
   ;; Mutable deftype fields are private to its methods. Keep their access here
   ;; so preparation uses direct calls rather than reflective field access.
@@ -119,6 +122,8 @@
   (setReservedBytes [_ bytes] (set! reserved-bytes bytes))
   (acceptedCount [_] accepted-count)
   (setAcceptedCount [_ accepted] (set! accepted-count accepted))
+  (writeCount [_] write-count)
+  (setWriteCount [_ writes] (set! write-count writes))
   (retired [_] retired?)
   (setRetired [_] (set! retired? (boolean true))))
 
@@ -346,6 +351,7 @@
   ([batch accepted-weight native-work?]
    (freeze-schedule! batch accepted-weight native-work? false))
   ([^Batch batch ^long accepted-weight native-work? large-tail?]
+   (.setWriteCount batch accepted-weight)
    (.setExecutionSchedule batch (cond
                                   (not native-work?) :inline
                                   large-tail? :parallel
@@ -353,6 +359,16 @@
    (phase/phase! :schedule-selected
                  {:schedule (.executionSchedule batch) :weight accepted-weight})
    (.executionSchedule batch)))
+
+(defn write-count
+  "Accepted logical writes, including when several members share one WAL body."
+  ^long [^Batch batch]
+  (.writeCount batch))
+
+(defn set-write-count!
+  "Publish the prepared batch's logical sync-policy weight before dispatch."
+  [^Batch batch ^long writes]
+  (.setWriteCount batch writes))
 
 (defn refresh-wal-bodies!
   "Publish the final accepted bodies before dispatch. Allocate one exact-sized
@@ -951,7 +967,7 @@
   (let [^ConcurrentLinkedQueue queue (.ready collector)
         limit (.batch-limit collector)
         cap (.batch-max-bytes collector)
-        descriptors (FastList. (int limit))
+        descriptors (FastList. (int (min limit (.get ^AtomicInteger (.queued collector)))))
         now (System/nanoTime)
         ^java.util.Iterator it (.iterator queue)]
     (loop [bytes (long 0) cutoff (long 0) blocked? false
@@ -985,7 +1001,7 @@
             (let [batch (->Batch (.getAndIncrement ^AtomicLong (.next-id collector))
                                 descriptors nil bytes cutoff (schedule-for taken)
                                 (AtomicLong. 0) (AtomicBoolean. false)
-                                (volatile! nil) collector taken false)]
+                                (volatile! nil) collector taken taken false)]
               (try
                 (dotimes [_ taken]
                   (let [^Descriptor descriptor (.peek queue)]
@@ -1045,7 +1061,7 @@
 
                 :else
                 (do
-                  ;; Descriptor capacity was allocated before any transfer.
+                  ;; Grow storage before transferring this descriptor's ownership.
                   (.add descriptors d)
                   (claim-flag! d selected-bit)
                   (.remove it)

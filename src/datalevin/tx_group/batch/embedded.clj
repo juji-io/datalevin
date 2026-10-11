@@ -125,9 +125,12 @@
                                {:write-batch-size (max 1 (min (long (:max-requests charge/default-limits))
                                                               (long (or (:write-batch-size @info)
                                                                         (wal/group-commit @info)))))})
-                              ;; Existing public calls have no byte-size or
-                              ;; preparation-timeout contract. Bound in-flight
-                              ;; requests; retain the caller's input size.
+                              ;; Production bounds request count only. Charges
+                              ;; cover controls, excluding payload preparation,
+                              ;; WAL bodies and results. Byte-limit options are
+                              ;; validated by the opener, but not applied here.
+                              ;; Preserve accepted input sizes and body timeouts;
+                              ;; see doc/wal.md for the memory limitation.
                               :rmw-allowance-bytes charge/request-control-bundle)
                 ;; Collector execution serializes native owners. Caller-side
                 ;; preparation never touches this reusable value buffer.
@@ -221,29 +224,27 @@
                            (throw (ex-info "LMDB handle is closed" {:type :lmdb/closed})))
                          (batch/check-serving! c))
                 close! (fn []
-                         (when (and (Thread/holdsLock (l/write-txn raw))
-                                    (some? @(l/write-txn raw)))
+                         ;; An idle writer monitor also coordinates background
+                         ;; indexing with close. Reject only an active writer.
+                         (when (cpp/native-write-active? raw)
                            (throw (ex-info "Close KV outside its transaction" {})))
                          (.set closing true)
                          ;; Let the current native transaction establish its
                          ;; outcome before rejecting queued requests, as close
                          ;; did before collector integration.
                          (locking (l/write-txn raw) (batch/close! c))
-                         ;; An idle writer monitor may be held by store close
-                         ;; or administration. Do not wait under that monitor
-                         ;; for a collector owner that still needs to acquire it.
-                         (when-not (batch/await-quiescence!
-                                     c (if (Thread/holdsLock (l/write-txn raw))
-                                         0 30000))
+                         (when-not (batch/await-quiescence! c 30000)
                            (throw (ex-info "Native writer did not stop before close"
                                            {:error :txlog/native-close-timeout})))
                          (when-not ((:close! runtime))
                            (throw (ex-info "WAL worker did not stop before close"
                                            {:error :txlog/wal-close-timeout})))
-                         (when @(:healthy? (:sync-manager state))
-                           (wal/force-through! state (dec (long @(:next-lsn state))) 0))
-                         (aset scratch 0 nil)
-                         (i/close-kv raw))
+                         (try
+                           (when @(:healthy? (:sync-manager state))
+                             (wal/force-through! state (dec (long @(:next-lsn state))) 0))
+                           (finally
+                             (aset scratch 0 nil)
+                             (i/close-kv raw))))
                 body! (fn [body opts]
                         (check!)
                         (when-let [check-submission! (:check-submission! hooks)]

@@ -35,7 +35,7 @@
       (charge-text! charge! element element-type))))
 
 (defn- encode
-  "Charge scratch, growth overlap and detached bytes before allocation.
+  "Charge peak scratch, growth overlap and detached bytes before allocation.
   Internal native owners can retain bounded value scratch across requests."
   (^bytes [charge! value type key?]
    (encode charge! value type key? nil))
@@ -55,9 +55,22 @@
                             (if key? c/+max-key-size+
                               (if-let [^ByteBuffer buffer
                                        (when reusable? (aget scratch 0))]
-                                (.capacity buffer) 256))))]
-       (charge! (+ charge/buffer-wrapper (charge/array-bytes 1 capacity)))
+                                (.capacity buffer) 256))))
+            previous-capacity 0
+            previous-charge 0
+            charged-peak 0]
        (let [^ByteBuffer previous (when reusable? (aget scratch 0))
+             buffer-charge (+ charge/buffer-wrapper (charge/array-bytes 1 capacity))
+             ;; Growth can overlap the last failed buffer and a bounded reusable
+             ;; buffer retained from an earlier attempt. Discarded attempts no
+             ;; longer contribute; charge only the increase in scratch peak.
+             retained-charge (if (and previous
+                                      (< (.capacity previous) previous-capacity))
+                               (+ charge/buffer-wrapper
+                                  (charge/array-bytes 1 (.capacity previous)))
+                               0)
+             peak (+ buffer-charge previous-charge retained-charge)
+             _ (charge! (- peak charged-peak))
              buffer (if (and previous (= capacity (.capacity previous)))
                       (.clear previous) (ByteBuffer/allocate (int capacity)))
              ;; Only the serialized native owner supplies scratch. Large
@@ -70,7 +83,20 @@
                                            (.duplicate ^ByteBuffer value) value)
                                          type)
                         true
-                        (catch BufferOverflowException _ false))]
+                        (catch BufferOverflowException _ false)
+                        (catch ClassCastException t
+                          ;; With validation disabled, malformed typed input can
+                          ;; fail in the encoder. Confirm the input error before
+                          ;; treating it as a clean rejection; an encoder fault
+                          ;; on valid input must still fence the collector.
+                          (when (or (c/kv-value-types type) (vector? type))
+                            (let [valid? (try (bits/valid-data? value type)
+                                             (catch ClassCastException _ false))]
+                              (when-not valid?
+                                (throw (ex-info (str "Invalid data, expecting " type
+                                                     " got " (pr-str value))
+                                                {:input value})))))
+                          (throw t)))]
          (if encoded?
            (let [size (.position buffer)]
              (if (and (not reusable?) (= size capacity))
@@ -83,7 +109,8 @@
              (throw (ex-info "Encoded key exceeds native key size"
                              {:error :kv/invalid-encoded-size
                               :outcome :not-committed}))
-             (recur (Math/multiplyExact (long capacity) 2)))))))))
+             (recur (Math/multiplyExact (long capacity) 2)
+                    capacity buffer-charge peak))))))))
 
 (defn- add-prepared-row!
   [^FastList rows charge! name op ^bytes key ^bytes value wal? flags]
@@ -100,7 +127,7 @@
 
 (defn prepare-rows
   "Freeze typed KV input for native application and WAL; existing stores allow
-  internal DBIs and native flags, whose successful effects are logged by RMW."
+  internal DBIs and native flags, which are retained in the WAL for replay."
   (^FastList [raw charge! dbi-name txs kt vt wal?]
    (prepare-rows raw charge! dbi-name txs kt vt wal? false))
   (^FastList [raw charge! dbi-name txs kt vt wal? existing?]
@@ -134,16 +161,18 @@
              (do
                (doseq [value (.-v tx)]
                  (add-prepared-row! rows charge! name (if (= :put-list op) :put op)
-                                    key (encode charge! value value-type duplicates? scratch) wal? nil))
+                                    key (encode charge! value value-type duplicates? scratch)
+                                    wal? (.-flags tx)))
                (when log-rows
                  (.add log-rows (OwnedKVTxData. op name key
                                                (encode charge! (.-v tx) :data false scratch)
-                                               key-type value-type))))
+                                               key-type value-type (.-flags tx)))))
              (let [value (when-not (= :del op)
                            (encode charge! (.-v tx) value-type duplicates? scratch))]
                (add-prepared-row! rows charge! name op key value wal? (.-flags tx))
                (when log-rows
-                 (.add log-rows (OwnedKVTxData. op name key value key-type value-type))))))))
+                 (.add log-rows (OwnedKVTxData. op name key value key-type value-type
+                                               (.-flags tx)))))))))
      rows)))
 
 (defn run-body [collector body opts]

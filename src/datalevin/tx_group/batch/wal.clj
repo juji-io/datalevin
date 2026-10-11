@@ -52,21 +52,21 @@
 
 (defn- encoded-bodies
   [b]
-  (let [^objects bodies (batch/wal-bodies b)]
-    (if (loop [idx 0]
-          (cond (= idx (alength bodies)) false
-                (instance? BodyPlan (aget bodies idx)) true
-                :else (recur (inc idx))))
-      (do
-        (phase/phase! :wal-encode-start b)
-        (let [encoded (object-array (alength bodies))]
-          (dotimes [idx (alength bodies)]
-            (let [body (aget bodies idx)]
-              (aset encoded idx (if (instance? BodyPlan body)
-                                  (.encodeBody ^BodyPlan body) body))))
-          (phase/phase! :wal-encode-complete b)
-          encoded))
-      bodies)))
+  (let [^objects bodies (batch/wal-bodies b)
+        n (alength bodies)]
+    (loop [idx 0 encoded nil]
+      (if (< idx n)
+        (let [body (aget bodies idx)]
+          (if (instance? BodyPlan body)
+            (let [^objects encoded (or encoded
+                                       (do (phase/phase! :wal-encode-start b)
+                                           (aclone bodies)))]
+              (aset encoded idx (.encodeBody ^BodyPlan body))
+              (recur (inc idx) encoded))
+            (recur (inc idx) encoded)))
+        (if encoded
+          (do (phase/phase! :wal-encode-complete b) encoded)
+          bodies)))))
 
 (defn branch
   "Adapt a private WAL runtime state to the executor's `IWalBranch` and
@@ -92,20 +92,9 @@
          (let [bodies (encoded-bodies batch)]
            (if custom-append?
              (append-fn state lsn bodies (batch/batch-cutoff batch) batch)
-             (let [write-count
-                   (loop [idx 0 total 0]
-                     (if (< idx (batch/batch-count batch))
-                       (let [data (batch/data (batch/batch-at batch idx))]
-                         (recur (inc idx)
-                                (if (or (:storage-staged? data)
-                                        (if (or (instance? datalevin.tx_group.batch.DatalogMemberData data)
-                                                (contains? data :rows))
-                                          (seq (:rows data)) (:wal-body data)))
-                                  (inc total) total)))
-                       total))]
-               (wal/begin-prepared-group! state lsn bodies
-                                          (batch/batch-cutoff batch) batch
-                                          write-count)))))
+             (wal/begin-prepared-group! state lsn bodies
+                                        (batch/batch-cutoff batch) batch
+                                        (batch/write-count batch)))))
        (complete-policy! [_ token deadline-ns]
          (complete-fn state token deadline-ns))
        executor/IWalMaintenance
