@@ -38,7 +38,7 @@
 (defn- public-error [t]
   (let [cause (ex-cause t)]
     (cond
-      (and cause (= "Batch aborted before WAL append" (ex-message t)))
+      (and cause (batch/cancellation-wrapper? t))
       (failure/unwrap-user-body-failure cause)
       (failure/user-body-failure? t) (failure/unwrap-user-body-failure t)
       ;; Keep the established HA wire error visible to idempotent callers,

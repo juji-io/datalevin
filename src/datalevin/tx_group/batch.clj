@@ -202,11 +202,16 @@
                 cause
                 (ex-info "Batch aborted before WAL append"
                          (assoc (ex-data cause) :outcome :not-committed
-                                :retryable? false)
+                                :retryable? false ::cancellation-wrapper true)
                          cause))]
     (ex-info "Batch cancelled before dispatch"
              (assoc (ex-data cause) ::pre-dispatch-cancel true)
              cause)))
+
+(defn cancellation-wrapper?
+  "Whether this exception wraps an original failure to add cancellation data."
+  [t]
+  (true? (::cancellation-wrapper (ex-data t))))
 
 (defn- pre-dispatch-cancel?
   [t]

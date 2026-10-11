@@ -75,11 +75,11 @@
   (Arrays/copyOf value (alength value)))
 
 (defn- capture!
-  "Freeze writes in the batch transaction, deferring eligible native tails.
-   Retain a failure even
-   when the body catches it, so no failed batch can reach WAL or native commit."
+  "Capture owned prepared rows or copy raw input into batch-owned rows,
+   deferring eligible native tails. Retain failures even when the body catches
+   them, so no failed batch can reach WAL or native commit."
   [raw wdb apply-rows! descriptor rows wal-rows valid? failure
-   {:keys [check-row! prepare-rows! allow-flags? prepared-owned? charge-fn prepared-request?
+   {:keys [check-row! prepare-rows! charge-fn prepared-request?
            application-error!]
     :or {charge-fn charge!} :as opts} dbi-name txs kt vt]
   (try
@@ -100,16 +100,12 @@
                            (application-error! t)
                            (throw t))))
                      txs)
-          txs (if prepared-request? (:rows prepared) prepared)
-          _ (when (and prepared-request? (not prepared-owned?))
-              (.append ^RowRegions wal-rows (:wal-rows prepared)))
           dbi-name (when-not prepare-rows! dbi-name)]
-      (if (and prepared-request? prepared-owned?)
-        ;; Public preparation already validates and owns these native rows.
-        ;; Apply the frozen region directly; only the private validation opener
-        ;; needs the copy/charge path below.
+      (if prepared-request?
+        ;; Prepared profiles validate and own their native rows. The raw
+        ;; profile validates and copies each row below.
         (staging/capture-prepared! wdb apply-rows! rows wal-rows opts prepared)
-        (doseq [row txs]
+        (doseq [row prepared]
           (let [record? (instance? KVTxData row)
                 op (if record? (.-op ^KVTxData row) (nth row 0))
                 name (or dbi-name (if record? (.-dbi-name ^KVTxData row) (nth row 1)))
@@ -125,22 +121,21 @@
                                        (if (= op :put) 6 4)) nil))]
             (when-not (and (or (#{:put :del} op)
                                (and prepare-rows! (= :del-list op) (= 1 (count v)))) (= key-type :raw)
-                           (or (= op :del) (= val-type :raw)) (or allow-flags? (empty? flags)))
+                           (or (= op :del) (= val-type :raw)) (empty? flags))
               (throw (ex-info "Operation is outside private native RMW scope"
                               {:error :txlog/unsupported-private-operation
                                :outcome :not-committed :retryable? false})))
             (check-row! name op k v)
             (charge-fn descriptor (+ charge/encoded-row-descriptor charge/vector-wrapper))
-            (let [key (when k (if prepared-owned? k (owned charge-fn descriptor k)))
+            (let [key (when k (owned charge-fn descriptor k))
                   value (case op
-                          :put (if prepared-owned? v (owned charge-fn descriptor v))
-                          :del-list (if prepared-owned? v
-                                        (do (charge-fn descriptor charge/vector-wrapper)
-                                            [(owned charge-fn descriptor (first v))]))
+                          :put (owned charge-fn descriptor v)
+                          :del-list (do (charge-fn descriptor charge/vector-wrapper)
+                                        [(owned charge-fn descriptor (first v))])
                           nil)
                   forward (l/kv-tx op name key value :raw :raw)]
               (.add ^ArrayList rows forward)
-              (apply-rows! [(if (seq flags) (l/kv-tx op name key value :raw :raw flags) forward)]))))))
+              (apply-rows! [forward]))))))
     :transacted
     (catch Throwable t
       (when (and (l/blind-unique-collision? t)
@@ -268,7 +263,7 @@
   [raw native-db apply-rows! batch descriptor failure
    {:keys [body-cost encode-body charge-fn] :or {charge-fn charge!} :as opts}]
   (charge-fn descriptor charge/vector-wrapper)
-  (let [^List rows (if (and (:prepared-request? opts) (:prepared-owned? opts))
+  (let [^List rows (if (:prepared-request? opts)
                      (RowRegions.) (ArrayList.))
         wal-rows (RowRegions.) valid? (volatile! true)
         aborted? (volatile! false)
@@ -375,7 +370,6 @@
           (if (and (:reuse-datalog-member-setup? opts)
                    (:shared-datalog-writer? opts)
                    (:prepared-request? opts)
-                   (:prepared-owned? opts)
                    (:encode-batch? opts)
                    (:datalog-prepare? (batch/context d))
                    ;; A lone resolver cannot amortize

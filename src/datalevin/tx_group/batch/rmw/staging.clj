@@ -215,7 +215,7 @@
                (assoc :storage-flush! #(flush-storage! staging))
                (and wal (not (:shared-datalog-writer? opts))
                     (not (:finish-preparation! opts))
-                    (:prepared-request? opts) (:prepared-owned? opts)
+                    (:prepared-request? opts)
                     (not (:encode-batch? opts)))
                (assoc :update-tail!
                       (fn [rows view]
