@@ -1,8 +1,7 @@
 ;; Copyright (c) Huahai Yang. All rights reserved.
 ;; Distributed under the Eclipse Public License 2.0.
-(ns ^:no-doc datalevin.tx-group.batch.stage
-  "Private encoded-KV convenience calls on an ordinary native transaction.
-   No staged state, overlay or undo journal."
+(ns ^:no-doc datalevin.tx-group.test-support.native-tx
+  "Test helpers for encoded KV operations on an ordinary native transaction."
   (:require [datalevin.interface :as i]
             [datalevin.lmdb :as l]))
 

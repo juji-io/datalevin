@@ -41,11 +41,6 @@
   (when (neg? characters) (overflow! :negative-characters characters))
   (Math/addExact 64 (array-bytes 2 characters)))
 
-(defn vector-bytes
-  "`64` for the wrapper plus `A(8, capacity)` for backing references."
-  ^long [^long capacity]
-  (Math/addExact 64 (array-bytes 8 capacity)))
-
 (defn carriers-bytes
   "`V(n) = 64 + A(8, n)`: one membership/result/gather reference carrier."
   ^long [^long capacity]
@@ -61,7 +56,6 @@
 (def ^:const encoded-row-descriptor 128)
 (def ^:const vector-wrapper 64)
 (def ^:const buffer-wrapper 256)
-(def ^:const scalar-box 64)
 
 (def ^:private ^:const min-request-allowance
   "Every admitted request must at least cover its own control bundle."

@@ -193,9 +193,9 @@
   (not-committed "Write was interrupted before it completed"
                  {:error :txlog/write-interrupted :retryable? false}))
 
-(defn- cancel-error
-  "Tag a clean pre-dispatch cancellation so its batch is rejected and the slot
-  released without fencing the runtime. An unexpected executor or coordinator
+(defn cancellation-error
+  "Construct a clean pre-dispatch cancellation so its batch is rejected and the
+  slot released without fencing the runtime. An unexpected executor or coordinator
   failure is not tagged and still fences."
   ^Throwable [cause]
   (let [cause (if (= :not-committed (:outcome (ex-data cause)))
@@ -583,7 +583,7 @@
   "Reject a sealed but undispatched batch without fencing, preserving the
   original cause/outcome. Capacity pressure uses this before either I/O branch."
   [cause]
-  (throw (cancel-error cause)))
+  (throw (cancellation-error cause)))
 
 (defn usage
   "Charged usage of admitted-but-unreleased requests and their allowances."
@@ -674,9 +674,9 @@
     (.lock lock)
     (try
       (when-not (.get ^AtomicBoolean (.serving collector))
-        (throw (cancel-error (fenced-error collector))))
+        (throw (cancellation-error (fenced-error collector))))
       (when (expired? batch)
-        (throw (cancel-error
+        (throw (cancellation-error
                 (expired-error "ordered preparation" (.cutoffNanos batch)))))
       (.set ^AtomicBoolean (.dispatched? batch) true)
       (finally (.unlock lock)))))
@@ -707,11 +707,11 @@
   (let [^Collector collector (.collector batch)
         cutoff (long (.cutoffNanos batch))]
     (when-not (.get ^AtomicBoolean (.serving collector))
-      (throw (cancel-error (fenced-error collector))))
+      (throw (cancellation-error (fenced-error collector))))
     (when (and (pos? cutoff) (> (System/nanoTime) cutoff))
-      (throw (cancel-error (expired-error "ordered preparation" cutoff))))
+      (throw (cancellation-error (expired-error "ordered preparation" cutoff))))
     (when (.isInterrupted (Thread/currentThread))
-      (throw (cancel-error (interrupted-error))))
+      (throw (cancellation-error (interrupted-error))))
     nil))
 
 ;; ---------------------------------------------------------------------------
@@ -1314,10 +1314,10 @@
         descriptors ^FastList (.descriptors batch)]
     (phase/phase! :ordered-work batch)
     (when (expired? batch)
-      (throw (cancel-error
+      (throw (cancellation-error
               (expired-error "ordered preparation" (.cutoffNanos batch)))))
     (when-not (.get ^AtomicBoolean (.serving collector))
-      (throw (cancel-error (fenced-error collector))))
+      (throw (cancellation-error (fenced-error collector))))
     (let [values ((.executor collector) batch)]
       ;; Injected collector executors need not use the native dispatch API.
       ;; Production executors report their final selection before dispatch.

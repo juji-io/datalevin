@@ -34,14 +34,13 @@
     (is (>= allowance minimum))))
 
 (deftest owned-representation-charges
-  (testing "a flat vector is its wrapper plus a reference array"
+  (testing "a reference carrier is its wrapper plus its backing array"
     (is (= 64 charge/vector-wrapper))
-    (is (= 96 (charge/vector-bytes 0)))
-    (is (= 160 (charge/vector-bytes 8))))
+    (is (= 96 (charge/carriers-bytes 0)))
+    (is (= 160 (charge/carriers-bytes 8)))
+    (is (= 2160 (charge/carriers-bytes 258))))
   (testing "an owned string is its box plus a char array"
     (is (= 128 (charge/string-bytes 16))))
-  (testing "a carrier is its wrapper plus its reference array"
-    (is (= 2160 (charge/carriers-bytes 258))))
   (testing "buffer wrappers are fixed"
     (is (= 256 charge/buffer-wrapper))
     (is (= 128 charge/encoded-row-descriptor))

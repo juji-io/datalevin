@@ -73,11 +73,6 @@
   ;; one operation without pushing a dynamic binding frame.
   (with-state* submitted-batched? submitted-request-count #(op context)))
 
-(def ^:private specialization-context
-  "Constant batch-specialization key. Adapter state is thread-local, so a
-  collected request no longer carries a captured binding context."
-  (Object.))
-
 (defn submit!
   ([collector run-transaction op]
    (submit! collector run-transaction op 0))
@@ -85,7 +80,6 @@
    (let [submitter (Thread/currentThread)
          submitted-batched? (batched?)
          submitted-request-count (request-count)
-         data (or (::data (meta op)) (::group/data (meta op)))
          run (fn [execute]
                (with-state* true (group/request-count execute)
                  (fn []
@@ -96,9 +90,6 @@
                        ;; caller bindings stay on the submitting thread.
                        (run-local-op op context submitted-batched?
                                      submitted-request-count))
-         operation (with-meta direct-body
-                     (assoc (meta op) ::group/data data
-                            ::group/context specialization-context))
          queued-pair
          (fn []
            ;; Forced only after this caller loses the leadership race and the
@@ -109,18 +100,13 @@
            ;; binding map.
            (let [bindings (get-thread-bindings)
                  foreign? #(not (identical? submitter (Thread/currentThread)))
-                 operation (with-meta
-                             (fn [context]
-                               (if (foreign?)
-                                 (with-bindings bindings (direct-body context))
-                                 (direct-body context)))
-                             (assoc (meta op) ::group/data data
-                                    ::group/context specialization-context))
-                 runner (with-meta
-                          (fn [execute]
-                            (if (foreign?)
-                              (with-bindings bindings (run execute))
-                              (run execute)))
-                          {::group/context specialization-context})]
+                 operation (fn [context]
+                             (if (foreign?)
+                               (with-bindings bindings (direct-body context))
+                               (direct-body context)))
+                 runner (fn [execute]
+                          (if (foreign?)
+                            (with-bindings bindings (run execute))
+                            (run execute)))]
              [runner operation]))]
-     (group/submit-adaptive! collector run operation queued-pair delay-nanos))))
+     (group/submit-adaptive! collector run direct-body queued-pair delay-nanos))))

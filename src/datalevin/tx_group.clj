@@ -5,55 +5,42 @@
   Native runners collect under their writer and publish after physical commit.
   WAL writes use `datalevin.tx-group.batch`."
   (:refer-clojure :exclude [run!])
-  (:import [java.util.concurrent ConcurrentLinkedQueue Semaphore TimeUnit]
+  (:import [java.util.concurrent ConcurrentLinkedQueue Semaphore]
            [java.util.concurrent.atomic AtomicBoolean]
            [java.util.concurrent.locks LockSupport ReentrantLock]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
-(deftype Request [op result ^Semaphore ready data context leadership])
+(deftype Request [op result ^Semaphore ready leadership])
 (deftype Group [^ReentrantLock lock ^ConcurrentLinkedQueue queue ^long limit
                 ^AtomicBoolean active])
 (deftype Committed [value confirmation])
 
-
-(deftype Rejected [error])
-
 (defprotocol IExecution
   (collect! [this] [this seal?])
-  (collect-next! [this])
   (request-count [this])
   (observe-collection! [this observer])
   (requests [this])
   (current-requests [this])
-  (initial-request [this])
-  (specialization-context [this])
-  (collection-group [this]))
+  (initial-request [this]))
 
 (declare execute)
 
-(deftype Execution [^FastList batch context observer collect sealed? ^Group group]
+(deftype Execution [^FastList batch observer collect sealed?]
   IExecution
   (collect! [_] (collect false))
   (collect! [_ seal?] (collect seal?))
-  (collect-next! [_]
-    (when (and group (not @sealed?) (< (.size batch) (.-limit group)))
-      (when-let [request (.poll ^ConcurrentLinkedQueue (.-queue group))]
-        (.add batch request)))
-    (when-let [f @observer] (f (.size batch))))
   (request-count [_] (.size batch))
   (observe-collection! [_ f] (vreset! observer f))
   (requests [_] batch)
   (current-requests [_] batch)
   (initial-request [_] nil)
-  (specialization-context [_] context)
-  (collection-group [_] group)
   clojure.lang.IFn
   (invoke [_ ctx]
     (collect false)
     (try (execute batch ctx collect)
          (finally (vreset! sealed? true)))))
 
-(deftype SingleExecution [op data request-context context ^Group group
+(deftype SingleExecution [op ^Group group
                           ^:volatile-mutable ^FastList batch
                           ^:volatile-mutable ^Request initial
                           ^:volatile-mutable observer
@@ -72,23 +59,16 @@
                 (recur))))))
     (when observer (observer (request-count this)))))
   (request-count [_] (if batch (.size batch) 1))
-  (collect-next! [this]
-    (when (and (not sealed?) (< (long (request-count this)) (.-limit group)))
-      (when-let [request (.poll ^ConcurrentLinkedQueue (.-queue group))]
-        (.add ^FastList (requests this) request)))
-    (when observer (observer (request-count this))))
   (observe-collection! [_ f] (set! observer f))
   (requests [_]
     (or batch
-        (let [request (Request. op (volatile! nil) nil data request-context nil)
+        (let [request (Request. op (volatile! nil) nil nil)
               requests (doto (FastList. 1) (.add request))]
           (set! initial request)
           (set! batch requests)
           requests)))
   (current-requests [_] batch)
   (initial-request [_] initial)
-  (specialization-context [_] context)
-  (collection-group [_] group)
   clojure.lang.IFn
   (invoke [this ctx]
     (collect! this false)
@@ -131,19 +111,12 @@
 
 (defn await-commit
   [value]
-  (cond
-    (instance? Committed value)
+  (if (instance? Committed value)
     (let [^Committed committed value
           value (await-commit (.-value committed))]
       @(.-confirmation committed)
       value)
-    (instance? Rejected value) (throw ^Throwable (.-error ^Rejected value))
-    :else value))
-
-(defn rejected
-  "Return a request-specific failure without failing or retrying its group."
-  [error]
-  (Rejected. error))
+    value))
 
 (defn create
   "Create one bounded-batch admission queue for a store and execution path."
@@ -209,8 +182,7 @@
                                 (.add requests request)
                                 (recur)))))))
                     (when-let [f @observer] (f (.size requests))))
-          execute (Execution. requests (::context (meta run-transaction))
-                              observer collect sealed? group)]
+          execute (Execution. requests observer collect sealed?)]
       (complete! requests (run-transaction execute) nil))
     (catch Throwable t
       (if (::body-failure (ex-data t))
@@ -227,8 +199,8 @@
 (defn- handoff!
   [^Group group]
   ;; The outgoing leader still owns group.lock. Keep selecting a successor
-  ;; atomic with helpers that may drain the queue. The caller signals the
-  ;; selected successor only after unlocking; handoff itself never wakes it.
+  ;; atomic with queue admission. The caller signals the selected successor
+  ;; only after unlocking; handoff itself never wakes it.
   (let [^ConcurrentLinkedQueue queue (.-queue group)
         ^AtomicBoolean active (.-active group)]
     (loop []
@@ -247,24 +219,6 @@
                        (finally (.unlock ^ReentrantLock (.-lock group))))]
     (when successor (.release ^Semaphore (.-ready ^Request successor)))))
 
-(defn drain!
-  "Help one bounded queued collector group before a caller's operation.
-  Await an active collector only within the supplied deadline."
-  [^Group group run-transaction deadline-ns]
-  (let [^ConcurrentLinkedQueue queue (.-queue group)
-        ^ReentrantLock lock (.-lock group)]
-    (when (and (or (.isLocked lock) (not (.isEmpty queue)))
-               (.tryLock lock (max 0 (- (long deadline-ns) (System/nanoTime)))
-                         TimeUnit/NANOSECONDS))
-      (let [requests (FastList.)]
-        (try
-          (when-let [request (.poll queue)]
-            (.add requests request)
-            (run! run-transaction requests group))
-          (finally
-            (.unlock lock)
-            (notify-ready! requests)))))))
-
 (defn- lead!
   [^Group group run-transaction result initial]
   (let [^ConcurrentLinkedQueue queue (.-queue group)
@@ -272,8 +226,8 @@
         completed (FastList.)]
     (.lock lock)
     (try
-      ;; A helper may already have completed this reserved leader's request.
-      ;; It still owes handoff, but must never execute that request again.
+      ;; A reserved leader must not execute a request already completed by
+      ;; another collected turn; it still owes leadership handoff.
       (when-not @result
         (when initial
           (let [requests (doto (FastList. 1) (.add initial))]
@@ -340,10 +294,7 @@
   ;; Run caller-side preparation before taking the group lock. A two-phase
   ;; caller has already published its token; this produces its payload.
   (when before-execute! (before-execute!))
-  (let [execution (SingleExecution. op (::data (meta op))
-                                    (::context (meta op))
-                                    (::context (meta run-transaction))
-                                    group nil nil nil false)
+  (let [execution (SingleExecution. op group nil nil nil false)
         ^ReentrantLock lock (.-lock group)]
     (.lock lock)
     (let [result
@@ -380,8 +331,7 @@
   ([^Group group run-transaction op leader? delay-nanos before-execute!]
    (let [result (volatile! nil)
          ready (Semaphore. 0)
-         data (::data (meta op))
-         request (Request. op result ready data (::context (meta op)) (volatile! false))]
+         request (Request. op result ready (volatile! false))]
      (.add ^ConcurrentLinkedQueue (.-queue group) request)
      ;; The token is visible before caller-side preparation runs, so a foreign
      ;; leader can collect it and wait for the payload while this caller encodes.
@@ -395,8 +345,7 @@
          ;; Like ReentrantLock.lock, waiting does not cancel an enqueued write
          ;; on interruption, and preserves the caller's interrupted status.
          (.acquireUninterruptibly ready)
-         ;; A force owner may complete the reserved leader's request while
-         ;; helping collection. That caller still owes leadership handoff.
+         ;; A reserved leader still owes leadership handoff after waking.
          (when @(.-leadership request)
            (lead! group run-transaction result nil))))
      (result! result))))

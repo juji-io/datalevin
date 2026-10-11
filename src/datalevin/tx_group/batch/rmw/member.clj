@@ -48,6 +48,21 @@
       t
       (when-let [cause (ex-cause t)] (owner-interruption cause)))))
 
+(defn- record-failure!
+  "Retain the first failure on this native owner's turn."
+  [failure t]
+  (when-not @failure (vreset! failure t)))
+
+(defn- abort-member!
+  "Cancel the batch without changing the member view's scope lifetime."
+  [aborted? failure opts]
+  (vreset! aborted? true)
+  (let [t (batch/cancellation-error
+            (ex-info "Batch aborted" {:error :txlog/request-aborted
+                                      :outcome :not-committed :retryable? false}))]
+    (record-failure! failure t)
+    (when-not (:abort-returns? opts) (throw t))))
+
 (defn- charge! [descriptor n]
   (try (batch/charge! descriptor n)
        (catch Throwable t
@@ -134,9 +149,9 @@
       (let [failure-error
             (if (and (= :not-committed (:outcome (ex-data t)))
                      (clean-body-failure? t))
-              (try (batch/cancel-before-dispatch! t) (catch Throwable e e))
+              (batch/cancellation-error t)
               t)]
-        (when-not @failure (vreset! failure failure-error))
+        (record-failure! failure failure-error)
         (throw failure-error)))))
 
 (defn- resolve-member!
@@ -179,16 +194,7 @@
                   (capture! raw wdb apply-rows! (.descriptor state)
                             (.rows state) (.walRows state) valid? failure
                             opts name txs kt vt))
-        abort! (fn []
-                 (vreset! aborted? true)
-                 (let [t (try
-                           (batch/cancel-before-dispatch!
-                            (ex-info "Batch aborted"
-                                     {:error :txlog/request-aborted
-                                      :outcome :not-committed :retryable? false}))
-                           (catch Throwable e e))]
-                   (when-not @failure (vreset! failure t))
-                   (when-not (:abort-returns? opts) (throw t))))
+        abort! #(abort-member! aborted? failure opts)
         staged!
         (when (:storage-rows! opts)
           (fn []
@@ -196,7 +202,7 @@
             (staging/remember-storage! (:staging opts) wdb (.descriptor state)
                                        nil nil state (l/request-context wdb))))]
     (.setCallbacks state capture staged! (:preparation-flush! opts) abort!
-                   (fn [t] (when-not @failure (vreset! failure t))))
+                   (fn [t] (record-failure! failure t)))
     {:state state :valid? valid? :aborted? aborted? :view wdb :native-db native-db}))
 
 (defn- run-datalog-member!
@@ -272,16 +278,7 @@
         ^WriterContext writer (l/writer-context wdb)
         capture (fn [name txs kt vt]
                   (capture! raw wdb apply-rows! descriptor rows wal-rows valid? failure opts name txs kt vt))
-        abort! (fn []
-                 (vreset! aborted? true)
-                 (let [t (try
-                           (batch/cancel-before-dispatch!
-                            (ex-info "Batch aborted" {:error :txlog/request-aborted
-                                                      :outcome :not-committed
-                                                      :retryable? false}))
-                           (catch Throwable e e))]
-                   (when-not @failure (vreset! failure t))
-                   (when-not (:abort-returns? opts) (throw t))))
+        abort! #(abort-member! aborted? failure opts)
         staged!
         (when (:storage-rows! opts)
           (fn []
@@ -289,7 +286,7 @@
              (:staging opts) wdb descriptor rows wal-rows
              nil (l/request-context wdb))))
         _ (.setCallbacks writer capture staged! (:preparation-flush! opts) abort!
-                         (fn [t] (when-not @failure (vreset! failure t))))
+                         (fn [t] (record-failure! failure t)))
         _ (.scopeTo writer valid? capture)
         _ (.setRequestContext writer (batch/context descriptor))
         _ (application/activate-member! (:application opts) wdb)]
