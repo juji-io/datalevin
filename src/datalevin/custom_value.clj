@@ -19,6 +19,7 @@
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
+   [datalevin.custom-data :as custom]
    [datalevin.interface :as i]
    [datalevin.lmdb :as l]
    [datalevin.util :refer [raise]])
@@ -273,12 +274,16 @@
    nil payload-dbi rtx))
 
 (defn find-value-at
-  "Find an exact match and its associated bytes in a caller-owned snapshot."
-  [kv index type value rtx]
-  (require-store! kv)
-  (find-prefix-at kv index type value
-                  (order-prefix type value (or (:max-size index) c/+max-key-size+))
-                  (i/get-dbi kv c/custom-values false) rtx))
+  "Find an exact match and its associated bytes in a caller-owned snapshot.
+  A prepared prefix preserves completed order callbacks if they replaced the
+  writer before the caller borrowed this snapshot."
+  ([kv index type value rtx]
+   (find-value-at kv index type value rtx
+                  (order-prefix type value (or (:max-size index) c/+max-key-size+))))
+  ([kv index type value rtx prefix]
+   (require-store! kv)
+   (find-prefix-at kv index type value prefix
+                   (i/get-dbi kv c/custom-values false) rtx)))
 
 (defn- find-prefix [kv index type value prefix]
   (with-snapshot kv
@@ -289,8 +294,10 @@
   "Find the complete value within its order bucket, including staged writes.
   A prepared prefix avoids evaluating and encoding the same order key again."
   ([kv index type value]
-   (find-value kv index type value
-               (order-prefix type value (or (:max-size index) c/+max-key-size+))))
+   (let [current-type (custom/operation-type kv type)
+         prefix (order-prefix (current-type) value
+                              (or (:max-size index) c/+max-key-size+))]
+     (find-value kv index (current-type) value prefix)))
   ([kv index type value prefix]
    (find-prefix kv index type value prefix)))
 
@@ -357,10 +364,11 @@
   (when (and (= (:position index) :key) (not (bytes? associated)))
     (raise "Associated index value must be raw bytes"
            {:error :custom-type/index-value}))
-  (let [prefix (order-prefix type value (or (:max-size index) c/+max-key-size+))
-        payload ((:serialize type) value)]
+  (let [current-type (custom/operation-type kv type)
+        prefix (order-prefix (current-type) value (or (:max-size index) c/+max-key-size+))
+        payload ((:serialize (current-type)) value)]
     (l/with-transaction-kv [tx kv]
-      (let [match (find-prefix tx index type value prefix)
+      (let [match (find-prefix tx index (current-type) value prefix)
             {:keys [id txs]}
             (if match
               (let [id (reference-id (:reference match))]
@@ -375,9 +383,10 @@
   [kv index type value]
   (require-store! kv)
   (check-index! kv index)
-  (let [prefix (order-prefix type value (or (:max-size index) c/+max-key-size+))]
+  (let [current-type (custom/operation-type kv type)
+        prefix (order-prefix (current-type) value (or (:max-size index) c/+max-key-size+))]
     (l/with-transaction-kv [tx kv]
-      (when-let [match (find-prefix tx index type value prefix)]
+      (when-let [match (find-prefix tx index (current-type) value prefix)]
         (let [ref (:reference match)]
           (transact! tx [(delete-index-tx index ref) (delete-payload-tx ref)]))
         match))))

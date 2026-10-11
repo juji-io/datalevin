@@ -426,3 +426,21 @@
   [kv type-name rtx]
   (resolve-cached-type kv type-name (:runtime-opts @(local-info kv))
                        (registry-at kv rtx)))
+
+(defn operation-type
+  "Return the current codecs for one operation. A callback can replace the
+  native writer; refresh the resolved functions before invoking another codec,
+  while preserving callback results already prepared by the caller."
+  [kv type]
+  (if (l/writing? kv)
+    (let [native (l/write-txn kv)
+          cached (volatile! [@native type])]
+      (fn []
+        (let [[txn type] @cached
+              current @native]
+          (if (identical? txn current)
+            type
+            (let [type (resolve-type kv (:type-name type))]
+              (vreset! cached [current type])
+              type)))))
+    (constantly type)))

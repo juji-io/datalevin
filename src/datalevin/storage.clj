@@ -2525,6 +2525,9 @@
                (aset attr-cache 0 store-schema)
                (aset attr-cache 1 infos))
              infos))
+         native-write (when (cd/custom-schema? store-schema)
+                        (lmdb/write-txn (.-lmdb store)))
+         descriptor-txn (when native-write (volatile! @native-write))
          txs    (FastList. (+ 2 (count datoms) (count extra-kv-txs)))
          unindexed-txs (when (seq (:db/noindex (rschema store))) (FastList.))
          ;; Nil slots mean no work; each list is allocated on its first item.
@@ -2533,15 +2536,25 @@
          avg-bf     (bf/get-array-buffer)]
      (try
        (doseq [^Datom datom datoms]
+         ;; A custom payload can grow the map and replace the writer while
+         ;; this plan is being prepared. Resolve its callbacks again before
+         ;; encoding another datom against that new native transaction.
+         (when (and native-write (not (identical? @descriptor-txn @native-write)))
+           (.clear attr-infos)
+           (vreset! descriptor-txn @native-write))
          (let [^objects ai (write-attr-info store attr-infos (.-a datom) (.-v datom)
                                            (d/datom-added datom))
                vt (aget ai 1)
                noindex? (:db/noindex (aget ai 0))
                datom-txs (if noindex? unindexed-txs txs)]
            (if-let [type (when (map? vt) (:custom/type vt))]
-             ((if (d/datom-added datom) cd/put-datom! cd/delete-datom!)
-              (lmdb/mark-write (.-lmdb store)) (.-e datom) (aget ai 2) type
-              (.-v datom) noindex?)
+             (let [lmdb (.-lmdb store)
+                   ;; Serializer callbacks can grow the map. The collector
+                   ;; refreshes this scoped writer, so retain it for the reads
+                   ;; and writes that follow the callback.
+                   writer (if (lmdb/writing? lmdb) lmdb (lmdb/mark-write lmdb))]
+               ((if (d/datom-added datom) cd/put-datom! cd/delete-datom!)
+                writer (.-e datom) (aget ai 2) type (.-v datom) noindex?))
              (if (d/datom-added datom)
                (insert-datom store datom datom-txs work giants attr-infos embedding-plan
                              avg-bf)

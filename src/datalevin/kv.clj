@@ -675,7 +675,7 @@
       (do (.check-ready this)
           (cond
             (and (:embedded? control) (custom-kv/custom-txs? db dbi-name txs))
-            (custom-kv/transact! this db dbi-name txs k-type v-type)
+            (custom-kv/transact! this db dbi-name txs k-type v-type raw-lmdb)
             (l/writing? db)
             (if (and (:embedded? control) (not (:native-row-capture (meta db))))
               (transact-with-txlog! db (txlog/state db) dbi-name txs k-type v-type)
@@ -691,7 +691,7 @@
                      #(i/transact-kv % dbi-name txs k-type v-type)
                      (write-batch-delay-nanos db))
       (if (custom-kv/custom-txs? db dbi-name txs)
-        (custom-kv/transact! this db dbi-name txs k-type v-type)
+        (custom-kv/transact! this db dbi-name txs k-type v-type raw-lmdb)
         (with-write-txn-lock-before-runtime-txlog-state
           db
           (fn []

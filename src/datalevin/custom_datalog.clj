@@ -176,25 +176,30 @@
       (k [_] (.duplicate k))
       (v [_] (.duplicate v)))))
 
-(defn match-reference
-  "Find a complete value in one entity/attribute order bucket."
-  [kv e aid type value]
-  (let [prefix (cv/order-prefix type value reference-budget)]
+(defn- match-reference-with-type
+  [kv e aid current-type value]
+  (let [prefix (cv/order-prefix (current-type) value reference-budget)]
     (i/list-range-some
      kv c/eav
      (fn [entry]
        (let [^Retrieved r (b/read-buffer (l/v entry) :avg)
              ^CustomReference v (.-v r)
              ref (.-reference v)]
-         (when (= value (cv/read-value kv type ref)) ref)))
+         (when (= value (cv/read-value kv (current-type) ref)) ref)))
      [:closed e e] :id
      [:closed (indexable nil aid (cv/reference prefix cv/min-id))
       (indexable nil aid (cv/reference prefix cv/max-id))] :avg true)))
 
+(defn match-reference
+  "Find a complete value in one entity/attribute order bucket."
+  [kv e aid type value]
+  (match-reference-with-type kv e aid (custom/operation-type kv type) value))
+
 (defn put-datom! [kv e aid type value noindex?]
-  (let [payload ((:serialize type) value)
-        prefix (cv/order-prefix type value reference-budget)
-        old (match-reference kv e aid type value)
+  (let [current-type (custom/operation-type kv type)
+        payload ((:serialize (current-type)) value)
+        prefix (cv/order-prefix (current-type) value reference-budget)
+        old (match-reference-with-type kv e aid current-type value)
         {:keys [id txs]} (if old
                           (let [id (cv/reference-id old)]
                             {:id id :txs [(l/kv-tx :put c/custom-values id payload :id :raw)]})
