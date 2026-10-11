@@ -201,9 +201,7 @@
         state (object-array 5)
         valid? (volatile! false)
         aborted? (volatile! false)
-        shared-view (:datalog-view opts)
-        wdb (or @shared-view (l/mark-write native-db))
-        _ (vreset! shared-view wdb)
+        wdb (l/mark-write native-db)
         capture (fn [name txs kt vt]
                   (member-carriers! state)
                   (capture! raw wdb apply-rows! (aget state 0)
@@ -230,25 +228,7 @@
              ;; identity, rather than allocating two empty row lists now.
              (vreset! (:storage-target opts)
                       [wdb (aget state 0) nil nil state (l/request-context wdb)])))
-         :native-prepare-flush!
-         (when-let [flush! (:preparation-flush! opts)]
-           (fn []
-             (flush!)
-             ;; Resolution can enter arbitrary user code. Give that code a
-             ;; capture with a permanently expiring request scope, so an escaped
-             ;; callback cannot revive when the batch starts its next resolver.
-             (when (and @valid? (nil? (aget state 3)))
-               (member-carriers! state)
-               (let [member-valid? (volatile! true)
-                     descriptor (aget state 0)
-                     rows (aget state 1)
-                     wal-rows (aget state 2)
-                     capture (fn [name txs kt vt]
-                               (capture! raw wdb apply-rows! descriptor rows wal-rows
-                                         member-valid? failure opts name txs kt vt))]
-                 (aset state 3 member-valid?)
-                 (let [_ (with-meta wdb (assoc (meta wdb) :native-row-capture capture))]
-                   nil)))))
+         :native-prepare-flush! (:preparation-flush! opts)
          :native-batch-abort! abort!
          :native-transaction-failed! (fn [t] (when-not @failure (vreset! failure t)))}]
     {:state state :valid? valid? :aborted? aborted? :view wdb :native-db native-db
@@ -272,10 +252,9 @@
     (vreset! valid? true)
     (vreset! aborted? false)
     (when-let [staged? (:storage-staged? opts)] (vreset! staged? false))
-    ;; User-code preparation may have installed a scoped capture. Restore the
-    ;; resolver callbacks, preserving a writer refreshed after map growth.
-    ;; Consecutive resolvers update the owned scope rather than allocating
-    ;; another native-view metadata map.
+    ;; Consecutive trusted resolvers update the owned scope rather than
+    ;; allocating another native-view metadata map. Views exposed to user code
+    ;; are retired, so their scoped callbacks and validity never change again.
     (let [updated (if (identical? (:native-row-capture metadata)
                                  (:native-row-capture callbacks))
                     metadata (merge (dissoc metadata :request-context) callbacks))]
@@ -458,6 +437,9 @@
     (apply-with-frozen-commit-retry!
      raw batch history
      (fn [wdb]
+       ;; Admission-time isolation can become stale while waiting for this
+       ;; writer. Validate before any body or native rows are applied.
+       (when-let [before! (:before-batch! opts)] (before! batch))
        ;; Refresh metadata once for every writer, including frozen blind rows.
        ;; A raw commit can advance the payload floor between collected batches.
        (when-let [ensure! (:ensure-body-ready! opts)]
@@ -469,8 +451,7 @@
        (let [active-view (volatile! nil)
              dispatched? (volatile! false)
              ready? (volatile! (boolean (:ensure-body-ready! opts)))
-             opts (cond-> (assoc opts :active-view active-view :capture-batch batch)
-                    (:shared-datalog-writer? opts) (assoc :datalog-view (volatile! nil)))
+             opts (assoc opts :active-view active-view :capture-batch batch)
              native-apply! (volatile! (cpp/prepared-row-applier wdb))
              refresh! (fn []
                         (doseq [view [wdb @active-view] :when view]
@@ -628,7 +609,28 @@
                              ;; for this body; the next resolver gets a fresh scope.
                              (when-let [view @active-view]
                                (if-let [^objects scope (:native-request-context (meta view))]
-                                 (aset scope 4 (dissoc (aget scope 4) :datalog-prepare?))
+                                 (do
+                                   (aset scope 4 (dissoc (aget scope 4) :datalog-prepare?))
+                                   ;; The cached preparation callback follows the
+                                   ;; active view, even after an earlier resolver
+                                   ;; escaped to user code and was retired.
+                                   (when-not (aget scope 3)
+                                     (member-carriers! scope)
+                                     (let [member-valid? (volatile! true)
+                                           descriptor (aget scope 0)
+                                           rows (aget scope 1)
+                                           wal-rows (aget scope 2)
+                                           capture (fn [name txs kt vt]
+                                                     (capture! raw view apply-rows!
+                                                               descriptor rows wal-rows
+                                                               member-valid? failure
+                                                               @storage-opts name txs kt vt))]
+                                       (aset scope 3 member-valid?)
+                                       (let [_ (with-meta view
+                                                 (assoc (meta view)
+                                                        :native-write-valid? member-valid?
+                                                        :native-row-capture capture))]
+                                         nil))))
                                  (let [_ (with-meta view
                                            (update (meta view) :request-context
                                                    dissoc :datalog-prepare?))] nil))))))
@@ -693,7 +695,15 @@
                                                                    raw wdb apply-rows! failure opts)]
                                                        (vreset! member-setup setup)
                                                        setup))]
-                                       (run-datalog-member! batch d failure opts setup))
+                                       (try
+                                         (run-datalog-member! batch d failure opts setup)
+                                         (finally
+                                           ;; User functions can retain the view
+                                           ;; itself, not just its capture. Never
+                                           ;; install another request's callbacks
+                                           ;; on a handle that has escaped.
+                                           (when (:native-write-valid? (meta (:view setup)))
+                                             (vreset! member-setup nil)))))
                                      (if (:kv-update? (batch/context d))
                                        (run-update-member! raw wdb apply-rows! batch d failure opts)
                                        (run-member! raw wdb apply-rows! batch d failure opts))))

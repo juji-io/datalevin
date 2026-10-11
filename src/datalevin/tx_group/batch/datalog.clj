@@ -15,7 +15,7 @@
   (:import [datalevin.db DB TxReport]
            [datalevin.storage Store WriteGroup]
            [clojure.lang Var]
-           [java.util HashMap IdentityHashMap]
+           [java.util Collection HashMap IdentityHashMap]
            [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -153,6 +153,18 @@
                               data (readable-result (:result data) after)))))
       committed)))
 
+(defn- check-isolation! [b descriptor]
+  (let [context (batch/context descriptor)]
+    (when-let [conn (:datalog-conn context)]
+      (when (and (s/synchronous-secondary-indexing? (:store @conn))
+                 (or (not (:isolated? context)) (> (batch/batch-count b) 1)))
+        ;; Admission is only a snapshot. Reject before touching any secondary
+        ;; engine when current indexing options require an individual commit.
+        (batch/cancel-before-dispatch!
+          (ex-info "Secondary indexing mode changed while write was queued"
+                   {:error :txlog/indexing-mode-changed
+                    :outcome :not-committed :retryable? true}))))))
+
 (defn attach!
   "Attach the existing Datalog store to the environment's data collector."
   ([db] (attach! db nil))
@@ -189,7 +201,13 @@
              :storage-tail! (fn [native]
                               (when-let [group @(:group @context)]
                                 (s/freeze-group-storage-datoms! group native)))
+             :before-batch! (fn [b]
+                              (dotimes [idx (batch/batch-count b)]
+                                (check-isolation! b (batch/batch-at b idx))))
              :before-body! (fn [descriptor]
+                             ;; Native preparation can collect more requests
+                             ;; after the initial batch check.
+                             (check-isolation! (:batch @context) descriptor)
                              (when-not (:datalog-prepare? (batch/context descriptor))
                                (when-let [current @(:current @context)]
                                  (db/-clear-tx-cache current))
@@ -214,11 +232,24 @@
         tx-store (if (identical? (kv/raw-lmdb (.-lmdb store))
                                 (kv/raw-lmdb lmdb))
                    store (s/transfer store lmdb))
-        tx-db (cond-> (if (and (identical? tx-store store)
-                              (or (:datalog-prepare? (l/request-context (kv/raw-lmdb lmdb)))
-                                  (and (empty? (:eavt previous))
-                                       (empty? (:avet previous)))))
-                       previous (db/transfer previous tx-store))
+        tx-db (cond-> (cond
+                       (and @(:current context)
+                            (:datalog-prepare? (l/request-context (kv/raw-lmdb lmdb))))
+                       ;; Retiring an escaped handle changes the Store. Carry
+                       ;; pending datoms into indexes whose custom comparators
+                       ;; use the new handle, rather than the expired one.
+                       (if (identical? tx-store store)
+                         previous
+                         (let [transferred (db/transfer previous tx-store)]
+                           (.addAll ^Collection (:eavt transferred) (:eavt previous))
+                           (.addAll ^Collection (:avet transferred) (:avet previous))
+                           transferred))
+
+                       (and (identical? tx-store store)
+                            (empty? (:eavt previous)) (empty? (:avet previous)))
+                       previous
+
+                       :else (db/transfer previous tx-store))
                 (nil? @(:current context))
                 (assoc :max-eid (i/init-max-eid tx-store)
                        :max-tx (i/max-tx tx-store)))
@@ -335,7 +366,8 @@
            (let [context @(:datalog-context control)]
              (execute-body! context conn (writing-db! context conn lmdb)
                             body publication notifications)))
-         (assoc opts :context (assoc (:context opts) :datalog-publication publication
+         (assoc opts :context (assoc (:context opts) :datalog-conn conn
+                               :datalog-publication publication
                                :isolated? (s/synchronous-secondary-indexing?
                                             (:store @conn)))))]
     ;; Explicit abort returns the body's result but publishes neither its

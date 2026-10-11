@@ -126,6 +126,9 @@
                     ^Condition progress
                     ^ConcurrentLinkedQueue ready
                     ^AtomicInteger queued
+                    ;; Maintained with the queue under coordination. A bounded
+                    ;; prefix need not visit an unbounded tail without deadlines.
+                    ^AtomicInteger queued-deadlines
                     ^AtomicBoolean active
                     ^AtomicBoolean serving
                     active-batch
@@ -445,12 +448,19 @@
         ;; only one of several waiters could leave an eligible caller asleep.
         (.signalAll ^Condition (.progress collector))))))
 
+(defn- queued-removed!
+  "Update queue counts after unlinking an entry under coordination."
+  [^Collector collector ^Descriptor descriptor]
+  (.decrementAndGet ^AtomicInteger (.queued collector))
+  (when (pos? (.deadline-nanos descriptor))
+    (.decrementAndGet ^AtomicInteger (.queued-deadlines collector))))
+
 (defn- reject-queued!
   [^Collector collector value]
   (let [^ConcurrentLinkedQueue queue (.ready collector)]
     (loop []
       (when-let [^Descriptor descriptor (.poll queue)]
-        (.decrementAndGet ^AtomicInteger (.queued collector))
+        (queued-removed! collector descriptor)
         (deliver! descriptor value)
         (recur)))))
 
@@ -745,6 +755,7 @@
          lock (ReentrantLock. true)
          progress (.newCondition lock)]
      (->Collector lock progress (ConcurrentLinkedQueue.) (AtomicInteger. 0)
+                  (AtomicInteger. 0)
                   (AtomicBoolean. false) (AtomicBoolean. true)
                   (volatile! nil) (volatile! nil) (AtomicLongArray. 2)
                   (PendingBudget. (long (:request-budget limits))
@@ -827,7 +838,7 @@
               (release-reservation! collector descriptor))
             (do
               (when (.remove ^ConcurrentLinkedQueue (.ready collector) descriptor)
-                (.decrementAndGet ^AtomicInteger (.queued collector)))
+                (queued-removed! collector descriptor))
               (release-reservation! collector descriptor)))
           (finally (.unlock lock)))))))
 
@@ -925,14 +936,15 @@
   "Caller holds coordination; the iterator still owns this queue entry."
   [^Collector collector ^java.util.Iterator it ^Descriptor descriptor ^long deadline]
   (.remove it)
-  (.decrementAndGet ^AtomicInteger (.queued collector))
+  (queued-removed! collector descriptor)
   (deliver! descriptor [false (expired-error "collection" deadline)])
   (phase/phase! :queue-expired descriptor))
 
 (declare schedule-for release-batch-charges!)
 
 (defn- take-prefix!
-  "Gather the bounded FIFO prefix and its cutoff while expiring the whole queue.
+  "Gather the bounded FIFO prefix and its cutoff while expiring queued deadlines.
+  Stop at a boundary once no unvisited queue entries have deadlines.
   Keep ownership with callers until all sealed storage has been allocated. An
   expired elected owner returns its rejection without executing a successor."
   ^Batch [^Collector collector ^Descriptor own]
@@ -942,26 +954,32 @@
         descriptors (FastList. (int limit))
         now (System/nanoTime)
         ^java.util.Iterator it (.iterator queue)]
-    (loop [bytes (long 0) cutoff (long 0) blocked? false]
-      (if (.hasNext it)
+    (loop [bytes (long 0) cutoff (long 0) blocked? false
+           remaining-deadlines (long (.get ^AtomicInteger (.queued-deadlines collector)))]
+      (if (and (or (and (not blocked?) (< (.size descriptors) limit) (< bytes cap))
+                   (pos? remaining-deadlines))
+               (.hasNext it))
         (let [^Descriptor descriptor (.next it)
-              deadline (.deadline-nanos descriptor)]
+              deadline (.deadline-nanos descriptor)
+              remaining-deadlines (if (pos? deadline)
+                                   (dec remaining-deadlines) remaining-deadlines)]
           (cond
             (and (pos? deadline) (<= deadline now))
             (do (expire-queued! collector it descriptor deadline)
-                (recur bytes cutoff blocked?))
+                (recur bytes cutoff blocked? remaining-deadlines))
 
             (or blocked? (>= (.size descriptors) limit)
                 (and (pos? (.size descriptors)) (:isolated? (.context descriptor)))
                 (> (+ bytes (.allowance descriptor)) cap))
-            (recur bytes cutoff true)
+            (recur bytes cutoff true remaining-deadlines)
 
             :else
             (do (.add descriptors descriptor)
                 (recur (+ bytes (.allowance descriptor))
                        (if (and (pos? deadline) (or (zero? cutoff) (< deadline cutoff)))
                          deadline cutoff)
-                       (boolean (:isolated? (.context descriptor)))))))
+                       (boolean (:isolated? (.context descriptor)))
+                       remaining-deadlines))))
         (let [taken (.size descriptors)]
           (when (and (pos? taken) (nil? @(.result own)))
             (let [batch (->Batch (.getAndIncrement ^AtomicLong (.next-id collector))
@@ -973,7 +991,7 @@
                   (let [^Descriptor descriptor (.peek queue)]
                     (claim-flag! descriptor selected-bit)
                     (.poll queue)
-                    (.decrementAndGet ^AtomicInteger (.queued collector))))
+                    (queued-removed! collector descriptor)))
                 batch
                 (catch Throwable t
                   ;; Also cover an exceptional partial ownership transfer.
@@ -1006,18 +1024,24 @@
             cap (.batch-max-bytes collector)
             now (System/nanoTime)
             ^java.util.Iterator it (.iterator queue)]
-        (loop [blocked? (:isolated? (.context ^Descriptor (.get descriptors 0)))]
-          (when (and (< (.size descriptors) limit) (.hasNext it))
+        (loop [blocked? (:isolated? (.context ^Descriptor (.get descriptors 0)))
+               remaining-deadlines (long (.get ^AtomicInteger (.queued-deadlines collector)))]
+          (when (and (< (.size descriptors) limit)
+                     (or (and (not blocked?) (< (.reservedBytes batch) cap))
+                         (pos? remaining-deadlines))
+                     (.hasNext it))
             (let [^Descriptor d (.next it)
                   deadline (.deadline-nanos d)
+                  remaining-deadlines (if (pos? deadline)
+                                       (dec remaining-deadlines) remaining-deadlines)
                   next-bytes (+ (.reservedBytes batch) (.allowance d))]
               (cond
                 (and (pos? deadline) (<= deadline now))
                 (do (expire-queued! collector it d deadline)
-                    (recur blocked?))
+                    (recur blocked? remaining-deadlines))
 
                 (or blocked? (:isolated? (.context d)) (> next-bytes cap))
-                (recur true)
+                (recur true remaining-deadlines)
 
                 :else
                 (do
@@ -1025,14 +1049,14 @@
                   (.add descriptors d)
                   (claim-flag! d selected-bit)
                   (.remove it)
-                  (.decrementAndGet ^AtomicInteger (.queued collector))
+                  (queued-removed! collector d)
                   (.setReservedBytes batch next-bytes)
                   (let [current (.cutoffNanos batch)]
                     (when (and (pos? deadline) (or (zero? current) (< deadline current)))
                       (.setCutoffNanos batch deadline)
                       (when (pos? (.get ^AtomicLongArray (.waiters collector) 0))
                         (signal-progress-under-lock! collector))))
-                  (recur false))))))
+                  (recur false remaining-deadlines))))))
         (- (.size descriptors) before))
       (finally (.unlock lock)))))
 
@@ -1394,12 +1418,12 @@
 (defn- unlink!
   "Remove one descriptor from the ready queue, so an expired caller does not wait
   for a batch that may never select it."
-  [^Collector collector descriptor]
+  [^Collector collector ^Descriptor descriptor]
   (let [^ReentrantLock lock (.lock collector)]
     (.lock lock)
     (try
       (when (.remove ^ConcurrentLinkedQueue (.ready collector) descriptor)
-        (.decrementAndGet ^AtomicInteger (.queued collector))
+        (queued-removed! collector descriptor)
         ;; An expiring head may have consumed the handoff notification. Relay
         ;; it if there is no execution owner to notify the next caller.
         (when-not (.get ^AtomicBoolean (.active collector))
@@ -1490,7 +1514,7 @@
   can neither strand an already published request nor let it activate a batch
   in a runtime that is no longer serving. Returns true when this caller owns the
   single active batch slot."
-  [^Collector collector descriptor]
+  [^Collector collector ^Descriptor descriptor]
   (let [^ReentrantLock lock (.lock collector)]
     ;; Ready publishers may take a free lock immediately. Selection uses fair
     ;; acquisition, so it cannot cut ahead of publishers already waiting. This
@@ -1501,6 +1525,8 @@
         (throw (fenced-error collector)))
       (.add ^ConcurrentLinkedQueue (.ready collector) descriptor)
       (.incrementAndGet ^AtomicInteger (.queued collector))
+      (when (pos? (.deadline-nanos descriptor))
+        (.incrementAndGet ^AtomicInteger (.queued-deadlines collector)))
       ;; Emit at the enqueue point, under the same coordination that fixes FIFO,
       ;; so a trace observer records the real publication order.
       (phase/phase! :ready-published descriptor)

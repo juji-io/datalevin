@@ -158,6 +158,7 @@
                             :finish-preparation! (:finish-preparation! hooks)
                             :storage-rows! (:storage-rows! hooks)
                             :storage-tail! (:storage-tail! hooks)
+                            :before-batch! (:before-batch! hooks)
                             :before-body! (:before-body! hooks)
                             :ensure-body-ready! (fn [wdb]
                                                   ;; The opener owns flags and scheduler startup.

@@ -44,13 +44,6 @@
 (defn- cache-enabled? []
   (boolean *cache?*))
 
-(defn parsed-q
-  [q]
-  (or (.get ^LRUCache *query-cache* q)
-      (let [res (qexec/prepare-query (dp/parse-query q))]
-        (.put ^LRUCache *query-cache* q res)
-        res)))
-
 (defn- resolve-qualified-fns
   "Convert qualified fns to fn-objects so that function implementation
   changes invalidate query result cache."
@@ -222,6 +215,32 @@
 
 (deftype ^:no-doc CacheAnalysis [nested? deps udf? qualified? pull-deps])
 
+(defn- analyze-query
+  [parsed-q]
+  (CacheAnalysis. (contains-nested-query? parsed-q)
+                  (query-cache-deps parsed-q)
+                  (query-uses-udf? parsed-q)
+                  (boolean (seq (:qwhere-qualified-fns parsed-q)))
+                  (pull-deps-reader parsed-q)))
+
+(defn parsed-q
+  [q]
+  (or (.get ^LRUCache *query-cache* q)
+      (let [parsed (qexec/prepare-query (dp/parse-query q))
+            ;; Keep structural analysis with the bounded parse-cache entry.
+            ;; Metadata leaves query equality/hash unchanged, and the delay
+            ;; avoids these walks for explain or result-cache-disabled calls.
+            res (vary-meta parsed assoc ::cache-analysis
+                           (delay (analyze-query parsed)))]
+        (.put ^LRUCache *query-cache* q res)
+        res)))
+
+(defn- query-analysis
+  [parsed-q]
+  (if-let [analysis (::cache-analysis (meta parsed-q))]
+    @analysis
+    (analyze-query parsed-q)))
+
 (defn- single-input-store
   "A store's result cache tracks only its own writes. Multiple database sources
   must execute until their revisions can be tracked together."
@@ -236,7 +255,9 @@
       store)))
 
 (defn q-result
-  ([parsed-q inputs] (q-result parsed-q inputs nil nil))
+  ([parsed-q inputs]
+   (q-result parsed-q inputs
+             (when (cache-enabled?) (query-analysis parsed-q)) nil))
   ([parsed-q inputs ^CacheAnalysis analysis execute]
    (let [parsed-q (qexec/resolve-window parsed-q inputs)]
      (if (and (cache-enabled?)
@@ -276,10 +297,6 @@
   "Retain query-invariant cache analysis and execution metadata. Input tokens,
   function implementations, UDF bindings and database revisions stay dynamic."
   [parsed-q]
-  (let [analysis (CacheAnalysis. (contains-nested-query? parsed-q)
-                                 (query-cache-deps parsed-q)
-                                 (query-uses-udf? parsed-q)
-                                 (boolean (seq (:qwhere-qualified-fns parsed-q)))
-                                 (pull-deps-reader parsed-q))
+  (let [analysis (query-analysis parsed-q)
         execute (qexec/query-runner parsed-q)]
     (fn [inputs] (q-result parsed-q inputs analysis execute))))
