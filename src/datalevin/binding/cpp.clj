@@ -28,6 +28,7 @@
    [datalevin.tx-state.lifetime :as lifetime]
    [datalevin.tx-state.protocol :as protocol]
    [datalevin.tx-group.batch.charge :as charge]
+   [datalevin.tx-group.failure :as failure]
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
             transact-kv stat key-compressor
@@ -1572,8 +1573,13 @@
           (if (or (= :ha/write-rejected (:error (ex-data e)))
                   (l/blind-unique-collision? e))
             (throw e)
-            (throw (ex-info (str "Fail to transact to LMDB: " (pr-str e))
-                            {} e))))))))
+            (let [error (ex-info (str "Fail to transact to LMDB: " (pr-str e))
+                                 {} e)]
+              ;; Preserve native provenance even when application code catches
+              ;; this exception or the enclosing body tags its own failure.
+              (when-not (failure/expected-native-rejection? e)
+                (scan/record-native-read-failure! wdb error))
+              (throw error))))))))
 
 (defn- open-kv*
   [dir dir-file db-file {:keys [mapsize max-readers flags max-dbs temp?

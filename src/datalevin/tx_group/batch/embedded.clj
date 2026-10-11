@@ -17,35 +17,30 @@
             [datalevin.tx-group.batch.factory :as factory]
             [datalevin.tx-group.batch.public :as public]
             [datalevin.tx-group.batch.rmw :as rmw]
+            [datalevin.tx-group.failure :as failure]
             [datalevin.txlog :as wal]
             [datalevin.txlog.append :as append])
-  (:import [datalevin.cpp Util$DTLVException]
-           [datalevin.lmdb DatomKVTxData KVTxData]
+  (:import [datalevin.lmdb DatomKVTxData KVTxData]
            [datalevin.utl RowRegions]
            [org.eclipse.collections.impl.list.mutable FastList]
            [java.util.concurrent.atomic AtomicBoolean]
            [java.util ArrayList Arrays]))
-
-(defn- expected-native-rejection? [^Throwable t]
-  (or (and (instance? Util$DTLVException t)
-           (let [message (.getMessage t)]
-             (or (.startsWith message "MDB_KEYEXIST")
-                 (.startsWith message "MDB_BAD_VALSIZE"))))
-      (when-let [cause (ex-cause t)] (expected-native-rejection? cause))))
 
 (def ^:dynamic *defer-attachment?*
   "Defer attachment while a server re-index replaces its environment."
   false)
 
 (defn- application-error! [t]
-  (if (or (rmw/clean-body-failure? t) (expected-native-rejection? t))
+  (if (or (rmw/clean-body-failure? t) (failure/expected-native-rejection? t))
     (batch/cancel-before-dispatch! t)
     (throw t)))
 
 (defn- public-error [t]
   (let [cause (ex-cause t)]
     (cond
-      (and cause (= "Batch aborted before WAL append" (ex-message t))) cause
+      (and cause (= "Batch aborted before WAL append" (ex-message t)))
+      (failure/unwrap-user-body-failure cause)
+      (failure/user-body-failure? t) (failure/unwrap-user-body-failure t)
       ;; Keep the established HA wire error visible to idempotent callers,
       ;; together with the collector's already committed local WAL outcome.
       (and cause (= :ha/write-indeterminate (:error (ex-data cause))))

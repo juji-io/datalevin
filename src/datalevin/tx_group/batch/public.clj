@@ -12,6 +12,7 @@
             [datalevin.tx-group.batch :as batch]
             [datalevin.tx-group.batch.charge :as charge]
             [datalevin.tx-group.batch.wal :as batch-wal]
+            [datalevin.tx-group.failure :as failure]
             [datalevin.txlog :as wal]
             [datalevin.txlog.codec :as codec]
             [datalevin.validate :as validate])
@@ -188,7 +189,8 @@
                 ;; cleanup would close that environment if floor validation
                 ;; fails; the native batch owner must abort only its writer.
                 (when-not (:ready? opts) (kv/ensure-txlog-ready! tx))
-                (let [result (body (kv/->KVLMDB tx nil))]
+                (let [handle (kv/->KVLMDB tx nil)
+                      result (failure/with-user-body true (body handle))]
                   (l/cancel-explicit-transaction-watchdog! watchdog)
                   (l/assert-explicit-transaction-live! watchdog)
                   result)

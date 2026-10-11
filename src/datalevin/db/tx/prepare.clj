@@ -16,6 +16,7 @@
    [datalevin.prepare :as coreprep]
    [datalevin.datom :as d :refer [datom?]]
    [datalevin.udf :as udf]
+   [datalevin.tx-group.failure :as failure]
    [datalevin.util :as u :refer [ cond+ raise]]
    [datalevin.validate :as vld])
   (:import
@@ -280,7 +281,7 @@
   (txcommon/flush-batch-prepare!)
   (let [[_ target & args] entity
         f                 (resolve-tx-callable db target)]
-    (apply f db args)))
+    (failure/with-user-body txcommon/*batch-prepare* (apply f db args))))
 
 (defn handle-custom-tx-fn
   ([db store entity]
@@ -296,7 +297,7 @@
                     (lookup-tx-fn-value db store ident))
            args (next entity)]
        (vld/validate-custom-tx-fn-value fun op entity)
-       (apply fun db args))))
+       (failure/with-user-body txcommon/*batch-prepare* (apply fun db args)))))
   ([db store entity entities]
    (concat (handle-custom-tx-fn db store entity) entities)))
 

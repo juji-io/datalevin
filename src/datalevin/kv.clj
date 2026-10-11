@@ -56,6 +56,7 @@
    [datalevin.txlog :as txlog]
    [datalevin.txlog.transfer :as transfer]
    [datalevin.tx-group.compat :as group]
+   [datalevin.tx-group.failure :as failure]
    [datalevin.util :refer [deftype+ raise]])
   (:import [java.util.concurrent.atomic AtomicReference AtomicBoolean]
            [java.util.concurrent ConcurrentHashMap]
@@ -845,9 +846,11 @@
         (when (i/list-dbi? tx dbi-name)
           (raise "update-kv requires a single-value DBI" {:dbi-name dbi-name}))
         (let [old (i/get-value tx dbi-name k k-type v-type)
-              value (if (identical? submitter (Thread/currentThread))
-                      (apply f old args)
-                      (with-bindings bindings (apply f old args)))]
+              value (failure/with-user-body
+                      (:native-transaction-failed! (meta (raw-lmdb tx)))
+                      (if (identical? submitter (Thread/currentThread))
+                        (apply f old args)
+                        (with-bindings bindings (apply f old args))))]
           (if (seq extra-rows)
             [nil (into [(l/kv-tx :put dbi-name k value k-type v-type)] extra-rows)
              :data :data]
@@ -875,7 +878,10 @@
        (fn [tx]
          (when (i/list-dbi? tx dbi-name)
            (raise "update-kv requires a single-value DBI" {:dbi-name dbi-name}))
-         (let [value (apply f (i/get-value tx dbi-name k k-type v-type) args)]
+         (let [old (i/get-value tx dbi-name k k-type v-type)
+               value (failure/with-user-body
+                       (:native-transaction-failed! (meta (raw-lmdb tx)))
+                       (apply f old args))]
            (i/transact-kv tx dbi-name [[:put k value]] k-type v-type)
            :transacted)))))))
 

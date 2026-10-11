@@ -12,6 +12,7 @@
             [datalevin.tx-group.batch.charge :as charge]
             [datalevin.tx-group.batch.executor :as executor]
             [datalevin.tx-group.batch.wal :as wal]
+            [datalevin.tx-group.failure :as failure]
             [datalevin.txlog.codec :as codec]
             [datalevin.tx-group.phase :as phase]
             [datalevin.util :as u])
@@ -21,12 +22,24 @@
            [java.util ArrayList Arrays List]
            [java.util.function Supplier]))
 
+(defn- terminal-body-failure? [^Throwable t]
+  (or (instance? Error t)
+      (instance? InterruptedException t)
+      (:resized (ex-data t))
+      (#{:txlog/runtime-fenced :txlog/runtime-closed
+         :txlog/write-deadline-exceeded :txlog/write-interrupted}
+        (:error (ex-data t)))
+      (when-let [cause (ex-cause t)] (terminal-body-failure? cause))))
+
 (defn clean-body-failure?
-  "Only expected application/validation errors can cancel without fencing.
-   An expected wrapper must not hide an unexpected engine failure in its cause."
+  "Tagged user exceptions and expected validation errors can cancel without
+   fencing. Native failure records take precedence over callback tags. Untagged
+   wrappers must not hide an unexpected engine failure in their cause."
   [^Throwable t]
   (or (and (l/explicit-transaction-timeout-error? t)
            (instance? InterruptedException (ex-cause t)))
+      (and (failure/user-body-failure? t)
+           (not (terminal-body-failure? t)))
       (and (or (instance? ExceptionInfo t)
                (instance? IllegalArgumentException t))
            (not (batch/pre-dispatch-cancellation? t))
@@ -437,6 +450,11 @@
     (apply-with-frozen-commit-retry!
      raw batch history
      (fn [wdb]
+       ;; Value-only update resolvers use this native owner directly, without a
+       ;; member view. Retain read/write failures on that path as well.
+       (let [_ (with-meta wdb (assoc (meta wdb) :native-transaction-failed!
+                                    (fn [t] (when-not @failure (vreset! failure t)))))]
+         nil)
        ;; Admission-time isolation can become stale while waiting for this
        ;; writer. Validate before any body or native rows are applied.
        (when-let [before! (:before-batch! opts)] (before! batch))

@@ -155,6 +155,13 @@ individually; commit or durability failures are propagated without that retry.
 Update functions must remain free of side effects and may execute on another
 submitting thread, with their Clojure dynamic bindings preserved.
 
+Exceptions from user transaction bodies, KV update functions and Datalog
+transaction functions, including `RuntimeException` and `IllegalStateException`,
+abort the uncommitted batch without fencing the environment. Recorded native
+failures still fence it even if user code catches or wraps them. JVM errors,
+owner interruption and terminal runtime/deadline errors retain their existing
+failure handling.
+
 Local Datalog WAL specializes common single-form writes before using the
 general transaction planner. A simple cardinality-one `:db.fn/patchIdoc` with
 a numeric entity id can be stamped against the active LMDB write snapshot;

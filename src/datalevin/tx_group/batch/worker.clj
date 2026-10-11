@@ -98,10 +98,10 @@
         (fn [deadline]
           (let [deadline (long deadline)
                 now (System/nanoTime)
-                remaining (cond
-                            (zero? deadline) (long idle-poll-ns)
-                            (<= deadline now) 0
-                            :else (- deadline now))]
+                remaining (long (cond
+                                  (zero? deadline) (long idle-poll-ns)
+                                  (<= deadline now) 0
+                                  :else (- deadline now)))]
             (LockSupport/parkNanos (Thread/currentThread)
                                    (min (max remaining (long settled-poll-ns))
                                         (long idle-poll-ns)))))
