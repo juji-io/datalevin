@@ -135,7 +135,8 @@
                 metadata (volatile! nil)
                 runtime (factory/executor
                           state raw
-                          {:runtime-control
+                          {:execution-profile (if (:datalog? hooks) :datalog-rmw :kv-rmw)
+                           :runtime-control
                            (merge kvtx/txlog-append-hooks
                            {:check-admission! #(when-not (.get closing)
                                                  (when @collector
@@ -148,11 +149,6 @@
                                                           wdb state token)))}
                            :rmw-opts
                            {:charge-fn (fn [_ _])
-                            :prepared-owned? true :allow-flags? true
-                            :prepared-request? true :retry-frozen? true :abort-returns? true
-                            :collect-prepared-prefix? true
-                            :encode-batch? (:datalog? hooks)
-                            :shared-datalog-writer? (:datalog? hooks)
                             :finish-preparation! (:finish-preparation! hooks)
                             :storage-rows! (:storage-rows! hooks)
                             :storage-tail! (:storage-tail! hooks)

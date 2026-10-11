@@ -27,6 +27,7 @@
   (:import
    [datalevin.async IAsyncWork]
    [datalevin.cpp Util]
+   [datalevin.utl WriterContext]
    [clojure.lang IPersistentVector]
    [java.io Writer PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
@@ -35,13 +36,33 @@
    [java.util.concurrent ScheduledExecutorService ScheduledFuture TimeUnit]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
+(defprotocol IWriterContext
+  (^WriterContext writer-context [view]
+    "Return the native writer's owned mutable context, or nil for other views."))
+
+(extend-protocol IWriterContext
+  Object
+  (writer-context [_] nil)
+  nil
+  (writer-context [_] nil))
+
 (defn ^:no-doc request-context
-  "Read the current request from a batch-owned native callback scope."
+  "Read the current request from a batch-owned native writer context."
   [view]
-  (let [metadata (meta view)]
-    (if-let [^objects scope (:native-request-context metadata)]
-      (aget scope 4)
-      (:request-context metadata))))
+  (when-let [^WriterContext context (writer-context view)]
+    (.requestContext context)))
+
+(defn ^:no-doc row-capture [view]
+  (when-let [^WriterContext context (writer-context view)] (.rowCapture context)))
+
+(defn ^:no-doc storage-staged [view]
+  (when-let [^WriterContext context (writer-context view)] (.storageStaged context)))
+
+(defn ^:no-doc prepare-flush [view]
+  (when-let [^WriterContext context (writer-context view)] (.prepareFlush context)))
+
+(defn ^:no-doc transaction-failed [view]
+  (when-let [^WriterContext context (writer-context view)] (.transactionFailed context)))
 
 (defn read-env-opts
   "Read the current environment options for internal lookups without copying

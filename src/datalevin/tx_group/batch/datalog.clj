@@ -254,8 +254,7 @@
                           ;; UDF resolvers may retain :kv or issue writes. Retire
                           ;; this member's reusable scope before exposing it,
                           ;; and keep all writes behind its row capture.
-                          (when-let [flush! (:native-prepare-flush!
-                                             (meta (kv/raw-lmdb lmdb)))]
+                          (when-let [flush! (l/prepare-flush (kv/raw-lmdb lmdb))]
                             (flush!))
                           lmdb)))]
         (vreset! (:resolver-indexes context) indexes)
@@ -319,7 +318,7 @@
                           #'s/*validate-secondary-indexing!*
                           (:validate-secondary-indexing! context)
                           #'txcommon/*batch-prepare*
-                          (PreparationContext. (:native-prepare-flush! (meta native))
+                          (PreparationContext. (l/prepare-flush native)
                                                (:group context) nil false
                                                (.-scalar-pending ^WriteGroup @(:group context))
                                                (HashMap.) true

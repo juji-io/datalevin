@@ -217,12 +217,14 @@
                             snapshot-error (volatile! nil)
                             runtime (factory/executor
                                      state raw
-                                     {:runtime-control
-                                      {:check-admission! #(when (and @collector
+                                     {:execution-profile :raw-rmw
+                                      :runtime-control
+                                      (when state
+                                       {:check-admission! #(when (and @collector
                                                                      (not (.get closing-force?)))
                                                             (batch/check-serving! @collector))
                                        :on-failure! #(when @collector
-                                                       (batch/fence! @collector %))}
+                                                       (batch/fence! @collector %))})
                                       :check-batch! (when state
                                                       #(recovery/check-capacity! opts state %))
                                       :rmw-opts (merge (rmw-adapters (recovery/dbis opts) (boolean (:protocol-options opts)))

@@ -2214,7 +2214,7 @@
           (aset context 0 store)
           (doseq [datom datoms] (.add pending datom))
           (when (seq datoms)
-            ((:native-storage-staged! (meta native))))
+            ((lmdb/storage-staged native)))
           modified-ms)))))
 
 (defn ^:no-doc ^:redef encode-group-storage-datoms
@@ -2290,7 +2290,7 @@
    (let [[res secondary-index-job-count modified-ms]
          (locking (.-write-txn store)
            ;; Eager/custom/giant plans can read native state during encoding.
-           (when-let [flush! (:native-prepare-flush! (meta (kv/raw-lmdb (.-lmdb store))))]
+           (when-let [flush! (lmdb/prepare-flush (kv/raw-lmdb (.-lmdb store)))]
              (flush!))
            ;; Transaction stores refresh when the write lock is acquired.
            ;; Direct writes acquire it here, before allocating any giant IDs.
@@ -2645,7 +2645,7 @@
     ;; The collector already owns this writer. Its capture validates and
     ;; freezes the storage rows without repeating public KV routing.
     (if-let [capture (when *write-group*
-                      (:native-row-capture (meta (kv/raw-lmdb lmdb))))]
+                      (lmdb/row-capture (kv/raw-lmdb lmdb)))]
       (capture nil txs :data :data)
       (transact-kv lmdb txs))
     (idoc/apply-state-actions! idoc-state-actions)))

@@ -304,6 +304,9 @@
              specs)))
 
 (deftype+ KVLMDB [db handle]
+  l/IWriterContext
+  (writer-context [_] (l/writer-context db))
+
   l/IWriting
   (writing? [_] (l/writing? db))
   (write-txn [_] (l/write-txn db))
@@ -678,7 +681,7 @@
             (and (:embedded? control) (custom-kv/custom-txs? db dbi-name txs))
             (custom-kv/transact! this db dbi-name txs k-type v-type raw-lmdb)
             (l/writing? db)
-            (if (and (:embedded? control) (not (:native-row-capture (meta db))))
+            (if (and (:embedded? control) (not (l/row-capture db)))
               (transact-with-txlog! db (txlog/state db) dbi-name txs k-type v-type)
               (i/transact-kv db dbi-name txs k-type v-type))
             (and (:embedded? control) (Thread/holdsLock (l/write-txn db)))
@@ -847,7 +850,7 @@
           (raise "update-kv requires a single-value DBI" {:dbi-name dbi-name}))
         (let [old (i/get-value tx dbi-name k k-type v-type)
               value (failure/with-user-body
-                      (:native-transaction-failed! (meta (raw-lmdb tx)))
+                      (l/transaction-failed (raw-lmdb tx))
                       (if (identical? submitter (Thread/currentThread))
                         (apply f old args)
                         (with-bindings bindings (apply f old args))))]
@@ -880,7 +883,7 @@
            (raise "update-kv requires a single-value DBI" {:dbi-name dbi-name}))
          (let [old (i/get-value tx dbi-name k k-type v-type)
                value (failure/with-user-body
-                       (:native-transaction-failed! (meta (raw-lmdb tx)))
+                       (l/transaction-failed (raw-lmdb tx))
                        (apply f old args))]
            (i/transact-kv tx dbi-name [[:put k value]] k-type v-type)
            :transacted)))))))

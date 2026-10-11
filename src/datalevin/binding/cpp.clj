@@ -41,7 +41,7 @@
    [datalevin.cpp BufVal Env Txn Dbi Cursor Stat Info Util Util$MapFullException]
    [datalevin.binding.cpp.buffer DBI]
    [datalevin.lmdb RangeContext]
-   [datalevin.utl BitOps]
+   [datalevin.utl BitOps WriterContext]
    [java.util.concurrent ConcurrentHashMap]
    [java.util.concurrent.atomic AtomicBoolean]
    [java.lang AutoCloseable]
@@ -641,8 +641,8 @@
                   method)) methods))))
 
 (defn- assert-write-view-valid!
-  [metadata]
-  (when-let [valid? (:native-write-valid? metadata)]
+  [^WriterContext context]
+  (when-let [valid? (.validity context)]
     (when-not @valid?
       (throw (ex-info "Write body has finished"
                       {:error :txlog/transaction-view-invalidated :retryable? false})))))
@@ -665,7 +665,8 @@
                   writing?
                   ^:volatile-mutable k-comp
                   ^:volatile-mutable v-comp
-                  ^:unsynchronized-mutable meta]
+                  ^WriterContext writer-context
+                  meta]
 
   IApplicationWriter
   (apply-native-once! [this body before-commit]
@@ -701,19 +702,22 @@
               (close-native-write! env write-txn nil nil))
             (throw e))))))
 
+  l/IWriterContext
+  (writer-context [_] writer-context)
+
   IWriting
   (writing? [_] writing?)
 
   (write-txn [_]
-    (when writing? (assert-write-view-valid! meta))
+    (when writing? (assert-write-view-valid! writer-context))
     (when (and writing?
-               (or (not (identical? (:native-write-owner meta) (Thread/currentThread)))
-                   (not (identical? (:native-write-rtx meta) @write-txn))))
+               (or (not (identical? (.owner writer-context) (Thread/currentThread)))
+                   (not (identical? (.transaction writer-context) @write-txn))))
       (throw (ex-info "Native transaction is no longer owned by this caller"
                       {:error :txlog/transaction-view-invalidated :retryable? false})))
     ;; A frozen write tail must be visible before a body borrows its writer
     ;; for a read (or another dependent write).
-    (when-let [flush! (when writing? (:native-before-read! meta))] (flush!))
+    (when-let [flush! (when writing? (.beforeRead writer-context))] (flush!))
     write-txn)
 
   (mark-write [_]
@@ -721,8 +725,9 @@
       env info tl-reader reader-registry dbis scheduled-sync kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w k-comp-bf-w v-comp-bf-w
       write-txn true k-comp v-comp
-      (assoc meta :native-write-owner (Thread/currentThread)
-                  :native-write-rtx @write-txn)))
+      (if writer-context
+        (.fork writer-context (Thread/currentThread) @write-txn)
+        (WriterContext. (Thread/currentThread) @write-txn)) meta))
 
   (reset-write
     [this]
@@ -759,7 +764,11 @@
           (throw e)))))
 
   IObj
-  (withMeta [this m] (set! meta m) this)
+  (withMeta [_ m]
+    (->CppLMDB
+      env info tl-reader reader-registry dbis scheduled-sync kp-w vp-w start-kp-w
+      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w v-comp-bf-w
+      write-txn writing? k-comp v-comp writer-context m))
   (meta [_] meta)
 
   ILMDB
@@ -847,7 +856,7 @@
   (closed-kv? [_] (.isClosed env))
 
   (check-ready [this]
-    (when writing? (assert-write-view-valid! meta))
+    (when writing? (assert-write-view-valid! writer-context))
     (when (.closed-kv? this)
       (raise "LMDB env is closed." {:type :lmdb/closed})))
 
@@ -1092,7 +1101,7 @@
 
   (open-transact-kv [this]
     (.check-ready this)
-    (when-let [abort! (:native-batch-abort! meta)] (abort!))
+    (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
     (try
       (.reset-write this)
       (.mark-write this)
@@ -1100,14 +1109,14 @@
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
   (close-transact-kv [_]
-    (when writing? (assert-write-view-valid! meta))
-    (when-let [abort! (:native-batch-abort! meta)] (abort!))
+    (when writing? (assert-write-view-valid! writer-context))
+    (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
     (close-native-write! env write-txn nil
                          (fn [_wdb context] (run-before-write-commit! context))))
 
   (abort-transact-kv [_]
-    (when writing? (assert-write-view-valid! meta))
-    (when-let [abort! (:native-batch-abort! meta)] (abort!))
+    (when writing? (assert-write-view-valid! writer-context))
+    (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
     (when-let [^Rtx wtxn @write-txn]
       (vreset! (.-aborted? wtxn) true)
       (vreset! write-txn wtxn)
@@ -1119,7 +1128,7 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
-    (if-let [capture (when writing? (:native-row-capture meta))]
+    (if-let [capture (when writing? (.rowCapture writer-context))]
       (capture dbi-name txs k-type v-type)
       (let [^objects prepared-one-shot
           (let [tx-open? (some? @write-txn)]
@@ -1672,6 +1681,7 @@
                                    nil
                                    (volatile! nil)
                                    false
+                                   nil
                                    nil
                                    nil
                                    nil)]

@@ -27,7 +27,7 @@
   "Retain a native transaction's failure at the common read boundary. This runs
    only on an exception, so catching a native failure cannot salvage its writer."
   [lmdb error]
-  (when-let [failed! (:native-transaction-failed! (meta lmdb))]
+  (when-let [failed! (l/transaction-failed lmdb)]
     (failed! error)))
 
 (defn get-value
