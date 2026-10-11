@@ -15,7 +15,7 @@
   (:import [datalevin.db DB TxReport]
            [datalevin.storage Store WriteGroup]
            [clojure.lang Var]
-           [java.util Collection HashMap IdentityHashMap]
+           [java.util HashMap IdentityHashMap]
            [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -153,17 +153,23 @@
                               data (readable-result (:result data) after)))))
       committed)))
 
+(defn- check-secondary-index-isolation! [b context]
+  (when (or (not (:isolated? context)) (> (batch/batch-count b) 1))
+    (batch/cancel-before-dispatch!
+      (ex-info "Secondary indexing mode changed while write was queued"
+               {:error :txlog/indexing-mode-changed
+                :outcome :not-committed :retryable? true}))))
+
+(defn- check-store-isolation! [b context store]
+  (when (s/synchronous-secondary-indexing? store)
+    (check-secondary-index-isolation! b context)))
+
 (defn- check-isolation! [b descriptor]
   (let [context (batch/context descriptor)]
     (when-let [conn (:datalog-conn context)]
-      (when (and (s/synchronous-secondary-indexing? (:store @conn))
-                 (or (not (:isolated? context)) (> (batch/batch-count b) 1)))
-        ;; Admission is only a snapshot. Reject before touching any secondary
-        ;; engine when current indexing options require an individual commit.
-        (batch/cancel-before-dispatch!
-          (ex-info "Secondary indexing mode changed while write was queued"
-                   {:error :txlog/indexing-mode-changed
-                    :outcome :not-committed :retryable? true}))))))
+      ;; Admission is only a snapshot. Recheck queued requests before starting
+      ;; the batch, and validate the writing Store again after its transfer.
+      (check-store-isolation! b context (:store @conn)))))
 
 (defn attach!
   "Attach the existing Datalog store to the environment's data collector."
@@ -181,7 +187,14 @@
                (let [ctx {:current (volatile! nil) :group (volatile! nil)
                           :cache (volatile! nil) :connections (IdentityHashMap.)
                           :native-view (object-array 2)
+                          :resolver-native (volatile! nil)
+                          :resolver-store (volatile! nil)
+                          :resolver-indexes (volatile! nil)
                           :resolver-bindings (volatile! nil)
+                          :validate-secondary-indexing!
+                          (fn [lmdb]
+                            (check-secondary-index-isolation!
+                              b (l/request-context (kv/raw-lmdb lmdb))))
                           :batch b}]
                  (vreset! context ctx)
                  (try (execute)
@@ -189,6 +202,10 @@
                         (when-let [[store disabled?] @(:cache ctx)]
                           (when-not disabled? (db/enable-cache store)))
                         (vreset! context nil)))))
+             :native-view! (fn [native]
+                             ;; This is the owned writer, not an exposed member
+                             ;; handle. RMW refreshes it after native map growth.
+                             (vreset! (:resolver-native @context) native))
              :finish-preparation! (fn [_ _]
                                     (when-let [group @(:group @context)]
                                       (s/write-group-metadata group)))
@@ -223,6 +240,27 @@
 (defn batched? [control]
   (> (batch/batch-count (:batch @(:datalog-context control))) 1))
 
+(defn- resolver-indexes!
+  [context store]
+  (vreset! (:resolver-store context) store)
+  (or @(:resolver-indexes context)
+      (let [native (kv/->KVLMDB @(:resolver-native context) nil)
+            index-store (s/transfer store native)
+            store-ref (:resolver-store context)
+            indexes (db/batch-tx-indexes
+                      index-store #(i/schema @store-ref)
+                      (fn []
+                        (let [lmdb (.-lmdb ^Store @store-ref)]
+                          ;; UDF resolvers may retain :kv or issue writes. Retire
+                          ;; this member's reusable scope before exposing it,
+                          ;; and keep all writes behind its row capture.
+                          (when-let [flush! (:native-prepare-flush!
+                                             (meta (kv/raw-lmdb lmdb)))]
+                            (flush!))
+                          lmdb)))]
+        (vreset! (:resolver-indexes context) indexes)
+        indexes)))
+
 (defn- writing-db!
   [context conn lmdb]
   (let [^DB before @conn
@@ -232,18 +270,21 @@
         tx-store (if (identical? (kv/raw-lmdb (.-lmdb store))
                                 (kv/raw-lmdb lmdb))
                    store (s/transfer store lmdb))
+        ;; Option publication can race the earlier queue checks. Transfer owns
+        ;; the options snapshot this writer will use; validate that exact Store
+        ;; before user code or secondary indexing can mutate external state.
+        _ (check-store-isolation! (:batch context)
+                                  (l/request-context (kv/raw-lmdb lmdb)) tx-store)
         tx-db (cond-> (cond
-                       (and @(:current context)
-                            (:datalog-prepare? (l/request-context (kv/raw-lmdb lmdb))))
-                       ;; Retiring an escaped handle changes the Store. Carry
-                       ;; pending datoms into indexes whose custom comparators
-                       ;; use the new handle, rather than the expired one.
-                       (if (identical? tx-store store)
-                         previous
-                         (let [transferred (db/transfer previous tx-store)]
-                           (.addAll ^Collection (:eavt transferred) (:eavt previous))
-                           (.addAll ^Collection (:avet transferred) (:avet previous))
-                           transferred))
+                       (:datalog-prepare? (l/request-context (kv/raw-lmdb lmdb)))
+                       ;; Order caches belong to the batch; custom functions
+                       ;; receive the active member's capture and validity.
+                       (let [[eavt avet] (resolver-indexes! context tx-store)]
+                         (if (and (identical? tx-store store)
+                                  (identical? eavt (:eavt previous))
+                                  (identical? avet (:avet previous)))
+                           previous
+                           (assoc previous :store tx-store :eavt eavt :avet avet)))
 
                        (and (identical? tx-store store)
                             (empty? (:eavt previous)) (empty? (:avet previous)))
@@ -275,6 +316,8 @@
     (if (:datalog-prepare? (l/request-context native))
       (or @(:resolver-bindings context)
           (let [bindings {#'s/*write-group* @(:group context)
+                          #'s/*validate-secondary-indexing!*
+                          (:validate-secondary-indexing! context)
                           #'txcommon/*batch-prepare*
                           (PreparationContext. (:native-prepare-flush! (meta native))
                                                (:group context) nil false
@@ -288,7 +331,9 @@
                                                                       @(:group context)))))}]
             (vreset! (:resolver-bindings context) bindings)
             bindings))
-      {#'s/*write-group* @(:group context) #'txcommon/*batch-prepare* nil})))
+      {#'s/*write-group* @(:group context)
+       #'s/*validate-secondary-indexing!* (:validate-secondary-indexing! context)
+       #'txcommon/*batch-prepare* nil})))
 
 (defn- native-kv-view! [context native]
   (let [^objects scope (:native-view context)]

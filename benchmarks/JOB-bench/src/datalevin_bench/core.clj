@@ -493,8 +493,7 @@
         db
         ;; hard-code dir to be "db" for now
         (-> (d/empty-db "db" schema {:closed-schema? true
-                                     :kv-opts        {:mapsize      100000
-                                                      :key-compress :hu}})
+                                     :kv-opts        {:mapsize 100000}})
             (show "empty db")
             (load-table start "comp-cast-type"  add-comp-cast-type  "data/comp_cast_type.csv")
             (load-table start "company-type"    add-company-type    "data/company_type.csv")

@@ -231,58 +231,70 @@
   "Compare range endpoints by order bucket, without complete-value tie breaks.
   The comparator belongs to a transaction overlay or a single range operation.
   Immutable type definitions and stable values need resolving/encoding only once;
-  new UDF bindings or a replaced native writer invalidate the cached keys."
-  [kv schema-fn]
-  (let [types (HashMap.)]
-    (fn [a x y]
-      (if (or (nil? x) (nil? y))
-        0
-        (if-let [t (let [t (:db/valueType ((schema-fn) a))]
-                     (when (custom-type? t) t))]
-          (cond
-            (= x y) 0
-            (or (identical? x c/v0) (identical? y c/vmax)) -1
-            (or (identical? x c/vmax) (identical? y c/v0)) 1
-            :else
-            (let [registry (get-in @(i/kv-info kv) [:runtime-opts :udf-registry])
-                  generation (udf/generation registry)
-                  txn (when (l/writing? kv) @(l/write-txn kv))
-                  cached (.get types t)
-                  entry (if (and cached (identical? registry (:registry cached))
-                                 (= generation (:generation cached))
-                                 (identical? txn (:txn cached)))
-                          cached
-                          (let [entry {:registry registry :generation generation :txn txn
-                                       :type (custom/resolve-type kv t)
-                                       :keys (IdentityHashMap.)}]
-                            (.put types t entry)
-                            entry))
-                  type (:type entry)
-                  ^IdentityHashMap keys (:keys entry)
-                  prefix (fn [v]
-                           (or (.get keys v)
-                               (let [key (cv/order-prefix type v reference-budget)]
-                                 (.put keys v key)
-                                 key)))]
-              (Arrays/compareUnsigned ^bytes (prefix x) ^bytes (prefix y))))
-          (d/compare-with-type x y))))))
+  new UDF bindings or a replaced native writer invalidate the cached keys.
+  resolver-kv can supply a member-scoped handle without discarding order keys."
+  ([kv schema-fn] (order-comparator kv schema-fn (constantly kv)))
+  ([kv schema-fn resolver-kv]
+   (let [types (HashMap.)]
+     (fn [a x y]
+       (if (or (nil? x) (nil? y))
+         0
+         (if-let [t (let [t (:db/valueType ((schema-fn) a))]
+                      (when (custom-type? t) t))]
+           (cond
+             (= x y) 0
+             (or (identical? x c/v0) (identical? y c/vmax)) -1
+             (or (identical? x c/vmax) (identical? y c/v0)) 1
+             :else
+             (let [registry (get-in @(i/kv-info kv) [:runtime-opts :udf-registry])
+                   generation (udf/generation registry)
+                   txn (when (l/writing? kv) @(l/write-txn kv))
+                   cached (.get types t)
+                   entry (if (and cached (identical? registry (:registry cached))
+                                  (= generation (:generation cached))
+                                  (identical? txn (:txn cached)))
+                           cached
+                           (let [entry {:registry registry :generation generation :txn txn
+                                        :keys (IdentityHashMap.)}]
+                             (.put types t entry)
+                             entry))
+                   scoped-kv (resolver-kv)
+                   ;; Keep batch ordering stable, but never invoke a custom
+                   ;; function bound to a finished member's handle.
+                   entry (if (identical? scoped-kv (:kv entry))
+                           entry
+                           (let [entry (assoc entry
+                                              :kv scoped-kv
+                                              :type (custom/resolve-type scoped-kv t))]
+                             (.put types t entry)
+                             entry))
+                   type (:type entry)
+                   ^IdentityHashMap keys (:keys entry)
+                   prefix (fn [v]
+                            (or (.get keys v)
+                                (let [key (cv/order-prefix type v reference-budget)]
+                                  (.put keys v key)
+                                  key)))]
+               (Arrays/compareUnsigned ^bytes (prefix x) ^bytes (prefix y))))
+           (d/compare-with-type x y)))))))
 
 (defn value-comparator
   "Order complete values by their native order prefix, then by a stable
   transaction-local ordinal. Equal values share an ordinal; hash collisions
   and non-Comparable application objects never collapse distinct entries."
-  [kv schema-fn]
-  (let [order (order-comparator kv schema-fn)
-        ordinals (HashMap.)
-        ordinal (fn [a v]
-                  (let [k [a v]]
-                    (or (.get ordinals k)
-                        (let [n (long (.size ordinals))]
-                          (.put ordinals k n)
-                          n))))]
-    (fn [a x y]
-      (let [n (long (order a x y))]
-        (if (and (zero? n) (some? x) (some? y) (not= x y)
-                 (custom-type? (:db/valueType ((schema-fn) a))))
-          (Long/compare (long (ordinal a x)) (long (ordinal a y)))
-          n)))))
+  ([kv schema-fn] (value-comparator kv schema-fn (constantly kv)))
+  ([kv schema-fn resolver-kv]
+   (let [order (order-comparator kv schema-fn resolver-kv)
+         ordinals (HashMap.)
+         ordinal (fn [a v]
+                   (let [k [a v]]
+                     (or (.get ordinals k)
+                         (let [n (long (.size ordinals))]
+                           (.put ordinals k n)
+                           n))))]
+     (fn [a x y]
+       (let [n (long (order a x y))]
+         (if (and (zero? n) (some? x) (some? y) (not= x y)
+                  (custom-type? (:db/valueType ((schema-fn) a))))
+           (Long/compare (long (ordinal a x)) (long (ordinal a y)))
+           n))))))

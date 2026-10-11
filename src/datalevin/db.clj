@@ -1230,9 +1230,10 @@
     (i/open-remote-store dir schema opts)
     (s/open dir schema opts)))
 
-(defn- custom-tx-datom-comparator [store index]
+(defn- custom-tx-datom-comparator [store index schema-fn resolver-kv]
   (let [kv (when (instance? Store store) (.-lmdb ^Store store))
-        value-cmp (cd/value-comparator kv #(schema store))]
+        value-cmp (cd/value-comparator kv schema-fn
+                                       (or resolver-kv (constantly kv)))]
     (if (= index :eav)
       (reify Comparator
         (compare [_ x y]
@@ -1252,23 +1253,41 @@
                    (Long/compare (d/datom-tx x) (d/datom-tx y))))))))))
 
 
-(defn- tx-datom-comparator [store index]
+(defn- tx-datom-comparator
   ;; Store schemas can change inside a transaction. Retain the ordinary datom
   ;; comparator until a new schema requires custom value ordering.
-  (let [ordinary (if (= index :eav) d/cmp-datoms-eavt d/cmp-datoms-avet)
-        state (volatile! nil)]
-    (reify Comparator
-      (compare [_ x y]
-        (let [current (schema store)
-              cached @state
-              comparator (if (identical? current (first cached))
-                           (second cached)
-                           (let [comparator (if (cd/custom-schema? current)
-                                              (custom-tx-datom-comparator store index)
-                                              ordinary)]
-                             (vreset! state [current comparator])
-                             comparator))]
-          (.compare ^Comparator comparator x y))))))
+  ([store index] (tx-datom-comparator store index #(schema store)))
+  ([store index schema-fn] (tx-datom-comparator store index schema-fn nil))
+  ([store index schema-fn resolver-kv]
+   (let [ordinary (if (= index :eav) d/cmp-datoms-eavt d/cmp-datoms-avet)
+         state (volatile! nil)]
+     (reify Comparator
+       (compare [_ x y]
+         (let [current (schema-fn)
+               cached @state
+               comparator (if (identical? current (first cached))
+                            (second cached)
+                            (let [custom? (cd/custom-schema? current)
+                                  ;; Preserve equal-prefix value ordinals when
+                                  ;; attributes are added to a live overlay.
+                                  ;; Replacing this comparator would reorder
+                                  ;; existing entries without rebuilding them.
+                                  custom (or (nth cached 2 nil)
+                                             (when custom?
+                                               (custom-tx-datom-comparator
+                                                 store index schema-fn resolver-kv)))
+                                  comparator (if custom? custom ordinary)]
+                              (vreset! state [current comparator custom])
+                              comparator))]
+           (.compare ^Comparator comparator x y)))))))
+
+(defn ^:no-doc batch-tx-indexes
+  "Create batch-owned resolver indexes. Custom comparisons use the owner's
+  unexposed native Store for cache identity; resolver-kv supplies the active
+  member's scoped handle for custom functions."
+  [store schema-fn resolver-kv]
+  [(TreeSortedSet. ^Comparator (tx-datom-comparator store :eav schema-fn resolver-kv))
+   (TreeSortedSet. ^Comparator (tx-datom-comparator store :ave schema-fn resolver-kv))])
 
 (defn new-db
   "Construct a current DB view. Rebuilds of the same database can supply

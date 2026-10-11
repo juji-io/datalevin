@@ -167,7 +167,9 @@
                                                   (when-not (:txlog-recovered? @(i/kv-info wdb))
                                                     (kv/ensure-txlog-ready! wdb false))
                                                   (kvtx/align-runtime-txlog-payload-floor!
-                                                    wdb true))
+                                                    wdb true)
+                                                  (when-let [native-view! (:native-view! hooks)]
+                                                    (native-view! wdb)))
                             :application-error! application-error!
                             :before-append! (fn [b]
                                               (let [term (:ha-term (batch/context (batch/batch-at b 0)))]

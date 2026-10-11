@@ -398,7 +398,10 @@
                        (raise "Custom type is not registered " type-name
                               {:error :custom-type/not-found :type-name type-name}))
         udf-registry (:udf-registry runtime-opts)
-        token [revision udf-registry (udf/generation udf-registry)]
+        ;; Resolved functions can capture their context's writer handle. Batch
+        ;; members share a native transaction but their handles expire separately.
+        token [revision udf-registry (udf/generation udf-registry)
+               (when (l/writing? kv) kv)]
         cache (type-cache kv)
         cached (get-in @cache [:compiled type-name])]
     (if (= token (:token cached))
@@ -411,7 +414,7 @@
 (defn resolve-type
   "Resolve a type for an operation. Optional runtime opts supply its UDF registry.
   Functions materialize on first use and are cached per registry revision and
-  UDF generation, separately for committed readers and the active native writer.
+  UDF generation, separately for committed readers and each native writer view.
   Call again for each operation to observe new bindings."
   ([kv type-name]
    (resolve-type kv type-name (:runtime-opts @(local-info kv))))

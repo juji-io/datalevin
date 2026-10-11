@@ -276,6 +276,10 @@
 
 (def ^:dynamic *write-group* nil)
 
+(def ^:dynamic *validate-secondary-indexing!*
+  "Collector isolation check invoked before synchronous secondary mutation."
+  nil)
+
 (defn ^:no-doc current-write-group
   "Return bookkeeping for this thread's private writing handle, if grouped."
   [lmdb]
@@ -2612,6 +2616,11 @@
   "Commit a prepared datom KV plan."
   [lmdb search-engines vector-indices embedding-indices idoc-indices
    {:keys [txs ft-ds vi-ds em-ds id-ds]}]
+  ;; Transaction bodies can change indexing modes after admission and Store
+  ;; transfer. Validate the prepared work before any engine state is mutated.
+  (when (and *validate-secondary-indexing!* (or ft-ds vi-ds em-ds id-ds)
+             (current-write-group lmdb))
+    (*validate-secondary-indexing!* lmdb))
   (when ft-ds
     (fulltext-index search-engines ft-ds))
   (when vi-ds
