@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.2 (2026-10-12)
 ### Fixed
 - [Lib] Missing classes in the jar.
 

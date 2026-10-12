@@ -433,7 +433,7 @@ reach as soon as we can. We may adjust the priorities based on feedback.
   library for Java, Python, and JavaScript; Book.~~[Done 2026/07/20]
 * 1.1.0 ~~AVE storage optimization; transaction and query performance
   enhancement.~~ [Done 2026/09/02]
-* 1.2.1 extensible storage/query for arbitrary data.
+* 1.2.2 extensible storage/query for arbitrary data.
 * 1.3.0 direct analytics, virtual relationships, and semantic data federation.
 * 1.4.0 aggregation in rule heads; incremental view maintenance and initial
   maintained aggregates.
