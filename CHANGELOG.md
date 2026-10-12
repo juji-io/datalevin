@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.1 (2026-10-12)
 ### Fixed
 - [Windows] native image build.
 - [WAL] startup flags.
