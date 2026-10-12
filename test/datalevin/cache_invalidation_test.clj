@@ -5,7 +5,7 @@
   (:import [datalevin.utl LRUCache]
            [java.util.function Function]))
 
-(defn- indexed-cache [capacity]
+(defn- indexed-cache ^LRUCache [capacity]
   (LRUCache. capacity 0
              (reify Function
                (apply [_ k] (#'db/cache-key-dependencies k)))))

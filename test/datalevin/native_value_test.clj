@@ -29,13 +29,13 @@
 (defn- logical [^NativeValue value]
   (first (b/deserialize (.payload value))))
 
-(defn- snapshot [codec type-name payload]
+(defn- snapshot ^NativeValue [codec type-name payload]
   (NativeValue. codec type-name payload
                 (reify BiPredicate
                   (test [_ left right]
                     (= (logical left) (logical right))))))
 
-(defn- value [logical-value nonce]
+(defn- value ^NativeValue [logical-value nonce]
   (snapshot "sender" ":app/task" (b/serialize [logical-value nonce])))
 
 (defn- receiver [type-name payload]
@@ -43,7 +43,7 @@
     (raise "Unknown native type" {:type-name type-name}))
   (snapshot "receiver" type-name payload))
 
-(defn- message-buffer [message wire-opts]
+(defn- message-buffer ^ByteBuffer [message wire-opts]
   (doto (ByteBuffer/allocate 65536)
     (p/write-message-bf message c/message-format-nippy wire-opts)))
 

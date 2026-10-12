@@ -87,7 +87,7 @@
         (when (u/file-exists root)
           (u/delete-files root))))))
 
-(defn- native-value [codec logical nonce]
+(defn- native-value ^NativeValue [codec logical nonce]
   (NativeValue. codec ":app/test" (b/serialize [codec logical nonce])
                 (reify BiPredicate
                   (test [_ left right]

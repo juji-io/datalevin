@@ -33,7 +33,7 @@
   serves JVM, while rust one serves the native embedded/client in the future.
   Auto-migration from 0.9.27 and above will be conducted on DB open.
 - [Write] native LMDB transactions and WAL transactions in `:strict` profile
-  both also use group commit while keeping durability guarantees (i.e. only durable
+  both use group commit while keeping durability guarantees (i.e. only durable
   commit is acknowledged). Such batching is disabled if synchronous secondary
   indexing (idoc, fulltext, vector, and embedding) is requested, asynchronous
   secondary indexing is unaffected.
