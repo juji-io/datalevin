@@ -1655,7 +1655,10 @@
                                                    (buffer/kv-flags
                                                      (conj flags :rdonly-env)))]
                                   (open/persisted-wal? probe)))))
-          flags (cond-> flags wal-default? (conj :writemap))
+          ;; Windows WRITEMAP environments do not open a synchronous metadata
+          ;; handle. Enable WAL's NOSYNC flag before the first DBI commit so
+          ;; those writes use the data handle, then flush initialization below.
+          flags (cond-> flags wal-default? (conj :writemap :nosync))
           ^Env env (Env/create env-path mapsize max-readers max-dbs
                                (buffer/kv-flags flags))
           info (cond-> (merge opts {:dir dir
@@ -1724,6 +1727,9 @@
         ;; Every environment needs the write transaction's value scratch buffer,
         ;; including in-memory and temporary stores that skip persisted metadata.
         (set-max-val-size lmdb (max-val-size lmdb))
+        ;; Initialization precedes WAL recovery and logging. Persist its
+        ;; metadata even when snapshot bootstrapping is disabled.
+        (when wal-default? (.sync env 1))
         ;; Runtime state is installed after persistence/loading and before the
         ;; handle is published. It is shared by marked-write views and omitted
         ;; from env-opts and stored metadata.

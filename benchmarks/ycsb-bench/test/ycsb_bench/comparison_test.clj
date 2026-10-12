@@ -189,15 +189,17 @@
     (is (not (.isPresent (ProcessHandle/of @pid))))))
 
 (deftest server-startup-timeout-cleans-child-test
-  (let [root (str (Files/createTempDirectory "ycsb-process-test-" (make-array FileAttribute 0)))
-        stopped (atom nil)
-        stop! @#'server/stop-process!]
+  (let [root (str (Files/createTempDirectory "ycsb-process-test-" (make-array FileAttribute 0)))]
     (try
-      (with-redefs-fn
-        {#'server/stop-process! (fn [process] (reset! stopped process) (stop! process))}
-        #(is (thrown? clojure.lang.ExceptionInfo
+      (let [failure (try
                       (server/start! root (assoc server/defaults :server-startup-timeout-ms 1
-                                                :server-heap-mb 512)))))
-      (is (some? @stopped))
-      (is (false? (.isAlive ^Process @stopped)))
+                                                :server-heap-mb 512))
+                      (catch clojure.lang.ExceptionInfo e e))
+            pid (:pid (ex-data failure))]
+        (is (instance? clojure.lang.ExceptionInfo failure))
+        (is (some? pid))
+        (when pid
+          (let [process (ProcessHandle/of pid)]
+            (is (or (not (.isPresent process))
+                    (not (.isAlive ^ProcessHandle (.get process))))))))
       (finally (u/delete-files root)))))

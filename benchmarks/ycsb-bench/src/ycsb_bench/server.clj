@@ -96,6 +96,7 @@
               "--add-opens=java.base/java.util=ALL-UNNAMED"
               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
               "--enable-native-access=ALL-UNNAMED"
+              "-Dclojure.compiler.direct-linking=true"
               "-cp" (System/getProperty "java.class.path")
               "clojure.main" "-m" "ycsb-bench.server" (str config) (str ready)]
         _ (spit config (pr-str (server-options root opts)))
@@ -120,7 +121,8 @@
         (try (stop-process! process)
              (catch Throwable cleanup (.addSuppressed t cleanup)))
         (throw (ex-info "Unable to start benchmark server"
-                        {:server-log (str/join "\n" (take-last 40 (str/split-lines (slurp log))))}
+                        {:pid (.pid process)
+                         :server-log (str/join "\n" (take-last 40 (str/split-lines (slurp log))))}
                         t))))))
 
 (defn start!

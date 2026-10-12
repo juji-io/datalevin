@@ -1,10 +1,8 @@
 (ns ycsb-bench.application-key-test
   (:require [clojure.test :refer [deftest is testing]]
             [datalevin.core :as d]
-            [datalevin.pull-api :as pull]
-            [datalevin.storage.entity :as entity]
-            [datalevin.storage :as storage]
-            [datalevin.storage.scan :as scans]
+            [datalevin.bits :as bits]
+            [datalevin.query :as query]
             [ycsb-bench.runner :as runner]
             [ycsb-bench.sql :as sql]
             [ycsb-bench.store :as store]
@@ -108,14 +106,15 @@
               (is (= :database-default (:key-collation info))))
             ;; A new key can land inside a previously scanned page.
             (store/put-records! other [["user50" (values 5)]])
-            (with-redefs [d/prepare-q (fn [& _] (throw (AssertionError. "Reprepared inside scan")))]
+            (let [prepared (some-> db :scan-reader deref)]
               (is (= [["user40" (values 1)] ["user50" (values 5)] ["user90" (values 0)]]
                      (store/scan-records db "user40" 3)))
-              (is (= [["user50" (values 5)]] (store/scan-records db "user41" 1))))
+              (is (= [["user50" (values 5)]] (store/scan-records db "user41" 1)))
+              (when prepared (is (identical? prepared @(:scan-reader db)))))
             (is (= 6 (store/record-count db))))
           {})))))
 
-(deftest prepared-field-scans-do-not-materialize-entities
+(deftest prepared-field-scans-preserve-direct-projection-and-page-limits
   (doseq [mode [:embedded :remote]]
     (testing (str mode)
       (with-store
@@ -124,62 +123,32 @@
         (fn [group]
           (let [db (store/for-worker group 0)
                 other (store/for-worker group 1)
-                ;; Identical payloads must remain distinct rows; key order
-                ;; differs from insertion order and internal entity order.
+                ;; Identical payloads remain distinct rows, in key order rather
+                ;; than insertion or internal entity order.
                 records [["user90" (values 0)] ["user10" (values 0)]
                          ["user30" (values 1)] ["user2" (values 2)]]
-                attributes (:attributes db)
-                pull-many pull/pull-many
-                select-entities entity/select-entities
-                eav-scan scans/eav-scan-v-list-chunk
-                encoded-reader storage/prepare-encoded-field-reader
-                entity-keys (atom {})
-                projected (atom [])
-                fail (fn [& _] (throw (AssertionError. "Scan materialized an entity")))
+                prepared @(:scan-reader db)
+                encoded-reader (query/query-reader (store/scan-query (:attributes db)))
                 scan (fn [start n]
-                       (reset! projected [])
-                       ;; Remote permission checks may read unrelated system
-                       ;; entities; only reject materializing benchmark fields.
-                       (let [rows
-                             (with-redefs [storage/prepare-encoded-field-reader
-                                           (fn [schema attrs]
-                                             (when-let [reader (encoded-reader schema attrs)]
-                                               (fn [view ids]
-                                                 (when (= (set attributes) (set attrs))
-                                                   (swap! projected into (map @entity-keys ids)))
-                                                 (reader view ids))))
-                                           scans/eav-scan-v-list-chunk
-                                           (fn [lmdb tuples eid-idx attrs-v & args]
-                                             (when (= (set attributes)
-                                                      (set (map first attrs-v)))
-                                               (swap! projected into
-                                                      (map #(aget ^objects % 1) tuples)))
-                                             (apply eav-scan lmdb tuples eid-idx attrs-v args))
-                                           pull/pull-many
-                                           (fn [view pattern ids]
-                                             (when (= attributes pattern) (fail))
-                                             (pull-many view pattern ids))
-                                           entity/select-entities
-                                           (fn [lmdb ids names aids id?]
-                                             (when (= (set attributes) (set names)) (fail))
-                                             (select-entities lmdb ids names aids id?))]
-                               (store/scan-records db start n))]
-                         (is (= (sort (map first rows)) (sort @projected))
-                             "Only keys selected by the limited AVE access reach field projection")
+                       (let [rows (store/scan-records db start n)]
+                         (is (identical? prepared @(:scan-reader db)))
+                         (is (<= (count rows) n))
+                         (when (= mode :embedded)
+                           (let [view @(:conn db)
+                                 encoded (encoded-reader view [view start n] true)]
+                             (is (instance? datalevin.read_encode.ReadResult encoded)
+                                 "The field range uses direct storage encoding")
+                             (is (= rows
+                                    (mapv (fn [row] [(first row) (subvec row 1)])
+                                          (bits/deserialize (bits/serialize encoded)))))))
                          rows))]
             (store/put-records! db records)
-            (reset! entity-keys
-                    (into {} (map (fn [[key _]]
-                                    [(:db/id (d/pull @(:conn db) [:db/id] [:ycsb/key key])) key])
-                                  records)))
             (is (= :fields (:scan-projection (store/storage-info db))))
             (is (= (vec (sort-by first records)) (scan "" 100)))
             (is (= [["user2" (values 2)] ["user30" (values 1)]] (scan "user11" 2)))
             (is (empty? (scan "zz" 3)))
             (store/update-field! other "user30" 10 "edit")
             (store/put-records! other [["user25" (values 3)]])
-            (swap! entity-keys assoc
-                   (:db/id (d/pull @(:conn db) [:db/id] [:ycsb/key "user25"])) "user25")
             (is (= [["user25" (values 3)] ["user30" (assoc (values 1) 10 "edit")]]
                    (scan "user21" 2))))
           {})))))

@@ -54,13 +54,13 @@
   which `resume!` should be given. Daemons that cannot be paused (for example
   because they are owned by another user or protected) are reported and
   skipped."
-  []
-  (if-not (macos?)
-    []
-    (vec
-     (for [pid (daemon-pids)
+  ([]
+   (if (macos?) (pause! (daemon-pids) stopped? sh) []))
+  ([pids stopped? run-command]
+   (vec
+     (for [pid pids
            :when  (not (stopped? pid))
-           :let   [result (sh "kill" "-STOP" (str pid))]
+           :let   [result (run-command "kill" "-STOP" (str pid))]
            :when  (do
                     (when-not (zero? (:exit result))
                       (println (str "Could not pause media analysis pid " pid ": "
@@ -70,28 +70,30 @@
 
 (defn resume!
   "SIGCONT exactly the pids returned by `pause!`."
-  [paused]
-  (when (macos?)
-    (doseq [pid paused]
-      (sh "kill" "-CONT" (str pid))))
-  nil)
+  ([paused]
+   (when (macos?) (resume! paused sh)))
+  ([paused run-command]
+   (doseq [pid paused]
+     (run-command "kill" "-CONT" (str pid)))
+   nil))
 
 (defn start-pause-monitor!
   "Pause current daemons and check every 250 ms for replacement processes.
   Returns a session for `stop-pause-monitor!`; only successfully stopped PIDs
   are recorded."
-  []
-  (let [mac? (macos?)
-        paused (atom (if mac? (pause!) []))
+  ([]
+   (start-pause-monitor! {:enabled? (macos?) :pause pause! :resume resume!}))
+  ([{:keys [enabled? pause resume]}]
+  (let [paused (atom (if enabled? (pause) []))
         stop (CountDownLatch. 1)
-        monitor (when mac?
+        monitor (when enabled?
                   (Thread.
                     ^Runnable
                     (fn []
                       (try
                         (loop []
                           (when-not (.await stop 250 TimeUnit/MILLISECONDS)
-                            (let [replacement-pids (pause!)]
+                            (let [replacement-pids (pause)]
                               (swap! paused #(vec (distinct (into % replacement-pids)))))
                             (recur)))
                         (catch InterruptedException _)))
@@ -99,12 +101,12 @@
     (when monitor
       (.setDaemon ^Thread monitor true)
       (.start ^Thread monitor))
-    {:paused paused :stop stop :thread monitor}))
+    {:paused paused :stop stop :thread monitor :resume resume})))
 
 (defn stop-pause-monitor!
   "Join the monitor before resuming its recorded PIDs. Preserve the calling
   thread's interruption status while completing cleanup. Returns resumed PIDs."
-  [{:keys [paused stop thread]}]
+  [{:keys [paused stop thread resume]}]
   (let [interrupted? (volatile! (Thread/interrupted))]
     (try
       (.countDown ^CountDownLatch stop)
@@ -115,23 +117,30 @@
                  (catch InterruptedException _ (vreset! interrupted? true)))
             (recur))))
       (let [pids @paused]
-        (resume! pids)
+        (resume pids)
         pids)
       (finally
         (when @interrupted? (.interrupt (Thread/currentThread)))))))
 
-(defmacro with-paused-media
-  "Run `body` while watching for media-analysis daemons, then stop the monitor
-  and resume the PIDs this call paused, including when the body throws."
-  [& body]
-  `(let [session# (start-pause-monitor!)
-         paused# @(:paused session#)]
-     (println (if (seq paused#)
-                (str "Paused media analysis daemons: " (pr-str paused#))
+(defn call-with-paused-media
+  "Call f while monitoring daemons and resume owned PIDs even when f throws.
+  An explicit control map can supply a platform and process implementation."
+  ([f]
+   (call-with-paused-media {:enabled? (macos?) :pause pause! :resume resume!} f))
+  ([control f]
+   (let [session (start-pause-monitor! control)
+         paused @(:paused session)]
+     (println (if (seq paused)
+                (str "Paused media analysis daemons: " (pr-str paused))
                 "No media analysis daemons paused."))
      (try
-       ~@body
+       (f)
        (finally
-         (let [resumed# (stop-pause-monitor! session#)]
-           (when (seq resumed#)
-             (println (str "Resumed media analysis daemons: " (pr-str resumed#)))))))))
+         (let [resumed (stop-pause-monitor! session)]
+           (when (seq resumed)
+             (println (str "Resumed media analysis daemons: " (pr-str resumed))))))))))
+
+(defmacro with-paused-media
+  "Run body with daemon monitoring and guaranteed cleanup."
+  [& body]
+  `(call-with-paused-media (fn [] ~@body)))

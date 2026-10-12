@@ -2099,6 +2099,7 @@
         }
     ],
     "serialization": [
+        {   "type":"java.lang.Number" },
         {   "type":"java.util.concurrent.atomic.AtomicInteger" },
         {   "type":"org.joda.time.DateTime" },
         {   "type":"java.lang.IllegalArgumentException"  },

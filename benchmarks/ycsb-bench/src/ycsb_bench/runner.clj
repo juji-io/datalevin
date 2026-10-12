@@ -277,8 +277,12 @@
 
 (defn run-phase!
   "Workers share a start gate. Counts or a duration bound each phase.
-  A failed worker or phase timeout invalidates the entire run."
-  [db space cdf opts phase n]
+  A failed worker or phase timeout invalidates the entire run. An explicit mix
+  permits deterministic operation streams without replacing the generator."
+  ([db space cdf opts phase n]
+   (run-phase! db space cdf opts phase n
+               (get-in w/workloads [(:workload opts) :mix])))
+  ([db space cdf opts phase n mix]
   (let [duration-ms (get opts (if (= phase :warmup) :warmup-ms :measurement-ms))
         timed? (some? duration-ms)]
     (if (if timed? (zero? (long duration-ms)) (zero? (long n)))
@@ -294,7 +298,6 @@
             end-ns (long-array 1)
             stopping? (AtomicBoolean. false)
             timeout (long (:phase-timeout-ms opts))
-            mix (get-in w/workloads [(:workload opts) :mix])
             futures (atom [])]
         (try
           (dotimes [worker workers]
@@ -340,7 +343,7 @@
             (summarize latencies codes elapsed))
           (finally
             (.set stopping? true)
-            (stop-workers! executor @futures)))))))
+            (stop-workers! executor @futures))))))))
 
 (defn- load! [db {:keys [records batch-size seed] :as opts}]
   (let [t0 (System/nanoTime)]
@@ -398,7 +401,7 @@
 
 (defn- run-dataset!
   "Load and execute one phase on a fresh store, with its own sampler and audit."
-  [db opts phase n]
+  [db opts phase n run-phase]
   (let [load-result (load! db opts)
         starting-records (store/record-count db)
         _ (when-not (= (:records opts) starting-records)
@@ -408,7 +411,7 @@
         cdf (request-state opts phase n)
         history (when (:value-audit? opts) (audit/history))
         phase-db (if history (audit/->AuditedRecords db history) db)
-        result (run-phase! phase-db space cdf opts phase n)
+        result (run-phase phase-db space cdf opts phase n)
         expected (+ (:records opts) (get-in result [:by-operation :insert :count] 0))
         events (when history (audit/events history))
         value-index (when history (audit/prepare events opts w/application-key))
@@ -426,7 +429,11 @@
                    (and history (= phase :warmup))
                    (assoc-in [:value-checks :comparisons] :post-warmup))}))
 
-(defn run-case! [provided]
+(defn run-case!
+  "Run one case. Optional runtime dependencies select the store lifecycle and
+  phase runner without changing workload options or recorded configuration."
+  ([provided] (run-case! provided {}))
+  ([provided runtime]
   (let [opts (options provided)
         opts (cond-> (assoc opts :workload-model (w/workload-model (:workload opts)))
                (= :f (:workload opts)) (assoc :rmw-execution :client-read-update
@@ -457,12 +464,15 @@
                       (assoc :zipfian-keyspace (or (:zipfian-keyspace provided)
                                                   (predicted-keyspace opts (:warmup opts)))))
         warmup? (pos? (long (or (phase-duration opts :warmup) (:warmup opts))))]
-    ((if (= :datalevin (:system opts)) store/with-stores sql/with-stores)
+    ((get runtime :with-stores
+          (if (= :datalevin (:system opts)) store/with-stores sql/with-stores))
       opts
       (fn [with-fresh-store]
         (let [warmup (when warmup?
-                       (with-fresh-store #(run-dataset! % warmup-opts :warmup (:warmup opts))))
-              measured (with-fresh-store #(run-dataset! % opts :measured (:ops opts)))]
+                       (with-fresh-store #(run-dataset! % warmup-opts :warmup (:warmup opts)
+                                                       (get runtime :run-phase run-phase!))))
+              measured (with-fresh-store #(run-dataset! % opts :measured (:ops opts)
+                                                      (get runtime :run-phase run-phase!)))]
           (-> measured
               (dissoc :result)
               (assoc :configuration
@@ -475,4 +485,4 @@
                      :warmup (if warmup
                                (merge (:result warmup) (dissoc warmup :result))
                                (assoc (summarize (long-array 0) (byte-array 0) 0) :skipped? true))
-                     :measured (:result measured))))))))
+                     :measured (:result measured)))))))))

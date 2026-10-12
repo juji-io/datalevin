@@ -1,13 +1,12 @@
 (ns ycsb-bench.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [datalevin.core :as d]
-            [datalevin.read-encode :as enc]
-            [datalevin.storage :as storage]
-            [datalevin-bench.host :as host]
+            [datalevin.bits :as bits]
+            [datalevin.query :as query]
             [ycsb-bench.core :as core]
             [ycsb-bench.runner :as runner]
-            [ycsb-bench.sql :as sql]
             [ycsb-bench.store :as store]
+            [ycsb-bench.support :as support]
             [ycsb-bench.workload :as w])
   (:import [java.util Random]
            [java.util.concurrent Callable ExecutionException Executors Future TimeUnit]))
@@ -26,24 +25,23 @@
             opts (assoc small-options :system :all :api :datalog
                         :mode :remote :workload :c)
             result {:measured {:ops-per-second 1.0 :latency-us {:p99 1.0}}
-                    :validation {:records 4}}]
-        (with-redefs [sql/check-postgres! (fn [_] (swap! events conj :preflight))
-                      host/pause! (fn [] (swap! events conj :pause) paused)
-                      host/resume! (fn [pids] (swap! events conj [:resume pids]))
-                      runner/run-case!
-                      (fn [{:keys [system]}]
-                        (swap! events conj [:run system])
-                        (when (and fail? (= system :postgres)) (throw failure))
-                        result)]
-          (binding [*out* (java.io.StringWriter.)]
-            (if fail?
-              (is (identical? failure
-                              (try (core/run-benchmark opts)
-                                   (catch Exception e e))))
-              (is (= [result result] (:results (core/run-benchmark opts)))))))
+                    :validation {:records 4}}
+            runtime {:check-postgres (fn [_] (swap! events conj :preflight))
+                     :host-control {:enabled? true
+                                    :pause (fn [] (swap! events conj :pause) paused)
+                                    :resume #(swap! events conj [:resume %])}
+                     :run-case (fn [{:keys [system]}]
+                                 (swap! events conj [:run system])
+                                 (when (and fail? (= system :postgres)) (throw failure))
+                                 result)}]
+        (binding [*out* (java.io.StringWriter.)]
+          (if fail?
+            (is (identical? failure
+                            (try (core/run-benchmark opts runtime)
+                                 (catch Exception e e))))
+            (is (= [result result] (:results (core/run-benchmark opts runtime))))))
         (is (= [:preflight :pause [:run :datalevin] [:run :postgres]
-                [:resume paused]]
-               @events))))))
+                [:resume paused]] @events))))))
 
 (deftest deterministic-records-test
   (let [values (w/initial-values 17 4 small-options)]
@@ -127,7 +125,6 @@
                              [:shape ["aaaa" "bbbb"]]]]
     (testing (str operation " duration-based=" timed? " values=" (pr-str values))
       (let [completed (atom [])
-            run-phase runner/run-phase!
             db (reify store/Records
                  (put-records! [_ _] nil)
                  (read-record [_ _] values)
@@ -138,14 +135,13 @@
                           :distribution :uniform :records 1 :warmup 2 :ops 3
                           :threads 1 :field-count 1 :field-length 4 :scan-length 1}
                    timed? (assoc :warmup-ms 10 :measurement-ms 10))
-            result (with-redefs [store/with-stores (fn [_ f] (f (fn [callback] (callback db))))
-                                 w/choose-operation (fn [_ _] operation)
-                                 runner/run-phase!
-                                 (fn [db space cdf opts phase n]
-                                   (let [result (run-phase db space cdf opts phase n)]
-                                     (swap! completed conj phase)
-                                     result))]
-                     (try (runner/run-case! opts) (catch Exception e e)))]
+            runtime {:with-stores (support/with-stores (fn [_] db))
+                     :run-phase (fn [db space cdf opts phase n]
+                                  (let [result (runner/run-phase! db space cdf opts phase n
+                                                                [[operation 100]])]
+                                    (swap! completed conj phase)
+                                    result))}
+            result (try (runner/run-case! opts runtime) (catch Exception e e))]
         (is (= (case expected :shape [] :characters [:warmup] [:warmup :measured]) @completed))
         (case expected
           :valid
@@ -267,43 +263,29 @@
           (let [record (store/for-worker db 0)
                 other (store/for-worker db 1)
                 attributes (:attributes record)
+                prepared (:reader record)
+                encoded-reader (query/query-reader (store/point-query attributes))
                 fields (mapv #(format "%04d" %) (range field-count))
-                prepare-scan storage/prepare-eav-scan-v-list
-                prepare-writer storage/prepare-tuple-writer
-                start-tuple enc/start-tuple!
-                encoded (atom 0)]
+                read! (fn [key expected]
+                        (is (identical? prepared (:reader record)))
+                        (is (= expected (store/read-record record key)))
+                        (when (= mode :embedded)
+                          (let [view @(:conn record)
+                                result (encoded-reader view [view key] true)]
+                            (is (instance? datalevin.read_encode.ReadResult result)
+                                "The reused point reader supports direct storage encoding")
+                            (is (= expected (bits/deserialize (bits/serialize result)))))))]
             (store/put-records! record [["user1" fields]])
-            (is (= fields (store/read-record record "user1")))
+            (read! "user1" fields)
             (is (= {:kind :point-lookup-projection}
                    (:selected-plan-alternative
                      (d/explain {} (store/point-query attributes) @(:conn record) "user1"))))
-            (with-redefs [d/prepare-q
-                          (fn [& _] (throw (AssertionError. "Reprepared inside point read")))
-                          storage/prepare-eav-scan-v-list
-                          (fn [schema attrs-v]
-                            (when (= (set attributes) (set (map first attrs-v)))
-                              (throw (AssertionError. "Rebuilt point EAV scan after write")))
-                            (prepare-scan schema attrs-v))
-                          storage/prepare-tuple-writer
-                          (fn [schema attrs]
-                            (when (= attributes attrs)
-                              (throw (AssertionError. "Rebuilt point tuple writer after write")))
-                            (prepare-writer schema attrs))
-                          enc/start-tuple!
-                          (fn [out ^long width]
-                            (when (= field-count width) (swap! encoded inc))
-                            (start-tuple out width))]
-              (dotimes [i 5]
-                (let [value (format "%04d" (+ 100 i))]
-                  (store/update-field! other "user1" (dec field-count) value)
-                  (is (= (assoc fields (dec field-count) value)
-                         (store/read-record record "user1"))
-                      "Reused queries see other handles' writes in field order")))
-              (store/put-records! other [["user2" fields]])
-              (is (= fields (store/read-record record "user2"))))
-            (if (= mode :remote)
-              (is (<= 6 @encoded) "Remote point reads encode tuples directly from storage")
-              (is (zero? @encoded)))
+            (dotimes [i 5]
+              (let [value (format "%04d" (+ 100 i))]
+                (store/update-field! other "user1" (dec field-count) value)
+                (read! "user1" (assoc fields (dec field-count) value))))
+            (store/put-records! other [["user2" fields]])
+            (read! "user2" fields)
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing or incomplete Datalog record"
                                  (store/read-record record "absent"))))
           {})))))

@@ -1,23 +1,22 @@
 (ns ycsb-bench.cli-test
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is use-fixtures]]
-            [datalevin-bench.host :as host]
+            [clojure.test :refer [deftest is]]
             [ycsb-bench.core :as core]
-            [ycsb-bench.runner :as runner]
-            [ycsb-bench.sql :as sql])
+            [ycsb-bench.support :as support])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
            [java.time Instant]))
 
-(use-fixtures :each
-  (fn [f]
-    ;; CLI tests share the test JVM: keep its executors alive and leave the
-    ;; host's processes alone. Parsing, benchmarking, and report I/O stay real.
-    (with-redefs [shutdown-agents (fn [])
-                  host/pause! (constantly [])
-                  host/resume! (fn [_])]
-      (f))))
+(defn- cli-main [& args]
+  (core/run-cli args {:host-control support/no-host-control}))
+
+(def unexpected-runtime
+  {:run-case (fn [_] (throw (AssertionError. "Unexpected benchmark run")))
+   :check-postgres (fn [_] (throw (AssertionError. "Unexpected PostgreSQL connection")))
+   :host-control {:enabled? true
+                  :pause (fn [] (throw (AssertionError. "Unexpected host control")))
+                  :resume (fn [_])}})
 
 (def small-args
   ["--api" "DATALOG" "--mode" "embedded" "--workload" "c"
@@ -65,39 +64,35 @@
       (is (= [] (get-in result [:storage :configuration :secondary-indexes]))))))
 
 (deftest help-and-invalid-arguments-test
-  (with-redefs [runner/run-case! (fn [_] (throw (AssertionError. "Unexpected benchmark run")))
-                host/pause! (fn [] (throw (AssertionError. "Unexpected host control")))]
-    (let [output (with-out-str (core/-main "--help"))]
-      (is (str/includes? output "YCSB-style Datalevin benchmark"))
-      (is (str/includes? output "--system"))
-      (is (not (str/includes? output "--sql-indexes")))
-      (is (str/includes? output "--output")))
-    (with-report-path
-      (fn [file]
-        (doseq [args [["--unknown-option"] ["unexpected-argument"]
-                      ["--ops"] ["--ops" "not-a-number"] ["--ops" "0"]
-                      ["--sql-indexes" "all"]
-                      ["--system" "postgres" "--mode" "embedded"]]]
-          (is (thrown? clojure.lang.ExceptionInfo
-                       (apply core/-main (concat ["--output" (str file)] args)))
-              (pr-str args))
-          (is (not (.exists file))))))))
+  (let [output (with-out-str (core/run-cli ["--help"] unexpected-runtime))]
+    (is (str/includes? output "YCSB-style Datalevin benchmark"))
+    (is (str/includes? output "--system"))
+    (is (not (str/includes? output "--sql-indexes")))
+    (is (str/includes? output "--output")))
+  (with-report-path
+    (fn [file]
+      (doseq [args [["--unknown-option"] ["unexpected-argument"]
+                    ["--ops"] ["--ops" "not-a-number"] ["--ops" "0"]
+                    ["--sql-indexes" "all"]
+                    ["--system" "postgres" "--mode" "embedded"]]]
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (core/run-cli (concat ["--output" (str file)] args) unexpected-runtime))
+            (pr-str args))
+        (is (not (.exists file)))))))
 
 (deftest timed-zipfian-inserts-fail-before-preflight-test
-  (with-redefs [sql/check-postgres! (fn [_] (throw (AssertionError. "Unexpected PostgreSQL connection")))
-                runner/run-case! (fn [_] (throw (AssertionError. "Unexpected benchmark run")))
-                host/pause! (fn [] (throw (AssertionError. "Unexpected host control")))]
-    (doseq [workload ["e" "all"]
-            timer ["--warmup-ms" "--measurement-ms"]]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require an explicit --zipfian-keyspace"
-                           (core/-main "--system" "all" "--api" "datalog" "--mode" "remote"
-                                       "--workload" workload timer "10"))))))
+  (doseq [workload ["e" "all"]
+          timer ["--warmup-ms" "--measurement-ms"]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require an explicit --zipfian-keyspace"
+                         (core/run-cli ["--system" "all" "--api" "datalog" "--mode" "remote"
+                                        "--workload" workload timer "10"]
+                                       unexpected-runtime)))))
 
 (deftest cli-file-report-test
   (with-report-path
     (fn [file]
       (let [output (with-out-str
-                     (apply core/-main
+                     (apply cli-main
                             (concat small-args
                                     ["--system" "all" "--output" (str file)
                                      "--pg-url" "unused-secret-url"
@@ -111,7 +106,7 @@
 
 (deftest cli-stdout-report-test
   (let [output (with-out-str
-                 (apply core/-main (concat small-args ["--system" "sqlite"])))
+                 (apply cli-main (concat small-args ["--system" "sqlite"])))
         ;; Status lines precede the EDN report on stdout.
         report (edn/read-string (subs output (str/index-of output "{")))]
     (check-report! report [:sqlite])
@@ -120,7 +115,7 @@
 
 (deftest cli-value-audit-report-test
   (let [output (with-out-str
-                 (apply core/-main (concat small-args ["--system" "sqlite" "--value-audit"])))
+                 (apply cli-main (concat small-args ["--system" "sqlite" "--value-audit"])))
         report (edn/read-string (subs output (str/index-of output "{")))
         result (first (:results report))]
     (is (true? (get-in result [:configuration :value-audit?])))
@@ -137,19 +132,19 @@
               failure (ex-info "Injected case validation failure" {})
               calls (atom [])]
           (when existing? (spit file previous))
-          (with-redefs [runner/run-case!
-                        (fn [{:keys [system]}]
-                          (swap! calls conj system)
-                          (if (= system :sqlite)
-                            (throw failure)
-                            {:measured {:ops-per-second 1.0 :latency-us {:p99 1.0}}
-                             :validation {:records 4}}))]
+          (let [runtime {:host-control support/no-host-control
+                         :run-case (fn [{:keys [system]}]
+                                     (swap! calls conj system)
+                                     (if (= system :sqlite)
+                                       (throw failure)
+                                       {:measured {:ops-per-second 1.0 :latency-us {:p99 1.0}}
+                                        :validation {:records 4}}))}]
             (is (identical? failure
                             (try
                               (with-out-str
-                                (apply core/-main (concat small-args
-                                                         ["--system" "all"
-                                                          "--output" (str file)])))
+                                (core/run-cli (concat small-args
+                                                      ["--system" "all" "--output" (str file)])
+                                              runtime))
                               (catch Exception e e)))))
           (is (= [:datalevin :sqlite] @calls))
           (if existing?
@@ -158,7 +153,7 @@
 
 (deftest timed-zipfian-cli-report-test
   (let [output (with-out-str
-                 (apply core/-main
+                 (apply cli-main
                         (concat small-args
                                 ["--system" "sqlite" "--workload" "e"
                                  "--warmup-ms" "10" "--measurement-ms" "20"
@@ -177,7 +172,7 @@
   (with-report-path
     (fn [file]
       (with-out-str
-        (apply core/-main
+        (apply cli-main
                (concat small-args
                        ["--system" "sqlite" "--client-counts" "1,2"
                         "--repetitions" "2" "--warmup-ms" "0" "--measurement-ms" "20"

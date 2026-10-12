@@ -4,6 +4,7 @@
             [ycsb-bench.core :as core]
             [ycsb-bench.runner :as runner]
             [ycsb-bench.store :as store]
+            [ycsb-bench.support :as support]
             [ycsb-bench.workload :as w]))
 
 (def options
@@ -47,13 +48,15 @@
                               [:drop-update :a :update]
                               [:drop-update :f :rmw]
                               [:wrong-scan-values :e :scan]]]
-    (with-redefs [store/with-stores (fn [_ f] (f (fn [callback] (callback (fake-store fault)))))
-                  w/choose-operation (fn [& _] op)]
-      (let [validation (:validation (runner/run-case!
-                                     (assoc options :workload workload :value-audit? false)))]
-        (is (= :passed (:status validation)))
-        (is (= :structure (:scope validation)))
-        (is (= :not-performed (:value-checks validation)))))))
+    (let [runtime {:with-stores (support/with-stores (fn [_] (fake-store fault)))
+                   :run-phase (fn [db space cdf opts phase n]
+                                (runner/run-phase! db space cdf opts phase n [[op 100]]))}
+          validation (:validation (runner/run-case!
+                                   (assoc options :workload workload :value-audit? false)
+                                   runtime))]
+      (is (= :passed (:status validation)))
+      (is (= :structure (:scope validation)))
+      (is (= :not-performed (:value-checks validation))))))
 
 (deftest audits-reject-shape-correct-corruption-after-each-phase
   (doseq [fault-phase [:warmup :measured]
@@ -64,46 +67,43 @@
                               [:wrong-scan-values :e :scan]
                               [:corrupt-insert :d :insert]
                               [:corrupt-insert :e :insert]]]
-    (testing (str [fault workload])
+    (testing (str [fault-phase fault workload])
       (let [completed (atom [])
             opened (atom 0)
-            run-phase runner/run-phase!]
-        (with-redefs [store/with-stores
-                      (fn [_ f]
-                        (f (fn [callback]
-                             (callback (fake-store
-                                         (when (= (swap! opened inc)
-                                                   (if (= fault-phase :warmup) 1 2))
-                                           fault))))))
-                      w/choose-operation (fn [& _] op)
-                      runner/run-phase!
-                      (fn [db space cdf opts phase n]
-                        (let [result (run-phase db space cdf opts phase n)]
-                          (swap! completed conj phase)
-                          result))]
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write history"
-                               (runner/run-case! (assoc options :workload workload)))))
+            runtime {:with-stores
+                     (support/with-stores
+                       (fn [_]
+                         (fake-store (when (= (swap! opened inc)
+                                              (if (= fault-phase :warmup) 1 2))
+                                       fault))))
+                     :run-phase (fn [db space cdf opts phase n]
+                                  (let [result (runner/run-phase! db space cdf opts phase n
+                                                                [[op 100]])]
+                                    (swap! completed conj phase)
+                                    result))}]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write history"
+                             (runner/run-case! (assoc options :workload workload) runtime)))
         (is (= (if (= fault-phase :warmup) [:warmup] [:warmup :measured]) @completed))))))
 
 (deftest audit-retains-warmup-and-timed-phase-history
   (doseq [workload [:a :b :c :d :e :f]
           timed? [false true]]
-    (with-redefs [store/with-stores (fn [_ f] (f (fn [callback] (callback (fake-store nil)))))]
-      (let [result (runner/run-case!
-                     (cond-> (assoc options :workload workload :threads 4)
-                       timed? (assoc :warmup-ms 5 :measurement-ms 10)))]
-        (doseq [phase [:warmup :measured]]
-          (let [counts (update-vals (get-in result [phase :by-operation]) :count)
-                validation (if (= phase :warmup) (get-in result [:warmup :validation]) (:validation result))
-                checks (:value-checks validation)]
-            (is (= :structure-and-observed-values (:scope validation)))
-            (is (= :passed (:status checks)))
-            (is (= (if (= phase :warmup) :post-warmup :post-measurement)
-                   (:comparisons checks) (:character-checks validation)))
-            (is (= (+ (get counts :read 0) (get counts :rmw 0)) (:point-reads checks)))
-            (is (= (+ (get counts :insert 0) (get counts :update 0) (get counts :rmw 0))
-                   (:write-calls checks)))
-            (is (= (:records validation) (:final-records checks)))))))))
+    (let [result (runner/run-case!
+                   (cond-> (assoc options :workload workload :threads 4)
+                     timed? (assoc :warmup-ms 5 :measurement-ms 10))
+                   {:with-stores (support/with-stores (fn [_] (fake-store nil)))})]
+      (doseq [phase [:warmup :measured]]
+        (let [counts (update-vals (get-in result [phase :by-operation]) :count)
+              validation (if (= phase :warmup) (get-in result [:warmup :validation]) (:validation result))
+              checks (:value-checks validation)]
+          (is (= :structure-and-observed-values (:scope validation)))
+          (is (= :passed (:status checks)))
+          (is (= (if (= phase :warmup) :post-warmup :post-measurement)
+                 (:comparisons checks) (:character-checks validation)))
+          (is (= (+ (get counts :read 0) (get counts :rmw 0)) (:point-reads checks)))
+          (is (= (+ (get counts :insert 0) (get counts :update 0) (get counts :rmw 0))
+                 (:write-calls checks)))
+          (is (= (:records validation) (:final-records checks))))))))
 
 (defn- update-event [start end field value]
   {:op :update :id 0 :field field :value value :start start :end end})

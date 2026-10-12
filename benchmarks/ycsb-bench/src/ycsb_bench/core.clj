@@ -68,11 +68,18 @@
 
 (defn run-benchmark
   "Run the selected cases, each with a fresh database. Returns an EDN report."
-  [provided]
+  ([provided] (run-benchmark provided {}))
+  ([provided runtime]
   (let [opts (runner/options provided)
-        cases (runner/cases opts)]
-    (when (some #(= :postgres (:system %)) cases) (sql/check-postgres! opts))
-    (host/with-paused-media
+        cases (runner/cases opts)
+        check-postgres (get runtime :check-postgres sql/check-postgres!)
+        run-case (get runtime :run-case runner/run-case!)
+        with-media (if-let [control (:host-control runtime)]
+                     #(host/call-with-paused-media control %)
+                     host/call-with-paused-media)]
+    (when (some #(= :postgres (:system %)) cases) (check-postgres opts))
+    (with-media
+      (fn []
       (let [report
             {:format-version 3
              :benchmark :datalevin-ycsb-style
@@ -88,7 +95,7 @@
              :results
              (vec
                (for [{:keys [system api mode workload threads datalog-handles trial] :as case-opts} cases]
-                 (let [result (runner/run-case! case-opts)
+                 (let [result (run-case case-opts)
                        measured (:measured result)]
                    (println (format "%s %s %s %s: %.1f ops/s, p99 %.1f us, %d records checked (%s) [trial %d, %d workers%s]"
                                     (name system) (name api) (name mode) (str/upper-case (name workload))
@@ -100,19 +107,25 @@
                                     (if (and (= system :datalevin) (= api :datalog) (= mode :remote))
                                       (str ", " (name datalog-handles) " handles") "")))
                    result)))}]
-        (assoc report :summary (summarize-trials (:results report)))))))
+        (assoc report :summary (summarize-trials (:results report)))))))))
+
+(defn run-cli
+  "Parse arguments and publish a validated report without shutting down the JVM."
+  ([args] (run-cli args {}))
+  ([args runtime]
+   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
+     (cond
+       (:help options) (println (str "YCSB-style Datalevin benchmark\n\n" summary))
+       (or (seq errors) (seq arguments))
+       (throw (ex-info "Invalid command line" {:errors errors :arguments arguments}))
+       :else
+       (let [report (run-benchmark (dissoc options :output :help) runtime)]
+         (if-let [output (:output options)]
+           (do (spit output (with-out-str (pp/pprint report)))
+               (println "Report:" output))
+           (pp/pprint report)))))))
 
 (defn -main [& args]
-  (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
-    (try
-      (cond
-        (:help options) (println (str "YCSB-style Datalevin benchmark\n\n" summary))
-        (or (seq errors) (seq arguments))
-        (throw (ex-info "Invalid command line" {:errors errors :arguments arguments}))
-        :else
-        (let [report (run-benchmark (dissoc options :output :help))]
-          (if-let [output (:output options)]
-            (do (spit output (with-out-str (pp/pprint report)))
-                (println "Report:" output))
-            (pp/pprint report))))
-      (finally (shutdown-agents)))))
+  (try
+    (run-cli args)
+    (finally (shutdown-agents))))

@@ -10,11 +10,11 @@
 (ns ^:no-doc datalevin.server.deps
   "Wiring and validation helpers for server dependency maps.
 
-  Dependency entries are stored as Vars rather than captured function
-  values so that every consumer observes the same replacement behavior:
-  redefining a var (including through `with-redefs`) is picked up at call
-  time. Non-callback entries (maps, sets, ...) are stored as Vars too and
-  read through `value`, so the rule is uniform across the whole map.
+  Dependency entries can be Vars or explicit values. Consumers resolve Vars
+  at call time, including thread-local bindings of dynamic callbacks.
+  Explicit callback maps let tests supply dependencies without changing
+  global Vars. Non-callback entries (maps, sets, ...) use the same `value`
+  resolver, so the rule is uniform across the whole map.
 
   A dependency contract is a map with two optional keys:
 

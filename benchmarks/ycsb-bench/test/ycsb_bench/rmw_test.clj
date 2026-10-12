@@ -25,17 +25,22 @@
   (doseq [old-value ["aaaa" "yyyy"]]
     (let [events (atom [])
           key (w/application-key 0)
-          rng (proxy [Random] [] (nextInt [_bound] 1))
+          generated (atom 0)
+          rng (proxy [Random] []
+                (nextInt [bound]
+                  (case (int bound)
+                    8 0
+                    3 1
+                    26 (do (when (= 1 (swap! generated inc))
+                             (swap! events conj [:generate 4]))
+                           25))))
           db (reify store/Records
                (read-record [_ id]
                  (swap! events conj [:read id])
                  [old-value old-value old-value])
                (update-field! [_ id field value]
                  (swap! events conj [:update id field value])))]
-      (with-redefs [w/choose-key (fn [& _] 0)
-                    w/random-value (fn [_ length]
-                                     (swap! events conj [:generate length]) "zzzz")]
-        (#'runner/execute! db (w/keyspace 8) rng nil options :rmw))
+      (#'runner/execute! db (w/keyspace 8) rng nil options :rmw)
       (is (= [[:generate 4] [:read key] [:update key 1 "zzzz"]] @events)
           "Generate an independent value, then read and update the same key"))))
 
@@ -84,11 +89,9 @@
                          (update-field! [_ id field value]
                            (swap! events conj [:update field value])
                            (store/update-field! db id field value)))
-               rng (proxy [Random] [] (nextInt [_bound] 1))]
+               rng (proxy [Random] [] (nextInt [bound] (case (int bound) 1 0 3 1 26 25)))]
            (store/put-records! db [[key ["aaaa" "bbbb" "cccc"]]])
-           (with-redefs [w/choose-key (fn [& _] 0)
-                         w/random-value (fn [& _] "zzzz")]
-             (#'runner/execute! wrapper (w/keyspace 1) rng nil opts :rmw))
+           (#'runner/execute! wrapper (w/keyspace 1) rng nil opts :rmw)
            (is (= [[:read ["aaaa" "bbbb" "cccc"]] :other-committed [:update 1 "zzzz"]]
                   @events))
            (is (= ["aaaa" "zzzz" "peer"] (store/read-record db key)))

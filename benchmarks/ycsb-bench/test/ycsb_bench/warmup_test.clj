@@ -3,6 +3,7 @@
             [ycsb-bench.core :as core]
             [ycsb-bench.runner :as runner]
             [ycsb-bench.store :as store]
+            [ycsb-bench.support :as support]
             [ycsb-bench.workload :as w]))
 
 (def options
@@ -64,31 +65,29 @@
 
 (deftest explicit-timed-keyspace-ignores-overridden-counts
   (doseq [workload [:d :e]]
-    (let [run-phase runner/run-phase!
-          runs
+    (let [runs
           (mapv
             (fn [n]
               (let [logs (atom [])
-                    result
-                    (with-redefs [store/with-stores
-                                  (fn [_ f]
-                                    (f (fn [callback]
-                                         (let [calls (atom [])]
-                                           (swap! logs conj calls)
-                                           (callback (memory-store calls))))))
-                                  runner/run-phase!
-                                  (fn [db space cdf opts phase _]
-                                    ;; Run a fixed prefix so elapsed time cannot
-                                    ;; change the trace being compared. Sampler
-                                    ;; setup and option resolution remain real.
-                                    (is (= 32 cdf (:zipfian-keyspace opts)))
-                                    (run-phase db space cdf
-                                               (dissoc opts :warmup-ms :measurement-ms)
-                                               phase 200))]
-                      (runner/run-case!
-                        (assoc options :workload workload :distribution :zipfian
-                               :warmup n :ops n :warmup-ms 10 :measurement-ms 10
-                               :zipfian-keyspace 32)))]
+                    runtime {:with-stores
+                             (support/with-stores
+                               (fn [_]
+                                 (let [calls (atom [])]
+                                   (swap! logs conj calls)
+                                   (memory-store calls))))
+                             :run-phase
+                             (fn [db space cdf opts phase _]
+                               ;; Compare a fixed request prefix; setup still
+                               ;; resolves the timed options and keyspace.
+                               (is (= 32 cdf (:zipfian-keyspace opts)))
+                               (runner/run-phase! db space cdf
+                                                  (dissoc opts :warmup-ms :measurement-ms)
+                                                  phase 200))}
+                    result (runner/run-case!
+                             (assoc options :workload workload :distribution :zipfian
+                                    :warmup n :ops n :warmup-ms 10 :measurement-ms 10
+                                    :zipfian-keyspace 32)
+                             runtime)]
                 (is (= 32 (get-in result [:configuration :zipfian-keyspace])
                        (get-in result [:warmup :zipfian-keyspace])
                        (get-in result [:measured :zipfian-keyspace])))
@@ -98,13 +97,13 @@
       (is (apply = runs) (str workload " keys, values and operations")))))
 
 (deftest counted-zipfian-keyspaces-retain-per-phase-predictions
-  (with-redefs [store/with-stores
-                (fn [_ f] (f (fn [callback] (callback (memory-store (atom []))))))]
-    (let [result (runner/run-case! (assoc options :workload :e :warmup 20 :ops 200))]
-      (is (= 11 (get-in result [:warmup :zipfian-keyspace])))
-      (is (= 29 (get-in result [:configuration :zipfian-keyspace])
-             (get-in result [:measured :zipfian-keyspace])))
-      (is (= :passed (get-in result [:validation :value-checks :status]))))))
+  (let [result (runner/run-case!
+                 (assoc options :workload :e :warmup 20 :ops 200)
+                 {:with-stores (support/with-stores (fn [_] (memory-store (atom []))))})]
+    (is (= 11 (get-in result [:warmup :zipfian-keyspace])))
+    (is (= 29 (get-in result [:configuration :zipfian-keyspace])
+           (get-in result [:measured :zipfian-keyspace])))
+    (is (= :passed (get-in result [:validation :value-checks :status])))))
 
 (deftest warmup-size-and-duration-do-not-change-measured-workload
   ;; With one worker the complete measured request stream is reproducible.
@@ -115,14 +114,14 @@
                              {:warmup 0 :warmup-ms 5} {:warmup 200 :warmup-ms 0}]]
             (let [logs (atom [])
                   result
-                  (with-redefs [store/with-stores
-                                (fn [_ f]
-                                  (f (fn [callback]
-                                       (let [calls (atom [])]
-                                         (swap! logs conj calls)
-                                         (callback (memory-store calls))))))]
-                    (runner/run-case! (cond-> (merge options {:workload workload} warmup-opts)
-                                        (= workload :e) (assoc :zipfian-keyspace 32))))]
+                  (runner/run-case!
+                    (cond-> (merge options {:workload workload} warmup-opts)
+                      (= workload :e) (assoc :zipfian-keyspace 32))
+                    {:with-stores (support/with-stores
+                                   (fn [_]
+                                     (let [calls (atom [])]
+                                       (swap! logs conj calls)
+                                       (memory-store calls))))})]
               (is (= (if (pos? (or (:warmup-ms warmup-opts) (:warmup warmup-opts))) 2 1)
                      (count @logs)))
               (is (= 8 (get-in result [:measured :starting-records])))
@@ -143,29 +142,27 @@
             (into [[:postgres :kv :remote] [:postgres :datalog :remote]]))
           [workload operation] [[:d :insert] [:e :insert] [:f :rmw]]]
     (testing (str [system api mode workload])
-      (let [run-phase runner/run-phase!
-            starting-data (atom {})
+      (let [starting-data (atom {})
             opts (cond-> (assoc options :system system :api api :mode mode :workload workload
                                 :threads 2 :pool-size 2 :datalog-handles :independent
                                 :value-audit? false :warmup-ms 5 :ops 4)
                    (= workload :e) (assoc :zipfian-keyspace 32))
             initial (initial-records opts)
             result
-            (with-redefs [runner/run-phase!
-                          (fn [db space cdf opts phase n]
-                            (is (= (:records opts) (:next @space) (:visible @space)))
-                            (swap! starting-data assoc phase
-                                   (into (sorted-map)
-                                         (map (fn [id] [id (store/read-record db id)]))
-                                         (keys initial)))
-                            ;; Force mutations even on a slow host where a timed
-                            ;; warmup may complete only one operation per worker.
-                            (with-redefs [w/choose-operation
-                                          (fn [& _]
-                                            (if (= phase :warmup) operation
-                                                (if (= workload :e) :scan :read)))]
-                              (run-phase db space cdf opts phase n)))]
-              (runner/run-case! opts))]
+            (runner/run-case!
+              opts
+              {:run-phase
+               (fn [db space cdf opts phase n]
+                 (is (= (:records opts) (:next @space) (:visible @space)))
+                 (swap! starting-data assoc phase
+                        (into (sorted-map)
+                              (map (fn [id] [id (store/read-record db id)]))
+                              (keys initial)))
+                 ;; A single-operation mix guarantees mutations even when a
+                 ;; timed warmup completes only one request per worker.
+                 (runner/run-phase! db space cdf opts phase n
+                                    [[(if (= phase :warmup) operation
+                                          (if (= workload :e) :scan :read)) 100]]))})]
         (is (= {:warmup initial :measured initial} @starting-data))
         (is (= 8 (get-in result [:measured :starting-records])))
         (is (= 8 (get-in result [:validation :records])))

@@ -6,6 +6,8 @@
    [datalevin.protocol :as p]
    [taoensso.nippy :as nippy])
   (:import
+   [java.io ByteArrayInputStream ByteArrayOutputStream
+    ObjectInputStream ObjectOutputStream]
    [java.nio ByteBuffer]
    [java.util.concurrent.atomic AtomicInteger]))
 
@@ -19,6 +21,16 @@
     (b/put-buffer buffer value)
     (.flip buffer)
     (b/read-buffer buffer)))
+
+(deftest java-serialization-fixture-is-registered
+  ;; Check native metadata directly: Nippy can hide a serialization error by
+  ;; falling back to AtomicInteger's readable representation, which thaws as Long.
+  (let [bytes (ByteArrayOutputStream.)]
+    (with-open [output (ObjectOutputStream. bytes)]
+      (.writeObject output (AtomicInteger. 42)))
+    (with-open [input (ObjectInputStream.
+                       (ByteArrayInputStream. (.toByteArray bytes)))]
+      (is (= 42 (.get ^AtomicInteger (.readObject input)))))))
 
 (deftest serialization-context-preserves-allowlists-and-legacy-data
   (let [payload {:data [1 2 "three"]}

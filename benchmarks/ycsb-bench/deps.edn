@@ -8,7 +8,8 @@
                    "--add-opens=java.base/java.nio=ALL-UNNAMED"
                    "--add-opens=java.base/java.util=ALL-UNNAMED"
                    "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-                   "--enable-native-access=ALL-UNNAMED"]}
+                   "--enable-native-access=ALL-UNNAMED"
+                   "-Dclojure.compiler.direct-linking=true"]}
   :bench {:main-opts ["-m" "ycsb-bench.core"]}
   :test {:extra-paths ["test"]
          :main-opts ["-m" "ycsb-bench.test-runner"]}}}

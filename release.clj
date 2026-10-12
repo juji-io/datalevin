@@ -124,6 +124,9 @@
   (println "\n\n[ Running OpenRuleBench tests ]\n")
   (sh "clojure" "-M:test" :dir "benchmarks/openrulebench")
 
+  (println "\n\n[ Running YCSB benchmark tests ]\n")
+  (sh "clojure" "-M:jvm:test" :dir "benchmarks/ycsb-bench")
+
   (println "\n\n[ Running write benchmark tests ]\n")
   (sh "clojure" "-M:test" :dir "benchmarks/write-bench")
 

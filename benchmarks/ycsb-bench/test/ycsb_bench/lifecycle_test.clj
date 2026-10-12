@@ -1,10 +1,16 @@
 (ns ycsb-bench.lifecycle-test
   (:require [clojure.test :refer [deftest is testing]]
             [datalevin.server :as server]
+            [datalevin.client :as client]
+            [datalevin.util :as u]
+            [ycsb-bench.server :as owned-server]
             [ycsb-bench.core-test :as shared]
             [ycsb-bench.runner :as runner]
-            [ycsb-bench.store :as store])
-  (:import [java.util.concurrent CountDownLatch ExecutionException TimeUnit]
+            [ycsb-bench.store :as store]
+            [ycsb-bench.support :as support])
+  (:import [java.nio.file Files]
+           [java.nio.file.attribute FileAttribute]
+           [java.util.concurrent CountDownLatch ExecutionException TimeUnit]
            [java.util.concurrent.atomic AtomicInteger]))
 
 (defn- check-cancellation! [reason]
@@ -52,28 +58,26 @@
                 {:api :kv :mode :embedded :workload :c :distribution :uniform
                  :records 1 :ops 3 :warmup 0 :field-count 1 :field-length 1
                  :threads (if (= reason :worker-failure) 2 1)
-                 :timeout-ms 30 :phase-timeout-ms (if (= reason :timeout) 500 10000)})
+                 :timeout-ms 30 :phase-timeout-ms (if (= reason :timeout) 500 10000)}
+                {:with-stores (support/with-stores (fn [_] db))})
               (deliver result {:unexpected-success? true})
               (catch Throwable t
                 (deliver result {:error t :interrupted? (.isInterrupted (Thread/currentThread))}))
               (finally (.countDown completed)))))]
-    (with-redefs-fn {(ns-resolve 'ycsb-bench.store 'open-store!) (fn [& _] db)}
-      (fn []
-        (.start coordinator)
-        (try
-          (is (.await entered 5 TimeUnit/SECONDS))
-          (when (= reason :interruption) (.interrupt coordinator))
-          (is (.await cancelled 5 TimeUnit/SECONDS))
-          ;; Exceed the old 30 ms shutdown limit while the operation is active.
-          (is (not (.await completed 150 TimeUnit/MILLISECONDS)))
-          (is (nil? @closed))
-          ;; Interrupting the join itself must not permit premature cleanup.
-          (.interrupt coordinator)
-          (is (not (.await completed 150 TimeUnit/MILLISECONDS)))
-          (is (nil? @closed))
-          (finally
-            (.countDown release)
-            (.join coordinator 5000)))))
+    (.start coordinator)
+    (try
+      (is (.await entered 5 TimeUnit/SECONDS))
+      (when (= reason :interruption) (.interrupt coordinator))
+      (is (.await cancelled 5 TimeUnit/SECONDS))
+      ;; Exceed the old shutdown limit while the native operation is active.
+      (is (not (.await completed 150 TimeUnit/MILLISECONDS)))
+      (is (nil? @closed))
+      (.interrupt coordinator)
+      (is (not (.await completed 150 TimeUnit/MILLISECONDS)))
+      (is (nil? @closed))
+      (finally
+        (.countDown release)
+        (.join coordinator 5000)))
     (is (not (.isAlive coordinator)))
     (is (= {:active 0} @closed))
     (is (false? @used-after-close?))
@@ -93,10 +97,27 @@
     (testing (name reason) (check-cancellation! reason))))
 
 (deftest remote-password-uri-roundtrip-test
-  ;; These characters exercise spaces, literal '+', URI delimiters, percent
-  ;; escaping and Unicode through actual authentication for both remote APIs.
-  (with-redefs [server/get-default-password (constantly "test pass +:/?@#% 雪")]
-    (doseq [api [:kv :datalog]]
-      (testing (name api)
-        (store/with-store (assoc shared/small-options :api api :mode :remote)
-                         shared/check-adapter!)))))
+  ;; Set the actual admin password, then exercise the benchmark's URI builder
+  ;; through authentication for both APIs, including URI delimiters and Unicode.
+  (let [root (str (Files/createTempDirectory "datalevin-ycsb-password-"
+                                            (make-array FileAttribute 0)))
+        opts shared/small-options
+        password "test pass +:/?@#% 雪"
+        srv (owned-server/start! root opts)
+        port (get-in srv [:info :port])]
+    (try
+      (let [admin (client/new-client (store/remote-uri port "" (server/get-default-password)))]
+        (try
+          (client/reset-password admin "datalevin" password)
+          (finally (client/disconnect admin))))
+      (doseq [api [:kv :datalog]]
+        (testing (name api)
+          (let [db (#'store/open-store! api
+                                       (store/remote-uri port (str "password-" (name api)) password)
+                                       (assoc opts :api api :mode :remote))]
+            (try
+              (shared/check-adapter! db)
+              (finally (store/close-store! db))))))
+      (finally
+        ((:close srv))
+        (u/delete-files root)))))

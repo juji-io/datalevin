@@ -203,6 +203,13 @@
   (storage-info [_] (merge (storage-info (first stores)) info))
   (close-store! [_] (close-stores! stores)))
 
+(defn remote-uri
+  "Encode benchmark credentials and the database path as a dtlv URI."
+  [port database-name password]
+  (.toASCIIString
+    (URI. "dtlv" (str "datalevin:" password) "127.0.0.1" (int port)
+          (str "/" database-name) nil nil)))
+
 (defn with-stores
   "Call f with a function that opens a fresh database for each callback.
   Databases have separate files; remote phases share one owned server process.
@@ -233,10 +240,8 @@
               (let [database-name (str "ycsb-" (swap! database-id inc))
                     path (if (= mode :embedded)
                            (str root "/" database-name)
-                           (.toASCIIString
-                             (URI. "dtlv" (str "datalevin:" (server/get-default-password))
-                                   "127.0.0.1" (int (get-in @srv [:info :port]))
-                                   (str "/" database-name) nil nil)))
+                           (remote-uri (get-in @srv [:info :port]) database-name
+                                       (server/get-default-password)))
                     stores (atom [])
                     failure (volatile! nil)]
                 (try

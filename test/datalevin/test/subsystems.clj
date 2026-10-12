@@ -48,11 +48,15 @@
                   (is (pos? (:last-committed-lsn wm)))
                   (is (= (:last-committed-lsn wm) (:last-durable-lsn wm)))))
               (finally (d/close-kv db))))
-          (let [db (d/open-kv dir opts)]
-            (try
-              (is (= 15 (d/get-value db "counts" 1 :long :long)))
-              (is (= [1 3] (d/get-list db "lists" 1 :long :long)))
-              (finally (d/close-kv db))))
+          (doseq [reopen-opts [opts {}]]
+            (let [db (d/open-kv dir reopen-opts)]
+              (try
+                (is (= 15 (d/get-value db "counts" 1 :long :long)))
+                (is (= [1 3] (d/get-list db "lists" 1 :long :long)))
+                (when wal?
+                  (is (contains? (d/get-env-flags db) :writemap))
+                  (is (contains? (d/get-env-flags db) :nosync)))
+                (finally (d/close-kv db)))))
           (finally (u/delete-files dir)))))))
 
 (deftest datalog-wal-upsert-prepared-query-and-reopen
