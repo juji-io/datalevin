@@ -163,7 +163,12 @@ jobs:
 
       - name: Zip Binary (Unix)
         if: matrix.os != 'windows-latest'
-        run: 7z a -tzip dtlv-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ env.RELEASE_ARCH }}.zip dtlv
+        run: |
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            7zz a -tzip dtlv-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ env.RELEASE_ARCH }}.zip dtlv
+          else
+            7z a -tzip dtlv-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ env.RELEASE_ARCH }}.zip dtlv
+          fi
 
       - name: Zip Binary (Windows)
         if: matrix.os == 'windows-latest'
