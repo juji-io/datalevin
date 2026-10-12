@@ -19,6 +19,14 @@ on:
           - ubuntu-22.04
           - ubuntu-24.04-arm
           - windows-latest
+      macos_runner:
+        description: Machine to use for a macOS rebuild
+        required: true
+        default: self-hosted
+        type: choice
+        options:
+          - self-hosted
+          - github-hosted
   release:
     types:
       - created
@@ -28,11 +36,16 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    # runs-on: ${{ matrix.os }}
+    # Keep matrix.os stable so a rebuild replaces the existing platform asset.
+    runs-on: ${{ matrix.os == 'macos-14' && (github.event_name == 'release' || inputs.macos_runner == 'self-hosted') && fromJSON('["self-hosted","macOS","ARM64","datalevin-release"]') || matrix.os }}
+    timeout-minutes: ${{ matrix.os == 'macos-14' && 180 || 360 }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
       # RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.sha }}
       RELEASE_ARCH: ${{ contains(fromJSON('["macos-14","ubuntu-24.04-arm"]'), matrix.os) && 'aarch64' || 'amd64' }}
+      # The local Mac runs a newer OS than the minimum supported release target.
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.os == 'macos-14' && '14.0' || '' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('{{"os":["{0}"]}}', inputs.runner) || '{"os":["macos-14","ubuntu-22.04","ubuntu-24.04-arm","windows-latest"]}') }}
@@ -49,6 +62,7 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Get Java
         uses: actions/setup-java@v4
@@ -60,7 +74,11 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: |
-            brew install leiningen libomp llvm
+            for formula in leiningen libomp llvm gh sevenzip; do
+              if ! brew list --versions "$formula" >/dev/null 2>&1; then
+                brew install "$formula"
+              fi
+            done
           linux: |
             sudo apt-get update
             sudo apt-get install -y gcc-12 g++-12 zlib1g-dev
@@ -117,8 +135,8 @@ jobs:
           if [ "${{ runner.os }}" == "macOS" ]; then
             # Manual rebuilds use the release tag's script, so override its
             # default application watchdog here as well.
-            export NATIVE_IMAGE_OPTIONS="-H:DeadlockWatchdogInterval=60"
-            bash script/compile-native
+            export NATIVE_IMAGE_OPTIONS="-H:DeadlockWatchdogInterval=60 -H:NativeLinkerOption=-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+            caffeinate -i bash script/compile-native
           else
             bash script/compile-native-linux
           fi
@@ -132,6 +150,16 @@ jobs:
       - name: Run Native Tests
         if: matrix.os != 'windows-latest'
         run: ./dtlv-test0
+
+      - name: Check macOS deployment target
+        if: matrix.os == 'macos-14'
+        run: |
+          xcrun vtool -show-build dtlv
+          minos=$(xcrun vtool -show-build dtlv | awk '/minos/ { print $2; exit }')
+          if [ -z "$minos" ] || [ "${minos%%.*}" -gt 14 ]; then
+            echo "Binary requires macOS ${minos:-unknown}; expected macOS 14 or earlier."
+            exit 1
+          fi
 
       - name: Zip Binary (Unix)
         if: matrix.os != 'windows-latest'
