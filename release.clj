@@ -90,13 +90,16 @@
                     {:dir cljdoc-dir})))
   (sh "lein" "with-profile" "core-release" "do" "clean," "pom," "jar")
   (sh "clojure" "-T:build" "compile-java" :dir cljdoc-dir)
-  (sh "./script/cljdoc" "ingest"
-      "--project" "datalevin/datalevin"
-      "--version" new-v
-      "--jar" (str repo-dir "/target/datalevin-" new-v ".jar")
-      "--pom" (str repo-dir "/pom.xml")
-      "--git" repo-dir
-      "--rev" "HEAD"
+  (sh "clojure" "-M"
+      "-i" (str repo-dir "/script/datalevin/release_cljdoc.clj")
+      "-e" (pr-str
+              (list 'datalevin.release-cljdoc/check!
+                    {:project "datalevin/datalevin"
+                     :version new-v
+                     :jar (str repo-dir "/target/datalevin-" new-v ".jar")
+                     :pom (str repo-dir "/pom.xml")
+                     :scm-url repo-dir
+                     :scm-rev "HEAD"}))
       :dir cljdoc-dir))
 
 (defn run-tests []

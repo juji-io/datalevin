@@ -67,7 +67,10 @@
                                                   "src/java/datalevin/ha"
                                                   "src/java/datalevin/io"
                                                   "src/java/datalevin/utl"
-                                                  "src/java/org"]}
+                                                  "src/java/org"]
+                    ;; This root-level bridge class is required by Clojure
+                    ;; namespaces as well as the separately built Java API.
+                    :javac-options ["src/java/datalevin/NativeValue.java"]}
    :native-uberjar {:aot          [datalevin.main],
                     :uberjar-name "main.uberjar.jar"}
    :test0-uberjar  {:main         datalevin.test0

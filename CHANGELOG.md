@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Lib] Missing classes in the jar.
+
 ## 1.2.1 (2026-10-12)
 ### Fixed
 - [Windows] native image build.
