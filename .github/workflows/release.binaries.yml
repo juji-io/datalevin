@@ -34,6 +34,7 @@ jobs:
       # RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.sha }}
       RELEASE_ARCH: ${{ contains(fromJSON('["macos-14","ubuntu-24.04-arm"]'), matrix.os) && 'aarch64' || 'amd64' }}
     strategy:
+      fail-fast: false
       matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('{{"os":["{0}"]}}', inputs.runner) || '{"os":["macos-14","ubuntu-22.04","ubuntu-24.04-arm","windows-latest"]}') }}
       # matrix:
       #   os:
@@ -114,6 +115,9 @@ jobs:
 
 
           if [ "${{ runner.os }}" == "macOS" ]; then
+            # Manual rebuilds use the release tag's script, so override its
+            # default application watchdog here as well.
+            export NATIVE_IMAGE_OPTIONS="-H:DeadlockWatchdogInterval=60"
             bash script/compile-native
           else
             bash script/compile-native-linux

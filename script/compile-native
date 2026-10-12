@@ -14,6 +14,8 @@ echo $JAVA_HOME
 
 args_app=(
     "--verbose"
+    # Allow slow macOS CI builds an hour without recorded compiler activity.
+    "-H:DeadlockWatchdogInterval=60"
     "-jar" "target/main.uberjar.jar"
     "-H:Name=dtlv"
 )
@@ -21,7 +23,7 @@ args_app=(
 args_test0=(
     "--verbose"
     "-Ob"
-    "-H:DeadlockWatchdogInterval=30"
+    "-H:DeadlockWatchdogInterval=60"
     "-jar" "target/test0.uberjar.jar"
     "-H:Name=dtlv-test0"
 )
