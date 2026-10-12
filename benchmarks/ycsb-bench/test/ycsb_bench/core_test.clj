@@ -130,7 +130,8 @@
                  (read-record [_ _] values)
                  (scan-records [_ start _n] [[start values]])
                  (record-count [_] 1)
-                 (storage-info [_] {}))
+                 (storage-info [_] {})
+                 (close-store! [_]))
             opts (cond-> {:api :kv :mode :embedded :workload :c
                           :distribution :uniform :records 1 :warmup 2 :ops 3
                           :threads 1 :field-count 1 :field-length 4 :scan-length 1}

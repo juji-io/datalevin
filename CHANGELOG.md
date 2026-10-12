@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Windows] native image build.
+- [WAL] startup flags.
+- [GraalVM] missing serialization annotation.
+
 ## 1.2.0 (2026-10-11)
 
 ### Added

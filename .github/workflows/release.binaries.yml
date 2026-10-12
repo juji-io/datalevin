@@ -1,27 +1,27 @@
 name: Build
 
-on: push
+# on: push
 # on: workflow_dispatch
-# on:
-#   workflow_dispatch:
-#     inputs:
-#       release_tag:
-#         description: Existing release tag whose binary asset should be rebuilt
-#         required: true
-#         type: string
-#       runner:
-#         description: Platform asset to rebuild
-#         required: true
-#         default: macos-14
-#         type: choice
-#         options:
-#           - macos-14
-#           - ubuntu-22.04
-#           - ubuntu-24.04-arm
-#           - windows-latest
-#   release:
-#     types:
-#       - created
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag whose binary asset should be rebuilt
+        required: true
+        type: string
+      runner:
+        description: Platform asset to rebuild
+        required: true
+        default: macos-14
+        type: choice
+        options:
+          - macos-14
+          - ubuntu-22.04
+          - ubuntu-24.04-arm
+          - windows-latest
+  release:
+    types:
+      - created
 
 permissions:
   contents: write
@@ -30,16 +30,17 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     env:
-      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.sha }}
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+      # RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.sha }}
       RELEASE_ARCH: ${{ contains(fromJSON('["macos-14","ubuntu-24.04-arm"]'), matrix.os) && 'aarch64' || 'amd64' }}
     strategy:
-      # matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('{{"os":["{0}"]}}', inputs.runner) || '{"os":["macos-14","ubuntu-22.04","ubuntu-24.04-arm","windows-latest"]}') }}
-      matrix:
-        os:
-          # - macos-14
-          # - ubuntu-22.04
-          # - ubuntu-24.04-arm
-          - windows-latest
+      matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('{{"os":["{0}"]}}', inputs.runner) || '{"os":["macos-14","ubuntu-22.04","ubuntu-24.04-arm","windows-latest"]}') }}
+      # matrix:
+      #   os:
+      #     # - macos-14
+      #     # - ubuntu-22.04
+      #     # - ubuntu-24.04-arm
+      #     - windows-latest
 
     steps:
       - name: Checkout repository and submodules
