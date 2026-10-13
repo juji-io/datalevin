@@ -353,6 +353,11 @@ directly load a collection of prepared datoms using `init-db` function. However,
 it is the caller's responsibility to ensure these datoms are correct because data
 integrity checks and temporary entity ID resolution are not performed.
 
+For both local and remote databases, `init-db` commits all datom batches in
+one transaction. A failed load rolls back its datom writes, including earlier
+batches. Database creation and schema setup happen before loading and are not
+rolled back.
+
 Similarly, `fill-db` can be used to bulk load additional collections of prepared
 datoms into a DB that is not empty. The same caution on datoms preparation need
 to apply.

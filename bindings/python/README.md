@@ -2,6 +2,8 @@
 
 Python bindings for Datalevin over the JVM interop bridge.
 
+Visit [datalevin.org](https://datalevin.org) for Datalevin documentation.
+
 ## Install
 
 ```bash

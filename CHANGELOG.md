@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- [Server] atomic `init-db`.
+
 ## 1.2.3 (2026-10-13)
 
 ### Fixed

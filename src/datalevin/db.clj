@@ -1505,7 +1505,19 @@
    (vld/validate-schema-update schema)
    (let [[_ runtime-opts] (split-runtime-opts opts)
          store            (open-store dir schema opts)]
-     (quick-fill store datoms)
+     (if (remote-store? store)
+       (locking (l/write-txn store)
+         (let [tx-store (i/open-transact store)]
+           (try
+             (pour tx-store datoms)
+             (i/close-transact store)
+             (catch Throwable failure
+               (try
+                 (i/abort-transact store)
+                 (catch Throwable abort-error
+                   (.addSuppressed failure abort-error)))
+               (throw failure)))))
+       (quick-fill store datoms))
      (cond-> (new-db store)
        (some? runtime-opts) (with-runtime-opts runtime-opts)))))
 

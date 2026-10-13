@@ -114,8 +114,11 @@ database does not exist yet.
 
 The client sends bounded batches; large batches use the copy-in protocol.
 `datalevin.constants/*fill-db-batch-size*` controls datoms per batch (default
-2,097,152). Outside an explicit transaction, each batch commits separately, so
-earlier batches remain committed if a later batch fails. Inside
+2,097,152). `init-db` commits all batches in one transaction; a failed load
+rolls back all of its datom writes. Database creation and schema setup precede
+the load and are not rolled back. For `fill-db` outside an explicit transaction,
+each batch commits separately, so earlier batches remain committed if a later
+batch fails. Inside
 `with-transaction`, loads participate in that transaction's commit or rollback.
 Remote loading preserves the server's WAL and durability settings. Loaded data
 is available to queries and subsequent transactions after commit.

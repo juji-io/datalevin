@@ -2,6 +2,8 @@
 
 Use Datalevin from Java with the `org.datalevin:datalevin-java` artifact.
 
+Visit [datalevin.org](https://datalevin.org) for Datalevin documentation.
+
 ## Add the Dependency
 
 Maven:
