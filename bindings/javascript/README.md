@@ -761,6 +761,12 @@ Use `initDb()` and `fillDb()` when you already have Datom-shaped data and want
 the fast bulk-load path. Datoms can be compact arrays in
 `[entityId, attr, value]` shape, and `datom()` creates the same shape.
 
+For a server database, pass its authenticated `dtlv://` URI as `dir` instead of
+a local path. Both `fillDb(conn, datoms)` and `conn.fillDb(datoms)` support remote
+connections. Remote loads preserve server WAL settings and commit in batches;
+outside an explicit transaction, earlier batches remain committed if a later
+batch fails. Use assigned entity IDs and trusted data matching the schema.
+
 ```js
 import { datom, fillDb, initDb } from "datalevin-node";
 

@@ -202,32 +202,32 @@ public final class Datalevin {
     }
 
     /**
-     * Creates or replaces a path-addressed Datalog database by bulk-loading
-     * Datom values.
+     * Opens a local or remote Datalog database and bulk-loads Datom values.
+     * {@code dir} may be a directory or an authenticated {@code dtlv://} URI.
      */
     public static Connection initDb(Object datoms, String dir) {
         return connFromDatoms(datoms, dir, null, null);
     }
 
     /**
-     * Creates or replaces a path-addressed Datalog database by bulk-loading
-     * Datom values with a raw schema map.
+     * Opens a local or remote Datalog database and bulk-loads Datom values
+     * with a raw schema map. {@code dir} may be a directory or a {@code dtlv://} URI.
      */
     public static Connection initDb(Object datoms, String dir, Map<?, ?> schema) {
         return connFromDatoms(datoms, dir, DatalevinForms.schemaInput(schema), null);
     }
 
     /**
-     * Creates or replaces a path-addressed Datalog database by bulk-loading
-     * Datom values with a typed schema builder.
+     * Opens a local or remote Datalog database and bulk-loads Datom values
+     * with a typed schema builder. {@code dir} may be a directory or a {@code dtlv://} URI.
      */
     public static Connection initDb(Object datoms, String dir, Schema schema) {
         return connFromDatoms(datoms, dir, schema == null ? null : schema.buildForm(), null);
     }
 
     /**
-     * Creates or replaces a path-addressed Datalog database by bulk-loading
-     * Datom values with a raw schema map and options.
+     * Opens a local or remote Datalog database and bulk-loads Datom values
+     * with a raw schema map and options. {@code dir} may be a directory or a {@code dtlv://} URI.
      */
     public static Connection initDb(Object datoms, String dir, Map<?, ?> schema, Map<?, ?> opts) {
         return connFromDatoms(datoms,
@@ -237,8 +237,8 @@ public final class Datalevin {
     }
 
     /**
-     * Creates or replaces a path-addressed Datalog database by bulk-loading
-     * Datom values with a typed schema builder and options.
+     * Opens a local or remote Datalog database and bulk-loads Datom values
+     * with a typed schema builder and options. {@code dir} may be a directory or a {@code dtlv://} URI.
      */
     public static Connection initDb(Object datoms, String dir, Schema schema, Map<?, ?> opts) {
         return connFromDatoms(datoms,

@@ -529,8 +529,8 @@
 
 (defn- close-native-write!
   [^Env env write-txn wdb before-commit]
-    (if-let [^Rtx wtxn @write-txn]
-     (try
+  (if-let [^Rtx wtxn @write-txn]
+    (try
       (when-let [^Txn txn (.-txn wtxn)]
         (close-resolution-cursor! wtxn)
         (let [aborted? @(.-aborted? wtxn)]
@@ -545,27 +545,27 @@
                 (close-resolution-cursor! wtxn)
                 (.close txn)
                 (up-db-size env)
-                (vreset! write-txn nil)
                 (raise "DB resized" {:resized true}))
               (catch Exception e
                 (close-resolution-cursor! wtxn)
                 (.close txn)
-                ;; A metadata write can resize and replace the writer before
-                ;; throwing. Release that replacement before clearing ownership.
-                (when-let [replacement @write-txn]
-                  (when-not (identical? replacement wtxn)
-                    (close-rtx-quiet! replacement)))
-                (vreset! write-txn nil)
                 (if (or (l/resized? e)
                         (= :ha/write-rejected (:error (ex-data e))))
                   (throw e)
                   (raise "Fail to commit read/write transaction in LMDB: "
                          e {})))))
-          (vreset! write-txn nil)
           (.close txn)
           (if aborted? :aborted :committed)))
-      (finally (close-rtx-quiet! wtxn)))
-      (raise "Calling `close-transact-kv` without opening" {})))
+      (finally
+        ;; Every exit must detach the writer before closing its buffers, even
+        ;; when a commit hook throws an Error or map growth itself fails. A
+        ;; metadata write may also have replaced the original transaction.
+        (let [replacement @write-txn]
+          (vreset! write-txn nil)
+          (when-not (identical? replacement wtxn)
+            (close-rtx-quiet! replacement))
+          (close-rtx-quiet! wtxn))))
+    (raise "Calling `close-transact-kv` without opening" {})))
 
 
 (defprotocol IApplicationWriter
@@ -731,7 +731,9 @@
 
   (reset-write
     [this]
-    (when-let [old @write-txn] (close-rtx-quiet! old))
+    (when-let [old @write-txn]
+      (vreset! write-txn nil)
+      (close-rtx-quiet! old))
     (let [lease (when-let [guard (:native-lifetime @info)] (lifetime/enter! guard))]
       (try
         (.clear kp-w)
@@ -799,8 +801,8 @@
           (lifecycle/stop-scheduled-sync scheduled-sync)
           (close-reader-rtxs! reader-registry)
           (when-let [^Rtx wtxn @write-txn]
-            (close-rtx-quiet! wtxn)
-            (vreset! write-txn nil))
+            (vreset! write-txn nil)
+            (close-rtx-quiet! wtxn))
           (.remove tl-reader)
           (let [dir-prefix (str (.env-dir this) u/+separator+)
                 indices    (->> @l/vector-indices

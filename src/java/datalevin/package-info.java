@@ -75,6 +75,11 @@
  *
  * <p>For bulk load, use Datom-shaped input with {@link datalevin.Datalevin#initDb}
  * and {@link datalevin.Connection#fillDb}:
+ * A database location may be a local directory or an authenticated
+ * {@code dtlv://} URI. Remote loads preserve server WAL settings and commit in
+ * batches. Outside an explicit transaction, earlier batches remain committed
+ * if a later batch fails. Use assigned entity IDs and trusted data matching
+ * the schema.
  *
  * <pre>{@code
  * try (Connection conn = Datalevin.initDb(

@@ -340,6 +340,10 @@ Only usable for debug output.
                    [datoms dir schema opts])
        :doc      "Low-level function for creating a Datalog database quickly from a sequence of trusted datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
+ Outside an explicit transaction, remote loads commit in batches controlled by
+ `datalevin.constants/*fill-db-batch-size*`. Earlier batches remain committed
+ if a later batch fails. The server's WAL and durability settings are preserved.
+
  `opts` map has keys:
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
@@ -378,6 +382,11 @@ Only usable for debug output.
 
 (def ^{:arglists '([db datoms])
        :doc      "Low-level function for filling a Datalog database quickly with a sequence of trusted datoms, useful for bulk data loading. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+
+ Supports local and remote databases. Outside an explicit transaction, remote
+ loads commit in batches controlled by `datalevin.constants/*fill-db-batch-size*`,
+ preserving the server's WAL and durability settings. Earlier batches remain
+ committed if a later batch fails.
 
  See also [[datom]], [[init-db]]."}
   fill-db db/fill-db)

@@ -1,10 +1,22 @@
 # Change Log
 
+## WIP
+
+### Fixed
+- [Server] reopen handle options correctly.
+- [Server] native writer cleanup.
+- [Lib] missing java/py/js binding for new functions.
+
+### Improved
+- [Server] `init-db` and `fill-db` work over `dtlv://`.
+
 ## 1.2.2 (2026-10-12)
+
 ### Fixed
 - [Lib] Missing classes in the jar.
 
 ## 1.2.1 (2026-10-12)
+
 ### Fixed
 - [Windows] native image build.
 - [WAL] startup flags.

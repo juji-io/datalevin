@@ -1471,15 +1471,26 @@
               (with-direct-db-transaction-slot
                 deps server db-name writing?
                 (fn []
-                  (case mode
-                    :copy-in
-                    (i/load-datoms (dt-store deps server skey db-name writing?)
-                                  ((:copy-in deps) server skey))
-                    :request
-                    (apply i/load-datoms
-                           (dt-store deps server skey db-name writing?)
-                           (rest args))
-                    (raise "Missing :mode when loading datoms" {}))))]
+                  (let [store (dt-store deps server skey db-name writing?)
+                        datoms (case mode
+                                 :copy-in ((:copy-in deps) server skey)
+                                 :request (nth args 1)
+                                 (raise "Missing :mode when loading datoms" {}))
+                        result (i/load-datoms store datoms)]
+                    ;; Raw loads bypass transact*, so publish the new entity
+                    ;; counter and invalidate queries before the next request.
+                    (when (seq datoms)
+                      (let [k (if writing? :wdt-db :dt-db)
+                            previous (get (db-state deps server db-name) k)
+                            target (i/last-modified store)]
+                        (st/mark-state-current! store target)
+                        (db/refresh-cache store target)
+                        ((:update-db deps) server db-name
+                         #(assoc % k (db/carry-runtime-opts
+                                       (db/new-db store nil previous)
+                                       previous)))
+                        (database-changed! deps server db-name writing?)))
+                    result)))]
           (if (= mode :copy-in)
             (write-complete! deps skey)
             (write-result! deps skey result)))))))

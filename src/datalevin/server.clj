@@ -1479,7 +1479,7 @@
             lmdb))))))
 
 (defn- reusable-open-store
-  [store schema]
+  [store schema opts]
   (cond
     (instance? Store store)
     (when-not (i/closed? store)
@@ -1492,7 +1492,7 @@
           (let [env-dir (i/dir store)]
             (close-store store)
             (dha/recover-ha-local-store-dir-if-needed! env-dir)
-            (st/open env-dir schema))
+            (st/open env-dir schema opts))
           (do
             ;; Preserve the legacy remote open-with-schema behavior for plain
             ;; stores, but never synthesize follower-local schema rows on HA
@@ -1522,13 +1522,13 @@
             (= actual-db-type c/dl-type))))
 
 (defn- reusable-store-for-db-type
-  [store schema db-type]
+  [store schema opts db-type]
   (case db-type
     :datalog
     (when (instance? Store store)
-      (reusable-open-store store schema))
+      (reusable-open-store store schema opts))
 
-    (reusable-open-store store schema)))
+    (reusable-open-store store schema opts)))
 
 (defn- multiple-lmdb-open-error?
   [e]
@@ -1536,14 +1536,41 @@
                "Please do not open multiple LMDB connections"))
 
 (defn- await-reusable-store
-  [^Server server db-name schema db-type]
+  [^Server server db-name schema opts db-type]
   (loop [attempts 40]
     (if-let [store (some-> (get-store server db-name)
-                           (reusable-store-for-db-type schema db-type))]
+                           (reusable-store-for-db-type schema opts db-type))]
       store
       (when (pos? attempts)
         (Thread/sleep (long 25))
         (recur (dec attempts))))))
+
+(declare apply-assoc-opts!)
+
+(defn- reopen-store-options!
+  [^Server server db-name permissions store opts]
+  (let [visible-opts (fn [opts]
+                       (cond-> (-> opts store-opts/store-visible-opts
+                                   c/canonicalize-wal-opts)
+                         (map? (:ha-control-plane opts))
+                         (update :ha-control-plane dissoc :local-peer-id :raft-dir)))
+        current      (visible-opts (i/opts store))
+        mutations    (into {}
+                           (remove (fn [[k v]]
+                                     (and (contains? current k)
+                                          (= (get current k) v))))
+                           ;; The client adds :db-name to every non-nil option
+                           ;; map, including maps containing only client opts.
+                           ;; A cached open must retain the store's identity.
+                           (dissoc (visible-opts opts) :db-name))]
+    (when (seq mutations)
+      (when-not (has-permission? ::alter ::database
+                                 (db-eid (.-sys-conn server) db-name)
+                                 permissions)
+        (raise "Don't have permission to alter database options while reopening"
+               {:db-name db-name :options (vec (keys mutations))}))
+      (apply-assoc-opts! server db-name store false mutations))
+    (get-store server db-name)))
 
 (defn- db-open-lock
   [^Server server db-name]
@@ -1605,7 +1632,7 @@
                                         requested-db-type db-type)
                     store            (or (some-> (get-store server db-name)
                                                  (reusable-store-for-db-type
-                                                   schema db-type))
+                                                   schema opts db-type))
                                          (try
                                            (case db-type
                                              :datalog   (do
@@ -1616,9 +1643,15 @@
                                            (catch Exception e
                                              (if (multiple-lmdb-open-error? e)
                                                (or (await-reusable-store
-                                                    server db-name schema db-type)
+                                                    server db-name schema opts db-type)
                                                    (throw e))
                                                (throw e)))))
+                    store            (if (and (= requested-db-type c/dl-type)
+                                              (instance? Store store)
+                                              (identical? store (get-store server db-name)))
+                                       (reopen-store-options!
+                                         server db-name permissions store opts)
+                                       store)
                     store            (try
                                        (add-store
                                          server db-name store activate-runtime?

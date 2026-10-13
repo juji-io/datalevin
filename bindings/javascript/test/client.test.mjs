@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { DatalevinJavaError, jvmStarted, newClient, uuid } from "../src/index.js";
+import { connect, datom, DatalevinJavaError, fillDb, initDb, jvmStarted, newClient, uuid } from "../src/index.js";
 import { clojureCliAvailable, runtimeAvailable, startLiveServer } from "../test-support/live-server.mjs";
 
 const integrationAvailable = runtimeAvailable() && clojureCliAvailable();
@@ -51,6 +51,40 @@ function runningInNodeTestWorker() {
 }
 
 let liveServer = null;
+
+test(
+  "remote bulk load supports initDb and both fillDb entry points",
+  { skip: !integrationAvailable, timeout: 30000 },
+  async () => {
+    const uri = liveServer.databaseUri(`js-bulk-${randomUUID()}`);
+    const schema = { ":value": { ":db/valueType": ":db.type/long" } };
+    const query = "[:find (count ?e) . :where [?e :value]]";
+    const datoms = Array.from({ length: 1003 }, (_, i) => [i + 1, ":value", i + 1]);
+    const conn = await initDb(datoms, { dir: uri, schema });
+    try {
+      const observer = await connect(uri);
+      try {
+        assert.equal(await conn.query(query), 1003);
+        assert.equal(await observer.query(query), 1003);
+        assert.equal(await fillDb(conn, [[2000, ":value", 2000]]), conn);
+        assert.equal(await conn.fillDb([datom(2001, ":value", 2001)]), conn);
+        assert.equal(await observer.query(query), 1005);
+        await conn.transact([{ ":db/id": -1, ":value": 9999 }]);
+        assert.equal(await conn.query("[:find ?e . :where [?e :value 9999]]"), 2002n);
+      } finally {
+        await observer.close();
+      }
+    } finally {
+      await conn.close();
+    }
+    const reopened = await connect(uri);
+    try {
+      assert.equal(await reopened.query(query), 1006);
+    } finally {
+      await reopened.close();
+    }
+  }
+);
 
 before(async () => {
   if (integrationAvailable) {

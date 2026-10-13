@@ -1381,9 +1381,21 @@
   (let [batch-size (long c/*fill-db-batch-size*)]
     (when-not (<= 1 batch-size Integer/MAX_VALUE)
       (raise "Invalid fill-db batch size" {:batch-size batch-size}))
-    (let [^FastList batch (FastList. (int batch-size))]
+    (let [;; Remote schema/options are RPCs: fetch them once per load, not
+          ;; twice for every datom.
+          correct (if (remote-store? store)
+                    (let [store-opts (opts store)
+                          schema     (schema store)]
+                      (fn [^Datom datom]
+                        (prepare/correct-datom*
+                          datom
+                          (prepare/correct-value-with-props
+                            store-opts (schema (.-a datom))
+                            (.-a datom) (.-v datom)))))
+                    #(correct-datom store %))
+          ^FastList batch (FastList. (int batch-size))]
       (doseq [datom datoms]
-        (.add batch (correct-datom store datom))
+        (.add batch (correct datom))
         (when (= batch-size (.size batch))
           (load-datoms store batch)
           (.clear batch)))
@@ -1459,7 +1471,7 @@
         (f)))
     (f)))
 
-(defn- quick-fill
+(defn- quick-fill-local
   [^Store store datoms]
   (let [lmdb    (.-lmdb store)
         flags   (get-env-flags lmdb)
@@ -1475,6 +1487,14 @@
         (when-not nosync? (set-env-flags lmdb #{:nosync} false))))
     (sync lmdb)))
 
+(defn- quick-fill
+  [store datoms]
+  (if (remote-store? store)
+    ;; Each bounded batch uses the server's regular write path, preserving
+    ;; its WAL/HA settings. Large batches use the copy-in wire protocol.
+    (pour store datoms)
+    (quick-fill-local store datoms)))
+
 (defn init-db
   ([datoms] (init-db datoms nil nil nil))
   ([datoms dir] (init-db datoms dir nil nil))
@@ -1484,7 +1504,7 @@
    (vld/validate-datom-list datoms)
    (vld/validate-schema-update schema)
    (let [[_ runtime-opts] (split-runtime-opts opts)
-         ^Store store     (open-store dir schema opts)]
+         store            (open-store dir schema opts)]
      (quick-fill store datoms)
      (cond-> (new-db store)
        (some? runtime-opts) (with-runtime-opts runtime-opts)))))

@@ -697,6 +697,12 @@ Use `init_db()` and `fill_db()` when you already have Datom-shaped data and want
 the fast bulk-load path. Datoms can be compact tuples in
 `(entity_id, attr, value)` shape, and `datom()` creates the same shape.
 
+For a server database, pass its authenticated `dtlv://` URI as `dir` instead of
+a local path. Both `fill_db(conn, datoms)` and `conn.fill_db(datoms)` support
+remote connections. Remote loads preserve server WAL settings and commit in
+batches; outside an explicit transaction, earlier batches remain committed if a
+later batch fails. Use assigned entity IDs and trusted data matching the schema.
+
 ```python
 from datalevin import datom, fill_db, init_db
 

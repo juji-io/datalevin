@@ -87,6 +87,48 @@ function that takes a `dir` argument can also take a connection URI string,
 e.g. `(get-conn "dtlv://datalevin:datalevin@localhost/mydb")`. The remote access
 is transparent to the function callers.
 
+## Bulk loading Datalog data
+
+Use `init-db` with a `dtlv://` URI to load trusted datoms into a server database,
+or `fill-db` to add them to an open remote database. Entity IDs must already be
+assigned and the datoms must match the schema; these APIs bypass transaction
+processing such as tempid resolution and uniqueness checks.
+
+```clojure
+(require '[datalevin.core :as d]
+         '[datalevin.constants :as c])
+
+(def loaded
+  (binding [c/*fill-db-batch-size* 10000]
+    (d/init-db (map #(d/datom % :item/value %) (range 1 100001))
+               (System/getenv "DATALEVIN_URI")
+               {:item/value {:db/valueType :db.type/long}})))
+
+(def filled (d/fill-db loaded [(d/datom 100001 :item/value 100001)]))
+(d/close-db filled)
+```
+
+Set `DATALEVIN_URI` to the authenticated connection URI for the target database.
+The user needs permission to alter that database, and create permission if the
+database does not exist yet.
+
+The client sends bounded batches; large batches use the copy-in protocol.
+`datalevin.constants/*fill-db-batch-size*` controls datoms per batch (default
+2,097,152). Outside an explicit transaction, each batch commits separately, so
+earlier batches remain committed if a later batch fails. Inside
+`with-transaction`, loads participate in that transaction's commit or rollback.
+Remote loading preserves the server's WAL and durability settings. Loaded data
+is available to queries and subsequent transactions after commit.
+
+## Reopening remote databases
+
+The server keeps Datalog stores open after clients close their connections.
+Reopening with `create-conn` applies explicitly supplied database options to the
+cached store and persists the changes across server restarts. Unspecified
+options retain their values. Changing options requires `:datalevin.server/alter`
+permission on the database; unchanged options and connection-only `:client-opts`
+remain available with view permission.
+
 ## Embedded server lifecycle
 
 When using `datalevin.server` from Clojure, `create` allocates server resources

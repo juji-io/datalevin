@@ -57,6 +57,20 @@
                       {:exit exit :out out :err err})))
     (flush)))
 
+(defn- run-bulk-load!
+  [classpath uri]
+  (let [{:keys [exit out err]}
+        (sh/sh "java"
+               "--add-opens=java.base/java.nio=ALL-UNNAMED"
+               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+               "-cp" classpath "test_jar.JavaBulkLoadSmoke" uri)]
+    (print out)
+    (binding [*out* *err*] (print err))
+    (when-not (zero? (long exit))
+      (throw (ex-info "Java remote bulk load failed."
+                      {:exit exit :out out :err err})))
+    (flush)))
+
 (defn -main
   [& _]
   (let [classpath (System/getenv "CLIENT_QUICKSTART_CLASSPATH")]
@@ -73,6 +87,7 @@
         (srv/start server)
         (run-client-quickstart! classpath uri)
         (run-atomic-notifications! classpath uri)
+        (run-bulk-load! classpath uri)
         (finally
           (srv/stop server)
           (u/delete-files root)))))

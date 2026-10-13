@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from datalevin import connect, new_client
+from datalevin import connect, datom, fill_db, init_db, new_client
 from datalevin.errors import DatalevinJavaError
 
 
@@ -28,6 +28,24 @@ SCHEMA = {
 
 def _matches_permission(permission: dict, act: str, obj: str) -> bool:
     return permission.get(":permission/act") == act and permission.get(":permission/obj") == obj
+
+
+def test_remote_bulk_load(live_server) -> None:
+    uri = live_server.database_uri(f"py-bulk-{uuid.uuid4().hex}")
+    schema = {":value": {":db/valueType": ":db.type/long"}}
+    query = "[:find (count ?e) . :where [?e :value]]"
+    # More than 1,000 datoms exercises multiple copy-in wire frames.
+    with init_db([(i, ":value", i) for i in range(1, 1004)], dir=uri, schema=schema) as conn:
+        with connect(uri) as observer:
+            assert conn.query(query) == 1003
+            assert observer.query(query) == 1003
+            assert fill_db(conn, [(2000, ":value", 2000)]) is conn
+            assert conn.fill_db([datom(2001, ":value", 2001)]) is conn
+            assert observer.query(query) == 1005
+            conn.transact([{":db/id": -1, ":value": 9999}])
+            assert conn.query("[:find ?e . :where [?e :value 9999]]") == 2002
+    with connect(uri) as reopened:
+        assert reopened.query(query) == 1006
 
 
 def _wait_for(predicate, timeout: float = 5.0, interval: float = 0.05) -> bool:

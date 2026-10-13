@@ -764,6 +764,10 @@ public final class Connection extends HandleResource {
     /**
      * Bulk-loads Datom values into this connection and returns this handle.
      *
+     * <p>Supports local and remote connections. Remote loads preserve server
+     * WAL settings and commit in batches; outside an explicit transaction,
+     * earlier batches remain committed if a later batch fails.
+     *
      * <p>Datoms may be raw Datalevin Datom objects, 3/4/5-element collections
      * in {@code [e, attr, value, tx?, added?]} shape, or maps with
      * {@code :e}, {@code :a}, and {@code :v} keys.
