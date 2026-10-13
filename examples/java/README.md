@@ -248,6 +248,34 @@ try (Connection conn = Datalevin.createConn(
 }
 ```
 
+## Atomic Updates and Database Notifications
+
+`KV.update` and `Datalevin.updateKv` atomically replace one value. Embedded
+callbacks receive the old value, or null for a missing key. Types default to
+`KVType.DATA`; explicit types accept `KVType` values or type strings:
+
+```java
+kv.update("counts", "visits", old -> old == null ? 1L : ((Number) old).longValue() + 1,
+          KVType.STRING, KVType.LONG);
+remoteKv.update("counts", "visits",
+                "(fn [old amount] (+ (long (or old 0)) (long amount)))",
+                KVType.STRING, KVType.LONG, 1L);
+```
+
+Remote updates use restricted Clojure function source. An embedded `UdfFunction`
+overload accepts a list of extra arguments; its callback receives a list
+beginning with the old value. Functions must be free of side effects because an
+update may retry. Exceptions and invalid results abort the update. Updates join
+an enclosing explicit KV transaction and return the `:transacted` keyword.
+
+`Connection.listenDb` and `Datalevin.listenDb` subscribe to committed changes to
+a remote database, including writes from other clients. Callbacks receive event
+maps with `:type` and `:db-name` on a dedicated thread and may query to refresh
+data. Commits may coalesce. Terminal failures deliver `:subscription-error`
+events with `:error`. Registering the same key replaces its subscription;
+`unlistenDb` or closing the connection stops it. `listen` continues to deliver
+connection transaction reports.
+
 ## KV Quick Start
 
 ```java

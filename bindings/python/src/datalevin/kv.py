@@ -355,6 +355,17 @@ class KV(ResourceWrapper):
         from .prepared import prepare_get_value
         return prepare_get_value(self, dbi_name, k_type, v_type, ignore_key)
 
+    def update(self, dbi_name, key, fn, k_type=":data", v_type=":data", *args):
+        """Atomically update a value. Use function source for remote stores.
+
+        Callbacks receive the old value (None for a missing key), then args.
+        They must be free of side effects because an update may retry.
+        """
+        if not callable(fn) and not isinstance(fn, str):
+            raise TypeError("fn must be callable or restricted Clojure function source.")
+        return to_python(_BINDINGS.key_value_update(self.raw_handle(), dbi_name, key, fn,
+                                                   k_type, v_type, args))
+
     def get_value(self, dbi_name, key, k_type=None, v_type=None, ignore_key=False):
         args = [self.raw_handle(), dbi_name, to_java(key)]
         if (k_type is None) != (v_type is None):

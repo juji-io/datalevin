@@ -15,16 +15,24 @@ public final class PreparedRead {
     private final Object prepared;
     private final Function<Object, Object> input;
     private final boolean query;
+    private final UdfCallbackScope callbackScope;
 
     PreparedRead(Object prepared, Function<Object, Object> input, boolean query) {
+        this(prepared, input, query, null);
+    }
+
+    PreparedRead(Object prepared, Function<Object, Object> input, boolean query,
+                 UdfCallbackScope callbackScope) {
         this.prepared = Objects.requireNonNull(prepared, "prepared");
         this.input = input;
         this.query = query;
+        this.callbackScope = callbackScope;
     }
 
     /** Executes with an entity id/lookup ref, query input list, or KV key. */
     public Object execute(Object value) {
-        return ClojureRuntime.core("execute-prepared", prepared, input.apply(value));
+        return UdfCallbackScope.call(callbackScope, () ->
+                ClojureRuntime.core("execute-prepared", prepared, input.apply(value)));
     }
 
     /**
@@ -32,17 +40,22 @@ public final class PreparedRead {
      * Remote preparations and prepared queries reject explicit views.
      */
     public Object execute(Object view, Object value) {
-        return ClojureRuntime.core("execute-prepared", prepared, view(view), input.apply(value));
+        return UdfCallbackScope.call(scope(view), () ->
+                ClojureRuntime.core("execute-prepared", prepared, view(view), input.apply(value)));
     }
 
     /** Executes and materializes results for foreign-language bridges. */
     public Object executeBridge(Object value) {
-        return bridge(execute(value));
+        return UdfCallbackScope.call(callbackScope, () -> bridge(execute(value)));
     }
 
     /** Executes against an explicit view and materializes bridge results. */
     public Object executeBridge(Object view, Object value) {
-        return bridge(execute(view, value));
+        return UdfCallbackScope.call(scope(view), () -> bridge(execute(view, value)));
+    }
+
+    private UdfCallbackScope scope(Object view) {
+        return callbackScope == null ? DatabaseValue.callbackScope(view) : callbackScope;
     }
 
     private Object bridge(Object value) {

@@ -103,10 +103,12 @@ class Connection(ResourceWrapper):
         close_fn = _BINDINGS.close_connection if owned else lambda _handle: None
         super().__init__(handle, close_fn, _BINDINGS.connection_closed, "connection")
         self._listeners = {}
+        self._db_listeners = {}
 
     def close(self) -> None:
-        self._listeners.clear()
         super().close()
+        self._listeners.clear()
+        self._db_listeners.clear()
 
     @staticmethod
     def _query_input(value, *, typed=False):
@@ -266,6 +268,24 @@ class Connection(ResourceWrapper):
     def unlisten(self, key) -> None:
         _BINDINGS.connection_unlisten(self.raw_handle(), key)
         self._listeners.pop(key, None)
+
+    def listen_db(self, callback, key=None):
+        """Subscribe to remote database commits; callbacks may query to refresh data.
+
+        Events have :type :db-changed or :subscription-error. Several commits
+        may coalesce; closing this connection stops its subscriptions.
+        """
+        proxy = _consumer_proxy(callback)
+        if key is None:
+            registered_key = to_python(_BINDINGS.connection_listen_db(self.raw_handle(), proxy))
+        else:
+            registered_key = to_python(_BINDINGS.connection_listen_db(self.raw_handle(), key, proxy))
+        self._db_listeners[registered_key] = proxy
+        return registered_key
+
+    def unlisten_db(self, key) -> None:
+        _BINDINGS.connection_unlisten_db(self.raw_handle(), key)
+        self._db_listeners.pop(key, None)
 
     def fill_db(self, datoms):
         _BINDINGS.fill_db(self.raw_handle(), datoms)

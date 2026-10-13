@@ -740,6 +740,28 @@ public final class Connection extends HandleResource {
     }
 
     /**
+     * Subscribes to committed changes across all clients of this remote database.
+     * The callback receives {@code :db-changed} or {@code :subscription-error}
+     * events on a dedicated listener thread. Commits may coalesce; query to
+     * refresh data. Closing this connection stops its subscriptions.
+     */
+    public Object listenDb(Consumer<Map<?, ?>> listener) {
+        Objects.requireNonNull(listener, "listener");
+        return DatalevinInterop.connectionListenDb(resource(), event -> listener.accept((Map<?, ?>) event));
+    }
+
+    /** Registers or replaces a remote database subscription under {@code key}. */
+    public Object listenDb(Object key, Consumer<Map<?, ?>> listener) {
+        Objects.requireNonNull(listener, "listener");
+        return DatalevinInterop.connectionListenDb(resource(), key, event -> listener.accept((Map<?, ?>) event));
+    }
+
+    /** Stops a remote database subscription. */
+    public void unlistenDb(Object key) {
+        DatalevinInterop.connectionUnlistenDb(resource(), key);
+    }
+
+    /**
      * Bulk-loads Datom values into this connection and returns this handle.
      *
      * <p>Datoms may be raw Datalevin Datom objects, 3/4/5-element collections

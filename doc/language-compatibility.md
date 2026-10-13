@@ -26,6 +26,7 @@ Status key:
 | Async transaction | Yes | Yes, `CompletableFuture` | Yes, `Future` | Yes, `Promise` |
 | Simulated transaction report from tx data | Yes | Yes | Yes | Yes |
 | Transaction listeners: `listen!` / `unlisten!` | Yes | Yes | Yes | Yes |
+| Remote database subscriptions: `listen-db!` / `unlisten-db!` | Yes | Yes, `listenDb` / `unlistenDb` | Yes, `listen_db` / `unlisten_db` | Yes, `listenDb` / `unlistenDb` |
 | Datalog transaction callback | Yes, `with-transaction` | Yes, `withTransaction` | Yes, `with_transaction` | No |
 | Datalog transaction callback timeout | Yes | Yes | Yes | N/A |
 | Transaction entity maps/forms | Yes | Yes, maps and `Tx` builders | Yes, pure `tx` forms plus dictionaries/lists | Yes, pure `tx` forms plus objects/arrays |
@@ -97,6 +98,7 @@ strings beginning with `:` or `?`.
 | Open/list/clear/drop DBIs | Yes | Yes | Yes | Yes |
 | Entries and basic get/range reads | Yes | Yes | Yes | Yes |
 | KV transaction data writes | Yes | Yes | Yes | Yes |
+| Atomic KV updates: `update-kv` | Yes | Yes, `KV.update` / `updateKv` | Yes, `KV.update` / `update_kv` | Yes, `KV.update` / `updateKv` |
 | List DB operations: get, put, delete, count, membership | Yes | Yes | Yes | Yes |
 | List DB range reads: range, first, first N, range counts | Yes | Yes | Yes | Yes |
 | List DB functional scans: visit, filter, filter count, keep, some | Yes | Yes | Yes | Yes |
@@ -111,6 +113,12 @@ strings beginning with `:` or `?`.
 | KV re-index | Yes | Yes | Yes | Yes |
 
 ### KV Notes
+
+Atomic updates accept host-language callbacks for embedded stores and restricted
+Clojure function source for both embedded and remote stores. Functions receive
+the old value (null/None for a missing key) and optional extra arguments. Invalid
+results or exceptions abort the update. Functions must be free of side effects
+because an update may retry. Updates inside an explicit KV transaction join it.
 
 Raw-buffer list scans pass short-lived callback wrapper objects. Decode or copy
 raw bytes during the callback; use the wrapper byte-copy helpers when data must

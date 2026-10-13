@@ -11,9 +11,19 @@ import java.util.Objects;
  */
 public final class DatabaseValue {
     private final Object handle;
+    private final UdfCallbackScope callbackScope;
 
     DatabaseValue(Object handle) {
+        this(handle, null);
+    }
+
+    DatabaseValue(Object handle, UdfCallbackScope callbackScope) {
         this.handle = Objects.requireNonNull(handle, "handle");
+        this.callbackScope = callbackScope;
+    }
+
+    static UdfCallbackScope callbackScope(Object value) {
+        return value instanceof DatabaseValue db ? db.callbackScope : null;
     }
 
     Object handle() {

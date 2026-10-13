@@ -281,6 +281,135 @@ test(
 );
 
 test(
+  "UDF callbacks read uncommitted data through lazy entities and prepared reads",
+  { skip: !runtimeAvailable, timeout: 30000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dtlv-js-udf-reads-"));
+    const registry = await createUdfRegistry();
+    const guard = UdfDescriptor.predicate(":person/ensure-score");
+    const nested = UdfDescriptor.queryFn(":person/read-score");
+    let callbackDb;
+    let callbackEntity;
+    let callbackPull;
+    let callbackQuery;
+
+    await registry.register(nested, async (db, eid) => {
+      // Read the outer callback's view while its owner services a nested UDF.
+      const [inner, outer] = await Promise.all([db.entityMap(eid), callbackDb.entityMap(eid)]);
+      assert.equal(intValue(inner[":score"]), intValue(outer[":score"]));
+      return inner[":score"];
+    });
+    await registry.register(guard, async (db, eid, expected) => {
+      callbackDb = db;
+      await sleep(1);
+      const entity = await db.entity(eid);
+      callbackEntity = await entity.get(":friend");
+      assert.equal(callbackEntity instanceof Entity, true);
+      assert.equal(await callbackEntity.get(":name"), "Bob");
+      const id = await entity.id();
+      const score = intValue(await entity.get(":score"));
+      callbackPull = await db.preparePull("[:name :score]");
+      const result = q.var("result");
+      const input = q.var("eid");
+      callbackQuery = await db.prepareQuery(q.query({
+        find: q.scalar(result),
+        inputs: [q.DB, input],
+        where: [q.bindUdf(nested, result, q.DB, input)]
+      }));
+      const [resolved, touched, pulled, many, cardinality, prepared, queried] = await Promise.all([
+        db.entid([":name", "Ada"]),
+        db.entityMap(id),
+        db.pull("[:name :score]", id),
+        db.pullMany("[:name :score]", [id]),
+        db.cardinality(":score"),
+        callbackPull.execute(id),
+        callbackQuery.execute([id])
+      ]);
+      assert.equal(resolved, id);
+      assert.equal(touched[":name"], "Ada");
+      for (const value of [touched, pulled, many[0], prepared]) {
+        assert.equal(intValue(value[":score"]), score);
+      }
+      assert.equal(intValue(cardinality), 2);
+      assert.equal(intValue(queried), score);
+      return score === intValue(expected);
+    });
+    const conn = await connect(dir, {
+      schema: {
+        ":name": schemaAttr({ valueType: ":db.type/string", unique: ":db.unique/identity" }),
+        ":score": schemaAttr({ valueType: ":db.type/long" }),
+        ":friend": schemaAttr({ valueType: ":db.type/ref" })
+      },
+      opts: { ":runtime-opts": { ":udf-registry": registry } }
+    });
+    try {
+      await conn.transact(tx.data(
+        tx.entity(-1, { name: "Ada", score: 11, friend: -2 }),
+        tx.entity(-2, { name: "Bob", score: 5 }),
+        tx.ensure(guard, -1, 11)
+      ));
+      const eid = await conn.query("[:find ?e . :where [?e :name \"Ada\"]]");
+      await assert.rejects(() => conn.transact(tx.data(
+        tx.entity(eid, { score: 12 }),
+        tx.ensure(guard, eid, 11)
+      )), /:db\/ensure failed/);
+      assert.equal(intValue(await conn.query("[:find ?score . :where [?e :name \"Ada\"] [?e :score ?score]]")), 11);
+      for (const read of [
+        () => callbackDb.entityMap(eid),
+        () => callbackEntity.get(":name"),
+        () => callbackPull.execute(eid),
+        () => callbackQuery.execute([eid])
+      ]) {
+        await assert.rejects(read, /UDF database view is no longer active/);
+      }
+    } finally {
+      await conn.close();
+    }
+  }
+);
+
+test(
+  "explicit KV transactions serialize concurrent async reads and retire prepared views",
+  { skip: !runtimeAvailable, timeout: 30000 },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dtlv-js-kv-owner-"));
+    const kv = await openKv(dir);
+    const opts = { kType: ":string", vType: ":long", ignoreKey: true };
+    try {
+      await kv.openDbi("data");
+      await kv.transact([
+        ...Array.from({ length: 16 }, (_, i) => [":put", `key-${i}`, i]),
+        [":put", "marker", 0]
+      ], {
+        dbiName: "data", ...opts
+      });
+      for (let round = 1; round <= 4; round += 1) {
+        const transaction = await kv.beginTransaction();
+        let prepared;
+        try {
+          const reads = await Promise.all(Array.from({ length: 16 }, async (_, i) => {
+            await sleep(i % 3);
+            return intValue(await transaction.getValue("data", `key-${i}`, opts));
+          }));
+          assert.deepEqual(reads, Array.from({ length: 16 }, (_, i) => i));
+          await transaction.transact([[":put", "marker", round]], { dbiName: "data", ...opts });
+          prepared = await transaction.prepareGetValue("data", opts);
+          assert.equal(intValue(await prepared.execute("marker")), round);
+          if (round % 2 === 0) await transaction.commit();
+          else await transaction.abort();
+        } finally {
+          await transaction.close();
+        }
+        assert.equal(intValue(await kv.getValue("data", "marker", opts)), round - (round % 2));
+        await assert.rejects(() => prepared.execute("marker"));
+      }
+    } finally {
+      await kv.close();
+    }
+  }
+);
+
+test(
   "UDF registry supports fulltext analyzers",
   { skip: !runtimeAvailable, timeout: 30000 },
   async () => {

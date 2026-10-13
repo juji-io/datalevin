@@ -169,6 +169,14 @@ class InteropBindings:
     def connection_unlisten(self, handle, key):
         call_java(classes().interop.connectionUnlisten, handle, to_java(key))
 
+    def connection_listen_db(self, handle, key_or_listener, listener=None):
+        if listener is None:
+            return call_java(classes().interop.connectionListenDb, handle, key_or_listener)
+        return call_java(classes().interop.connectionListenDb, handle, to_java(key_or_listener), listener)
+
+    def connection_unlisten_db(self, handle, key):
+        call_java(classes().interop.connectionUnlistenDb, handle, to_java(key))
+
     def connection_datoms(self, handle, index, c1=None, c2=None, c3=None, limit=None):
         return call_java(
             classes().interop.connectionDatoms,
@@ -278,6 +286,26 @@ class InteropBindings:
 
     def key_value_begin_transaction(self, handle):
         return call_java(classes().interop.keyValueBeginTransaction, handle)
+
+    def key_value_update(self, handle, dbi_name, key, fn, k_type, v_type, args):
+        values = (handle, dbi_name, to_java(key))
+        types_and_args = (to_java(k_type), to_java(v_type), to_java(list(args)))
+        if isinstance(fn, str):
+            return call_java(classes().interop.keyValueUpdateSource, *values, fn, *types_and_args)
+        context = copy_context()
+
+        def invoke(items):
+            try:
+                return context.copy().run(lambda: to_java(fn(*(to_python(item) for item in items))))
+            except jpype.JException:
+                raise
+            except Exception as exc:
+                raise jpype.JClass("java.lang.IllegalArgumentException")(
+                    f"Python update failed: {type(exc).__name__}: {exc}"
+                ) from exc
+
+        proxy = jpype.JProxy(classes().udf_function, dict(invoke=invoke))
+        return call_java(classes().interop.keyValueUpdate, *values, proxy, *types_and_args)
 
     def key_value_commit_transaction(self, tx):
         return call_java(classes().interop.keyValueCommitTransaction, tx)
@@ -1295,6 +1323,21 @@ def transact_async(conn: Connection, tx_data, tx_meta=None):
     """Start an async transaction and return a concurrent.futures.Future."""
 
     return conn.transact_async(tx_data, tx_meta)
+
+
+def listen_db(conn: Connection, callback, key=None):
+    """Subscribe to committed changes to a remote database."""
+    return conn.listen_db(callback, key)
+
+
+def unlisten_db(conn: Connection, key):
+    """Stop a remote database subscription."""
+    return conn.unlisten_db(key)
+
+
+def update_kv(kv, dbi_name, key, fn, k_type=":data", v_type=":data", *args):
+    """Atomically update one KV value using a callback or restricted function source."""
+    return kv.update(dbi_name, key, fn, k_type, v_type, *args)
 
 
 def abort_transact(conn: Connection):

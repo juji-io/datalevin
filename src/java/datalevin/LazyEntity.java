@@ -7,9 +7,19 @@ import java.util.Objects;
  */
 public final class LazyEntity {
     private final Object handle;
+    private final UdfCallbackScope callbackScope;
 
     LazyEntity(Object handle) {
+        this(handle, null);
+    }
+
+    LazyEntity(Object handle, UdfCallbackScope callbackScope) {
         this.handle = Objects.requireNonNull(handle, "handle");
+        this.callbackScope = callbackScope;
+    }
+
+    static UdfCallbackScope callbackScope(Object value) {
+        return value instanceof LazyEntity entity ? entity.callbackScope : null;
     }
 
     Object handle() {

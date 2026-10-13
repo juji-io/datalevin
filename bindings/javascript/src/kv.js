@@ -428,6 +428,14 @@ export class KV extends ResourceWrapper {
     return prepareGetValue(this, dbiName, opts);
   }
 
+  /** Atomically update a value; host callbacks are embedded-only, source also runs remotely. */
+  async update(dbiName, key, fn, { kType = ":data", vType = ":data", args = [] } = {}) {
+    if (typeof fn !== "function" && typeof fn !== "string") {
+      throw new TypeError("fn must be a function or restricted Clojure function source.");
+    }
+    return toJsResult(await _BINDINGS.keyValueUpdate(this.rawHandle(), dbiName, key, fn, kType, vType, args));
+  }
+
   async transact(txs, { dbiName = null, kType = null, vType = null } = {}) {
     if (dbiName === null && (kType !== null || vType !== null)) {
       throw new TypeError("kType and vType require dbiName for KV transact().");

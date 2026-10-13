@@ -41,12 +41,15 @@ public final class Datalevin {
 
     /** Prepares a reusable pull with the same options as the Clojure pull API. */
     public static PreparedRead preparePull(Object db, Object selector, Map<?, ?> opts) {
-        Object view = PreparedRead.view(db);
-        Object pattern = DatalevinForms.pullSelectorInput(selector);
-        Object prepared = opts == null
+        UdfCallbackScope scope = DatabaseValue.callbackScope(db);
+        return UdfCallbackScope.call(scope, () -> {
+            Object view = PreparedRead.view(db);
+            Object pattern = DatalevinForms.pullSelectorInput(selector);
+            Object prepared = opts == null
                 ? ClojureRuntime.core("prepare-pull", view, pattern)
                 : ClojureRuntime.core("prepare-pull", view, pattern, DatalevinForms.optionsInput(opts));
-        return new PreparedRead(prepared, DatalevinForms::lookupRefInput, false);
+            return new PreparedRead(prepared, DatalevinForms::lookupRefInput, false, scope);
+        });
     }
 
     /**
@@ -54,10 +57,13 @@ public final class Datalevin {
      * a list of the remaining :in values, excluding the initial database.
      */
     public static PreparedRead prepareQuery(Object db, Object query) {
-        Object form = query instanceof DatalogQuery typed
+        UdfCallbackScope scope = DatabaseValue.callbackScope(db);
+        return UdfCallbackScope.call(scope, () -> {
+            Object form = query instanceof DatalogQuery typed
                 ? typed.buildForm() : DatalevinForms.queryFormInput(query);
-        return new PreparedRead(ClojureRuntime.core("prepare-q", PreparedRead.view(db), form),
-                                PreparedRead.queryInput(query), true);
+            return new PreparedRead(ClojureRuntime.core("prepare-q", PreparedRead.view(db), form),
+                                    PreparedRead.queryInput(query), true, scope);
+        });
     }
 
     /** Prepares a KV point read with the default data types and value-only result. */
@@ -440,6 +446,57 @@ public final class Datalevin {
     public static void unlisten(Connection conn, Object key) {
         Objects.requireNonNull(conn, "conn");
         conn.unlisten(key);
+    }
+
+    /** Subscribes to committed changes to a remote database. */
+    public static Object listenDb(Connection conn, Consumer<Map<?, ?>> listener) {
+        Objects.requireNonNull(conn, "conn");
+        return conn.listenDb(listener);
+    }
+
+    /** Registers or replaces a remote database subscription under {@code key}. */
+    public static Object listenDb(Connection conn, Object key, Consumer<Map<?, ?>> listener) {
+        Objects.requireNonNull(conn, "conn");
+        return conn.listenDb(key, listener);
+    }
+
+    /** Stops a remote database subscription. */
+    public static void unlistenDb(Connection conn, Object key) {
+        Objects.requireNonNull(conn, "conn");
+        conn.unlistenDb(key);
+    }
+
+    /** Atomically updates one embedded KV value with default data types. */
+    public static Object updateKv(KV kv, String dbi, Object key, Function<Object, ?> fn) {
+        Objects.requireNonNull(kv, "kv");
+        return kv.update(dbi, key, fn);
+    }
+
+    /** Atomically updates one embedded KV value with explicit types. */
+    public static Object updateKv(KV kv, String dbi, Object key, Function<Object, ?> fn,
+                                   Object kType, Object vType) {
+        Objects.requireNonNull(kv, "kv");
+        return kv.update(dbi, key, fn, kType, vType);
+    }
+
+    /** Atomically updates one embedded KV value using extra arguments. */
+    public static Object updateKv(KV kv, String dbi, Object key, UdfFunction fn,
+                                   Object kType, Object vType, List<?> args) {
+        Objects.requireNonNull(kv, "kv");
+        return kv.update(dbi, key, fn, kType, vType, args);
+    }
+
+    /** Atomically updates a local or remote KV value using restricted function source. */
+    public static Object updateKv(KV kv, String dbi, Object key, String source) {
+        Objects.requireNonNull(kv, "kv");
+        return kv.update(dbi, key, source);
+    }
+
+    /** Atomically updates a local or remote KV value using function source and extra arguments. */
+    public static Object updateKv(KV kv, String dbi, Object key, String source,
+                                   Object kType, Object vType, Object... args) {
+        Objects.requireNonNull(kv, "kv");
+        return kv.update(dbi, key, source, kType, vType, args);
     }
 
     /**

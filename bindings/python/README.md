@@ -94,6 +94,31 @@ prepare them from the transaction handle instead. Keep the owning store open.
 Prepared reads require no separate close, and transaction-bound reads retain
 the transaction's lifetime and thread restrictions.
 
+`kv.update(dbi_name, key, fn, k_type=":data", v_type=":data", *args)` and
+`update_kv(kv, ...)` atomically replace one value and return `":transacted"`.
+Embedded callbacks receive the old value (None for a missing key), followed by
+extra arguments. For remote updates, supply restricted Clojure function source:
+
+```python
+kv.update("counts", "visits", lambda old: (old or 0) + 1)
+remote_kv.update("counts", "visits",
+                 "(fn [old amount] (+ (long (or old 0)) (long amount)))",
+                 ":string", ":long", 1)
+```
+
+Functions must be free of side effects because updates may retry. Invalid values
+and callback exceptions abort the update; explicit transactions control commit.
+
+`conn.listen_db(callback, key=None)` and `listen_db(conn, ...)` subscribe to
+committed changes to a remote database, including writes from other clients.
+Callbacks run on a dedicated thread with `{":type": ":db-changed", ":db-name":
+"app"}` and may query the connection to refresh data. Several commits may
+coalesce into one event. Terminal failures deliver a `":subscription-error"`
+event with `":error"`. Registering the same key replaces its subscription.
+`conn.unlisten_db(key)` or `unlisten_db(conn, key)` stops a subscription; closing
+the connection stops all its subscriptions. `conn.listen` continues to deliver
+transaction reports.
+
 `conn.transact_ack(tx_data, tx_meta=None)` and `transact_ack(conn, ...)` return
 `":transacted"` on success. Validation and durability match `transact`, and
 listeners still receive full reports. Inside an explicit transaction, success

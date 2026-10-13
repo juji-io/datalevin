@@ -10,11 +10,17 @@ package datalevin;
 public final class KVTransaction extends KV {
 
     private final KV owner;
+    private final KvCallOwner callOwner;
     private boolean finished;
 
     KVTransaction(KV owner, Object transactionKv) {
+        this(owner, transactionKv, null);
+    }
+
+    KVTransaction(KV owner, Object transactionKv, KvCallOwner callOwner) {
         super(transactionKv, false);
         this.owner = owner;
+        this.callOwner = callOwner;
         this.finished = false;
     }
 
@@ -28,10 +34,16 @@ public final class KVTransaction extends KV {
     /**
      * Commits this transaction.
      */
-    public synchronized Object commit() {
+    public Object commit() {
+        return callOwner == null ? commitOwned() : callOwner.call(this::commitOwned);
+    }
+
+    private synchronized Object commitOwned() {
         ensureActive();
         try {
-            return ClojureRuntime.core("commit-kv-transaction", owner.resource());
+            Object result = ClojureRuntime.core("commit-kv-transaction", owner.resource());
+            if (callOwner != null) callOwner.transactionFinished();
+            return result;
         } finally {
             finish();
         }
@@ -40,10 +52,16 @@ public final class KVTransaction extends KV {
     /**
      * Aborts this transaction.
      */
-    public synchronized Object abort() {
+    public Object abort() {
+        return callOwner == null ? abortOwned() : callOwner.call(this::abortOwned);
+    }
+
+    private synchronized Object abortOwned() {
         ensureActive();
         try {
-            return ClojureRuntime.core("abort-kv-transaction", owner.resource());
+            Object result = ClojureRuntime.core("abort-kv-transaction", owner.resource());
+            if (callOwner != null) callOwner.transactionFinished();
+            return result;
         } finally {
             finish();
         }
@@ -53,7 +71,7 @@ public final class KVTransaction extends KV {
      * Aborts this transaction if it is still active.
      */
     @Override
-    public synchronized void close() {
+    public void close() {
         if (active()) {
             abort();
         }
@@ -68,5 +86,6 @@ public final class KVTransaction extends KV {
     private void finish() {
         finished = true;
         super.close();
+        if (callOwner != null) callOwner.close();
     }
 }

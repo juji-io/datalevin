@@ -52,6 +52,38 @@ final class ClojureFns {
         };
     }
 
+    static AFn bridgeConsumer(Consumer<Object> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        return new AFn() {
+            @Override
+            public Object invoke(Object value) {
+                consumer.accept(ClojureCodec.bridgeOutput(value));
+                return null;
+            }
+        };
+    }
+
+    static AFn updateFunction(UdfFunction fn, Object vType) {
+        Objects.requireNonNull(fn, "fn");
+        return new AFn() {
+            @Override
+            public Object invoke(Object value) {
+                ArrayList<Object> values = new ArrayList<>();
+                values.add(ClojureCodec.bridgeOutput(value));
+                return DatalevinForms.kvInput(fn.invoke(values), vType);
+            }
+
+            @Override
+            public Object applyTo(ISeq args) {
+                ArrayList<Object> values = new ArrayList<>();
+                for (ISeq remaining = args; remaining != null; remaining = remaining.next()) {
+                    values.add(ClojureCodec.bridgeOutput(remaining.first()));
+                }
+                return DatalevinForms.kvInput(fn.invoke(values), vType);
+            }
+        };
+    }
+
     static AFn biFunction(BiFunction<Object, Object, ?> fn) {
         return new AFn() {
             @Override
@@ -113,9 +145,14 @@ final class ClojureFns {
         Objects.requireNonNull(fn, "fn");
         final boolean txFn = isTxFnDescriptor(descriptor);
         final boolean javascriptSerializer = isJavascriptSerializer(descriptor);
+        final boolean javascript = descriptor instanceof Map<?, ?> map
+                && ClojureCodec.keyword(":javascript").equals(map.get(ClojureCodec.keyword(":udf/lang")));
         return new AFn() {
             private Object invokeValues(List<?> values) {
-                Object result = fn.invoke(bridgeUdfArguments(values));
+                Object result = javascript && (UdfCallbackScope.hasOwnerWork()
+                        || values.stream().anyMatch(ClojureFns::rawDatabase))
+                        ? UdfCallbackScope.invoke(fn, scope -> bridgeUdfArguments(values, scope))
+                        : fn.invoke(bridgeUdfArguments(values, null));
                 if (javascriptSerializer) {
                     // Node's Object-returning proxy represents Buffer results
                     // as numeric arrays. Restore their byte-oriented contract.
@@ -152,11 +189,11 @@ final class ClojureFns {
         };
     }
 
-    private static List<?> bridgeUdfArguments(List<?> values) {
+    private static List<?> bridgeUdfArguments(List<?> values, UdfCallbackScope scope) {
         ArrayList<Object> bridged = null;
         for (int i = 0; i < values.size(); i++) {
             Object value = values.get(i);
-            Object replacement = rawDatabase(value) ? new DatabaseValue(value) : value;
+            Object replacement = rawDatabase(value) ? new DatabaseValue(value, scope) : value;
             if (bridged != null) {
                 bridged.add(replacement);
             } else if (replacement != value) {

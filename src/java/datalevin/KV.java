@@ -93,6 +93,44 @@ public class KV extends HandleResource {
     }
 
     /**
+     * Atomically replaces one embedded value using {@code fn}; a missing key
+     * supplies {@code null}. Types default to {@code :data}. The function must
+     * be free of side effects because an update may retry.
+     */
+    public Object update(String dbi, Object key, Function<Object, ?> fn) {
+        return update(dbi, key, fn, KVType.DATA, KVType.DATA);
+    }
+
+    /** Atomically updates one embedded value with explicit key and value types. */
+    public Object update(String dbi, Object key, Function<Object, ?> fn, Object kType, Object vType) {
+        Objects.requireNonNull(fn, "fn");
+        return DatalevinInterop.keyValueUpdate(resource(), dbi, key,
+                                               args -> fn.apply(args.get(0)), kType, vType, List.of());
+    }
+
+    /** Atomically updates one embedded value using the old value and extra arguments. */
+    public Object update(String dbi, Object key, UdfFunction fn,
+                          Object kType, Object vType, List<?> args) {
+        return DatalevinInterop.keyValueUpdate(resource(), dbi, key, fn, kType, vType, args);
+    }
+
+    /** Atomically updates a local or remote value using restricted Clojure function source. */
+    public Object update(String dbi, Object key, String source) {
+        return update(dbi, key, source, KVType.DATA, KVType.DATA);
+    }
+
+    /**
+     * Atomically updates a local or remote value using restricted Clojure
+     * function source, explicit types, and optional extra arguments.
+     * Returns {@code :transacted}; exceptions or invalid results abort the update.
+     */
+    public Object update(String dbi, Object key, String source,
+                          Object kType, Object vType, Object... args) {
+        return DatalevinInterop.keyValueUpdateSource(resource(), dbi, key, source,
+                                                     kType, vType, java.util.Arrays.asList(args));
+    }
+
+    /**
      * Runs {@code fn} inside a single KV write transaction.
      */
     @SuppressWarnings("unchecked")

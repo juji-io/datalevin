@@ -107,6 +107,36 @@ Use `schemaAttr({ noIndex: true })` for `:db/noindex`. Reads by entity and pull
 remain available; query conditions on that attribute require
 `await conn.indexAttr(attr)` (or `indexAttr(conn, attr)`) to atomically backfill AVE.
 
+## Atomic Updates and Database Notifications
+
+`kv.update(dbiName, key, fn, { kType, vType, args })` and
+`updateKv(kv, ...)` atomically replace one value and return `":transacted"`.
+Types default to `":data"`. Embedded callbacks receive the old value (null for
+a missing key), then any extra arguments. Use restricted Clojure function source
+for remote updates:
+
+```js
+await kv.update("counts", "visits", old => Number(old ?? 0) + 1);
+await remoteKv.update("counts", "visits",
+  "(fn [old amount] (+ (long (or old 0)) (long amount)))",
+  { kType: ":string", vType: ":long", args: [1] });
+```
+
+JVM long values arrive as `BigInt` in callbacks; use `BigInt` arithmetic or
+convert small counters with `Number`, as in the example above.
+
+Functions must be free of side effects because updates may retry. Invalid values
+and callback exceptions abort the update; explicit transactions control commit.
+
+`conn.listenDb(callback, key = null)` and `listenDb(conn, ...)` subscribe to
+committed changes to a remote database, including writes from other clients.
+Callbacks receive `{ ":type": ":db-changed", ":db-name": "app" }` and may await
+queries on the connection to refresh data. Several commits may coalesce into one
+event. Terminal failures deliver a `":subscription-error"` event with `":error"`.
+Registering the same key replaces the callback. Call `conn.unlistenDb(key)` or
+`unlistenDb(conn, key)` to stop a subscription; closing the connection stops all
+its subscriptions. `conn.listen` continues to deliver transaction reports.
+
 ## Composing Queries
 
 Use normal JavaScript control flow to assemble clauses. Variables, attributes,

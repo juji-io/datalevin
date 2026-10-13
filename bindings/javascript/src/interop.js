@@ -403,6 +403,19 @@ class InteropBindings {
     );
   }
 
+  async connectionListenDb(handle, keyOrListener, listener = null) {
+    const cls = await classes();
+    const raw = await unwrapInteropHandle(handle);
+    return hasValue(listener)
+      ? callJavaMethod(cls.interop, "connectionListenDb", raw, await toJava(keyOrListener), listener)
+      : callJavaMethod(cls.interop, "connectionListenDb", raw, keyOrListener);
+  }
+
+  async connectionUnlistenDb(handle, key) {
+    const cls = await classes();
+    await callJavaMethod(cls.interop, "connectionUnlistenDb", await unwrapInteropHandle(handle), await toJava(key));
+  }
+
   async connectionDatoms(handle, index, c1 = null, c2 = null, c3 = null, limit = null) {
     const cls = await classes();
     return callJavaMethod(
@@ -566,9 +579,33 @@ class InteropBindings {
     return Boolean(await callJavaMethod(handle, "closed"));
   }
 
+  async keyValueUpdate(handle, dbi, key, fn, kType, vType, args) {
+    const cls = await classes();
+    const values = [await unwrapInteropHandle(handle), dbi, await toJava(key)];
+    const typesAndArgs = [await toJava(kType), await toJava(vType), await toJava(args)];
+    if (typeof fn === "string") {
+      return callJavaMethod(cls.interop, "keyValueUpdateSource", ...values, fn, ...typesAndArgs);
+    }
+    const { newProxy } = await javaBridgeModule();
+    const proxy = newProxy("datalevin.UdfFunction", {
+      invoke: bindNativeCallback(async (items) => {
+        const result = await fn(...await toJs(items));
+        return toJava(result === undefined ? null : result);
+      })
+    });
+    try {
+      return await callJavaMethod(cls.interop, "keyValueUpdate", ...values, proxy, ...typesAndArgs);
+    } finally {
+      proxy.reset?.();
+    }
+  }
+
   async keyValueBeginTransaction(handle) {
     const cls = await classes();
-    return callJavaMethod(cls.interop, "keyValueBeginTransaction", await unwrapInteropHandle(handle));
+    const method = typeof cls.interop.keyValueBeginTransactionBridge === "function"
+      ? "keyValueBeginTransactionBridge"
+      : "keyValueBeginTransaction";
+    return callJavaMethod(cls.interop, method, await unwrapInteropHandle(handle));
   }
 
   async keyValueCommitTransaction(tx) {
@@ -1571,6 +1608,18 @@ export async function abortTransact(conn) {
 
 export async function txDataToSimulatedReport(conn, txData) {
   return conn.txDataToSimulatedReport(txData);
+}
+
+export async function listenDb(conn, callback, key = null) {
+  return conn.listenDb(callback, key);
+}
+
+export async function unlistenDb(conn, key) {
+  return conn.unlistenDb(key);
+}
+
+export async function updateKv(kv, dbiName, key, fn, opts = {}) {
+  return kv.update(dbiName, key, fn, opts);
 }
 
 export async function datalogKv(conn) {

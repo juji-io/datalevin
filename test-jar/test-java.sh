@@ -18,6 +18,7 @@ client_quickstart_classpath="$classpath:$test_jar_dir/target/java-classes"
 
 javac --release 21 -cp "$classpath" -d target/java-classes \
     src-java/test_jar/JavaSmoke.java \
+    src-java/test_jar/JavaAtomicNotificationsSmoke.java \
     "$repo_root/examples/java/ClientQuickStart.java"
 
 java --add-opens=java.base/java.nio=ALL-UNNAMED \

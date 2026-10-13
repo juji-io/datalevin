@@ -43,6 +43,20 @@
                          :out      out}))))
     (flush)))
 
+(defn- run-atomic-notifications!
+  [classpath uri]
+  (let [{:keys [exit out err]}
+        (sh/sh "java"
+               "--add-opens=java.base/java.nio=ALL-UNNAMED"
+               "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+               "-cp" classpath "test_jar.JavaAtomicNotificationsSmoke" uri)]
+    (print out)
+    (binding [*out* *err*] (print err))
+    (when-not (zero? (long exit))
+      (throw (ex-info "Java atomic updates and database subscriptions failed."
+                      {:exit exit :out out :err err})))
+    (flush)))
+
 (defn -main
   [& _]
   (let [classpath (System/getenv "CLIENT_QUICKSTART_CLASSPATH")]
@@ -58,6 +72,7 @@
       (try
         (srv/start server)
         (run-client-quickstart! classpath uri)
+        (run-atomic-notifications! classpath uri)
         (finally
           (srv/stop server)
           (u/delete-files root)))))

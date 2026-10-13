@@ -51,6 +51,45 @@ public final class DatalevinInterop {
         return ClojureRuntime.core(function, normalizeArgs(args));
     }
 
+    /** Atomically updates one embedded KV value using a host callback. */
+    public static Object keyValueUpdate(Object kv, String dbi, Object key, UdfFunction fn,
+                                         Object kType, Object vType, List<?> args) {
+        return updateKeyValue(kv, dbi, key, ClojureFns.updateFunction(fn, vType == null ? ":data" : vType),
+                              kType, vType, args);
+    }
+
+    /**
+     * Atomically updates one local or remote KV value using restricted Clojure
+     * function source, such as {@code (fn [old amount] (+ (or old 0) amount))}.
+     */
+    public static Object keyValueUpdateSource(Object kv, String dbi, Object key, String source,
+                                               Object kType, Object vType, List<?> args) {
+        Objects.requireNonNull(source, "source");
+        ClojureRuntime.requireNamespace("datalevin.interpret");
+        Object fn = ClojureRuntime.invoke("datalevin.interpret", "compile-inter-fn-source",
+                                          ClojureRuntime.readEdn(source));
+        return updateKeyValue(kv, dbi, key, fn, kType, vType, args);
+    }
+
+    private static Object updateKeyValue(Object kv, String dbi, Object key, Object fn,
+                                          Object kType, Object vType, List<?> args) {
+        Object normalizedKType = DatalevinForms.typeInput(kType == null ? ":data" : kType);
+        Object normalizedVType = DatalevinForms.typeInput(vType == null ? ":data" : vType);
+        ArrayList<Object> values = new ArrayList<>();
+        values.add(rawResource(kv));
+        values.add(dbi);
+        values.add(DatalevinForms.kvInput(key, normalizedKType));
+        values.add(fn);
+        values.add(normalizedKType);
+        values.add(normalizedVType);
+        if (args != null) {
+            for (Object arg : args) {
+                values.add(ClojureCodec.runtimeInput(arg));
+            }
+        }
+        return ClojureCodec.bridgeOutput(ClojureRuntime.core("update-kv", values.toArray()));
+    }
+
     /** Creates an opaque reusable pull handle for bridge runtimes. */
     public static PreparedRead preparePull(Object db, Object selector, Map<?, ?> opts) {
         return Datalevin.preparePull(db, selector, opts);
@@ -264,9 +303,10 @@ public final class DatalevinInterop {
      * Resolves an entity id or lookup ref against a database value.
      */
     public static Object databaseEntid(Object db, Object eid) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("entid",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("entid",
                                                              rawResource(db),
-                                                             DatalevinForms.lookupRefInput(eid)));
+                                                             DatalevinForms.lookupRefInput(eid))));
     }
 
     /**
@@ -274,10 +314,13 @@ public final class DatalevinInterop {
      * database value.
      */
     public static LazyEntity databaseEntity(Object db, Object eid) {
-        Object entity = ClojureRuntime.core("entity",
+        UdfCallbackScope scope = DatabaseValue.callbackScope(db);
+        return UdfCallbackScope.call(scope, () -> {
+            Object entity = ClojureRuntime.core("entity",
                                             rawResource(db),
                                             DatalevinForms.lookupRefInput(eid));
-        return entity == null ? null : new LazyEntity(entity);
+            return entity == null ? null : new LazyEntity(entity, scope);
+        });
     }
 
     /**
@@ -285,30 +328,34 @@ public final class DatalevinInterop {
      * database value.
      */
     public static Object databaseEntityMap(Object db, Object eid) {
-        Object entity = ClojureRuntime.core("entity",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () -> {
+            Object entity = ClojureRuntime.core("entity",
                                             rawResource(db),
                                             DatalevinForms.lookupRefInput(eid));
-        return entity == null ? null : ClojureCodec.bridgeOutput(ClojureRuntime.core("touch", entity));
+            return entity == null ? null : ClojureCodec.bridgeOutput(ClojureRuntime.core("touch", entity));
+        });
     }
 
     /**
      * Pulls one entity from a database value.
      */
     public static Object databasePull(Object db, Object selector, Object eid) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("pull",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("pull",
                                                              rawResource(db),
                                                              DatalevinForms.pullSelectorInput(selector),
-                                                             DatalevinForms.lookupRefInput(eid)));
+                                                             DatalevinForms.lookupRefInput(eid))));
     }
 
     /**
      * Pulls many entities from a database value.
      */
     public static Object databasePullMany(Object db, Object selector, List<?> eids) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("pull-many",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("pull-many",
                                                              rawResource(db),
                                                              DatalevinForms.pullSelectorInput(selector),
-                                                             DatalevinForms.entityIdsInput(eids)));
+                                                             DatalevinForms.entityIdsInput(eids))));
     }
 
     /**
@@ -316,26 +363,28 @@ public final class DatalevinInterop {
      * value.
      */
     public static long databaseCardinality(Object db, Object attr) {
-        return ClojureCodec.javaLong(ClojureRuntime.core("cardinality",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.javaLong(ClojureRuntime.core("cardinality",
                                                          rawResource(db),
-                                                         DatalevinForms.datalogAttrInput(attr)));
+                                                         DatalevinForms.datalogAttrInput(attr))));
     }
 
     /**
      * Collects query-planner statistics for all attributes in a database value.
      */
     public static Object databaseAnalyze(Object db) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("analyze",
-                                                             rawResource(db)));
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("analyze", rawResource(db))));
     }
 
     /**
      * Collects query-planner statistics for one attribute in a database value.
      */
     public static Object databaseAnalyze(Object db, Object attr) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("analyze",
+        return UdfCallbackScope.call(DatabaseValue.callbackScope(db), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("analyze",
                                                              rawResource(db),
-                                                             DatalevinForms.datalogAttrInput(attr)));
+                                                             DatalevinForms.datalogAttrInput(attr))));
     }
 
     /**
@@ -359,11 +408,11 @@ public final class DatalevinInterop {
      * Returns the bridge-safe entity id for a lazy entity handle.
      */
     public static Object entityId(Object entity) {
-        return ClojureCodec.bridgeOutput(
+        return UdfCallbackScope.call(LazyEntity.callbackScope(entity), () -> ClojureCodec.bridgeOutput(
                 ClojureRuntime.invoke("clojure.core",
                                       "get",
                                       rawResource(entity),
-                                      ClojureCodec.keyword(":db/id")));
+                                      ClojureCodec.keyword(":db/id"))));
     }
 
     /**
@@ -371,10 +420,11 @@ public final class DatalevinInterop {
      * entity.
      */
     public static Object entityGet(Object entity, Object attr) {
-        return bridgeEntityValue(ClojureRuntime.invoke("clojure.core",
+        UdfCallbackScope scope = LazyEntity.callbackScope(entity);
+        return UdfCallbackScope.call(scope, () -> bridgeEntityValue(ClojureRuntime.invoke("clojure.core",
                                                        "get",
                                                        rawResource(entity),
-                                                       DatalevinForms.datalogAttrInput(attr)));
+                                                       DatalevinForms.datalogAttrInput(attr)), scope));
     }
 
     /**
@@ -382,18 +432,19 @@ public final class DatalevinInterop {
      * attribute.
      */
     public static boolean entityContains(Object entity, Object attr) {
-        return ClojureCodec.javaBoolean(
+        return UdfCallbackScope.call(LazyEntity.callbackScope(entity), () -> ClojureCodec.javaBoolean(
                 ClojureRuntime.invoke("clojure.core",
                                       "contains?",
                                       rawResource(entity),
-                                      DatalevinForms.datalogAttrInput(attr)));
+                                      DatalevinForms.datalogAttrInput(attr))));
     }
 
     /**
      * Touches and materializes a lazy entity handle into bridge-safe data.
      */
     public static Object entityTouch(Object entity) {
-        return ClojureCodec.bridgeOutput(ClojureRuntime.core("touch", rawResource(entity)));
+        return UdfCallbackScope.call(LazyEntity.callbackScope(entity), () ->
+                ClojureCodec.bridgeOutput(ClojureRuntime.core("touch", rawResource(entity))));
     }
 
     /**
@@ -494,6 +545,24 @@ public final class DatalevinInterop {
      */
     public static void connectionUnlisten(Object conn, Object key) {
         ClojureRuntime.core("unlisten!", rawResource(conn), ClojureCodec.runtimeInput(key));
+    }
+
+    /** Subscribes to committed changes across all clients of a remote database. */
+    public static Object connectionListenDb(Object conn, Consumer<Object> listener) {
+        return ClojureCodec.bridgeOutput(ClojureRuntime.core("listen-db!", rawResource(conn),
+                                                             ClojureFns.bridgeConsumer(listener)));
+    }
+
+    /** Registers or replaces a remote database subscription under {@code key}. */
+    public static Object connectionListenDb(Object conn, Object key, Consumer<Object> listener) {
+        return ClojureCodec.bridgeOutput(ClojureRuntime.core("listen-db!", rawResource(conn),
+                                                             ClojureCodec.runtimeInput(key),
+                                                             ClojureFns.bridgeConsumer(listener)));
+    }
+
+    /** Stops a remote database subscription. */
+    public static void connectionUnlistenDb(Object conn, Object key) {
+        ClojureRuntime.core("unlisten-db!", rawResource(conn), ClojureCodec.runtimeInput(key));
     }
 
     /**
@@ -661,6 +730,11 @@ public final class DatalevinInterop {
         Object rawKv = rawResource(kv);
         return new KVTransaction(new KV(rawKv, false),
                                  ClojureRuntime.core("begin-kv-transaction", rawKv));
+    }
+
+    /** Opens a KV transaction on a persistent owner for asynchronous bridge calls. */
+    public static Object keyValueBeginTransactionBridge(Object kv) {
+        return KvCallOwner.begin(rawResource(kv));
     }
 
     /**
@@ -1857,20 +1931,20 @@ public final class DatalevinInterop {
         return value != null && "datalevin.entity.Entity".equals(value.getClass().getName());
     }
 
-    private static Object bridgeEntityValue(Object value) {
+    private static Object bridgeEntityValue(Object value, UdfCallbackScope scope) {
         if (value == null) {
             return null;
         }
 
         if (rawEntity(value)) {
-            return new LazyEntity(value);
+            return new LazyEntity(value, scope);
         }
 
         if (value instanceof Map<?, ?> map) {
             LinkedHashMap<Object, Object> result = new LinkedHashMap<>(map.size());
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 result.put(ClojureCodec.bridgeOutput(entry.getKey()),
-                           bridgeEntityValue(entry.getValue()));
+                           bridgeEntityValue(entry.getValue(), scope));
             }
             return result;
         }
@@ -1878,7 +1952,7 @@ public final class DatalevinInterop {
         if (value instanceof Set<?> set) {
             LinkedHashSet<Object> result = new LinkedHashSet<>(set.size());
             for (Object item : set) {
-                result.add(bridgeEntityValue(item));
+                result.add(bridgeEntityValue(item, scope));
             }
             return result;
         }
@@ -1886,7 +1960,7 @@ public final class DatalevinInterop {
         if (value instanceof Collection<?> collection) {
             ArrayList<Object> result = new ArrayList<>(collection.size());
             for (Object item : collection) {
-                result.add(bridgeEntityValue(item));
+                result.add(bridgeEntityValue(item, scope));
             }
             return result;
         }
@@ -1894,7 +1968,7 @@ public final class DatalevinInterop {
         if (value instanceof Iterable<?> iterable) {
             ArrayList<Object> result = new ArrayList<>();
             for (Object item : iterable) {
-                result.add(bridgeEntityValue(item));
+                result.add(bridgeEntityValue(item, scope));
             }
             return result;
         }
@@ -1902,7 +1976,7 @@ public final class DatalevinInterop {
         if (value instanceof Object[] array) {
             ArrayList<Object> result = new ArrayList<>(array.length);
             for (Object item : array) {
-                result.add(bridgeEntityValue(item));
+                result.add(bridgeEntityValue(item, scope));
             }
             return result;
         }

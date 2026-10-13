@@ -95,18 +95,21 @@ export class Connection extends ResourceWrapper {
       "connection"
     );
     this._listenerProxies = new Map();
+    this._dbListenerProxies = new Map();
   }
 
   async close() {
-    this._resetListenerProxies();
     await super.close();
+    this._resetListenerProxies();
   }
 
   _resetListenerProxies() {
-    for (const { proxy } of this._listenerProxies.values()) {
-      proxy.reset?.();
+    for (const listeners of [this._listenerProxies, this._dbListenerProxies]) {
+      for (const { proxy } of listeners.values()) {
+        proxy.reset?.();
+      }
+      listeners.clear();
     }
-    this._listenerProxies.clear();
   }
 
   async schema() {
@@ -314,6 +317,29 @@ export class Connection extends ResourceWrapper {
     const existing = this._listenerProxies.get(key);
     existing?.proxy.reset?.();
     this._listenerProxies.delete(key);
+  }
+
+  /** Subscribe to remote database commits; events may coalesce and callbacks may query. */
+  async listenDb(callback, key = null) {
+    const proxy = await createConsumerProxy(callback);
+    let registeredKey;
+    try {
+      registeredKey = hasValue(key)
+        ? await toJsResult(await _BINDINGS.connectionListenDb(this.rawHandle(), key, proxy), { bridge: true })
+        : await toJsResult(await _BINDINGS.connectionListenDb(this.rawHandle(), proxy), { bridge: true });
+    } catch (error) {
+      proxy.reset?.();
+      throw error;
+    }
+    this._dbListenerProxies.get(registeredKey)?.proxy.reset?.();
+    this._dbListenerProxies.set(registeredKey, { proxy });
+    return registeredKey;
+  }
+
+  async unlistenDb(key) {
+    await _BINDINGS.connectionUnlistenDb(this.rawHandle(), key);
+    this._dbListenerProxies.get(key)?.proxy.reset?.();
+    this._dbListenerProxies.delete(key);
   }
 
   async fillDb(datoms) {

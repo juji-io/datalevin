@@ -102,6 +102,26 @@
                      :scm-rev "HEAD"}))
       :dir cljdoc-dir))
 
+(defn run-binding-tests []
+  (println "\n\n[ Running Java binding tests ]\n")
+  (sh "test-jar/test-java.sh")
+
+  (println "\n\n[ Building runtime jar for JavaScript and Python tests ]\n")
+  (sh "clojure" "-T:build" "vendor-jar" ":native-platform" "all")
+
+  (println "\n\n[ Running JavaScript binding tests ]\n")
+  (sh "npm" "ci" :dir "bindings/javascript")
+  ;; Each integration test worker starts a JVM; bound simultaneous startups.
+  (sh "npm" "test" "--" "--test-concurrency=2" :dir "bindings/javascript")
+
+  (println "\n\n[ Running Python binding tests ]\n")
+  (let [python "bindings/python/.venv/bin/python"]
+    (when-not (.isFile (File. python))
+      (sh "python3" "-m" "venv" "bindings/python/.venv"))
+    (sh python "-m" "pip" "--disable-pip-version-check" "install"
+        "--editable" "./bindings/python[dev]")
+    (sh python "-m" "pytest" "bindings/python/tests" "-q")))
+
 (defn run-tests []
   (println "\n\n[ Running lein tests ]\n")
   (sh "./lein-test" :dir "script")
@@ -149,6 +169,7 @@
   (sh "./dtlv-test0")
   (sh "./script/compile-native-test1" :dir dtlvtest-dir)
   (sh "./dtlv-test1" :dir dtlvtest-dir)
+  (run-binding-tests)
   )
 
 (defn- str->json [s]

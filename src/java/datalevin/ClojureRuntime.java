@@ -242,7 +242,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1) {
         try {
-            return lookup(ns, name).invoke(arg1);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1})
+                    : lookup(ns, name).invoke(arg1);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -250,7 +252,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2})
+                    : lookup(ns, name).invoke(arg1, arg2);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -258,7 +262,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -266,7 +272,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3, arg4);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3, arg4);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -274,7 +282,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4, Object arg5) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -282,7 +292,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4, Object arg5, Object arg6) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -298,7 +310,9 @@ final class ClojureRuntime {
                          Object arg6,
                          Object arg7) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
@@ -315,13 +329,21 @@ final class ClojureRuntime {
                          Object arg7,
                          Object arg8) {
         try {
-            return lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+            return KvCallOwner.hasOwners()
+                    ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8})
+                    : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
         } catch (RuntimeException e) {
             throw translateException(e);
         }
     }
 
     private static Object invoke(IFn fn, Object[] args) {
+        KvCallOwner owner = KvCallOwner.find(args);
+        return owner == null ? invokeDirect(fn, args)
+                : owner.call(() -> owner.trackPrepared(invokeDirect(fn, args)));
+    }
+
+    private static Object invokeDirect(IFn fn, Object[] args) {
         if (args == null || args.length == 0) {
             return fn.invoke();
         }
