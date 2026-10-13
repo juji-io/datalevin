@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.3 (2026-10-13)
 
 ### Fixed
 - [Server] reopen handle options correctly.
