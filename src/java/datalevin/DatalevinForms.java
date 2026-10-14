@@ -190,7 +190,7 @@ final class DatalevinForms {
                    ClojureCodec.bridgeOutput(txData == null ? PersistentVector.EMPTY : txData));
         result.put(ClojureCodec.keyword(":tempids"),
                    ClojureCodec.bridgeOutput(tempids == null ? PersistentArrayMap.EMPTY : tempids));
-        result.put(ClojureCodec.keyword(":tx-id"), ClojureCodec.bridgeOutput(txReportId(txData)));
+        result.put(ClojureCodec.keyword(":tx-id"), ClojureCodec.bridgeOutput(txReportId(tempids)));
         result.put(ClojureCodec.keyword(":tx-meta"), ClojureCodec.bridgeOutput(txMeta));
         return result;
     }
@@ -596,9 +596,9 @@ final class DatalevinForms {
         return ClojureCodec.runtimeInput(flag);
     }
 
-    private static Object txReportId(Object txData) {
-        if (txData instanceof Collection<?> collection && !collection.isEmpty()) {
-            return ClojureRuntime.datom("datom-tx", collection.iterator().next());
+    private static Object txReportId(Object tempids) {
+        if (tempids instanceof Map<?, ?> map) {
+            return map.get(ClojureCodec.keyword(":db/current-tx"));
         }
         return null;
     }

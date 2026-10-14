@@ -432,7 +432,7 @@
 (defn pull
   ([db pattern id opts]
    (let [store (.-store ^DB db)]
-     (if (db/remote-store? store)
+     (if (and (db/remote-store? store) (not (db/pending-tx-cache? db)))
        (i/pull store pattern id opts)
        (pull* db pattern id opts))))
   ([db pattern id]
@@ -514,7 +514,7 @@
   ([^DB db pattern opts]
    {:pre [(db/db? db)]}
    (let [store (.-store db)]
-     (if (db/remote-prepared-store? store)
+     (if (and (db/remote-prepared-store? store) (not (db/pending-tx-cache? db)))
        (i/prepare-remote-read store :pull [pattern nil opts])
        (let [^LRUCache cache (.-pull-readers db)
              k              [pattern opts]
@@ -543,7 +543,7 @@
 (defn pull-many
   ([db pattern id opts]
    (let [store (.-store ^DB db)]
-     (if (db/remote-store? store)
+     (if (and (db/remote-store? store) (not (db/pending-tx-cache? db)))
        (i/pull-many store pattern id opts)
        (pull-many* db pattern id opts))))
   ([db pattern id]

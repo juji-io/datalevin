@@ -15,7 +15,6 @@
    [datalevin.client :as dc]
    [datalevin.constants :as c]
    [datalevin.core :as d]
-   [datalevin.datom :as dd]
    [datalevin.interface :as i]
    [datalevin.json-convert :as jc])
   (:import
@@ -536,8 +535,7 @@
   (let [tx-data (:tx-data report)]
     {"tx-data" (or tx-data [])
      "tempids" (or (:tempids report) {})
-     "tx-id"   (when-let [datom (first tx-data)]
-                 (dd/datom-tx datom))
+     "tx-id"   (get-in report [:tempids :db/current-tx])
      "tx-meta" (:tx-meta report)}))
 
 (defn- handle-create-conn

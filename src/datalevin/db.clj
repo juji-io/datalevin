@@ -928,9 +928,13 @@
                            (datom e nil nil))  ; e _ v
              (e-datoms store e) ; e _ _
              (av-datoms store a v) ; _ a v
-             (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                   (ave-tuples-list
-                     store a [[[:closed c/v0] [:closed c/vmax]]] nil true)) ; _ a _
+             (if (remote-store? store)
+               ;; Client-side overlays merge remote datoms with pending writes.
+               ;; The tuple storage primitive is available only to local stores.
+               (slice store :ave (datom e0 a c/v0) (datom emax a c/vmax))
+               (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
+                     (ave-tuples-list
+                       store a [[[:closed c/v0] [:closed c/vmax]]] nil true))) ; _ a _
              (slice-filter store :eav
                            (fn [^Datom d] (when ((s/vpred v) (.-v d)) d))
                            (datom e0 nil nil)
@@ -1507,16 +1511,19 @@
          store            (open-store dir schema opts)]
      (if (remote-store? store)
        (locking (l/write-txn store)
-         (let [tx-store (i/open-transact store)]
-           (try
-             (pour tx-store datoms)
-             (i/close-transact store)
-             (catch Throwable failure
-               (try
-                 (i/abort-transact store)
-                 (catch Throwable abort-error
-                   (.addSuppressed failure abort-error)))
-               (throw failure)))))
+         ;; Map growth discards earlier batches in the native transaction.
+         ;; Abort each failed attempt and replay the entire import.
+         (u/repeat-try-catch c/+in-tx-overflow-times+ l/resized?
+           (let [tx-store (i/open-transact store)]
+             (try
+               (pour tx-store datoms)
+               (i/close-transact store)
+               (catch Throwable failure
+                 (try
+                   (i/abort-transact store)
+                   (catch Throwable abort-error
+                     (.addSuppressed failure abort-error)))
+                 (throw failure))))))
        (quick-fill store datoms))
      (cond-> (new-db store)
        (some? runtime-opts) (with-runtime-opts runtime-opts)))))

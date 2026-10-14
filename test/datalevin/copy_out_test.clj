@@ -1,6 +1,9 @@
 (ns datalevin.copy-out-test
   (:require [clojure.test :refer [deftest is testing]]
-            [datalevin.client :as client]))
+            [datalevin.client :as client]
+            [datalevin.constants :as c]
+            [datalevin.datom :as dd]
+            [datalevin.server.handlers :as handlers]))
 
 (defn- receive-copy
   [header items done]
@@ -40,6 +43,41 @@
             :db-info (:db-info header) :copy-meta (:copy-meta header)
             :new-attributes (:new-attributes done)}
            (receive-copy header result done)))))
+
+(deftest transaction-copy-out-preserves-datom-order-for-sequential-reports
+  (let [tempids {-1 1 "-1" 2 :db/current-tx 3}
+        boundary (- c/+wire-datom-batch-size+ (inc (count tempids)))]
+    (doseq [n [(dec boundary) boundary (inc boundary)]
+            [kind tx-data-fn] [[:vector identity]
+                              [:list #(apply list %)]
+                              [:lazy-seq #(map identity %)]]]
+      (testing (str kind " report with " n " datoms")
+        (let [tx-data (mapv #(dd/datom (inc %) :item/id % 3 (even? %))
+                            (range n))
+              expected {:tx-data tx-data :tempids (assoc tempids :max-eid n)
+                        :db-info {:max-eid n :max-tx 3 :last-modified 123}
+                        :new-attributes [:item/id]}
+              report (assoc expected :tx-data (tx-data-fn tx-data))
+              response (atom nil)
+              copied? (atom false)
+              deps {:write-message (fn [_ message]
+                                     (reset! response message))
+                    :copy-out (fn [_ data batch-size copy-meta response-meta]
+                                (reset! copied? true)
+                                (is (= c/+wire-datom-batch-size+ batch-size))
+                                (is (nil? copy-meta))
+                                (reset! response
+                                        (receive-copy
+                                          (assoc response-meta
+                                                 :type :copy-out-response)
+                                          data {:type :copy-done})))}]
+          (#'handlers/write-tx-response! deps nil report)
+          (is (= (<= boundary n) @copied?))
+          (let [decoded (client/decode-tx-response @response)]
+            (is (= expected decoded))
+            (is (= (mapv (juxt dd/datom-e dd/datom-tx dd/datom-added) tx-data)
+                   (mapv (juxt dd/datom-e dd/datom-tx dd/datom-added)
+                         (:tx-data decoded))))))))))
 
 (deftest binary-copy-still-returns-vector-of-chunks
   (let [chunk (byte-array [1 2 3])
