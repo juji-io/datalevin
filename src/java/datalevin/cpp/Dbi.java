@@ -18,15 +18,18 @@ public class Dbi {
         this.kvInfo = "datalevin/kv-info".equals(name);
         this.ptr = new IntPointer(1);
 
-        Txn txn = Txn.create(env);
+        Txn txn = null;
         try {
+            txn = Txn.create(env);
             Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
             handle = (int) ptr.get();
-        } catch (Exception e) {
-            txn.close();
+            txn.commit();
+        } catch (RuntimeException | Error e) {
+            ptr.close();
             throw e;
+        } finally {
+            if (txn != null) txn.close();
         }
-        txn.commit();
     }
 
     /**
@@ -38,8 +41,13 @@ public class Dbi {
         this.name = name;
         this.kvInfo = "datalevin/kv-info".equals(name);
         this.ptr = new IntPointer(1);
-        Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
-        handle = (int) ptr.get();
+        try {
+            Util.checkRc(DTLV.mdb_dbi_open(txn.get(), name, flags, ptr));
+            handle = (int) ptr.get();
+        } catch (RuntimeException | Error e) {
+            ptr.close();
+            throw e;
+        }
     }
 
     /**

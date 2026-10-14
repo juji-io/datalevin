@@ -955,11 +955,10 @@ public final class DatalevinInterop {
      * Flushes all pending documents in a raw full-text search index writer.
      */
     public static Object searchCommit(Object writer) {
-        Object result = ClojureCodec.bridgeOutput(ClojureRuntime.core("commit", rawResource(writer)));
         if (writer instanceof SearchIndexWriter searchWriter) {
-            searchWriter.close();
+            return searchWriter.commit();
         }
-        return result;
+        return ClojureCodec.bridgeOutput(ClojureRuntime.core("commit", rawResource(writer)));
     }
 
     /**

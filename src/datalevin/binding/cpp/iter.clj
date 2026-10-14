@@ -117,13 +117,14 @@
           v (.val cur)
           value-compressor (dbi-value-codec db)
           iter (DTLV$dtlv_key_rank_sample_iter.)
-          samples (alength indices)
-          sizets (SizeTPointer. samples)]
-      (dotimes [i samples] (.put sizets i (aget indices i)))
-      (Util/checkRc
-       (DTLV/dtlv_key_rank_sample_iter_create
-        ^DTLV$dtlv_key_rank_sample_iter iter
-        sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek))
+          samples (alength indices)]
+      ;; Native creation copies the indices; this buffer is not iterator-owned.
+      (with-open [sizets (SizeTPointer. samples)]
+        (dotimes [i samples] (.put sizets i (aget indices i)))
+        (Util/checkRc
+         (DTLV/dtlv_key_rank_sample_iter_create
+          ^DTLV$dtlv_key_rank_sample_iter iter
+          sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek)))
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_key_rank_sample_iter_has_next iter)))
@@ -183,13 +184,14 @@
           v       (.val cur)
           value-compressor (dbi-value-codec db)
           iter    (DTLV$dtlv_list_rank_sample_iter.)
-          samples (alength indices)
-          sizets  (SizeTPointer. samples)]
-      (dotimes [i samples] (.put sizets i (aget indices i)))
-      (Util/checkRc
-        (DTLV/dtlv_list_rank_sample_iter_create
+          samples (alength indices)]
+      ;; Native creation copies the indices; this buffer is not iterator-owned.
+      (with-open [sizets (SizeTPointer. samples)]
+        (dotimes [i samples] (.put sizets i (aget indices i)))
+        (Util/checkRc
+         (DTLV/dtlv_list_rank_sample_iter_create
           ^DTLV$dtlv_list_rank_sample_iter iter
-          sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek))
+          sizets samples (.ptr cur) (.ptr k) (.ptr v) sk ek)))
       (reify
         Iterator
         (hasNext [_] (dtlv-rc (DTLV/dtlv_list_rank_sample_iter_has_next iter)))

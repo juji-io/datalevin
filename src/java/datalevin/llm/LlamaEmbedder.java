@@ -56,6 +56,10 @@ public final class LlamaEmbedder implements AutoCloseable {
                                                  ctxSize,
                                                  batchSize,
                                                  threads);
+        if (rc != 0) {
+            // Native creation clears the output on failure; destroy accepts null.
+            DTLV.dtlv_llama_embedder_destroy(handle);
+        }
         checkRc(rc, "initialize llama embedder");
 
         int dims = DTLV.dtlv_llama_embedder_n_embd(handle);

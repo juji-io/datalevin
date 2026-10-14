@@ -48,6 +48,10 @@ public final class LlamaGenerator implements AutoCloseable {
                                                   gpuLayers,
                                                   ctxSize,
                                                   threads);
+        if (rc != 0) {
+            // Native creation clears the output on failure; destroy accepts null.
+            DTLV.dtlv_llama_generator_destroy(handle);
+        }
         checkRc(rc, "initialize llama generator");
     }
 

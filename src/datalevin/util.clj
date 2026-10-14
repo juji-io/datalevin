@@ -44,32 +44,36 @@
 (defn get-worker-thread-pool
   "access the thread pool for parallel query processing"
   []
-  (let [pool @worker-thread-pool-atom]
-    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
-      (reset! worker-thread-pool-atom (ioPool))
-      pool)))
+  (locking worker-thread-pool-atom
+    (let [pool @worker-thread-pool-atom]
+      (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+        (reset! worker-thread-pool-atom (ioPool))
+        pool))))
 
 (defn shutdown-worker-thread-pool
   []
-  (when-let [^ExecutorService pool @worker-thread-pool-atom]
-    (.shutdownNow pool)
-    (.awaitTermination pool 100 TimeUnit/MILLISECONDS)))
+  (locking worker-thread-pool-atom
+    (when-let [^ExecutorService pool @worker-thread-pool-atom]
+      (.shutdownNow pool)
+      (.awaitTermination pool 100 TimeUnit/MILLISECONDS))))
 
 (defonce scheduler-atom (atom nil))
 
 (defn get-scheduler
   "access the scheduler"
   []
-  (let [pool @scheduler-atom]
-    (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
-      (reset! scheduler-atom (Executors/newSingleThreadScheduledExecutor))
-      pool)))
+  (locking scheduler-atom
+    (let [pool @scheduler-atom]
+      (if (or (nil? pool) (.isShutdown ^ExecutorService pool))
+        (reset! scheduler-atom (Executors/newSingleThreadScheduledExecutor))
+        pool))))
 
 (defn shutdown-scheduler
   []
-  (when-let [^ExecutorService pool @scheduler-atom]
-    (.shutdownNow pool)
-    (.awaitTermination pool 100 TimeUnit/MILLISECONDS)))
+  (locking scheduler-atom
+    (when-let [^ExecutorService pool @scheduler-atom]
+      (.shutdownNow pool)
+      (.awaitTermination pool 100 TimeUnit/MILLISECONDS))))
 
 (defn seqable?
   ^Boolean [x]

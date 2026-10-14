@@ -37,10 +37,13 @@ public final class SearchIndexWriter extends HandleResource {
 
     /**
      * Flushes all pending documents and closes this writer.
+     * The writer is closed even if flushing fails.
      */
     public Object commit() {
-        Object result = DatalevinInterop.searchCommit(this);
-        close();
-        return result;
+        try {
+            return DatalevinInterop.searchCommit(resource());
+        } finally {
+            close();
+        }
     }
 }

@@ -354,13 +354,13 @@
       (when-not (= rc DTLV/MDB_NOTFOUND)
         (iter/v-bf vp value-codec rtx))))
   (get-key-rank [_ rtx]
-    (let [^BufVal kp (iter/rtx-key-buf rtx)
-          ^LongPointer rp (LongPointer. 1)
-          rc (DTLV/mdb_get_key_rank (.get ^Txn (iter/rtx-txn rtx))
-                                    (.get db) (.ptr kp) nil rp)]
-      (Util/checkRc ^int rc)
-      (when-not (= rc DTLV/MDB_NOTFOUND)
-        (.get rp))))
+    (with-open [^LongPointer rp (LongPointer. 1)]
+      (let [^BufVal kp (iter/rtx-key-buf rtx)
+            rc (DTLV/mdb_get_key_rank (.get ^Txn (iter/rtx-txn rtx))
+                                      (.get db) (.ptr kp) nil rp)]
+        (Util/checkRc ^int rc)
+        (when-not (= rc DTLV/MDB_NOTFOUND)
+          (.get rp)))))
   (get-key-by-rank [_ rtx rank]
     (let [^BufVal kp (iter/rtx-key-buf rtx)
           ^BufVal vp (iter/rtx-val-buf rtx)

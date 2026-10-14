@@ -242,7 +242,8 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1))
                     ? invoke(lookup(ns, name), new Object[]{arg1})
                     : lookup(ns, name).invoke(arg1);
         } catch (RuntimeException e) {
@@ -252,7 +253,9 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2})
                     : lookup(ns, name).invoke(arg1, arg2);
         } catch (RuntimeException e) {
@@ -262,7 +265,10 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3})
                     : lookup(ns, name).invoke(arg1, arg2, arg3);
         } catch (RuntimeException e) {
@@ -272,7 +278,11 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3)
+                    || KvCallOwner.isPrepared(arg4))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4})
                     : lookup(ns, name).invoke(arg1, arg2, arg3, arg4);
         } catch (RuntimeException e) {
@@ -282,7 +292,12 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4, Object arg5) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3)
+                    || KvCallOwner.isPrepared(arg4)
+                    || KvCallOwner.isPrepared(arg5))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5})
                     : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5);
         } catch (RuntimeException e) {
@@ -292,7 +307,13 @@ final class ClojureRuntime {
 
     static Object invoke(String ns, String name, Object arg1, Object arg2, Object arg3, Object arg4, Object arg5, Object arg6) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3)
+                    || KvCallOwner.isPrepared(arg4)
+                    || KvCallOwner.isPrepared(arg5)
+                    || KvCallOwner.isPrepared(arg6))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6})
                     : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6);
         } catch (RuntimeException e) {
@@ -310,7 +331,14 @@ final class ClojureRuntime {
                          Object arg6,
                          Object arg7) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3)
+                    || KvCallOwner.isPrepared(arg4)
+                    || KvCallOwner.isPrepared(arg5)
+                    || KvCallOwner.isPrepared(arg6)
+                    || KvCallOwner.isPrepared(arg7))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
                     : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
         } catch (RuntimeException e) {
@@ -329,7 +357,15 @@ final class ClojureRuntime {
                          Object arg7,
                          Object arg8) {
         try {
-            return KvCallOwner.hasOwners()
+            return (KvCallOwner.hasOwners()
+                    || KvCallOwner.isPrepared(arg1)
+                    || KvCallOwner.isPrepared(arg2)
+                    || KvCallOwner.isPrepared(arg3)
+                    || KvCallOwner.isPrepared(arg4)
+                    || KvCallOwner.isPrepared(arg5)
+                    || KvCallOwner.isPrepared(arg6)
+                    || KvCallOwner.isPrepared(arg7)
+                    || KvCallOwner.isPrepared(arg8))
                     ? invoke(lookup(ns, name), new Object[]{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8})
                     : lookup(ns, name).invoke(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
         } catch (RuntimeException e) {
@@ -346,6 +382,15 @@ final class ClojureRuntime {
     private static Object invokeDirect(IFn fn, Object[] args) {
         if (args == null || args.length == 0) {
             return fn.invoke();
+        }
+        // Prepared handles carry their owner directly, rather than through the
+        // global view registry. Clojure still receives its original preparation.
+        for (int i = 0; i < args.length; i++) {
+            if (KvCallOwner.isPrepared(args[i])) {
+                args = args.clone();
+                for (; i < args.length; i++) args[i] = KvCallOwner.unwrapPrepared(args[i]);
+                break;
+            }
         }
         return switch (args.length) {
             case 1 -> fn.invoke(args[0]);

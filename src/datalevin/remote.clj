@@ -75,16 +75,45 @@
 (defonce ^:private ^ConcurrentHashMap chatty-kv-stats*
   (ConcurrentHashMap.))
 
+(defonce ^:private ^AtomicLong chatty-kv-last-sweep-ms
+  (AtomicLong.))
+
+(defn- expire-chatty-kv-state!
+  [^long now-ms]
+  (let [last-ms (.get chatty-kv-last-sweep-ms)
+        window-ms (long *chatty-kv-detect-window-ms*)
+        interval-ms (long (max 1 window-ms))]
+    (when (and (or (>= (- now-ms last-ms) interval-ms) (< now-ms last-ms))
+               (.compareAndSet chatty-kv-last-sweep-ms last-ms now-ms))
+      (let [cutoff (- now-ms window-ms)]
+        (doseq [^java.util.Map$Entry entry (.entrySet chatty-kv-seq-state)]
+          (let [state (.getValue entry)]
+            (when (< ^long (:ts state) cutoff)
+              ;; A reader may have refreshed this key since it was inspected.
+              (.remove chatty-kv-seq-state (.getKey entry) state))))))))
+
+(defn- clear-chatty-kv-db!
+  [db-name]
+  (doseq [state-key (.keySet chatty-kv-seq-state)]
+    (when (= db-name (nth state-key 1))
+      (.remove chatty-kv-seq-state state-key)))
+  (doseq [stat-key (.keySet chatty-kv-stats*)]
+    (when (= db-name (first stat-key))
+      (.remove chatty-kv-stats* stat-key))))
+
 (defn reset-chatty-kv-stats!
   "Reset runtime chatty-KV detection state and counters."
   []
   (.clear chatty-kv-seq-state)
   (.clear chatty-kv-stats*)
+  (.set chatty-kv-last-sweep-ms 0)
   nil)
 
 (defn chatty-kv-stats
-  "Return detected chatty remote KV calls as {[db-name dbi-name op] count}."
+  "Return detected chatty remote KV calls as {[db-name dbi-name op] count}.
+  Closing a remote store clears its database's counters."
   []
+  (expire-chatty-kv-state! (System/currentTimeMillis))
   (into {}
         (map (fn [^java.util.Map$Entry e]
                [(.getKey e) (.getValue e)]))
@@ -98,6 +127,7 @@
 (defn- detect-chatty-kv!
   [db-name dbi-name op]
   (let [now-ms    (System/currentTimeMillis)
+        _         (expire-chatty-kv-state! now-ms)
         tid       (.getId (Thread/currentThread))
         state-key [tid db-name dbi-name op]
         prev      (.get chatty-kv-seq-state state-key)
@@ -462,16 +492,19 @@
 
   (close [_]
     (when (.compareAndSet closed? false true)
-      (when-not (cl/disconnected? client)
-        ;; Closing a remote store detaches the client/session view of the DB.
-        ;; It is not a with-transaction control message and must not route
-        ;; through the server's write-runner path.
-        (datalog-request read-floor-tx client :close [db-name] false))
-      (when (and owns-client? (not (cl/disconnected? client)))
-        (cl/disconnect client))
-      (when (and (not (identical? tx-client client))
-                 (not (cl/disconnected? tx-client)))
-        (cl/disconnect tx-client))))
+      (try
+        (when-not (cl/disconnected? client)
+          ;; Closing a remote store detaches the client/session view of the DB.
+          ;; It is not a with-transaction control message and must not route
+          ;; through the server's write-runner path.
+          (datalog-request read-floor-tx client :close [db-name] false))
+        (when (and owns-client? (not (cl/disconnected? client)))
+          (cl/disconnect client))
+        (when (and (not (identical? tx-client client))
+                   (not (cl/disconnected? tx-client)))
+          (cl/disconnect tx-client))
+        (finally
+          (clear-chatty-kv-db! db-name)))))
 
   (closed? [_]
     (if (or (.get closed?) (cl/disconnected? client))
@@ -981,13 +1014,16 @@
 
   (close-kv [_]
     (when (.compareAndSet closed? false true)
-      (when-not (cl/disconnected? client)
-        (cl/normal-request client :close-kv [db-name]))
-      (when (and owns-client? (not (cl/disconnected? client)))
-        (cl/disconnect client))
-      (when (and (not (identical? tx-client client))
-                 (not (cl/disconnected? tx-client)))
-        (cl/disconnect tx-client))))
+      (try
+        (when-not (cl/disconnected? client)
+          (cl/normal-request client :close-kv [db-name]))
+        (when (and owns-client? (not (cl/disconnected? client)))
+          (cl/disconnect client))
+        (when (and (not (identical? tx-client client))
+                   (not (cl/disconnected? tx-client)))
+          (cl/disconnect tx-client))
+        (finally
+          (clear-chatty-kv-db! db-name)))))
 
   (closed-kv? [_]
     (if (or (.get closed?) (cl/disconnected? client))

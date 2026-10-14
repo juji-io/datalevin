@@ -115,28 +115,30 @@
   (let [dbi (i/get-dbi lmdb dbi-name false)
         rtx (if (l/writing? lmdb)
               @(l/write-txn lmdb)
-              (i/get-rtx lmdb))
-        cur (l/get-cursor dbi rtx)]
+              (i/get-rtx lmdb))]
     (try
-      (let [indices (long-array [rank])
-            iterable (if (i/list-dbi? lmdb dbi-name)
-                       (l/iterate-list-sample dbi rtx cur indices [:all] k-type)
-                       (l/iterate-key-sample dbi rtx cur indices [:all] k-type))]
-        (with-open [^AutoCloseable iter (.iterator ^Iterable iterable)]
-          (when (.hasNext ^Iterator iter)
-            (let [kv (.next ^Iterator iter)
-                  v  (b/read-buffer (l/v kv) v-type)]
-              (if ignore-key?
-                v
-                [(b/read-buffer (l/k kv) k-type) v])))))
+      (let [cur (l/get-cursor dbi rtx)]
+        (try
+          (let [indices (long-array [rank])
+                iterable (if (i/list-dbi? lmdb dbi-name)
+                           (l/iterate-list-sample dbi rtx cur indices [:all] k-type)
+                           (l/iterate-key-sample dbi rtx cur indices [:all] k-type))]
+            (with-open [^AutoCloseable iter (.iterator ^Iterable iterable)]
+              (when (.hasNext ^Iterator iter)
+                (let [kv (.next ^Iterator iter)
+                      v  (b/read-buffer (l/v kv) v-type)]
+                  (if ignore-key?
+                    v
+                    [(b/read-buffer (l/k kv) k-type) v])))))
+          (finally
+            (if (l/read-only? rtx)
+              (l/return-cursor dbi cur)
+              (l/close-cursor dbi cur)))))
       (catch Throwable e
         (record-native-read-failure! lmdb e)
         (raise "Fail to get-by-rank: " e
                {:dbi dbi-name :rank rank :k-type k-type :v-type v-type}))
       (finally
-        (if (l/read-only? rtx)
-          (l/return-cursor dbi cur)
-          (l/close-cursor dbi cur))
         (when-not (l/writing? lmdb)
           (i/return-rtx lmdb rtx))))))
 
@@ -144,30 +146,36 @@
   ([lmdb dbi-name call error]
    `(scan ~lmdb ~dbi-name ~call ~error false))
   ([lmdb dbi-name call error keep-rtx?]
-   `(do
-      (i/check-ready ~lmdb)
-      (let [~'dbi (i/get-dbi ~lmdb ~dbi-name false)
-            ~'rtx (if (l/writing? ~lmdb)
-                    @(l/write-txn ~lmdb)
-                    (i/get-rtx ~lmdb))
-            ~'cur (l/get-cursor ~'dbi ~'rtx)]
-        (try
-          ~call
-          (catch Throwable ~'e
-            (record-native-read-failure! ~lmdb ~'e)
-            (when ~keep-rtx?
-              (if (l/read-only? ~'rtx)
-                (l/return-cursor ~'dbi ~'cur)
-                (l/close-cursor ~'dbi ~'cur))
-              (when-not (l/writing? ~lmdb) (i/return-rtx ~lmdb ~'rtx)))
-            ~error)
-          (finally
-            (when-not ~keep-rtx?
-              (if (l/read-only? ~'rtx)
-                (l/return-cursor ~'dbi ~'cur)
-                (l/close-cursor ~'dbi ~'cur)))
-            (when-not (or (l/writing? ~lmdb) ~keep-rtx?)
-              (i/return-rtx ~lmdb ~'rtx))))))))
+   (let [release-cursor `(if (l/read-only? ~'rtx)
+                           (l/return-cursor ~'dbi ~'cur)
+                           (l/close-cursor ~'dbi ~'cur))
+         release-rtx `(when-not (l/writing? ~lmdb)
+                        (i/return-rtx ~lmdb ~'rtx))]
+     `(do
+        (i/check-ready ~lmdb)
+        (let [~'dbi (i/get-dbi ~lmdb ~dbi-name false)
+              ~'rtx (if (l/writing? ~lmdb)
+                      @(l/write-txn ~lmdb)
+                      (i/get-rtx ~lmdb))
+              ~'cur (try
+                      (l/get-cursor ~'dbi ~'rtx)
+                      (catch Throwable ~'e
+                        (try
+                          (record-native-read-failure! ~lmdb ~'e)
+                          (throw ~'e)
+                          (finally ~release-rtx))))]
+          (try
+            ~call
+            (catch Throwable ~'e
+              (try
+                (record-native-read-failure! ~lmdb ~'e)
+                (finally
+                  (when ~keep-rtx?
+                    (try ~release-cursor (finally ~release-rtx)))))
+              ~error)
+            (finally
+              (when-not ~keep-rtx?
+                (try ~release-cursor (finally ~release-rtx))))))))))
 
 (defn sample-kv
   [lmdb dbi-name n k-type v-type ignore-key?]

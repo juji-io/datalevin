@@ -417,6 +417,16 @@ The goal of Datalevin is to simplify data storage and access. We aim to support
 diverse workloads and use cases. The [Datalevin roadmap](roadmap.md) is the
 authority for release targets, priorities, and milestone completion gates.
 
+Upcoming work, with scope and sequencing defined in the linked roadmap sections:
+
+* [Direct analytics, virtual relations, and federation](roadmap.md#13-direct-analytics-virtual-relations-and-semantic-federation)
+* [Rule-head aggregation and maintained analytics](roadmap.md#14-aggregation-in-rule-heads-and-maintained-analytics)
+* [Compression and KV TTL](roadmap.md#20-compression-and-kv-ttl)
+* [Entity-level security](roadmap.md#21-secure-data)
+* [Provenance annotations](roadmap.md#22-explainable-data)
+* [Local sharding](roadmap.md#local-sharding-earlier-delivery-under-consideration)
+* [Distributed data](roadmap.md#31-distributed-data)
+
 Completed milestones:
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
