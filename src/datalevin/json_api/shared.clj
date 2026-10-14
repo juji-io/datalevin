@@ -535,10 +535,7 @@
   [report]
   (let [tx-data (:tx-data report)]
     {"tx-data" (or tx-data [])
-     "tempids" (into {}
-                     (map (fn [[k v]]
-                            [(str k) v]))
-                     (:tempids report))
+     "tempids" (or (:tempids report) {})
      "tx-id"   (when-let [datom (first tx-data)]
                  (dd/datom-tx datom))
      "tx-meta" (:tx-meta report)}))

@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+
+### Fixed
+- [Server] transaction report tempid encoding.
+- [Server] large map/set results encoding.
+- [Lib] JSON report tempid encoding.
+
 ## 1.2.4 (2026-10-14)
 
 ### Fixed

@@ -1819,9 +1819,8 @@
     (let [{:keys [tx-data tempids new-attributes]} res]
       [tx-data (dissoc tempids :max-eid) (tempids :max-eid) new-attributes])
     (let [[tx-data tempids] (split-with datom? res)
-          max-eid           (-> tempids last second)
-          tempids           (into {} (butlast tempids))]
-      [tx-data tempids max-eid nil])))
+          tempids           (into {} tempids)]
+      [tx-data (dissoc tempids :max-eid) (:max-eid tempids) nil])))
 
 (defn- resolved-remote-db-info
   [store db db-info max-eid simulated?]
