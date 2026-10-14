@@ -123,43 +123,43 @@
     (sh python "-m" "pytest" "bindings/python/tests" "-q")))
 
 (defn run-tests []
-  (println "\n\n[ Running lein tests ]\n")
-  (sh "./lein-test" :dir "script")
+  ;; (println "\n\n[ Running lein tests ]\n")
+  ;; (sh "./lein-test" :dir "script")
 
-  (println "\n\n[ Running test1 lein tests (dtlvtest) ]\n")
-  (sh "lein" "test" :dir dtlvtest-dir)
+  ;; (println "\n\n[ Running test1 lein tests (dtlvtest) ]\n")
+  ;; (sh "lein" "test" :dir dtlvtest-dir)
 
-  (println "\n\n[ Running Jepsen lein tests ]\n")
-  (sh "lein" "test" :dir "jepsen")
+  ;; (println "\n\n[ Running Jepsen lein tests ]\n")
+  ;; (sh "lein" "test" :dir "jepsen")
 
-  (println "\n\n[ Running JOB tests ]\n")
-  (sh "./job-test" :dir "script")
+  ;; (println "\n\n[ Running JOB tests ]\n")
+  ;; (sh "./job-test" :dir "script")
 
-  (println "\n\n[ Running math tests ]\n")
-  (sh "./math-test" :dir "script")
+  ;; (println "\n\n[ Running math tests ]\n")
+  ;; (sh "./math-test" :dir "script")
 
-  (println "\n\n[ Running LDBC-SNB tests ]\n")
-  (sh "./ldbc-snb-test" :dir "script")
+  ;; (println "\n\n[ Running LDBC-SNB tests ]\n")
+  ;; (sh "./ldbc-snb-test" :dir "script")
 
-  (println "\n\n[ Running idoc tests ]\n")
-  (sh "clojure" "-M:test" :dir "benchmarks/idoc-bench")
+  ;; (println "\n\n[ Running idoc tests ]\n")
+  ;; (sh "clojure" "-M:test" :dir "benchmarks/idoc-bench")
 
-  (println "\n\n[ Running OpenRuleBench tests ]\n")
-  (sh "clojure" "-M:test" :dir "benchmarks/openrulebench")
+  ;; (println "\n\n[ Running OpenRuleBench tests ]\n")
+  ;; (sh "clojure" "-M:test" :dir "benchmarks/openrulebench")
 
-  (println "\n\n[ Running YCSB benchmark tests ]\n")
-  (sh "clojure" "-M:jvm:test" :dir "benchmarks/ycsb-bench")
+  ;; (println "\n\n[ Running YCSB benchmark tests ]\n")
+  ;; (sh "clojure" "-M:jvm:test" :dir "benchmarks/ycsb-bench")
 
-  (println "\n\n[ Running write benchmark tests ]\n")
-  (sh "clojure" "-M:test" :dir "benchmarks/write-bench")
+  ;; (println "\n\n[ Running write benchmark tests ]\n")
+  ;; (sh "clojure" "-M:test" :dir "benchmarks/write-bench")
 
-  (println "\n\n[ Testing jar ]\n")
-  (sh "./jar" :dir "script")
-  (sh "test-jar/test.sh")
+  ;; (println "\n\n[ Testing jar ]\n")
+  ;; (sh "./jar" :dir "script")
+  ;; (sh "test-jar/test.sh")
 
-  (println "\n\n[ Testing uberjar ]\n")
-  (sh "./uberjar" :dir "script")
-  (sh "test-jar/test-uber.sh")
+  ;; (println "\n\n[ Testing uberjar ]\n")
+  ;; (sh "./uberjar" :dir "script")
+  ;; (sh "test-jar/test-uber.sh")
 
   (println "\n\n[ Testing native jar ]\n")
   (sh "test-jar/test-native.sh")

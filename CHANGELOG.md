@@ -7,6 +7,7 @@
 ### Improved
 - [Server] atomic `init-db`.
 - [KV] cleanup resources after use.
+- update deps.
 
 ## 1.2.3 (2026-10-13)
 

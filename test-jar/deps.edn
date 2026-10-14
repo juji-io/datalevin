@@ -1,6 +1,6 @@
 {:paths   ["src"]
  :deps
- {org.clojure/clojure                  {:mvn/version "1.12.5"}
+ {org.clojure/clojure                  {:mvn/version "1.12.6"}
   com.github.clj-easy/graal-build-time {:mvn/version "1.0.6"}}
  :aliases {:build
            {:deps       {io.github.clojure/tools.build {:mvn/version "0.10.7"}}
