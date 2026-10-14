@@ -1,14 +1,16 @@
 (ns datalevin.native-cursor-cleanup-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [datalevin.binding.cpp :as cpp]
+            [datalevin.binding.cpp.buffer :as buffer]
             [datalevin.bits :as b]
+            [datalevin.constants :as c]
             [datalevin.interface :as i]
             [datalevin.kv :as kv]
             [datalevin.lmdb :as l]
             [datalevin.test.core :refer [db-fixture]]
             [datalevin.util :as u])
-  (:import [datalevin.binding.cpp Rtx]
-           [datalevin.cpp Cursor Txn]
+  (:import [datalevin.binding.cpp CppLMDB Rtx]
+           [datalevin.cpp BufVal Cursor Dbi Txn Util$NotReadyException]
            [datalevin.dtlvnative DTLV]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
@@ -74,6 +76,71 @@
         (is (nil? (.ptr ^Cursor first-cur)))
         (is (nil? (.ptr ^Cursor second-cur)))
         (is (= [[1 2]] (i/get-range db "data" [:all] :long :long)))))))
+
+(deftest read-only-terminal-operations-close-pooled-cursors
+  (doseq [operation [:abort :commit]]
+    (testing (name operation)
+      (with-lmdb
+        (fn [db dbi]
+          (i/open-dbi db "other")
+          (with-open [key (BufVal. c/+max-key-size+)
+                      val (BufVal. 0)]
+            (let [^Txn txn (Txn/createReadOnly
+                            (.-env ^CppLMDB (kv/raw-lmdb db)))
+                  ^Dbi native-dbi (l/dbi dbi)
+                  ^Dbi other-dbi (l/dbi (i/get-dbi db "other"))]
+              (try
+                (let [^Cursor idle (.getCursor txn native-dbi key val)
+                      ^Cursor borrowed (.getCursor txn native-dbi key val)
+                      ^Cursor other (.getCursor txn other-dbi key val)]
+                  (.release idle)
+                  (.release other)
+                  (case operation
+                    :abort (.abort txn)
+                    :commit (.commit txn))
+                  ;; Both idle and outstanding cursors, across all DBIs, must
+                  ;; be freed immediately rather than waiting for Txn.close().
+                  (doseq [^Cursor cur [idle borrowed other]]
+                    (is (nil? (.ptr cur)))
+                    (.release cur)
+                    (.close cur))
+                  (is (thrown? Util$NotReadyException
+                               (.getCursor txn native-dbi key val)))
+                  (.close txn)
+                  (.close txn))
+                (finally
+                  (.close txn))))))))))
+
+(deftest reused-read-cursors-use-the-supplied-buffers
+  (with-lmdb
+    (fn [db dbi]
+      (i/transact-kv db [[:put "data" 3 4 :long :long]])
+      (with-open [first-key (BufVal. c/+max-key-size+)
+                  first-val (BufVal. 0)
+                  next-key (BufVal. c/+max-key-size+)
+                  next-val (BufVal. 0)]
+        (let [^Txn txn (Txn/createReadOnly
+                        (.-env ^CppLMDB (kv/raw-lmdb db)))
+              ^Dbi native-dbi (l/dbi dbi)]
+          (try
+            (buffer/put-bufval first-key 1 :long nil nil)
+            (let [^Cursor first-cur (.getCursor txn native-dbi first-key first-val)]
+              (is (.seek first-cur DTLV/MDB_SET))
+              (is (= 2 (b/read-buffer (.outBuf first-val) :long)))
+              (.release first-cur)
+              (doseq [[^BufVal key ^BufVal val k v]
+                      [[next-key next-val 3 4] [first-key first-val 1 2]]]
+                (buffer/put-bufval key k :long nil nil)
+                (let [^Cursor cur (.getCursor txn native-dbi key val)]
+                  (is (identical? first-cur cur))
+                  (is (identical? key (.key cur)))
+                  (is (identical? val (.val cur)))
+                  (is (.seek cur DTLV/MDB_SET))
+                  (is (= k (b/read-buffer (.outBuf (.key cur)) :long)))
+                  (is (= v (b/read-buffer (.outBuf (.val cur)) :long)))
+                  (.release cur))))
+            (finally
+              (.close txn))))))))
 
 (deftest virtual-thread-return-closes-its-cursors
   (with-lmdb

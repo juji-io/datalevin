@@ -2,6 +2,8 @@
 
 ## WIP
 
+### Fixed
+- [KV] native cursor memory leaks.
 ### Improved
 - [Server] atomic `init-db`.
 

@@ -26,13 +26,18 @@ public class Env {
         DTLV.MDB_env env = new DTLV.MDB_env();
         Util.checkRc(DTLV.mdb_env_create(env));
 
-        Util.checkRc(DTLV.mdb_env_set_mapsize(env, size));
-        Util.checkRc(DTLV.mdb_env_set_maxreaders(env, maxReaders));
-        Util.checkRc(DTLV.mdb_env_set_maxdbs(env, maxDbs));
+        try {
+            Util.checkRc(DTLV.mdb_env_set_mapsize(env, size));
+            Util.checkRc(DTLV.mdb_env_set_maxreaders(env, maxReaders));
+            Util.checkRc(DTLV.mdb_env_set_maxdbs(env, maxDbs));
 
-        Util.checkRc(DTLV.mdb_env_open(env, dir, flags, 0664));
+            Util.checkRc(DTLV.mdb_env_open(env, dir, flags, 0664));
 
-        return new Env(env);
+            return new Env(env);
+        } catch (RuntimeException | Error e) {
+            DTLV.mdb_env_close(env);
+            throw e;
+        }
     }
 
     /**

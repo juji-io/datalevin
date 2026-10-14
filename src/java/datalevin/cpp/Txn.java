@@ -85,25 +85,30 @@ public class Txn {
 
     public void abort() {
         checkReady();
+        closeCursorPools();
         state = DONE;
         DTLV.mdb_txn_abort(ptr);
     }
 
     public void close() {
         if (state == RELEASED) return;
+        closeCursorPools();
+        if (state == READY || state == RESET) DTLV.mdb_txn_abort(ptr);
+        state = RELEASED;
+    }
+
+    private void closeCursorPools() {
         if (cursorPools != null) {
             for (ReadCursorPool pool : cursorPools.values()) pool.close();
             cursorPools.clear();
             cursorPools = null;
         }
-        if (state == READY || state == RESET) DTLV.mdb_txn_abort(ptr);
-        state = RELEASED;
     }
 
     /**
-     * Borrow a cursor whose buffers and lifetime belong to this transaction.
-     * Read cursors survive reset/renew, but are all freed before transaction
-     * close, including cursors abandoned by a terminated reader thread.
+     * Borrow a cursor using the supplied key/value buffers. Read cursors belong
+     * to this transaction and survive reset/renew, but are all freed before
+     * commit, abort, or close, including abandoned cursors from terminated readers.
      */
     public Cursor getCursor(Dbi dbi, BufVal key, BufVal val) {
         checkReady();
@@ -135,7 +140,7 @@ public class Txn {
             if (cursor != null) {
                 cursor.pooled = false;
                 try {
-                    return cursor.renew(txn);
+                    return cursor.renew(txn, key, val);
                 } catch (RuntimeException | Error e) {
                     cursor.close();
                     throw e;
@@ -170,6 +175,7 @@ public class Txn {
 
     public void commit() {
         checkReady();
+        closeCursorPools();
         state = DONE;
         Util.checkRc(DTLV.mdb_txn_commit(ptr));
     }

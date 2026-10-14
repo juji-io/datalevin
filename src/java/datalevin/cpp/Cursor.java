@@ -277,4 +277,12 @@ public class Cursor {
         Util.checkRc(DTLV.mdb_cursor_renew(txn.get(), ptr));
         return this;
     }
+
+    /** Renew a pooled cursor with the caller's buffers for its next use. */
+    Cursor renew(Txn txn, BufVal key, BufVal val) {
+        renew(txn);
+        this.key = key;
+        this.val = val;
+        return this;
+    }
 }
