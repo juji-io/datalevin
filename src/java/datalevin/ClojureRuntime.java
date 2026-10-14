@@ -8,7 +8,6 @@ import clojure.lang.Var;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Shared JVM interop runtime for Datalevin language bindings.
@@ -19,10 +18,19 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class ClojureRuntime {
 
+    private static final int VAR_CACHE_SIZE = 256;
     private static final int READ_EDN_CACHE_SIZE = 256;
     private static final int READ_EDN_CACHE_MAX_LENGTH = 4096;
     private static final Object NULL_SENTINEL = new Object();
-    private static final ConcurrentHashMap<String, IFn> VARS = new ConcurrentHashMap<>();
+    private static final Map<String, IFn> VARS =
+            Collections.synchronizedMap(new LinkedHashMap<String, IFn>(VAR_CACHE_SIZE,
+                                                                       0.75f,
+                                                                       true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, IFn> eldest) {
+                    return size() > VAR_CACHE_SIZE;
+                }
+            });
     private static final Map<String, Object> READ_EDN_CACHE =
             Collections.synchronizedMap(new LinkedHashMap<String, Object>(READ_EDN_CACHE_SIZE,
                                                                           0.75f,

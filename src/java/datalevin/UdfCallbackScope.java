@@ -6,7 +6,6 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Function;
@@ -18,16 +17,11 @@ import java.util.function.Supplier;
  * borrowed database, entity, and prepared handles expire with the callback.
  */
 final class UdfCallbackScope {
-    private static final ExecutorService CALLBACKS = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "datalevin-js-udf");
-        thread.setDaemon(true);
-        return thread;
-    });
     private static final ThreadLocal<BlockingQueue<Runnable>> OWNER_WORK = new ThreadLocal<>();
     private static final Runnable WAKE = () -> {};
 
-    private final Thread owner = Thread.currentThread();
-    private final BlockingQueue<Runnable> work;
+    private Thread owner = Thread.currentThread();
+    private BlockingQueue<Runnable> work;
     private final Set<FutureTask<?>> pending = new HashSet<>();
     private boolean active = true;
 
@@ -46,14 +40,18 @@ final class UdfCallbackScope {
             work = new LinkedBlockingQueue<>();
             OWNER_WORK.set(work);
         }
+        BlockingQueue<Runnable> ownerWork = work;
         UdfCallbackScope scope = new UdfCallbackScope(work);
         FutureTask<Object> callback = new FutureTask<>(() -> fn.invoke(arguments.apply(scope)));
         try {
-            CALLBACKS.execute(() -> {
+            ExecutorService callbacks = (ExecutorService) ClojureRuntime.invoke(
+                    "datalevin.util", "get-udf-callback-thread-pool");
+            callbacks.execute(() -> {
                 try {
                     callback.run();
                 } finally {
-                    scope.work.offer(WAKE);
+                    // Completion can race with scope cleanup after interruption.
+                    ownerWork.offer(WAKE);
                 }
             });
             // Nested callbacks share this queue so the owner can service reads
@@ -77,19 +75,16 @@ final class UdfCallbackScope {
     }
 
     private <T> T call(Supplier<T> operation) {
-        if (Thread.currentThread() == owner) {
-            synchronized (this) {
-                checkActive();
-            }
-            return operation.get();
-        }
-        FutureTask<T> request;
+        FutureTask<T> request = null;
         synchronized (this) {
             checkActive();
-            request = new FutureTask<>(operation::get);
-            pending.add(request);
-            work.offer(request);
+            if (Thread.currentThread() != owner) {
+                request = new FutureTask<>(operation::get);
+                pending.add(request);
+                work.offer(request);
+            }
         }
+        if (request == null) return operation.get();
         try {
             return await(request);
         } finally {
@@ -110,6 +105,8 @@ final class UdfCallbackScope {
             work.remove(request);
         }
         pending.clear();
+        owner = null;
+        work = null;
     }
 
     static <T> T await(FutureTask<T> task) {

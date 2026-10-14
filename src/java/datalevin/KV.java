@@ -89,7 +89,7 @@ public class KV extends HandleResource {
      * Opens an explicit KV write transaction.
      */
     public KVTransaction beginTransaction() {
-        return new KVTransaction(this, ClojureRuntime.core("begin-kv-transaction", resource()));
+        return KVTransaction.begin(this);
     }
 
     /**

@@ -727,9 +727,7 @@ public final class DatalevinInterop {
      * Opens an explicit KV write transaction.
      */
     public static Object keyValueBeginTransaction(Object kv) {
-        Object rawKv = rawResource(kv);
-        return new KVTransaction(new KV(rawKv, false),
-                                 ClojureRuntime.core("begin-kv-transaction", rawKv));
+        return KVTransaction.begin(new KV(rawResource(kv), false));
     }
 
     /** Opens a KV transaction on a persistent owner for asynchronous bridge calls. */

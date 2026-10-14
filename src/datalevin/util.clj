@@ -22,7 +22,8 @@
    [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [java.util Random Arrays Iterator UUID]
    [java.util.concurrent Executors ExecutorService Future TimeUnit
-    ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue]
+    ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy ArrayBlockingQueue
+    ThreadFactory]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException
     StandardCopyOption StandardOpenOption]
@@ -56,6 +57,31 @@
     (when-let [^ExecutorService pool @worker-thread-pool-atom]
       (.shutdownNow pool)
       (.awaitTermination pool 100 TimeUnit/MILLISECONDS))))
+
+(defonce udf-callback-thread-pool-atom (atom nil))
+
+(defn get-udf-callback-thread-pool
+  "Access the cached daemon pool for asynchronous bridge UDF callbacks."
+  []
+  (locking udf-callback-thread-pool-atom
+    (let [^ExecutorService pool @udf-callback-thread-pool-atom]
+      (if (or (nil? pool) (.isShutdown pool))
+        (reset! udf-callback-thread-pool-atom
+                (Executors/newCachedThreadPool
+                  (reify ThreadFactory
+                    (newThread [_ runnable]
+                      (doto (Thread. ^Runnable runnable "datalevin-js-udf")
+                        (.setDaemon true))))))
+        pool))))
+
+(defn shutdown-udf-callback-thread-pool
+  "Stop bridge UDF callback workers when the last LMDB closes."
+  []
+  (locking udf-callback-thread-pool-atom
+    (when-let [^ExecutorService pool @udf-callback-thread-pool-atom]
+      (.shutdownNow pool)
+      (.awaitTermination pool 100 TimeUnit/MILLISECONDS)
+      (reset! udf-callback-thread-pool-atom nil))))
 
 (defonce scheduler-atom (atom nil))
 

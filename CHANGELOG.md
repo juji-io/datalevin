@@ -6,6 +6,7 @@
 - [KV] native cursor memory leaks.
 ### Improved
 - [Server] atomic `init-db`.
+- [KV] cleanup resources after use.
 
 ## 1.2.3 (2026-10-13)
 

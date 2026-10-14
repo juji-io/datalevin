@@ -621,22 +621,14 @@
             [vec-ref ids]))
         [vec-ref ids]))))
 
-(defn- vec-save-key* [fname] (->> fname hash (str "vec-save-") keyword))
-
-(defonce ^:private vec-save-key-cache* (atom {}))
-
 (defn vec-save-key
-  "Stable async work key for a vector save, memoized across calls."
+  "Stable async work key for a vector save without retaining its filename."
   [fname]
-  (or (get @vec-save-key-cache* fname)
-      (let [k (vec-save-key* fname)]
-        (swap! vec-save-key-cache* assoc fname k)
-        k)))
+  (->> fname hash (str "vec-save-") keyword))
 
 (defn reset-vec-save-cache!
-  "Clear memoized vector-save work keys. Intended for tests."
+  "Compatibility helper. Vector-save work keys are no longer cached."
   []
-  (reset! vec-save-key-cache* {})
   nil)
 
 (def ^:dynamic *submit-async-vec-save*

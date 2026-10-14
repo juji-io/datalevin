@@ -208,17 +208,16 @@
           (combined-work cmb items (.-stage wq) backlog first-work)
           (individual-work items backlog)))
       (finally
-        (if (.peek items)
-          ;; Keep ownership while handing a weighted residual or newly arrived
-          ;; work back to the dispatcher.
-          (.offer event-queue k)
-          (do
-            (.set active false)
-            ;; Close the enqueue-vs-release race: a producer that observed the
-            ;; old active=true did not schedule an event.
-            (when (and (.peek items)
-                       (.compareAndSet active false true))
-              (.offer event-queue k))))))))
+        (locking wq
+          (if (.peek items)
+            ;; Keep ownership while handing a weighted residual or newly arrived
+            ;; work back to the dispatcher.
+            (.offer event-queue k)
+            (do
+              (.set active false)
+              ;; Enqueue checks this mapping under the same queue lock, so a
+              ;; producer holding this retired queue will retry the lookup.
+              (.remove work-queues k wq))))))))
 
 (defn- new-workqueue
   [work]
@@ -242,17 +241,22 @@
       ;; ConcurrentHashMap.putIfAbsent evaluates its value eagerly. Constructing
       ;; a WorkQueue here for every submission used to allocate and discard a
       ;; queue (and combine stage) once the key was established.
-      (let [^WorkQueue wq            (or (.get work-queues k)
-                                         (let [fresh (new-workqueue work)]
-                                           (or (.putIfAbsent work-queues k fresh)
-                                               fresh)))
-            item                     (->WorkItem work p cb)
-            ^ConcurrentLinkedQueue q (.-items wq)]
-        (.offer q item)
-        ;; Exactly one event/handler may own a work key at a time. The handler
-        ;; reschedules itself if work arrives while it is active.
-        (when (.compareAndSet ^AtomicBoolean (.-active wq) false true)
-          (.offer event-queue k)))
+      (let [item (->WorkItem work p cb)]
+        (loop []
+          (let [^WorkQueue wq (or (.get work-queues k)
+                                 (let [fresh (new-workqueue work)]
+                                   (or (.putIfAbsent work-queues k fresh)
+                                       fresh)))]
+            (when-not
+              (locking wq
+                (when (identical? wq (.get work-queues k))
+                  (.offer ^ConcurrentLinkedQueue (.-items wq) item)
+                  ;; Exactly one event/handler owns this queue. Publish its
+                  ;; first event only after the item is in the current mapping.
+                  (when (.compareAndSet ^AtomicBoolean (.-active wq) false true)
+                    (.offer event-queue k))
+                  true))
+              (recur)))))
       (catch Throwable e
         (.release backlog)
         (throw e)))))

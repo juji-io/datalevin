@@ -27,9 +27,7 @@
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.core/open-kv` for more details.")
 
-(defn- sync-key* [dir] (->> dir hash (str "lmdb-sync-") keyword))
-
-(def sync-key (memoize sync-key*))
+(defn sync-key [dir] (->> dir hash (str "lmdb-sync-") keyword))
 
 (deftype AsyncSync [dir lmdb]
   IAsyncWork

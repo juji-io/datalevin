@@ -19,14 +19,14 @@
    [java.nio ByteBuffer]
    [java.security MessageDigest]
    [java.util Arrays Random]
-   [java.util.concurrent ArrayBlockingQueue ConcurrentLinkedDeque
-    CountDownLatch]
+   [java.util.concurrent ArrayBlockingQueue CountDownLatch]
    [java.util.concurrent.atomic AtomicInteger]
    [java.util.function BiPredicate]))
 
 (deftest pooled-serialization-growth-nesting-and-failures
-  ;; A fresh pool forces growth, independently of buffers warmed by other tests.
-  (with-redefs [bf/array-buffers (ConcurrentLinkedDeque.)]
+  ;; An empty pool forces growth, independently of buffers warmed by other tests.
+  (.clear bf/array-buffers)
+  (try
     (let [value {:schema (vec (repeat 1000 {:db/valueType :db.type/string}))}
           expected (b/serialize value)]
       (b/with-serialized-bf [outer value]
@@ -43,7 +43,8 @@
       (is (thrown? Exception (b/acquire-serialized-bf String)))
       (b/with-serialized-bf [buffer value]
         (is (= value (b/deserialize-bf buffer)))))
-    (is (pos? (.size bf/array-buffers)))))
+    (is (pos? (.size bf/array-buffers)))
+    (finally (.clear bf/array-buffers))))
 
 (defn- byte-array-hash [value]
   (let [md (MessageDigest/getInstance "SHA-256")

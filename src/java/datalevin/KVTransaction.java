@@ -24,6 +24,21 @@ public final class KVTransaction extends KV {
         this.finished = false;
     }
 
+    static KVTransaction begin(KV owner) {
+        Object kv = owner.resource();
+        Object transactionKv = ClojureRuntime.core("begin-kv-transaction", kv);
+        try {
+            return new KVTransaction(owner, transactionKv);
+        } catch (RuntimeException | Error failure) {
+            try {
+                ClojureRuntime.core("abort-kv-transaction", kv);
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != failure) failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
     /**
      * Returns whether this transaction is still active.
      */

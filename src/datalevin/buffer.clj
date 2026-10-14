@@ -13,7 +13,7 @@
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
-   [java.util.concurrent ConcurrentLinkedDeque]
+   [java.util.concurrent ArrayBlockingQueue]
    [java.nio ByteBuffer]
    [datalevin.utl BufOps]))
 
@@ -28,37 +28,46 @@
   ^long [^ByteBuffer b1 ^ByteBuffer b2]
   (BufOps/compareByteBuf b1 b2))
 
-(defonce ^ConcurrentLinkedDeque array-buffers (ConcurrentLinkedDeque.))
+;; Bound both the number of idle buffers and each buffer's capacity, limiting
+;; retained heap/direct storage to 32 MiB per pool after a burst of large reads.
+(def ^:private ^:const buffer-pool-size 32)
+(def ^:private ^:const max-pooled-buffer-capacity (* 1024 1024))
+
+(defonce ^ArrayBlockingQueue array-buffers
+  (ArrayBlockingQueue. buffer-pool-size))
 
 (defn- allocate-array-buffer
   ^ByteBuffer [size]
   (ByteBuffer/wrap (byte-array size)))
 
 (defn- take-buffer!
-  ^ByteBuffer [^ConcurrentLinkedDeque buffers allocate ^long size]
+  ^ByteBuffer [^ArrayBlockingQueue buffers allocate ^long size]
   (let [cap (+ size Integer/BYTES)] ;; for storing length
-    (loop [skipped []]
-      (if-let [^ByteBuffer bf (.pollFirst buffers)]
-        (if (<= cap (.capacity bf))
-          (do
-            (doseq [^ByteBuffer skipped-bf skipped]
-              (.offer buffers skipped-bf))
-            (.clear bf)
-            bf)
-          (recur (conj skipped bf)))
-        (do
-          (doseq [^ByteBuffer skipped-bf skipped]
-            (.offer buffers skipped-bf))
+    ;; An unpoolable request must not drain buffers useful to smaller callers.
+    (if (> cap max-pooled-buffer-capacity)
+      (allocate cap)
+      (loop []
+        (if-let [^ByteBuffer bf (.poll buffers)]
+          (if (<= cap (.capacity bf))
+            (do (.clear bf) bf)
+            ;; Drop undersized buffers instead of scanning them on every call.
+            (recur))
           (allocate cap))))))
+
+(defn- return-buffer!
+  [^ArrayBlockingQueue buffers ^ByteBuffer bf]
+  (and (<= (.capacity bf) max-pooled-buffer-capacity)
+       (.offer buffers bf)))
 
 (defn get-array-buffer
   ([] (get-array-buffer (+ c/+max-key-size+ Integer/BYTES)))
   (^ByteBuffer [^long size]
    (take-buffer! array-buffers allocate-array-buffer size)))
 
-(defn return-array-buffer [bf] (.offer array-buffers bf))
+(defn return-array-buffer [bf] (return-buffer! array-buffers bf))
 
-(defonce ^ConcurrentLinkedDeque direct-buffers (ConcurrentLinkedDeque.))
+(defonce ^ArrayBlockingQueue direct-buffers
+  (ArrayBlockingQueue. buffer-pool-size))
 
 (defn allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
@@ -70,7 +79,7 @@
   (^ByteBuffer [^long size]
    (take-buffer! direct-buffers allocate-buffer size)))
 
-(defn return-direct-buffer [bf] (.offer direct-buffers bf))
+(defn return-direct-buffer [bf] (return-buffer! direct-buffers bf))
 
 (defn hex-buffer [^ByteBuffer sb]
   (let [sa (byte-array (.remaining sb))]

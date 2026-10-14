@@ -19,7 +19,6 @@
    datalevin.cache-invalidation-test
    datalevin.leftist-heap-test
    datalevin.native-value-test
-   datalevin.native-writer-cleanup-test
    datalevin.serialization-context-test
    datalevin.storage-buffer-test
    datalevin.util-test
@@ -46,7 +45,6 @@
           'datalevin.cache-invalidation-test
           'datalevin.leftist-heap-test
           'datalevin.native-value-test
-          'datalevin.native-writer-cleanup-test
           'datalevin.serialization-context-test
           'datalevin.storage-buffer-test
           'datalevin.util-test

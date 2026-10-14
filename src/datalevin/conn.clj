@@ -1255,9 +1255,7 @@
 
 (declare dl-tx-combine)
 
-(defn- dl-work-key* [db-name] (->> db-name hash (str "tx") keyword))
-
-(def ^:no-doc dl-work-key (memoize dl-work-key*))
+(defn ^:no-doc dl-work-key [db-name] (->> db-name hash (str "tx") keyword))
 (defn- tx-data-size
   ^long [tx-data]
   (if (instance? java.util.Collection tx-data)

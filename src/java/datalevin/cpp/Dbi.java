@@ -65,7 +65,8 @@ public class Dbi {
     }
 
     /**
-     * Free memory
+     * Release JavaCPP storage. The environment owns the native DBI handle;
+     * mdb_drop with del=1 also closes that handle.
      */
     public void close() {
         ptr.close();

@@ -800,6 +800,7 @@
   (a/shutdown-executor)
   (shutdown-transact-async-executor-if-loaded!)
   (shutdown-query-plan-pool-if-loaded!)
+  (u/shutdown-udf-callback-thread-pool)
   (u/shutdown-worker-thread-pool)
   (u/shutdown-scheduler)
   nil)
@@ -812,9 +813,7 @@
 
 (declare kv-tx-combine)
 
-(defn- kv-work-key* [dir] (->> dir hash (str "kv-tx") keyword))
-
-(def kv-work-key (memoize kv-work-key*))
+(defn kv-work-key [dir] (->> dir hash (str "kv-tx") keyword))
 
 (deftype ^:no-doc AsyncKVTx [lmdb dbi-name txs k-type v-type cb]
   IAsyncWork

@@ -1010,16 +1010,29 @@
   (drop-dbi [this dbi-name]
     (.check-ready this)
     (try
-      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
-            ^Txn txn (Txn/create env)]
-        (Util/checkRc (DTLV/mdb_drop (.get txn) (.get dbi) 1))
-        (.commit txn)
-        (vswap! info update :dbis dissoc dbi-name)
-        (vswap! info update :custom-dbis disj dbi-name)
-        (transact-kv this c/kv-info
-                     [[:del [:dbis dbi-name]]] [:keyword :string])
-        (.remove dbis dbi-name)
-        nil)
+      (locking dbis
+        (let [^DBI db (.get-dbi this dbi-name)
+              ^Dbi dbi (.-db db)
+              dropped? (volatile! false)
+              ^Txn txn (Txn/create env)]
+          (try
+            (Util/checkRc (DTLV/mdb_drop (.get txn) (.get dbi) 1))
+            ;; del=1 closes the native handle immediately, even if the commit
+            ;; or later metadata update fails. Its wrapper must be retired.
+            (vreset! dropped? true)
+            (.commit txn)
+            (vswap! info update :dbis dissoc dbi-name)
+            (vswap! info update :custom-dbis disj dbi-name)
+            (transact-kv this c/kv-info
+                         [[:del [:dbis dbi-name]]] [:keyword :string])
+            nil
+            (finally
+              (try
+                (.close txn)
+                (finally
+                  (when @dropped?
+                    (.remove dbis dbi-name)
+                    (buffer/close-dbi-quiet! db))))))))
       (catch Exception e (raise "Fail to drop DBI: " dbi-name e {}))))
 
   (list-dbis [_] (keys (@info :dbis)))
