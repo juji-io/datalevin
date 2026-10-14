@@ -31,6 +31,16 @@ Build the universal wheel and run the smoke test:
 ./script/deploy-python --dry-run
 ```
 
+The packaging scripts use `PYTHON_BIN` when set, otherwise the existing
+`bindings/python/.venv` interpreter, then `python` or `python3` from `PATH`.
+Use `--python` to override that selection. Choose an interpreter with a JPype
+wheel for your platform; for example, [JPype 1.7.1's release files](https://pypi.org/project/jpype1/1.7.1/#files)
+include macOS wheels for Python 3.14 but not 3.15:
+
+```bash
+./script/deploy-python --dry-run --python python3.14
+```
+
 Skip the smoke test if you only want the wheel build:
 
 ```bash

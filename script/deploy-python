@@ -13,7 +13,8 @@ Options:
   --testpypi     Upload to TestPyPI.
   --dry-run      Build the wheel and stop before upload.
   --skip-smoke   Skip the isolated wheel install and package smoke test.
-  --python <bin> Python interpreter to use. Defaults to PYTHON_BIN or python.
+  --python <bin> Python interpreter to use. Defaults to PYTHON_BIN, the binding
+                 virtualenv, then python or python3.
   --help         Show this message.
 
 Environment:
@@ -28,7 +29,11 @@ cd "$repo_root"
 
 python_bin=${PYTHON_BIN:-}
 if [[ -z "$python_bin" ]]; then
-  if command -v python >/dev/null 2>&1; then
+  if [[ -x "$repo_root/bindings/python/.venv/bin/python" ]]; then
+    python_bin="$repo_root/bindings/python/.venv/bin/python"
+  elif [[ -x "$repo_root/bindings/python/.venv/Scripts/python.exe" ]]; then
+    python_bin="$repo_root/bindings/python/.venv/Scripts/python.exe"
+  elif command -v python >/dev/null 2>&1; then
     python_bin=python
   else
     python_bin=python3
@@ -95,6 +100,8 @@ rm -rf "$dist_dir"
 mkdir -p "$dist_dir"
 
 echo "Building datalevin ${version} wheel..."
+echo "Using Python: $python_bin"
+"$python_bin" --version
 echo "Ensuring Python wheel build tooling is available..."
 "$python_bin" -m venv "$build_root/venv"
 build_python="$build_root/venv/bin/python"

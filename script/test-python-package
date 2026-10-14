@@ -10,7 +10,8 @@ Install a built Datalevin wheel into a fresh virtualenv and run a smoke test
 from outside the repository package paths.
 
 Options:
-  --python <bin> Python interpreter to use. Defaults to PYTHON_BIN or python.
+  --python <bin> Python interpreter to use. Defaults to PYTHON_BIN, the binding
+                 virtualenv, then python or python3.
   --help         Show this message.
 EOF
 }
@@ -20,7 +21,11 @@ cd "$repo_root"
 
 python_bin=${PYTHON_BIN:-}
 if [[ -z "$python_bin" ]]; then
-  if command -v python >/dev/null 2>&1; then
+  if [[ -x "$repo_root/bindings/python/.venv/bin/python" ]]; then
+    python_bin="$repo_root/bindings/python/.venv/bin/python"
+  elif [[ -x "$repo_root/bindings/python/.venv/Scripts/python.exe" ]]; then
+    python_bin="$repo_root/bindings/python/.venv/Scripts/python.exe"
+  elif command -v python >/dev/null 2>&1; then
     python_bin=python
   else
     python_bin=python3
@@ -84,6 +89,8 @@ wheel_path="${wheel_dir}/$(basename "$wheel_path")"
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/datalevin-python-package.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT
 
+echo "Using Python: $python_bin"
+"$python_bin" --version
 "$python_bin" -m venv "$test_root/venv"
 smoke_python="$test_root/venv/bin/python"
 if [[ ! -x "$smoke_python" ]]; then
