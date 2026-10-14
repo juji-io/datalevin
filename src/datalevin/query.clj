@@ -8,6 +8,8 @@
    [datalevin.query.execute.ordered-range :as ordered-range]
    [datalevin.query.execute.point-lookup :as point]
    [datalevin.query.plan :as qplan]
+   [datalevin.query.source.execute :as source-exec]
+   [datalevin.query.source.plan :as source-plan]
    [datalevin.query-optimizer :as qo]
    [datalevin.interface :as i]
    [datalevin.util :refer [raise]])
@@ -55,6 +57,8 @@
   "Count tuples produced by an optimizable where-clause plan without retaining
   its final output. Intended for offline cardinality experiments."
   [query & inputs]
+  (when (source-plan/source-inputs? inputs)
+    (raise "Query-source count-plan is unsupported" {:error :query-source/unsupported}))
   (with-query-runtime
     (let [parsed-q (qcache/parsed-q query)]
       (qexec/mark-parsing-finished!)
@@ -96,9 +100,11 @@
 
 (defn q
   [query & inputs]
-  (if-let [[store inputs'] (only-remote-db inputs)]
-    (i/q store query inputs')
-    (apply perform query inputs)))
+  (if (source-plan/source-inputs? inputs)
+    (source-exec/run query inputs nil)
+    (if-let [[store inputs'] (only-remote-db inputs)]
+      (i/q store query inputs')
+      (apply perform query inputs))))
 
 (defn- prepared-query [query]
   (let [parsed-q (with-query-runtime (qcache/parsed-q query))
@@ -122,6 +128,8 @@
         expected (count (:qin parsed-q))]
     (fn [db inputs encoded?]
       (check-query-inputs! inputs expected)
+      (when (source-plan/source-inputs? inputs)
+        (raise "Prepared query sources are unsupported" {:error :query-source/unsupported}))
       (let [inputs (if (identical? db (nth inputs 0)) inputs (assoc inputs 0 db))
             result (if encoded?
                      (if encoded-range
@@ -159,6 +167,8 @@
     (prepared/prepared-read
       (fn [inputs]
         (check-query-inputs! inputs expected)
+        (when (source-plan/source-inputs? inputs)
+          (raise "Prepared query sources are unsupported" {:error :query-source/unsupported}))
         (if remote
           (do
             (when (some db/-searchable? inputs)
@@ -176,6 +186,8 @@
 
 (defn explain
   [opts query & inputs]
-  (if-let [[store inputs'] (only-remote-db inputs)]
-    (i/explain store opts query inputs')
-    (apply explain* opts query inputs)))
+  (if (source-plan/source-inputs? inputs)
+    (source-exec/run query inputs opts)
+    (if-let [[store inputs'] (only-remote-db inputs)]
+      (i/explain store opts query inputs')
+      (apply explain* opts query inputs))))

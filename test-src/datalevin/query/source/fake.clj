@@ -1,9 +1,10 @@
 (ns datalevin.query.source.fake
   "Deterministic, deliberately eager F0 fake. Never a production adapter."
-  (:require [datalevin.query.source :as source]
+  (:require [datalevin.datom :as datom]
+            [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.value :as value])
-  (:import [java.util Date]))
+  (:import [java.util Date Objects]))
 
 (defn- owned-copy [x]
   (cond
@@ -43,13 +44,23 @@
         predicates (filter #(= :predicate (:kind %)) clauses)
         matches (reduce (fn [matches pattern]
                           (vec (for [binding matches, row rows
-                                     :let [match (match-row binding (:terms pattern) row)]
-                                     :when match] match))) [bindings] patterns)]
+                                     :let [match (match-row bindings (:terms pattern) row)]
+                                     :when (and match
+                                                (every? (fn [[k v]]
+                                                          (or (not (contains? binding k))
+                                                              (Objects/equals (get binding k) v))) match))]
+                                 (merge binding match)))) [bindings] patterns)]
     (filterv (fn [binding]
                (every? (fn [{:keys [operator args]}]
-                         (apply ({:= = :not= not= :< < :<= <= :> > :>= >=} operator)
-                                (map #(if (= :const (first %)) (second %)
-                                          (get binding (second %))) args))) predicates)) matches)))
+                         (let [[a b] (map #(if (= :const (first %)) (second %)
+                                              (get binding (second %))) args)]
+                           (case operator
+                             := (= a b)
+                             :not= (not= a b)
+                             :< (neg? (datom/compare-with-type a b))
+                             :<= (not (pos? (datom/compare-with-type a b)))
+                             :> (pos? (datom/compare-with-type a b))
+                             :>= (not (neg? (datom/compare-with-type a b)))))) predicates)) matches)))
 
 (defrecord Cursor [columns rows position state metrics request events faults]
   source/IQuerySourceCursor
@@ -167,7 +178,12 @@
                                            (assoc column :variable (second term))))
                                        (map vector (:terms clause)
                                             (contract/pattern-columns descriptor clause)))))
-                       distinct vec)
+                       (reduce (fn [columns column]
+                                 (let [v (:variable column)]
+                                   (assoc columns v
+                                          (update column :nullable?
+                                                  #(and % (get-in columns [v :nullable?] true)))))) {})
+                       vals vec)
           handle (Object.)
           plan {:id :scan :source-symbol (:source-symbol request) :columns columns
                 :clauses (:clauses request) :bindings (:bindings request)}]

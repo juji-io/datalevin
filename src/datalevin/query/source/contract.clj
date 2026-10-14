@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.query.source.contract
-  "Pure structural checks shared by F0 fixtures and the future executor."
+  "Pure structural checks shared by F0 fixtures and the embedded executor."
   (:require [clojure.set :as set]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.value :as v :refer [fail!]]))
@@ -206,9 +206,13 @@
       (when-not (and (= [] (get-in a [:properties :ordering]))
                      (= :none (get-in a [:properties :blocking-state])))
         (fail! :query-source/unsupported :planning))
-      (doseq [column (:columns a)]
-        (column! column true)
-        (ensure! (= (select-keys column [:type :nullable?]) (types (:variable column))) :planning))
+      (let [covered-types (variable-types (update request :clauses
+                                                  #(filterv (fn [c] (contains? (:covers a) (:id c))) %)))]
+        (doseq [column (:columns a)]
+          (column! column true)
+          (ensure! (= (:type column) (:type (types (:variable column)))) :planning)
+          (when-let [covered (covered-types (:variable column))]
+            (ensure! (= (:nullable? column) (:nullable? covered)) :planning))))
       (let [available (into (set (keys (:bindings request))) (map :variable) (:columns a))
             covered-vars (reduce set/union #{} (map #(variables (clauses %)) (:covers a)))
             residual-vars (reduce set/union #{}

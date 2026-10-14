@@ -25,6 +25,8 @@ checks remain in `test/data`; test-only adapter infrastructure lives in
 The query-source F0 contract suite runs independently of the query engine:
 `clojure -M:test -m datalevin.query.source.runner`. It uses the test-only fake
 and conformance driver under `test-src/datalevin/query/source`.
+The initial F1 query-engine integration checks run with
+`clojure -M:test -m datalevin.query.source.execution-runner`.
 
 When implementation moves to another namespace, update its tests to call the
 owning namespace. Do not keep forwarding functions or pass-through stubs in

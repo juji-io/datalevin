@@ -1,5 +1,5 @@
 (ns datalevin.query.source
-  "Experimental embedded query-source SPI v1. Not yet integrated with d/q.
+  "Experimental embedded query-source SPI v1.
 
   Sources are caller-owned. Sessions and owned-batch cursors belong to one
   invocation. See doc/query-source-spi.md for the complete contract."
@@ -57,7 +57,7 @@
   "Release live charges idempotently; cumulative external requests are not refunded."
   [reservation] (control/release! reservation))
 (defn batch-charge-bytes
-  "Conservative retained charge for owned values. Unknown/custom values reject
-  until a conservative custom-value sizing contract is installed in F1."
+  "Conservative retained charge for owned values. Custom values must implement
+  datalevin.query.source.value/IQuerySourceValue; unknown values reject."
   [columns rows]
   (value/batch-charge-bytes columns rows))

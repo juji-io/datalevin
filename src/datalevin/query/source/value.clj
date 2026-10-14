@@ -1,11 +1,18 @@
-(ns ^:no-doc datalevin.query.source.value
-  "Portable owned values and conservative F0 accounting. No storage dependency."
+(ns datalevin.query.source.value
+  "Owned logical values and explicit custom-value validation/accounting hooks."
   (:import [java.math BigDecimal BigInteger]
            [java.util Date UUID]))
 
 (def scalar-types
   #{:boolean :long :bigint :double :float :bigdec :string :keyword :symbol
     :uuid :instant :bytes :data})
+
+(defprotocol IQuerySourceValue
+  "Opt-in contract for immutable custom values. This does not register a storage
+  codec or change equality. Implementations must include all retained backing
+  storage in their conservative charge and perform no I/O in either method."
+  (-logical-type [value] "Return this value's complete custom type descriptor.")
+  (-retained-bytes [value] "Return a conservative positive integer heap charge."))
 
 (defn fail!
   ([category phase] (fail! category phase {}))
@@ -36,6 +43,11 @@
 
 (defn value-charge [x]
   (cond
+    (satisfies? IQuerySourceValue x)
+    (let [n (-retained-bytes x)]
+      (when-not (and (integer? n) (<= 64 n Long/MAX_VALUE))
+        (fail! :query-source/invalid :values))
+      n)
     (nil? x) 8
     (or (boolean? x) (instance? Long x) (instance? Integer x)
         (instance? Double x) (instance? Float x)) 32
@@ -61,8 +73,7 @@
     (case (:kind t)
       :tuple (and (vector? x) (= (count x) (count (:elements t)))
                   (every? true? (map matches-type? (:elements t) x)))
-      ;; Descriptor validation is independent of runtime codec availability.
-      :custom false
+      :custom (and (satisfies? IQuerySourceValue x) (= t (-logical-type x)))
       false)
     (case t
       :boolean (boolean? x)
@@ -81,14 +92,25 @@
                  (catch clojure.lang.ExceptionInfo _ false))
       false)))
 
+(defn execution-type!
+  "Reject array-identity equality until the engine has a portable byte key.
+  Owned byte batches remain valid SPI values for consumers outside d/q."
+  [t]
+  (when (= :bytes t) (fail! :query-source/unsupported :equality))
+  (when (= :tuple (:kind t)) (run! execution-type! (:elements t))))
+
+(defn execution-value! [x]
+  (when (bytes? x) (fail! :query-source/unsupported :equality))
+  (cond
+    (plain-map? x) (doseq [[k v] x] (execution-value! k) (execution-value! v))
+    (or (vector? x) (set? x) (list? x)) (run! execution-value! x)))
+
 (defn rows! [columns rows]
   (when-not (and (vector? rows)
                 (every? #(and (vector? %) (= (count columns) (count %))) rows))
     (fail! :query-source/invalid :batch))
   (doseq [row rows, [column x] (map vector columns row)]
     (value-charge x)
-    (when (and (some? x) (= :custom (get-in column [:type :kind])))
-      (fail! :query-source/unsupported :values))
     (when-not (if (nil? x) (:nullable? column) (matches-type? (:type column) x))
       (fail! :query-source/invalid :batch)))
   rows)
