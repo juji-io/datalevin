@@ -22,6 +22,10 @@ Shared test fixtures needed by this repository's builds and language binding
 checks remain in `test/data`; test-only adapter infrastructure lives in
 `test-src` so the sibling checkout can use it too.
 
+The query-source F0 contract suite runs independently of the query engine:
+`clojure -M:test -m datalevin.query.source.runner`. It uses the test-only fake
+and conformance driver under `test-src/datalevin/query/source`.
+
 When implementation moves to another namespace, update its tests to call the
 owning namespace. Do not keep forwarding functions or pass-through stubs in
 production just for old tests. Test handler behavior through the active handler,
