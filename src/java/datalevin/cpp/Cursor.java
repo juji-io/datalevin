@@ -24,6 +24,8 @@ public class Cursor {
     private BufVal val;
     private DTLV.MDB_val multipleVals;
     private boolean ownsMultipleVals;
+    Txn.ReadCursorPool pool;
+    boolean pooled;
 
     public Cursor(DTLV.MDB_cursor ptr, BufVal key, BufVal val) {
         this(ptr, key, val, null, true);
@@ -222,14 +224,27 @@ public class Cursor {
      * Close and free memory
      */
     public void close() {
+        if (ptr == null) return;
+        if (pool != null) {
+            pool.remove(this);
+            pool = null;
+        }
         DTLV.mdb_cursor_close(ptr);
         ptr.close();
+        ptr = null;
         if (multipleVals != null) {
             if (ownsMultipleVals) {
                 multipleVals.position(0).close();
             }
             multipleVals = null;
         }
+    }
+
+    /** Return a borrowed cursor to its transaction, or close an unpooled one. */
+    public void release() {
+        if (ptr == null) return;
+        if (pool == null) close();
+        else pool.release(this);
     }
 
     /**
@@ -254,6 +269,11 @@ public class Cursor {
      * Renew cursor.
      */
     public Cursor renew(Txn txn) {
+        if (ptr == null) throw new IllegalStateException("Cursor is closed");
+        if (pool != null && pool.txn != txn) {
+            throw new IllegalArgumentException(
+                "Pooled cursor belongs to a different transaction");
+        }
         Util.checkRc(DTLV.mdb_cursor_renew(txn.get(), ptr));
         return this;
     }

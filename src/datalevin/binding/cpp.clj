@@ -960,7 +960,7 @@
                            (Dbi/create env dbi-name (buffer/kv-flags flags)))
                 db       (buffer/->DBI this (when-not raw? k-comp)
                                (when-not (or raw? dupfixed?) v-comp)
-                               dbi (buffer/new-pools) kp vp kc vc
+                               dbi kp vp kc vc
                                dupsort? dupfixed? counted?
                                ;; The custom KV adapter validates logical data;
                                ;; this DBI receives encoded references and bytes.

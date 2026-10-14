@@ -7,6 +7,10 @@ import static datalevin.cpp.Txn.State.RESET;
 
 import org.bytedeco.javacpp.*;
 import datalevin.dtlvnative.DTLV;
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /**
  * Wrap a DTLV MDB_txn
@@ -18,6 +22,7 @@ public class Txn {
     private DTLV.MDB_txn ptr;
     private final boolean readOnly;
     private boolean kvInfoChanged;
+    private IdentityHashMap<Dbi, ReadCursorPool> cursorPools;
 
     public Txn(DTLV.MDB_txn ptr, boolean readOnly) {
         this.ptr = ptr;
@@ -86,8 +91,81 @@ public class Txn {
 
     public void close() {
         if (state == RELEASED) return;
+        if (cursorPools != null) {
+            for (ReadCursorPool pool : cursorPools.values()) pool.close();
+            cursorPools.clear();
+            cursorPools = null;
+        }
         if (state == READY || state == RESET) DTLV.mdb_txn_abort(ptr);
         state = RELEASED;
+    }
+
+    /**
+     * Borrow a cursor whose buffers and lifetime belong to this transaction.
+     * Read cursors survive reset/renew, but are all freed before transaction
+     * close, including cursors abandoned by a terminated reader thread.
+     */
+    public Cursor getCursor(Dbi dbi, BufVal key, BufVal val) {
+        checkReady();
+        if (!readOnly) return Cursor.create(this, dbi, key, val);
+        if (cursorPools == null) cursorPools = new IdentityHashMap<>();
+        ReadCursorPool pool = cursorPools.get(dbi);
+        if (pool == null) {
+            pool = new ReadCursorPool(this, dbi);
+            cursorPools.put(dbi, pool);
+        }
+        return pool.borrow(key, val);
+    }
+
+    /** Access is confined to the reader, or its quiescent teardown owner. */
+    static final class ReadCursorPool {
+        final Txn txn;
+        private final Dbi dbi;
+        private final ArrayDeque<Cursor> available = new ArrayDeque<>();
+        private final Set<Cursor> owned =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+
+        ReadCursorPool(Txn txn, Dbi dbi) {
+            this.txn = txn;
+            this.dbi = dbi;
+        }
+
+        Cursor borrow(BufVal key, BufVal val) {
+            Cursor cursor = available.poll();
+            if (cursor != null) {
+                cursor.pooled = false;
+                try {
+                    return cursor.renew(txn);
+                } catch (RuntimeException | Error e) {
+                    cursor.close();
+                    throw e;
+                }
+            }
+            cursor = Cursor.create(txn, dbi, key, val);
+            cursor.pool = this;
+            owned.add(cursor);
+            return cursor;
+        }
+
+        void release(Cursor cursor) {
+            if (!cursor.pooled) {
+                available.add(cursor);
+                cursor.pooled = true;
+            }
+        }
+
+        void remove(Cursor cursor) {
+            owned.remove(cursor);
+            if (cursor.pooled) {
+                available.remove(cursor);
+                cursor.pooled = false;
+            }
+        }
+
+        void close() {
+            // Closing also removes each cursor from the ownership set.
+            for (Cursor cursor : owned.toArray(new Cursor[0])) cursor.close();
+        }
     }
 
     public void commit() {

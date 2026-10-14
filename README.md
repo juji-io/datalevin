@@ -414,8 +414,10 @@ issue](https://github.com/datalevin/datalevin/issues/383).
 ## :earth_americas: Roadmap
 
 The goal of Datalevin is to simplify data storage and access. We aim to support
-diverse workloads and use cases. Below are the tentative goals that we try to
-reach as soon as we can. We may adjust the priorities based on feedback.
+diverse workloads and use cases. The [Datalevin roadmap](roadmap.md) is the
+authority for release targets, priorities, and milestone completion gates.
+
+Completed milestones:
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Networked server mode with role based access control.~~ [Done 2021/09/06]
@@ -433,16 +435,7 @@ reach as soon as we can. We may adjust the priorities based on feedback.
   library for Java, Python, and JavaScript; Book.~~[Done 2026/07/20]
 * 1.1.0 ~~AVE storage optimization; transaction and query performance
   enhancement.~~ [Done 2026/09/02]
-* 1.2.3 extensible storage/query for arbitrary data.
-* 1.3.0 direct analytics, virtual relationships, and semantic data federation.
-* 1.4.0 aggregation in rule heads; incremental view maintenance and initial
-  maintained aggregates.
-* 2.0.0 data compression; KV TTL.
-* 2.1.0 entity-level security.
-* 2.2.0 provenance annotation.
-* 3.0.0 local sharding. [Earlier delivery is under consideration](doc/local-sharding.md),
-  following the [strict group-commit measurements](doc/strict-group-commit-2026-09-21/README.md).
-* 3.1.0 data distribution.
+* 1.2.0 ~~extensible storage/query for arbitrary data.~~ [Done 2026/10/13]
 
 ## :arrows_clockwise: Contact
 

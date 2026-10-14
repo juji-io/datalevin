@@ -22,9 +22,7 @@
    [datalevin.dtlvnative DTLV DTLV$MDB_val DTLV$MDB_stat]
    [datalevin.cpp BufVal Cursor Dbi Stat Txn UnsafeAccess Util]
    [java.nio BufferOverflowException ByteBuffer]
-   [java.util ArrayDeque]
    [java.util.concurrent ConcurrentHashMap]
-   [java.util.function Supplier]
    [org.bytedeco.javacpp LongPointer]))
 
 (def ^:private ^:const ave-multiple-max-buffer-bytes 524288)
@@ -40,10 +38,6 @@
   []
   (when-let [f @buffer-allocation-observer*]
     (f)))
-
-(defprotocol IPool
-  (pool-add [_ x])
-  (pool-take [_]))
 
 (defprotocol ICloseableResource
   (close-resource! [_]))
@@ -62,17 +56,6 @@
 (definterface ^:private IMultipleBuffer
   (^datalevin.cpp.BufVal multipleValBuffer [^long size])
   (^datalevin.cpp.Cursor multipleWriteCursor [^datalevin.cpp.Txn txn]))
-
-(deftype Pool [^ThreadLocal que]
-  IPool
-  (pool-add [_ x] (.add ^ArrayDeque (.get que) x))
-  (pool-take [_] (.poll ^ArrayDeque (.get que))))
-
-(defn new-pools
-  []
-  (Pool. (ThreadLocal/withInitial
-          (reify Supplier
-            (get [_] (ArrayDeque.))))))
 
 (defn new-bufval [size] (BufVal. size))
 
@@ -110,35 +93,6 @@
     (try
       (.close cur)
       (catch Throwable _))))
-
-(defn- bufval-open?
-  [^BufVal bufval]
-  (try
-    (some? (.ptr bufval))
-    (catch Throwable _ false)))
-
-(defn- cursor-open?
-  [^Cursor cur]
-  (and (bufval-open? (.key cur))
-       (bufval-open? (.val cur))))
-
-(defn- reusable-cursor
-  [^Pool curs ^Txn txn]
-  (loop []
-    (when-let [^Cursor cur (pool-take curs)]
-      (if-not (cursor-open? cur)
-        (do
-          (close-cursor-quiet! cur)
-          (recur))
-        (let [renewed (try
-                        (.renew cur txn)
-                        cur
-                        (catch Throwable _
-                          (close-cursor-quiet! cur)
-                          nil))]
-          (if renewed
-            renewed
-            (recur)))))))
 
 (defn- flag-value
   "flag key to int value, cover all flags"
@@ -281,7 +235,6 @@
               key-codec
               value-codec
               ^Dbi db
-              ^Pool curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
               ^ByteBuffer k-comp-bf
@@ -446,14 +399,11 @@
           (.iterate-list-key-range-val-full this rtx cur k-range k-type)))
       (.iterate-key this rtx cur k-range k-type)))
   (get-cursor [_ rtx]
-    (let [rtx rtx
-          ^Txn txn (iter/rtx-txn rtx)]
-      (or (when (.isReadOnly txn)
-            (reusable-cursor curs txn))
-          (Cursor/create txn db (iter/rtx-key-buf rtx) (iter/rtx-val-buf rtx)))))
+    (let [^Txn txn (iter/rtx-txn rtx)]
+      (.getCursor txn db (iter/rtx-key-buf rtx) (iter/rtx-val-buf rtx))))
   (cursor-count [_ cur] (.count ^Cursor cur))
   (close-cursor [_ cur] (.close ^Cursor cur))
-  (return-cursor [_ cur] (pool-add curs cur))
+  (return-cursor [_ cur] (.release ^Cursor cur))
 
   ICloseableResource
   (close-resource! [_]
