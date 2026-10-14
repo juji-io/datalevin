@@ -673,6 +673,12 @@
   (let [message (some-> status .getErrorMsg)]
     (or (status-has-raft-error? status
                                 read-retryable-error-names)
+        ;; JRaft wraps asynchronous transport exceptions and send failures in
+        ;; EINTERNAL. Retrying the read-index barrier can reconnect to a leader.
+        (and (= "EINTERNAL" (status-raft-error-name status))
+             (string? message)
+             (or (s/starts-with? message "RPC exception:")
+                 (s/starts-with? message "Fail to send a RPC request:")))
         (and (string? message)
              (or (s/includes? message "leader stepped down")
                  (s/includes? message
