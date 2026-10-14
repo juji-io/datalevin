@@ -1491,6 +1491,9 @@
                                  :request (nth args 1)
                                  (raise "Missing :mode when loading datoms" {}))]
                     (try
+                      (when (and writing? (seq datoms))
+                        (kvtx/txlog-spool-pending!
+                          (kv/raw-lmdb (.-lmdb ^Store store))))
                       (let [result (i/load-datoms store datoms)]
                         ;; Raw loads bypass transact*, so publish the new entity
                         ;; counter and invalidate queries before the next request.

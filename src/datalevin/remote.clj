@@ -630,7 +630,11 @@
     (abort-ha-transaction! tx-client :abort-transact db-name))
 
   (close-transact [_]
-    (close-ha-transaction! tx-client :close-transact db-name))
+    (let [result (close-ha-transaction! tx-client :close-transact db-name)]
+      ;; Raw imports can commit before the opening counters are consumed.
+      ;; The next DB view must fetch committed metadata and advance its floor.
+      (vreset! open-db-info (sampling-open-info @open-db-info))
+      result))
 
   ILMDB
   (kv-info [_] nil)

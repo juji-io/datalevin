@@ -20,6 +20,7 @@
    [datalevin.txlog :as txlog]
    [datalevin.txlog.append :as append]
    [datalevin.txlog.codec :as tcodec]
+   [datalevin.txlog.spool :as spool]
    [datalevin.txlog.transfer :as transfer]
    [datalevin.util :as u :refer [raise]])
   (:import
@@ -1039,22 +1040,49 @@
 
 (defn txlog-reset-pending!
   [info-v]
+  (when (spool/spool? (:txlog-pending-ops @info-v))
+    (spool/close-quietly! (:txlog-pending-ops @info-v)))
   (vswap! info-v assoc :txlog-pending-ops (FastList.))
   (when-let [arena (:kv-encode-buffer (:txlog-state @info-v))]
     (encoding/reset-arena! arena)))
 
 (defn txlog-add-pending!
   [info-v rows]
-  (let [^FastList pending (ensure-pending-fast-list! info-v)]
-    (if (instance? java.util.Collection rows)
-      (.addAll pending ^java.util.Collection rows)
-      (doseq [row rows]
-        (.add pending row)))
-    pending))
+  (if (spool/spool? (:txlog-pending-ops @info-v))
+    (let [pending (spool/append! (:txlog-pending-ops @info-v) rows)]
+      (when-let [arena (:kv-encode-buffer (:txlog-state @info-v))]
+        (encoding/reset-arena! arena))
+      pending)
+    (let [^FastList pending (ensure-pending-fast-list! info-v)]
+      (if (instance? java.util.Collection rows)
+        (.addAll pending ^java.util.Collection rows)
+        (doseq [row rows]
+          (.add pending row)))
+      pending)))
+
+(defn txlog-spool-pending!
+  "Encode an explicit bulk transaction's pending rows into a spillable buffer.
+  Subsequent writes share the buffer until the transaction commits or aborts."
+  [lmdb]
+  (when (txlog-write-path-enabled? lmdb)
+    (let [info-v (i/kv-info lmdb)
+          pending (:txlog-pending-ops @info-v)]
+      (when-not (spool/spool? pending)
+        (let [buffer (spool/create!)]
+          (try
+            (spool/append! buffer (or pending []))
+            (catch Throwable failure
+              (try (.close ^java.io.Closeable buffer)
+                   (catch Throwable cleanup (.addSuppressed failure cleanup)))
+              (throw failure)))
+          (vswap! info-v assoc :txlog-pending-ops buffer)
+          (when-let [arena (:kv-encode-buffer (:txlog-state @info-v))]
+            (encoding/reset-arena! arena)))))))
 
 (defn txlog-pending-rows
   [info-v]
-  (ensure-pending-fast-list! info-v))
+  (let [pending (:txlog-pending-ops @info-v)]
+    (if (spool/spool? pending) pending (ensure-pending-fast-list! info-v))))
 
 (defn txlog-mark-fatal!
   [state ex]
@@ -1326,6 +1354,7 @@
             (try
               (.close ^java.io.Closeable sync-lock-ch)
               (catch Exception _))))
+        (txlog-reset-pending! info-v)
         (vswap! info-v dissoc :txlog-state :txlog-pending-ops
                 :txlog-recovered?
                 :snapshot-scheduler-lock
@@ -2619,7 +2648,8 @@
     (if (write-txn-open? lmdb)
       (let [pending (txlog-pending-rows info-v)]
         (try
-          (if (pos? (.size ^java.util.List pending))
+          (when (spool/spool? pending) (spool/check! pending))
+          (if (pos? (count pending))
             ;; HA commit admission cannot safely reject after we append durable
             ;; txn-log payload, because followers may replay the payload even if
             ;; the local LMDB commit is later aborted. Run that check before the

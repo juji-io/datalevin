@@ -1397,8 +1397,11 @@
                             store-opts (schema (.-a datom))
                             (.-a datom) (.-v datom)))))
                     #(correct-datom store %))
-          ^FastList batch (FastList. (int batch-size))]
+          ;; Allocate backing storage only as datoms arrive.
+          ^FastList batch (FastList.)]
       (doseq [datom datoms]
+        ;; Check each element here so lazy input is not walked before loading.
+        (vld/validate-datom datom)
         (.add batch (correct datom))
         (when (= batch-size (.size batch))
           (load-datoms store batch)
@@ -1505,38 +1508,61 @@
   ([datoms dir schema] (init-db datoms dir schema nil))
   ([datoms dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
-   (vld/validate-datom-list datoms)
    (vld/validate-schema-update schema)
    (let [[_ runtime-opts] (split-runtime-opts opts)
          store            (open-store dir schema opts)]
-     (if (remote-store? store)
-       (locking (l/write-txn store)
-         ;; Map growth discards earlier batches in the native transaction.
-         ;; Abort each failed attempt and replay the entire import.
-         (u/repeat-try-catch c/+in-tx-overflow-times+ l/resized?
-           (let [tx-store (i/open-transact store)]
-             (try
-               (pour tx-store datoms)
-               (i/close-transact store)
-               (catch Throwable failure
-                 (try
-                   (i/abort-transact store)
-                   (catch Throwable abort-error
-                     (.addSuppressed failure abort-error)))
-                 (throw failure))))))
-       (quick-fill store datoms))
-     (cond-> (new-db store)
-       (some? runtime-opts) (with-runtime-opts runtime-opts)))))
+     (try
+       (if (remote-store? store)
+         (locking (l/write-txn store)
+           ;; Map growth discards earlier batches in the native transaction.
+           ;; Abort each failed attempt and replay the entire import.
+           (u/repeat-try-catch c/+in-tx-overflow-times+ l/resized?
+             (let [tx-store (i/open-transact store)]
+               (try
+                 (pour tx-store datoms)
+                 (i/close-transact store)
+                 (catch Throwable failure
+                   (try
+                     (i/abort-transact store)
+                     (catch Throwable abort-error
+                       (when-not (identical? failure abort-error)
+                         (.addSuppressed failure abort-error))))
+                   (throw failure))))))
+         (quick-fill store datoms))
+       (cond-> (new-db store)
+         (some? runtime-opts) (with-runtime-opts runtime-opts))
+       (catch Throwable failure
+         ;; Only the returned DB can own this opened store. Release it after
+         ;; transaction retries have ended, including lazy input failures.
+         (try
+           (i/close store)
+           (catch Throwable close-error
+             (when-not (identical? failure close-error)
+               (.addSuppressed failure close-error))))
+         (throw failure))))))
 
 (defn fill-db
   [db datoms]
   (let [store (.-store ^DB db)]
-    (quick-fill store datoms)
-    (let [target (last-modified store)]
-      (when (instance? Store store)
-        (s/mark-state-current! ^Store store target))
-      (refresh-cache store target))
-    (carry-runtime-opts (new-db store nil db) db)))
+    (try
+      (quick-fill store datoms)
+      (let [target (last-modified store)]
+        (when (instance? Store store)
+          (s/mark-state-current! ^Store store target))
+        (refresh-cache store target))
+      (carry-runtime-opts (new-db store nil db) db)
+      (catch Throwable failure
+        (when (remote-store? store)
+          ;; Earlier remote batches can commit before a later batch fails.
+          ;; Clear without RPCs so cleanup preserves the original failure,
+          ;; and prevent pre-import readers from repopulating this cache.
+          (let [cache-key (dir store)]
+            (when-let [^LRUCache cache (.get ^ConcurrentHashMap caches cache-key)]
+              (locking cache
+                (.beginInvalidation cache (.target cache))
+                (.clear cache)))
+            (.remove ^ConcurrentHashMap remote-cache-check-ms cache-key)))
+        (throw failure)))))
 
 ;; ----------------------------------------------------------------------------
 

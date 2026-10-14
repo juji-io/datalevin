@@ -22,6 +22,7 @@
    [datalevin.txlog.meta :as tmeta]
    [datalevin.txlog.recovery :as trec]
    [datalevin.txlog.segment :as tseg]
+   [datalevin.txlog.spool :as spool]
    [datalevin.txlog.transfer :as transfer]
    [datalevin.txlog.weights :as weights]
    [datalevin.util :as u :refer [raise]]
@@ -1192,8 +1193,11 @@
 
 (defn- append-prepared-record!
   [state rows hooks]
-  (let [^ByteBuffer body (tcodec/encode-commit-row-payload-buffer
-                         0 0 rows {:ha-term (:ha-term hooks)})
+  (let [spooled? (spool/spool? rows)
+        opts {:ha-term (:ha-term hooks)}
+        ^ByteBuffer body (if spooled?
+                           (spool/payload-buffer! rows opts)
+                           (tcodec/encode-commit-row-payload-buffer 0 0 rows opts))
         append-lock (or (:append-lock state) state)]
     (try
       (locking append-lock
@@ -1209,7 +1213,9 @@
               (notify-runtime-failure! state e)
               (throw e)))))
       (finally
-        (tcodec/release-commit-row-payload-buffer! body)))))
+        (if spooled?
+          (spool/release-payload-buffer! body)
+          (tcodec/release-commit-row-payload-buffer! body))))))
 
 (defn- defer-sync-attempt!
   [{:keys [monitor] :as sync-manager}]

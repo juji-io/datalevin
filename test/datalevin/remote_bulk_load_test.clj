@@ -2,7 +2,11 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [datalevin.constants :as c]
             [datalevin.core :as d]
-            [datalevin.test.core :refer [server-fixture]]))
+            [datalevin.db :as db]
+            [datalevin.interface :as i]
+            [datalevin.test.core :refer [server-fixture]])
+  (:import [datalevin.remote DatalogStore]
+           [java.util.concurrent.atomic AtomicLong]))
 
 (use-fixtures :each server-fixture)
 
@@ -46,6 +50,36 @@
             (is (= 10000 (:item/value (d/pull @reopened '[*] 10000))))
             (finally (d/close reopened))))))))
 
+(deftest remote-init-db-returns-committed-metadata
+  (doseq [wal? [false true]
+          [mode batch-size datoms]
+          [[:request 1 [(d/datom 100 :item/value 1)
+                        (d/datom 200 :item/value 2)]]
+           [:copy-in (inc c/+wire-datom-batch-size+)
+            (mapv #(d/datom % :item/value %)
+                  (range 1 (+ 2 c/+wire-datom-batch-size+)))]
+           [:empty 1 []]]]
+    (testing (str mode " import with WAL " wal?)
+      (let [uri (str "dtlv://datalevin:datalevin@localhost/bulk-metadata-"
+                     wal? "-" (name mode))
+            db (binding [c/*fill-db-batch-size* batch-size]
+                 (d/init-db datoms uri
+                            {:item/value {:db/valueType :db.type/long}}
+                            {:wal? wal?}))]
+        (try
+          (let [^DatalogStore store (:store db)
+                ;; Capture before db-info itself can advance the read floor.
+                floor (.get ^AtomicLong (.-read-floor-tx store))
+                info (i/db-info store)]
+            (is (= (select-keys info [:max-eid :max-tx])
+                   (select-keys db [:max-eid :max-tx])))
+            (is (= (:max-tx info) floor))
+            (is (= (if (seq datoms) (:e (last datoms)) 0) (:max-eid db)))
+            (is (= (+ 1 (count (partition-all batch-size datoms))) (:max-tx db)))
+            (is (= (count datoms)
+                   (count (d/q '[:find ?e :where [?e :item/value]] db)))))
+          (finally (d/close-db db)))))))
+
 (deftest remote-init-db-rollback
   (doseq [wal? [false true]]
     (let [uri (str "dtlv://datalevin:datalevin@localhost/bulk-init-errors-" wal?)
@@ -61,6 +95,28 @@
                                              (d/datom 101 :item/value "bad")]
                                             uri))))
           (is (= #{[1]} (d/q query @conn))))
+        (testing "a failed batch does not realize the rest of the input"
+          (let [realized (atom [])]
+            (is (thrown-with-msg?
+                  Exception #"Invalid data"
+                  (binding [c/*fill-db-batch-size* 1]
+                    (d/init-db
+                      (map (fn [eid]
+                             (swap! realized conj eid)
+                             (d/datom eid :item/value
+                                      (if (= eid 101) "bad" eid)))
+                           (list 100 101 102 103))
+                      uri))))
+            (is (= [100 101] @realized))
+            (is (= #{[1]} (d/q query @conn)))))
+        (testing "invalid elements roll back earlier batches"
+          (doseq [invalid [nil false {} [:db/add 101 :item/value 101]]]
+            (is (thrown-with-msg?
+                  clojure.lang.ExceptionInfo #"init-db expects list of Datoms"
+                  (binding [c/*fill-db-batch-size* 1]
+                    (d/init-db (list (d/datom 100 :item/value 100) invalid)
+                               uri))))
+            (is (= #{[1]} (d/q query @conn)))))
         (testing "rollback releases the writer and restores the entity counter"
           (is (= 2 (get (:tempids (d/transact! conn
                                              [{:db/id -1 :item/value 2}]))
@@ -92,6 +148,43 @@
         (is (= #{[1]} (d/q '[:find ?e :where [?e :item/value]] @conn)))
         (is (= 2 (get (:tempids (d/transact! conn [{:db/id -1 :item/value 2}])) -1))))
       (finally (d/close conn)))))
+
+(deftest remote-failed-fill-invalidates-client-caches
+  (binding [c/*remote-db-last-modified-check-interval-ms* 60000]
+    (doseq [wal? [false true]
+            batch-size [1 (inc c/+wire-datom-batch-size+)]]
+      (testing (str "WAL " wal? ", batch size " batch-size)
+        (let [uri (str "dtlv://datalevin:datalevin@localhost/bulk-partial-cache-"
+                       wal? "-" batch-size)
+              conn (d/create-conn uri
+                                  {:item/value {:db/valueType :db.type/long}}
+                                  {:wal? wal? :validate-data? true})
+              dbv @conn
+              store (:store dbv)
+              datoms (conj (mapv #(d/datom % :item/value %)
+                                (range 1 (inc batch-size)))
+                           (d/datom (inc batch-size) :item/value "bad"))]
+          (try
+            (is (= 0 (d/count-datoms dbv nil :item/value nil)))
+            (is (empty? (d/datoms dbv :eav)))
+            (let [token (db/cache-token store)]
+              (is (thrown-with-msg? Exception #"Invalid data"
+                                   (binding [c/*fill-db-batch-size* batch-size]
+                                     (d/fill-db dbv datoms))))
+              (is (false? (db/cache-put-if-current
+                            store token [:count nil :item/value nil nil] 0))
+                  "an older read cannot republish its pre-import result"))
+            ;; Check the warmed cache before any query can refresh metadata.
+            (is (= batch-size (d/count-datoms dbv nil :item/value nil)))
+            (is (= (set (range 1 (inc batch-size)))
+                   (into #{} (map :e) (d/datoms dbv :eav))))
+            (is (= batch-size
+                   (d/q '[:find (count ?e) . :where [?e :item/value]] dbv)))
+            (is (= (inc batch-size)
+                   (get (:tempids (d/transact! conn [{:db/id -1 :item/value 42}]))
+                        -1)))
+            (is (= (inc batch-size) (d/count-datoms @conn nil :item/value nil)))
+            (finally (d/close conn))))))))
 
 (deftest remote-bulk-load-in-transaction
   (let [conn (d/create-conn "dtlv://datalevin:datalevin@localhost/bulk-transaction"
