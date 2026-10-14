@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.4 (2026-10-14)
 
 ### Fixed
 - [KV] native cursor memory leaks.
