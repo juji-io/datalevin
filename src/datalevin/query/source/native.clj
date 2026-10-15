@@ -11,6 +11,7 @@
             [datalevin.storage :as storage]
             [datalevin.storage.schema :as schema]
             [datalevin.query.source :as source]
+            [datalevin.query.source.native-compression :as compression]
             [datalevin.query.source.native-value :as native-value]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.util :as u])
@@ -94,7 +95,7 @@
                                                 (bindings (second term))))
           (fail! :query-source/unsupported :native-type))))))
 
-(defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type prepare emit eid]
+(defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type payload prepare emit eid]
   ;; Reserve buffers and bounded preflight state first. Generic collections and
   ;; giant homogeneous tuples get a separate layout-derived reservation, held through emit.
   ;; Retaining a row beyond emit requires the consumer's own reservation.
@@ -106,14 +107,19 @@
                                    (* 8 expanded-size) attribute-size
                                    (native-value/scratch-bytes type expanded-size))})]
     (try
-      (let [{:keys [decode retained-bytes]} (prepare)
-            decoded (when (pos? (long retained-bytes))
-                      (source/reserve! control {:retained-bytes retained-bytes}))]
-        (try
-          (let [v (decode)]
-            (source/check-active! control)
-            (emit [eid attribute v]))
-          (finally (when decoded (source/release! decoded)))))
+      (let [visit (fn [buffer]
+                    (let [{:keys [decode retained-bytes]} (prepare buffer)
+                          decoded (when (pos? (long retained-bytes))
+                                    (source/reserve! control {:retained-bytes retained-bytes}))]
+                      (try
+                        (let [v (decode)]
+                          (source/check-active! control)
+                          (emit [eid attribute v]))
+                        (finally (when decoded (source/release! decoded))))))]
+        (if payload
+          (compression/with-buffer control (payload)
+                                   #(native-value/scratch-bytes type %) visit)
+          (visit buffer)))
       (finally (source/release! token)))))
 
 (defn scan!
@@ -134,13 +140,16 @@
                            (let [giant (bits/avg->giant-id raw)]
                              (if (= c/normal giant)
                                (visit-value control raw (.remaining raw) attribute type
-                                            #(native-value/prepare-inline raw type check!) emit eid)
+                                            (when (= type :data) #(native-value/inline-data-buffer raw))
+                                            (if (= type :data)
+                                              #(native-value/prepare-data % check!)
+                                              #(native-value/prepare-inline % type check!)) emit eid)
                                (let [giants (i/get-dbi kv c/giants false)]
                                  (lmdb/put-read-key giants rtx giant :id)
                                  (if-let [buffer (lmdb/get-kv giants rtx)]
                                    (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                                                #(native-value/prepare-giant
-                                                   (index/giant-datom-buffer buffer) type eid attribute check!)
+                                                #(index/giant-datom-buffer buffer)
+                                                #(native-value/prepare-giant % type eid attribute check!)
                                                 emit eid)
                                    (fail! :query-source/invalid :native-value))))))]
               (when-not (reduced? result)

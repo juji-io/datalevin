@@ -315,6 +315,27 @@
         (when-not (= (.position buffer) end)
           (fail! :query-source/invalid :native-value))))))
 
+(defn inline-data-buffer
+  "Borrow the Nippy payload of an inline AVG data value without copying it."
+  ^ByteBuffer [^ByteBuffer raw]
+  (let [buffer (.duplicate raw)]
+    (need! buffer 7)
+    (.position buffer 4)
+    (.limit buffer (- (.limit buffer) 2))
+    buffer))
+
+(defn prepare-data
+  "Preflight raw Nippy data after any separately reserved envelope expansion."
+  [^ByteBuffer buffer check!]
+  (skip-header! buffer)
+  (let [start (.position buffer)
+        layout (value! buffer :data (context :data check!) 0 false)]
+    (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
+    {:retained-bytes (:charge layout)
+     :decode (fn []
+               (.position buffer start)
+               (impl/with-thaw-cache (nippy/thaw-from-bb! buffer)))}))
+
 (defn prepare-inline
   "Validate an inline AVG value, returning a decoder and additional charge.
   The caller must already reserve encoded buffers and scratch-bytes."
@@ -324,16 +345,7 @@
      (need! buffer 7)
      (.position buffer 4)
      (if (= type :data)
-       (do
-         (.limit buffer (- (.limit buffer) 2))
-         (skip-header! buffer)
-         (let [start (.position buffer)
-               layout (value! buffer :data (context :data check!) 0 false)]
-           (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
-           {:retained-bytes (:charge layout)
-            :decode (fn []
-                      (.position buffer start)
-                      (impl/with-thaw-cache (nippy/thaw-from-bb! buffer)))}))
+       (prepare-data (inline-data-buffer raw) check!)
        (do
          (case (:kind type)
            :tuple (inline-tuple! buffer (:elements type))
