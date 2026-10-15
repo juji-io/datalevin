@@ -49,7 +49,8 @@
                (ensure! (vector? (:columns contract)) :descriptor)
                (doseq [column (:columns contract)] (column! column false)))
     :eav (do (fields! contract #{:kind :attributes} #{} :descriptor)
-             (ensure! (v/plain-map? (:attributes contract)) :descriptor)
+             (ensure! (and (v/plain-map? (:attributes contract))
+                           (seq (:attributes contract))) :descriptor)
              (doseq [[attribute types] (:attributes contract)]
                (ensure! (keyword? attribute) :descriptor)
                (fields! types #{:entity-type :value-type} #{} :descriptor)

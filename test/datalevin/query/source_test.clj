@@ -33,6 +33,8 @@
                (assoc tuple-info :runtime (Object.))
                (assoc-in tuple-info [:pattern-contract :columns 0 :type] :int)
                (assoc-in tuple-info [:pattern-contract :columns 0 :nullable?] :yes)
+               (assoc tuple-info :pattern-contract {:kind :eav :attributes {}})
+               (assoc tuple-info :pattern-contract {:kind :eav :attributes []})
                (assoc tuple-info :pattern-contract {:kind :eav :attributes {"bad" {}}})]]
     (is (= :query-source/invalid (category #(source/validate-source-info! bad)))))
   (let [custom {:kind :custom :name :test/ref :version 1 :fingerprint "type:v1:test"
@@ -175,13 +177,19 @@
   (let [bytes (byte-array [1 2 3])
         info (assoc tuple-info :pattern-contract {:kind :tuple :columns [{:type :bytes :nullable? false}]})
         clauses [{:id 0 :kind :pattern :terms [[:var '?bytes]]}]
-        fake (fake/source info [[bytes] [bytes]])
-        result (harness/run! fake clauses {:limits {:batch-rows 1}
-                                           :consume (fn [_] (aset-byte bytes 0 (byte 9)))})
-        [first-row second-row] (:rows result)]
-    (is (= [1 2 3] (vec (first first-row))))
-    (is (= [1 2 3] (vec (first second-row))))
-    (is (not (identical? (first first-row) (first second-row))))
+        fake (fake/source info (vec (repeat 5 [bytes])))
+        batches (atom [])
+        result (harness/run! fake clauses {:limits {:batch-rows 2}
+                                           :consume (fn [batch]
+                                                      (swap! batches conj (:row-count batch))
+                                                      (aset-byte bytes 0 (byte 9)))})
+        values (mapv first (:rows result))]
+    (is (= [2 2 1] @batches))
+    (is (= (repeat 5 [1 2 3]) (mapv vec values)))
+    (is (= 5 (count (set values))))
+    ;; Ownership holds between rows in one batch as well as across advances.
+    (aset-byte ^bytes (first values) 0 (byte 7))
+    (is (= (repeat 4 [1 2 3]) (mapv vec (next values))))
     (is (= :close-session (last @(:events fake))))))
 
 (deftest acquisition-and-planning-failures-clean-up-only-acquired-resources
