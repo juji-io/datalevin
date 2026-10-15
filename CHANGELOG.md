@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.5 (2026-10-14)
 
 ### Fixed
 - [Server] transaction report tempid encoding.
