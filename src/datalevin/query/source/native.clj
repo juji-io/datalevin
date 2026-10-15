@@ -49,6 +49,10 @@
 (defn- attribute-type [schema attribute]
   (let [{:db/keys [valueType tupleTypes]} (schema attribute)]
     (or (logical-scalar valueType)
+        (when (or (nil? valueType) (= valueType :db.type/data)
+                  (and (= valueType :db.type/tuple) (nil? tupleTypes)
+                       (nil? (:db/tupleType (schema attribute)))))
+          :data)
         (when (and (= valueType :db.type/tuple) (<= 2 (count tupleTypes) 255))
           (let [elements (mapv logical-scalar tupleTypes)]
             (when (every? some? elements) {:kind :tuple :elements elements})))
@@ -79,9 +83,9 @@
                                                 (bindings (second term))))
           (fail! :query-source/unsupported :native-type))))))
 
-(defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type decode emit eid]
-  ;; Flat scalars and fixed tuples have bounded collection amplification. This
-  ;; covers buffers, text temporaries, values, and row/binding containers.
+(defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type prepare emit eid]
+  ;; Reserve buffers and bounded preflight state first. Generic collections get
+  ;; a separate layout-derived reservation before decoding, held through emit.
   ;; Retaining a row beyond emit requires the consumer's own reservation.
   (let [expanded-size (long expanded-size)
         attribute-size (long (value/value-charge attribute))
@@ -89,39 +93,45 @@
         token (source/reserve! control
                 {:retained-bytes (+ 4096 (long (.remaining buffer))
                                    (* 8 expanded-size) attribute-size
-                                   (* 512 (count (:elements type))))})]
+                                   (native-value/scratch-bytes type expanded-size))})]
     (try
-      (let [v (decode)]
-        (source/check-active! control)
-        (emit [eid attribute v]))
+      (let [{:keys [decode retained-bytes]} (prepare)
+            decoded (when (pos? (long retained-bytes))
+                      (source/reserve! control {:retained-bytes retained-bytes}))]
+        (try
+          (let [v (decode)]
+            (source/check-active! control)
+            (emit [eid attribute v]))
+          (finally (when decoded (source/release! decoded)))))
       (finally (source/release! token)))))
 
 (defn scan!
   "Visit owned datoms from one pinned EAV scan without a full-result collector."
   [control {:keys [kv attrs schema]} attribute emit]
-  (scan/scan kv c/eav
-    (with-open [^AutoCloseable iterator
-                (.iterator ^Iterable (lmdb/iterate-list dbi rtx cur [:all] :id [:all] :avg))]
-      (loop []
-        (source/check-active! control)
-        (when (.hasNext ^Iterator iterator)
-          (let [entry (.next ^Iterator iterator)
-                eid (bits/read-buffer (lmdb/k entry) :id)
-                ^ByteBuffer raw (lmdb/v entry)
-                result (when (= attribute (attrs (bits/avg->aid raw)))
-                         (let [type (attribute-type schema attribute)
-                               giant (bits/avg->giant-id raw)]
-                           (if (= c/normal giant)
-                             (visit-value control raw (.remaining raw) attribute type
-                                          #(native-value/inline-value raw type) emit eid)
-                             (let [giants (i/get-dbi kv c/giants false)]
-                               (lmdb/put-read-key giants rtx giant :id)
-                               (if-let [buffer (lmdb/get-kv giants rtx)]
-                                 (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                                              #(native-value/giant-value
-                                                 (index/giant-datom-buffer buffer) type eid attribute)
-                                              emit eid)
-                                 (fail! :query-source/invalid :native-value))))))]
-            (when-not (reduced? result)
-              (recur))))))
-    (throw e)))
+  (let [type (attribute-type schema attribute)
+        check! #(source/check-active! control)]
+    (scan/scan kv c/eav
+      (with-open [^AutoCloseable iterator
+                  (.iterator ^Iterable (lmdb/iterate-list dbi rtx cur [:all] :id [:all] :avg))]
+        (loop []
+          (source/check-active! control)
+          (when (.hasNext ^Iterator iterator)
+            (let [entry (.next ^Iterator iterator)
+                  eid (bits/read-buffer (lmdb/k entry) :id)
+                  ^ByteBuffer raw (lmdb/v entry)
+                  result (when (= attribute (attrs (bits/avg->aid raw)))
+                           (let [giant (bits/avg->giant-id raw)]
+                             (if (= c/normal giant)
+                               (visit-value control raw (.remaining raw) attribute type
+                                            #(native-value/prepare-inline raw type check!) emit eid)
+                               (let [giants (i/get-dbi kv c/giants false)]
+                                 (lmdb/put-read-key giants rtx giant :id)
+                                 (if-let [buffer (lmdb/get-kv giants rtx)]
+                                   (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
+                                                #(native-value/prepare-giant
+                                                   (index/giant-datom-buffer buffer) type eid attribute check!)
+                                                emit eid)
+                                   (fail! :query-source/invalid :native-value))))))]
+              (when-not (reduced? result)
+                (recur))))))
+      (throw e))))

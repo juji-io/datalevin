@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.query.source.native-value
-  "Preflight scalar and fixed tuple layouts before allocating decoded values."
+  "Preflight supported native value layouts before allocating decoded values."
   (:require [datalevin.bits :as bits]
             [datalevin.constants :as c]
             [datalevin.query.source.value :refer [fail!]]
@@ -7,6 +7,22 @@
             [taoensso.nippy.impl :as impl]
             [taoensso.nippy.schema :as schema])
   (:import [java.nio ByteBuffer]))
+
+(def ^:private max-data-depth 64)
+(def ^:private max-data-cache 256)
+
+(defn scratch-bytes
+  "Bound preflight cache/stack state independently of decoded collections."
+  ^long [type ^long encoded-size]
+  (if (= type :data)
+    (+ (* 256 (min (long max-data-cache) encoded-size))
+       (* 512 (min (long max-data-depth) encoded-size)))
+    (* 512 (count (:elements type)))))
+
+(defn- add-charge ^long [^long a ^long b]
+  ;; Saturation still exceeds any available ledger space: the raw-buffer
+  ;; reservation is already live. Cached DAGs must never wrap a charge.
+  (if (> b (- Long/MAX_VALUE a)) Long/MAX_VALUE (+ a b)))
 
 (def ^:private datom-type-id (impl/coerce-custom-type-id :datalevin/datom))
 
@@ -32,6 +48,7 @@
         (case kind
           (:true :false) [:boolean 0]
           :boolean_ [:boolean 1]
+          :integer [:integer 4]
           :long-0 [:long 0]
           (:long-pos-sm :long-neg-sm :long-sm_) [:long 1]
           (:long-pos-md :long-neg-md :long-md_) [:long 2]
@@ -56,66 +73,122 @@
           (:bigint :biginteger) [:bigint (length! buffer 4)]
           :bigdec [:bigdec (length! buffer 4)]
           (fail! :query-source/unsupported :native-value))]
-    (when-not (= type expected) (fail! :query-source/invalid :native-value))
+    (when-not (or (= expected :data) (= type expected))
+      (fail! :query-source/invalid :native-value))
     (skip! buffer size)
-    (when (= kind :bigdec) (skip! buffer 4))))
+    (when (= kind :bigdec) (skip! buffer 4))
+    {:type type :charge (+ 512 (* 8 (long size))) :height 0}))
 
 (declare value!)
 
-(defn- value-body! [^ByteBuffer buffer expected cache cache-limit nullable?]
+(defn- collection-layout [kind ^ByteBuffer buffer]
+  (case kind
+    :vec-0 [:vector 0] :vec-2 [:vector 2] :vec-3 [:vector 3]
+    :vec-sm* [:vector (+ 128 (length! buffer 1))]
+    :vec-sm_ [:vector (length! buffer 1)]
+    :vec-md [:vector (length! buffer 2)] :vec-lg [:vector (length! buffer 4)]
+    :set-0 [:set 0]
+    :set-sm* [:set (+ 128 (length! buffer 1))]
+    :set-sm_ [:set (length! buffer 1)]
+    :set-md [:set (length! buffer 2)] :set-lg [:set (length! buffer 4)]
+    :map-0 [:map 0]
+    (:map-sm* :pam-sm*_) [:map (* 2 (+ 128 (length! buffer 1)))]
+    :map-sm_ [:map (* 2 (length! buffer 1))]
+    :map-md [:map (* 2 (length! buffer 2))]
+    :map-lg [:map (* 2 (length! buffer 4))]
+    :list-0 [:list 0] :list-sm [:list (length! buffer 1)]
+    :list-md [:list (length! buffer 2)] :list-lg [:list (length! buffer 4)]
+    nil))
+
+(defn- value-body! [^ByteBuffer buffer expected context depth nullable?]
   (need! buffer 1)
   (let [kind (first (schema/types-spec (.get buffer (.position buffer))))]
     (cond
       (= kind :nil)
       (do (when-not nullable? (fail! :query-source/invalid :native-value))
           (skip! buffer 1)
-          true)
+          {:type :nil :charge 512 :height 0})
 
-      (= :tuple (:kind expected))
-      (let [_ (skip! buffer 1)
-            size (case kind
-                   :vec-0 0 :vec-2 2 :vec-3 3
-                   :vec-sm* (+ 128 (length! buffer 1))
-                   :vec-sm_ (length! buffer 1)
-                   :vec-md (length! buffer 2)
-                   :vec-lg (length! buffer 4)
-                   (fail! :query-source/unsupported :native-value))]
-        (when-not (= size (count (:elements expected)))
-          (fail! :query-source/invalid :native-value))
-        (doseq [type (:elements expected)]
-          (value! buffer type cache cache-limit true))
-        false)
+      (and (= expected :data) (= kind :meta))
+      (do
+        (skip! buffer 1)
+        (let [depth (inc (long depth))
+              metadata (value! buffer :data context depth true)
+              _ (when-not (#{:map :nil} (:type metadata))
+                  (fail! :query-source/invalid :native-value))
+              value (value! buffer :data context depth nullable?)]
+          (when-not (#{:vector :map :set :list :symbol} (:type value))
+            (fail! :query-source/invalid :native-value))
+          (assoc value
+                 :height (inc (max (long (:height metadata)) (long (:height value))))
+                 :charge (add-charge 512 (add-charge (long (:charge metadata))
+                                                    (long (:charge value)))))))
 
-      :else (do (scalar-body! buffer expected) false))))
+      (or (= expected :data) (= :tuple (:kind expected)))
+      (let [start (.position buffer)
+            _ (skip! buffer 1)]
+        (if-let [[kind size] (collection-layout kind buffer)]
+          (let [size (long size)
+                tuple? (= :tuple (:kind expected))]
+            ;; At least one tag per element is required, even for a cache ref.
+            ;; Validate counts before any Nippy collection allocation.
+            (need! buffer size)
+            (when (and tuple? (not (and (= kind :vector)
+                                        (= size (count (:elements expected))))))
+              (fail! :query-source/invalid :native-value))
+            ((:check! context))
+            (loop [i 0, charge (+ 512 (* 128 size)), height 0]
+              (if (= i size)
+                {:type (if tuple? expected kind) :charge charge :height (inc height)}
+                (let [_ (when (zero? (bit-and i 1023)) ((:check! context)))
+                      child (value! buffer (if tuple? (nth (:elements expected) i) :data)
+                                    context (inc (long depth)) true)]
+                  (recur (inc i) (add-charge charge (long (:charge child)))
+                         (max height (long (:height child))))))))
+          (do (.position buffer start)
+              (scalar-body! buffer expected))))
 
-(defn- value! [^ByteBuffer buffer expected cache cache-limit nullable?]
+      :else (scalar-body! buffer expected))))
+
+(defn- compatible! [expected layout nullable?]
+  (when-not (if (= :nil (:type layout)) nullable?
+                (or (= expected :data) (= expected (:type layout))))
+    (fail! :query-source/invalid :native-value))
+  layout)
+
+(defn- value! [^ByteBuffer buffer expected {:keys [cache cache-limit] :as context} depth nullable?]
+  (when (> (long depth) (long max-data-depth))
+    (fail! :query-source/unsupported :native-value))
   (need! buffer 1)
   (let [kind (first (schema/types-spec (.get buffer (.position buffer))))
         cached (case kind
                  :cached-0 0 :cached-1 1 :cached-2 2
                  :cached-3 3 :cached-4 4 :cached-5 5 :cached-6 6 :cached-7 7
-                 :cached-sm :small :cached-md :medium nil)]
-    (if (nil? cached)
-      (value-body! buffer expected cache cache-limit nullable?)
-      (do
-        (skip! buffer 1)
-        (let [id (case cached
-                   :small (length! buffer 1) :medium (length! buffer 2) cached)]
-          ;; Cache space is bounded by the schema's field count, independently
-          ;; of encoded IDs. Nested/generic readers cannot allocate extra state.
-          (when-not (< -1 id (long cache-limit))
-            (fail! :query-source/unsupported :native-value))
-          (if-let [{:keys [type nil?]} (@cache id)]
-            (when-not (and (= type expected) (or nullable? (not nil?)))
-              (fail! :query-source/invalid :native-value))
-            (do
-              (when-not (= id (count @cache))
-                (fail! :query-source/invalid :native-value))
-              ;; Match Nippy's ordered first occurrences. Reserve this slot
-              ;; before nested elements, while rejecting references to it.
-              (vswap! cache assoc id {:pending? true})
-              (let [nil? (value-body! buffer expected cache cache-limit nullable?)]
-                (vswap! cache assoc id {:type expected :nil? nil?})))))))))
+                 :cached-sm :small :cached-md :medium nil)
+        layout
+        (if (nil? cached)
+          (value-body! buffer expected context depth nullable?)
+          (do
+            (skip! buffer 1)
+            (let [id (case cached
+                       :small (length! buffer 1) :medium (length! buffer 2) cached)]
+              (when-not (< -1 id (long cache-limit))
+                (fail! :query-source/unsupported :native-value))
+              (if-let [layout (@cache id)]
+                (do (when (:pending? layout) (fail! :query-source/invalid :native-value))
+                    (compatible! expected layout nullable?))
+                (do
+                  (when-not (= id (count @cache))
+                    (fail! :query-source/invalid :native-value))
+                  ;; Match Nippy's ordered first occurrences and reject cycles.
+                  (vswap! cache assoc id {:pending? true})
+                  (let [layout (value-body! buffer expected context depth nullable?)]
+                    (vswap! cache assoc id layout)
+                    layout))))))]
+    ;; Also bound logical depth when cached subtrees occur deeper in the value.
+    (when (> (+ (long depth) (long (:height layout))) (long max-data-depth))
+      (fail! :query-source/unsupported :native-value))
+    layout))
 
 (defn- skip-header! [^ByteBuffer buffer]
   (let [p (.position buffer)]
@@ -129,31 +202,42 @@
         (fail! :query-source/unsupported :native-value))
       (skip! buffer 4))))
 
+(defn- context [type check!]
+  {:cache (volatile! {}) :check! check!
+   :cache-limit (if (= type :data) max-data-cache (+ 3 (count (:elements type))))})
+
+(defn prepare-giant
+  "Validate a raw Nippy datom without constructing its values. Returns a decoder
+  and an additional retained-byte charge, to reserve through consumer handoff.
+  The caller must already reserve raw/expanded buffers and scratch-bytes."
+  ([buffer type eid attribute] (prepare-giant buffer type eid attribute (fn [])))
+  ([^ByteBuffer buffer type eid attribute check!]
+   (skip-header! buffer)
+   (need! buffer 11)
+   (when-not (and (= schema/id-prefixed-custom-md (.get buffer))
+                 (= datom-type-id (.getShort buffer))
+                 (= eid (.getLong buffer)))
+     (fail! :query-source/invalid :native-value))
+   (let [start (.position buffer)
+         context (context type check!)]
+     (value! buffer :keyword context 0 false)
+     (let [layout (value! buffer type context 0 false)]
+       (value! buffer :long context 0 false)
+       (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
+       {:retained-bytes (if (= type :data) (:charge layout) 0)
+        :decode (fn []
+                  (.position buffer start)
+                  (impl/with-thaw-cache
+                    (when-not (= attribute (nippy/thaw-from-bb! buffer))
+                      (fail! :query-source/invalid :native-value))
+                    (nippy/thaw-from-bb! buffer)))}))))
+
 (defn giant-value
-  "Read a declared scalar or fixed tuple from a reserved raw Nippy datom buffer.
-  Check every tag and length without constructing values first. No metadata,
-  generic collection, or custom reader is invoked; caches and tuple counts are
-  bounded by the schema. Validate the owning entity/attribute, so a stale giant
-  reference cannot emit another fact."
-  [^ByteBuffer buffer type eid attribute]
-  (skip-header! buffer)
-  (need! buffer 11)
-  (when-not (and (= schema/id-prefixed-custom-md (.get buffer))
-                (= datom-type-id (.getShort buffer))
-                (= eid (.getLong buffer)))
-    (fail! :query-source/invalid :native-value))
-  (let [start (.position buffer)
-        cache (volatile! {})
-        cache-limit (+ 3 (count (:elements type)))]
-    (value! buffer :keyword cache cache-limit false)
-    (value! buffer type cache cache-limit false)
-    (value! buffer :long cache cache-limit false)
-    (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
-    (.position buffer start)
-    (impl/with-thaw-cache
-      (when-not (= attribute (nippy/thaw-from-bb! buffer))
-        (fail! :query-source/invalid :native-value))
-      (nippy/thaw-from-bb! buffer))))
+  "Decode a pre-reserved scalar or fixed tuple. Generic values must use
+  prepare-giant and reserve its returned charge before invoking the decoder."
+  [buffer type eid attribute]
+  (when (= type :data) (fail! :query-source/unsupported :native-value))
+  ((:decode (prepare-giant buffer type eid attribute))))
 
 (defn- scalar-header [^long header]
   (case header
@@ -191,16 +275,35 @@
     (when-not (= (.position buffer) end)
       (fail! :query-source/invalid :native-value))))
 
+(defn prepare-inline
+  "Validate an inline AVG value, returning a decoder and additional charge.
+  The caller must already reserve encoded buffers and scratch-bytes."
+  ([raw type] (prepare-inline raw type (fn [])))
+  ([^ByteBuffer raw type check!]
+   (let [buffer (.duplicate raw)]
+     (need! buffer 7)
+     (.position buffer 4)
+     (if (= type :data)
+       (do
+         (.limit buffer (- (.limit buffer) 2))
+         (skip-header! buffer)
+         (let [start (.position buffer)
+               layout (value! buffer :data (context :data check!) 0 false)]
+           (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
+           {:retained-bytes (:charge layout)
+            :decode (fn []
+                      (.position buffer start)
+                      (impl/with-thaw-cache (nippy/thaw-from-bb! buffer)))}))
+       (do
+         (if (= :tuple (:kind type))
+           (inline-tuple! buffer (:elements type))
+           (when-not (= type (scalar-header (.get buffer)))
+             (fail! :query-source/invalid :native-value)))
+         {:retained-bytes 0 :decode #(bits/avg->inline-value raw)})))))
+
 (defn inline-value
-  "Decode an AVG value only after checking every component's scalar header.
-  Tuple trailers bound each component; no fallback to a generic reader is
-  permitted. The caller reserves memory before this preflight and decoding."
-  [^ByteBuffer raw type]
-  (let [buffer (.duplicate raw)]
-    (need! buffer 7)
-    (.position buffer 4)
-    (if (= :tuple (:kind type))
-      (inline-tuple! buffer (:elements type))
-      (when-not (= type (scalar-header (.get buffer)))
-        (fail! :query-source/invalid :native-value)))
-    (bits/avg->inline-value raw)))
+  "Decode a pre-reserved scalar or fixed tuple. Generic values must use
+  prepare-inline and reserve its returned charge before invoking the decoder."
+  [raw type]
+  (when (= type :data) (fail! :query-source/unsupported :native-value))
+  ((:decode (prepare-inline raw type))))
