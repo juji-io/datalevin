@@ -18,24 +18,44 @@
     :planning :open :fetch :batch :values :reserve :execution :metrics :close :syntax})
 
 (defn redacted-error [runtime phase error]
-  (let [data (ex-data error)]
-    (ex-info "Query-source operation failed"
+  ;; Only errors redacted by this invocation may retain diagnostic context.
+  ;; Provider ex-data can contain arbitrary values even under structural keys.
+  (if (contains? @(:redacted-errors runtime) error)
+    error
+    (let [data (ex-data error)
+          error
+          (ex-info "Query-source operation failed"
              (merge {:error (cond (instance? InterruptedException error) :query-source/cancelled
                                   (categories (:error data)) (:error data)
                                   :else :query-source/provider)
                      :phase (if (phases phase) phase :execution) :query-id (:query-id runtime)}
+                    (:location runtime)
                     (when (= :query/timeout (:error data)) {:type :query/timeout})
                     (when (= :closed (:state data)) {:state :closed})
                     (when (and (contains? control/default-limits (:category data))
                                (integer? (:maximum data)) (integer? (:attempted data)))
-                      (select-keys data [:category :maximum :attempted]))))))
+                      (select-keys data [:category :maximum :attempted]))))]
+      (swap! (:redacted-errors runtime) conj error)
+      error)))
+
+(defn with-context
+  "Locate failures using core query/plan context, never provider exception data."
+  [runtime location f]
+  (let [runtime (update runtime :location merge
+                        (select-keys location [:source-symbol :clause-ids :alternative-id]))]
+    (try (f runtime)
+         (catch Throwable e
+           (throw (redacted-error runtime (or (:phase (ex-data e)) :execution) e))))))
 
 (defn invoke [runtime phase f]
-  (source/check-active! (:control runtime))
-  (let [result (try (f)
-                    (catch Throwable e
-                      (source/check-active! (:control runtime))
-                      (throw (redacted-error runtime phase e))))]
+  (let [result (try
+                 (source/check-active! (:control runtime))
+                 (try (f)
+                      (catch Throwable e
+                        (source/check-active! (:control runtime))
+                        (throw e)))
+                 (catch Throwable e
+                   (throw (redacted-error runtime phase e))))]
     ;; A provider may successfully return a resource just as its deadline fires.
     ;; Callers first attach ownership, then check active before the next operation.
     result))
@@ -44,7 +64,11 @@
   "Attach one resource and return its idempotent close function."
   [runtime close]
   (let [closed (atom false)
-        close (fn [] (when (compare-and-set! closed false true) (close)))]
+        close (fn []
+                (when (compare-and-set! closed false true)
+                  (try (close)
+                       (catch Throwable e
+                         (throw (redacted-error runtime :close e))))))]
     (swap! (:cleanup runtime) conj close)
     close))
 
@@ -56,6 +80,7 @@
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))
         runtime {:control control :query-id (UUID/randomUUID) :cleanup (atom [])
+                 :redacted-errors (atom #{})
                  :explain (atom {:sources [] :native-scans 0 :streamed-rows 0})}
         primary (atom nil)]
     (binding [*runtime* runtime]

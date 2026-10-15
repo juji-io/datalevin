@@ -91,15 +91,19 @@
         predicates (filterv #(= :predicate (:kind %)) clauses)
         descriptors (IdentityHashMap.)
         entries (mapv (fn [[sym input]]
-                        (if (satisfies? source/IQuerySource input)
-                          (let [descriptor (or (.get descriptors input)
-                                               (let [d (rt/invoke runtime :descriptor #(source/-source-info input))]
-                                                 (contract/negotiate d)
-                                                 (.put descriptors input d)
-                                                 (rt/charge! runtime d)
-                                                 d))]
-                            {:symbol sym :source input :descriptor descriptor})
-                          (do (native/validate! input) {:symbol sym :native input}))) sources)
+                        (rt/with-context runtime
+                          {:source-symbol sym
+                           :clause-ids (mapv :id (filter #(= sym (:source-symbol %)) patterns))}
+                          (fn [runtime]
+                            (if (satisfies? source/IQuerySource input)
+                              (let [descriptor (or (.get descriptors input)
+                                                   (let [d (rt/invoke runtime :descriptor #(source/-source-info input))]
+                                                     (contract/negotiate d)
+                                                     (.put descriptors input d)
+                                                     (rt/charge! runtime d)
+                                                     d))]
+                                {:symbol sym :source input :descriptor descriptor})
+                              (do (native/validate! input) {:symbol sym :native input}))))) sources)
         types (atom {})]
     (rt/charge! runtime bindings)
     (rt/charge! runtime clauses)
@@ -126,20 +130,24 @@
                     eligible (filterv #(set/subset? (contract/variables %) available) predicates)
                     clauses (into local eligible)]
                 (when descriptor
-                  (contract/clauses! descriptor clauses)
-                  (doseq [pattern local
-                          [term column] (map vector (:terms pattern)
-                                             (contract/pattern-columns descriptor pattern))]
-                    (when-not (= :ignore (first term)) (value/execution-type! (:type column)))
-                    (when (= :var (first term))
-                      (let [sym (second term) t (:type column)]
-                        (when (and (contains? @types sym) (not= t (@types sym)))
-                          (fail! :query-source/unsupported :types))
-                        (swap! types assoc sym t)
-                        (when (contains? bindings sym)
-                          (let [x (bindings sym)]
-                            (when-not (if (nil? x) (:nullable? column) (value/matches-type? t x))
-                              (fail! :query-source/invalid :types))))))))
+                  (doseq [clause clauses]
+                    (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id clause)]}
+                      (fn [_] (contract/clauses! descriptor [clause]))))
+                  (doseq [pattern local]
+                    (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
+                      (fn [_]
+                        (doseq [[term column] (map vector (:terms pattern)
+                                                  (contract/pattern-columns descriptor pattern))]
+                          (when-not (= :ignore (first term)) (value/execution-type! (:type column)))
+                          (when (= :var (first term))
+                            (let [sym (second term) t (:type column)]
+                              (when (and (contains? @types sym) (not= t (@types sym)))
+                                (fail! :query-source/unsupported :types))
+                              (swap! types assoc sym t)
+                              (when (contains? bindings sym)
+                                (let [x (bindings sym)]
+                                  (when-not (if (nil? x) (:nullable? column) (value/matches-type? t x))
+                                    (fail! :query-source/invalid :types)))))))))))
                 (assoc entry :clauses clauses :patterns local))) entries)]
       {:entries entries :bindings bindings :predicates predicates :types @types
        :limit (window (:qlimit parsed) bindings nil)
@@ -179,36 +187,45 @@
         acquired
         (mapcat
           (fn [group]
-            (let [request (assoc common :source-descriptors (vec (distinct (map :descriptor group))))
-                  session (rt/invoke runtime :acquisition #(source/-open-session (:source (first group)) request))]
-              (when-not (satisfies? source/IQuerySourceSession session) (fail! :query-source/invalid :session))
-              (rt/own! runtime #(source/-close-session! session))
-              (let [registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
-                (rt/own! runtime #(source/unregister-cancel! registration)))
-              (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
-              (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))) groups)
+            (rt/with-context runtime
+              {:source-symbol (:symbol (first group))
+               :clause-ids (mapv :id (:clauses (first group)))}
+              (fn [runtime]
+                (let [request (assoc common :source-descriptors (vec (distinct (map :descriptor group))))
+                      session (rt/invoke runtime :acquisition #(source/-open-session (:source (first group)) request))]
+                  (when-not (satisfies? source/IQuerySourceSession session) (fail! :query-source/invalid :session))
+                  (rt/own! runtime #(source/-close-session! session))
+                  (let [registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
+                    (rt/own! runtime #(source/unregister-cancel! registration)))
+                  (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
+                  (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))) groups)
         planned
         (mapv
           (fn [{:keys [source symbol descriptor clauses session request] :as entry}]
-            (let [request (merge request {:source-symbol symbol :source-descriptor descriptor
-                                         :clauses clauses :bindings bindings
-                                         :required-vars (into #{} (mapcat contract/variables) clauses)
-                                         :max-alternatives 32
-                                         :demand {:quality :exact :ordering [] :offset 0 :limit nil}})
-                  _ (contract/planning-request! request)
-                  response (rt/invoke runtime :planning #(source/-plan-source source session request))
-                  selected (select-cover request response (:allow-once? entry))]
-              (swap! (:explain runtime) update :sources conj
-                     {:source symbol :consistency (:consistency request)
-                      :pattern-count (count (:patterns entry))
-                      :selected (mapv #(-> (select-keys % [:covers :prefilters])
-                                            (assoc :properties
-                                                   (select-keys (:properties %)
-                                                                [:replay :ordering :blocking-state]))) selected)})
-              (mapv #(assoc entry :alternative % :request request) selected))) acquired)
+            (rt/with-context runtime {:source-symbol symbol :clause-ids (mapv :id clauses)}
+              (fn [runtime]
+                (let [request (merge request {:source-symbol symbol :source-descriptor descriptor
+                                             :clauses clauses :bindings bindings
+                                             :required-vars (into #{} (mapcat contract/variables) clauses)
+                                             :max-alternatives 32
+                                             :demand {:quality :exact :ordering [] :offset 0 :limit nil}})
+                      _ (contract/planning-request! request)
+                      response (rt/invoke runtime :planning #(source/-plan-source source session request))
+                      selected (select-cover request response (:allow-once? entry))]
+                  (swap! (:explain runtime) update :sources conj
+                         {:source symbol :consistency (:consistency request)
+                          :pattern-count (count (:patterns entry))
+                          :selected (mapv #(-> (select-keys % [:covers :prefilters])
+                                                (assoc :properties
+                                                       (select-keys (:properties %)
+                                                                    [:replay :ordering :blocking-state]))) selected)})
+                  (mapv #(assoc entry :alternative % :request request) selected))))) acquired)
         fragments (vec (mapcat identity planned))]
     (doseq [group (vals (group-by :session fragments))]
       (when (and (> (count group) 1)
                  (some #(= :once (get-in % [:alternative :properties :replay])) group))
-        (fail! :query-source/unsupported :planning)))
+        (rt/with-context runtime
+          {:source-symbol (:symbol (first group))
+           :clause-ids (mapv :id (:clauses (first group)))}
+          (fn [_] (fail! :query-source/unsupported :planning)))))
     (assoc prepared :fragments fragments)))

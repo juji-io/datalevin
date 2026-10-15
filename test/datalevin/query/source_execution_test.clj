@@ -100,7 +100,12 @@
         error (try (d/q pairs-query s) (catch Exception e e))]
     (is (= :query-source/provider (:error (ex-data error))))
     (is (= :fetch (:phase (ex-data error))))
+    (is (= {:source-symbol '$s :clause-ids [0] :alternative-id :scan}
+           (select-keys (ex-data error) [:source-symbol :clause-ids :alternative-id])))
     (is (= 1 (count (.getSuppressed ^Throwable error))))
+    (is (= (select-keys (ex-data error) [:query-id :source-symbol :clause-ids :alternative-id])
+           (select-keys (ex-data (first (.getSuppressed ^Throwable error)))
+                        [:query-id :source-symbol :clause-ids :alternative-id])))
     (is (not (.contains (str error) "secret")))
     (is (= :close-session (last (remove #{:cancel-session} @(:events s)))))))
 

@@ -53,46 +53,52 @@
 
 (defn- source-reader [runtime {:keys [session request descriptor symbol alternative]}]
   (fn [emit]
-    (let [control (:control runtime)
-          cursor (rt/invoke runtime :open
-                            #(source/-open-cursor session
-                               (merge request {:plan (:plan alternative) :alternative-id (:id alternative)
-                                               :source-symbol symbol
-                                               :definition-fingerprint (:definition-fingerprint descriptor)})))
-          _ (when-not (satisfies? source/IQuerySourceCursor cursor) (fail! :query-source/invalid :open))
-          close (rt/own! runtime #(source/-close-cursor! cursor))
-          batch-request {:control control :max-rows (get-in request [:limits :batch-rows])
-                         :max-bytes (get-in request [:limits :batch-bytes])}
-          columns (:columns alternative)]
-      (loop []
-        (let [batch (rt/invoke runtime :fetch #(source/-next-batch! cursor batch-request))
-              _ (contract/batch! columns batch-request batch)
-              stopped
-              (try
-                (visit-rows (:rows batch) (fn [row]
-                          (source/check-active! control)
-                          (run! value/execution-value! row)
-                          (swap! (:explain runtime) update :streamed-rows inc)
-                          (let [scratch (source/reserve! control
-                                          {:retained-bytes (+' 512 (*' 256 (count columns))
-                                                               (value/value-charge row))})]
-                            (try (emit (zipmap (map :variable columns) row))
-                                 (finally (source/release! scratch))))))
-                (finally (when-let [token (:reservation batch)] (source/release! token))))]
-          (when-not (or (:exhausted? batch) (reduced? stopped)) (recur))))
-      (rt/invoke runtime :close close)
-      (swap! (:explain runtime) update :cursors (fnil conj [])
-             {:source symbol :metrics (rt/invoke runtime :metrics #(metrics cursor))}))))
+    (rt/with-context runtime
+      {:source-symbol symbol :alternative-id (:id alternative)
+       :clause-ids (vec (sort (into (:covers alternative) (:prefilters alternative))))}
+      (fn [runtime]
+        (let [control (:control runtime)
+              cursor (rt/invoke runtime :open
+                                #(source/-open-cursor session
+                                   (merge request {:plan (:plan alternative) :alternative-id (:id alternative)
+                                                   :source-symbol symbol
+                                                   :definition-fingerprint (:definition-fingerprint descriptor)})))
+              _ (when-not (satisfies? source/IQuerySourceCursor cursor) (fail! :query-source/invalid :open))
+              close (rt/own! runtime #(source/-close-cursor! cursor))
+              batch-request {:control control :max-rows (get-in request [:limits :batch-rows])
+                             :max-bytes (get-in request [:limits :batch-bytes])}
+              columns (:columns alternative)]
+          (loop []
+            (let [batch (rt/invoke runtime :fetch #(source/-next-batch! cursor batch-request))
+                  _ (contract/batch! columns batch-request batch)
+                  stopped
+                  (try
+                    (visit-rows (:rows batch) (fn [row]
+                              (source/check-active! control)
+                              (run! value/execution-value! row)
+                              (swap! (:explain runtime) update :streamed-rows inc)
+                              (let [scratch (source/reserve! control
+                                              {:retained-bytes (+' 512 (*' 256 (count columns))
+                                                                   (value/value-charge row))})]
+                                (try (emit (zipmap (map :variable columns) row))
+                                     (finally (source/release! scratch))))))
+                    (finally (when-let [token (:reservation batch)] (source/release! token))))]
+              (when-not (or (:exhausted? batch) (reduced? stopped)) (recur))))
+          (rt/invoke runtime :close close)
+          (swap! (:explain runtime) update :cursors (fnil conj [])
+                 {:source symbol :metrics (rt/invoke runtime :metrics #(metrics cursor))}))))))
 
-(defn- native-reader [runtime snapshots bindings {:keys [native patterns]}]
+(defn- native-reader [runtime snapshots bindings {:keys [native patterns symbol]}]
   (mapv (fn [pattern]
           (fn [emit]
-            (swap! (:explain runtime) update :native-scans inc)
-            (native/scan! (:control runtime) (get snapshots (.-store ^DB native))
-                          (second (second (:terms pattern)))
-                          (fn [row]
-                            (when-let [binding (match-row bindings (:terms pattern) row)]
-                              (emit binding)))))) patterns))
+            (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
+              (fn [runtime]
+                (swap! (:explain runtime) update :native-scans inc)
+                (native/scan! (:control runtime) (get snapshots (.-store ^DB native))
+                              (second (second (:terms pattern)))
+                              (fn [row]
+                                (when-let [binding (match-row bindings (:terms pattern) row)]
+                                  (emit binding)))))))) patterns))
 
 (defn- result-shape [parsed rows]
   (let [rows (if-let [return (:qreturn-map parsed)]
