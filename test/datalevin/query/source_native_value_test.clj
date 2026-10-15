@@ -1,6 +1,7 @@
 (ns datalevin.query.source-native-value-test
   (:require [clojure.test :refer [deftest is]]
             [datalevin.bits :as bits]
+            [datalevin.buffer :as buffer]
             [datalevin.constants :as c]
             [datalevin.datom :as datom]
             [datalevin.index :as index]
@@ -11,7 +12,7 @@
             [taoensso.nippy.schema :as schema])
   (:import [java.io DataInput DataOutput]
            [java.nio ByteBuffer]
-           [java.util Arrays Date UUID]))
+           [java.util ArrayList Arrays Date UUID]))
 
 (defn- decode [bytes type]
   (native-value/giant-value (ByteBuffer/wrap bytes) type 1 :test/value))
@@ -33,6 +34,66 @@
           freeze [bits/serialize #(nippy/freeze % {:compressor nil})]]
     (is (= value (decode (freeze (datom/datom 1 :test/value value)) type))
         (str type " " (class value)))))
+
+(defn- tuple-type [elements] {:kind :tuple :elements elements})
+
+(deftest fixed-tuple-datom-layouts
+  (doseq [[types value]
+          [[[:long :string] [42 "λ😀"]]
+           [[:keyword :symbol :long] [:test/value 'test/value nil]]
+           [[:boolean :float :double :bigint :bigdec :instant :uuid]
+            [false (float 1.25) 2.0 (biginteger 42) 1.00M (Date. 12) (UUID/randomUUID)]]
+           [(vec (repeat 100 :long)) (vec (range 100))]
+           [(vec (repeat 255 :string)) (vec (repeat 255 "value"))]]]
+    (doseq [freeze [bits/serialize #(nippy/freeze % {:compressor nil})]]
+      (is (= value (decode (freeze (datom/datom 1 :test/value value))
+                           (tuple-type types)))))
+    (let [indexable (bits/indexable 1 2 value types 1)]
+      (when-not (bits/giant? indexable)
+        (is (= value (native-value/inline-value
+                       (ByteBuffer/wrap (bits/indexable-bytes indexable))
+                       (tuple-type types))))))))
+
+(deftest wide-tuple-encoding-with-a-cold-buffer-pool
+  ;; Normal typed tuple writes must be independent of earlier pool borrowers.
+  (let [borrowed (ArrayList.)]
+    (.drainTo buffer/array-buffers borrowed)
+    (try
+      (let [value (vec (range 100))
+            encoded (bits/indexable 1 2 value (vec (repeat 100 :long)) 7)]
+        (is (bits/giant? encoded))
+        (is (= 7 (bits/avg->giant-id (ByteBuffer/wrap (bits/indexable-bytes encoded))))))
+      (finally (run! buffer/return-array-buffer borrowed)))))
+
+(deftest tuple-preflight-rejects-malformed-and-generic-components
+  (let [type (tuple-type [:long :string])
+        bytes (bits/serialize (datom/datom 1 :test/value [42 "value"]))]
+    (doseq [length (range (alength bytes))]
+      (is (= :query-source/invalid
+             (category #(decode (Arrays/copyOf bytes (int length)) type)))))
+    (doseq [bad-type [(tuple-type [:long :string :long])
+                     (tuple-type [:string :long])]]
+      (is (= :query-source/invalid (category #(decode bytes bad-type))))))
+  (doseq [value [[1 {:not "a scalar"}] [1 ["nested"]]
+                (with-meta [1 "value"] {:not "allowed"})]]
+    (is (= :query-source/unsupported
+           (category #(decode (bits/serialize (datom/datom 1 :test/value value))
+                              (tuple-type [:long :string]))))))
+  (let [bytes (bits/indexable-bytes (bits/indexable 1 2 [42 "value"] [:long :string] 1))
+        type (tuple-type [:long :string])]
+    ;; A generic/custom/nested component must never reach bits' fallback reader.
+    (doseq [header [c/type-custom c/type-hete-tuple 99]]
+      (let [bad (aclone bytes)]
+        (aset-byte bad 6 (byte header))
+        (is (= :query-source/unsupported
+               (category #(native-value/inline-value (ByteBuffer/wrap bad) type))))))
+    (doseq [[position replacement] [[5 3] [6 c/type-string]
+                                   [(- (alength bytes) 5) 0]
+                                   [(- (alength bytes) 4) 100]]]
+      (let [bad (aclone bytes)]
+        (aset-byte bad position (byte replacement))
+        (is (= :query-source/invalid
+               (category #(native-value/inline-value (ByteBuffer/wrap bad) type))))))))
 
 (deftest giant-buffers-preserve-layout-and-borrowed-position
   (let [d (datom/datom 1 :test/value (apply str (repeat 4000 "large value")))
@@ -75,6 +136,48 @@
   [^DataInput in]
   (swap! decoded-custom-values inc)
   (.readInt in))
+
+(deftest tuple-preflight-bounds-counts-caches-and-custom-readers
+  (reset! decoded-custom-values 0)
+  (is (= :query-source/unsupported
+         (category #(decode (bits/serialize (datom/datom 1 :test/value [1 (UnexpectedValue.)]))
+                            (tuple-type [:long :string])))))
+  (is (zero? @decoded-custom-values))
+  (doseq [length [-1 0 Integer/MAX_VALUE]]
+    (let [buffer (ByteBuffer/allocate 100)]
+      (.put buffer schema/id-prefixed-custom-md)
+      (.putShort buffer (short (impl/coerce-custom-type-id :datalevin/datom)))
+      (.putLong buffer 1)
+      (nippy/freeze-to-bb! buffer :test/value)
+      #_{:clj-kondo/ignore [:unresolved-var]}
+      (.put buffer schema/id-vec-lg)
+      (.putInt buffer length)
+      (.flip buffer)
+      (is (= :query-source/invalid
+             (category #(native-value/giant-value buffer (tuple-type [:long :string])
+                                                  1 :test/value))))))
+  (let [bytes (fn [cache-id]
+                (let [buffer (ByteBuffer/allocate 100)]
+                  (.put buffer schema/id-prefixed-custom-md)
+                  (.putShort buffer (short (impl/coerce-custom-type-id :datalevin/datom)))
+                  (.putLong buffer 1)
+                  (nippy/freeze-to-bb! buffer :test/value)
+                  (.put buffer schema/id-vec-2)
+                  (.put buffer schema/id-cached-md)
+                  (.putShort buffer (short cache-id))
+                  (nippy/freeze-to-bb! buffer "cached")
+                  (.put buffer schema/id-cached-md)
+                  (.putShort buffer (short cache-id))
+                  (nippy/freeze-to-bb! buffer 1)
+                  (.flip buffer)
+                  (bits/get-bytes buffer)))]
+    (is (= ["cached" "cached"] (decode (bytes 0) (tuple-type [:string :string]))))
+    (is (= :query-source/invalid
+           (category #(decode (bytes 0) (tuple-type [:string :long])))))
+    (is (= :query-source/invalid
+           (category #(decode (bytes 4) (tuple-type [:string :string])))))
+    (is (= :query-source/unsupported
+           (category #(decode (bytes Short/MAX_VALUE) (tuple-type [:string :string])))))))
 
 (deftest preflight-rejects-before-invoking-readers
   (reset! decoded-custom-values 0)

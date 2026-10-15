@@ -904,15 +904,21 @@
   [v t]
   (wrap-extrema
     v c/min-bytes c/max-bytes
-    (let [t        (into [] (map dl-type->raw) t)
-          tuple-bf ^ByteBuffer (bf/get-array-buffer)]
-      (if (= 1 (count t))
-        (put-homo-tuple tuple-bf v (nth t 0))
-        (put-hete-tuple tuple-bf v t))
-      (let [res (Arrays/copyOfRange (.array tuple-bf)
-                                    0 (.position tuple-bf))]
-        (bf/return-array-buffer tuple-bf)
-        res))))
+    (let [t (into [] (map dl-type->raw) t)]
+      (loop [^ByteBuffer tuple-bf (bf/get-array-buffer)]
+        (let [encoded (try
+                        (if (= 1 (count t))
+                          (put-homo-tuple tuple-bf v (nth t 0))
+                          (put-hete-tuple tuple-bf v t))
+                        (Arrays/copyOfRange (.array tuple-bf) 0 (.position tuple-bf))
+                        (catch BufferOverflowException e
+                          (when (= (.capacity tuple-bf) Integer/MAX_VALUE) (throw e))
+                          nil)
+                        (finally (bf/return-array-buffer tuple-bf)))]
+          (if encoded encoded
+              (recur (bf/get-array-buffer
+                       (min (- Integer/MAX_VALUE Integer/BYTES)
+                            (* 2 (long (.capacity tuple-bf))))))))))))
 
 (defn- val-bytes
   "Turn datalog value into bytes according to :db/valueType"
