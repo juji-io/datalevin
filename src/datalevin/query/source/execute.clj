@@ -80,7 +80,7 @@
                                  (finally (source/release! scratch))))))
                 (finally (when-let [token (:reservation batch)] (source/release! token))))]
           (when-not (or (:exhausted? batch) (reduced? stopped)) (recur))))
-      (close)
+      (rt/invoke runtime :close close)
       (swap! (:explain runtime) update :cursors (fnil conj [])
              {:source symbol :metrics (rt/invoke runtime :metrics #(metrics cursor))}))))
 

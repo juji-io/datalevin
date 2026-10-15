@@ -6,7 +6,8 @@
             [datalevin.query.source.fake :as fake]
             [datalevin.query.source-test :refer [tuple-info category error-data]]
             [datalevin.util :as u])
-  (:import [java.util.concurrent CountDownLatch TimeUnit]))
+  (:import [datalevin.query.source.control Control]
+           [java.util.concurrent CountDownLatch ScheduledFuture TimeUnit]))
 
 (def pairs-query '[:find ?id ?name :in $s :where [$s ?id ?name]])
 
@@ -135,6 +136,44 @@
     (is (nil? (source/check-active! parent)))
     (source/release! token)
     (control/close! parent)))
+
+(deftest closing-a-control-releases-its-descendants
+  (let [parent (control/create)
+        child (control/create {:parent parent :timeout-ms 60000})
+        grandchild (control/create {:parent child :timeout-ms 60000})]
+    (try
+      (source/reserve! parent {:retained-bytes 30 :external-requests 1})
+      (source/reserve! child {:retained-bytes 20 :external-requests 1})
+      (source/reserve! grandchild {:retained-bytes 10 :external-requests 1})
+      (control/close! child)
+      (control/close! child)
+      (is (= 30 (:retained-bytes (control/usage parent))))
+      (is (= 3 (:external-requests (control/usage parent))))
+      (is (nil? (source/check-active! parent)))
+      (doseq [^Control closed [child grandchild]]
+        (is (= :closed (:state (error-data #(source/check-active! closed)))))
+        (is (.isCancelled ^ScheduledFuture @(.-timer closed))))
+      (is (= :closed (:state (error-data #(control/create {:parent child :timeout-ms 60000})))))
+      (finally (control/close! grandchild) (control/close! child) (control/close! parent)))))
+
+(deftest completion-and-cancellation-have-one-outcome
+  (dotimes [_ 20]
+    (let [ctl (control/create)
+          start (CountDownLatch. 1)
+          finish (future (.await start)
+                         (try (control/complete! ctl) :completed
+                              (catch clojure.lang.ExceptionInfo e (:error (ex-data e)))))
+          cancel (future (.await start)
+                         (control/cancel! ctl {:error :query-source/cancelled :phase :execution}))]
+      (try
+        (source/reserve! ctl {:retained-bytes 10})
+        (.countDown start)
+        (let [outcome (deref finish 2000 :hung)]
+          (is (nil? (deref cancel 2000 :hung)))
+          (is (#{:completed :query-source/cancelled} outcome))
+          (is (= (= :query-source/cancelled outcome) (source/cancelled? ctl)))
+          (is (zero? (:retained-bytes (control/usage ctl)))))
+        (finally (control/close! ctl) (future-cancel finish) (future-cancel cancel))))))
 
 (deftest blocked-fetch-observes-cancellation
   (let [latch (CountDownLatch. 1)

@@ -10,7 +10,7 @@
    :result-bytes 67108864 :external-requests 1024 :concurrent-requests 4})
 (def ledger-keys (disj (set (keys default-limits)) :batch-rows :batch-bytes))
 
-(deftype Control [limits deadline state timer parent closed])
+(deftype Control [limits deadline state timer parent closed children])
 (deftype Registration [control callback])
 (deftype Reservation [control charges status])
 
@@ -45,13 +45,18 @@
                            (if parent (.-state ^Control parent)
                                (atom {:usage (zipmap ledger-keys (repeat 0))
                                       :registrations #{} :reservations #{}}))
-                           (atom nil) parent (atom false))]
-     (when-let [deadline (.-deadline control)]
-       (reset! (.-timer control)
-               (.schedule ^ScheduledThreadPoolExecutor @scheduler
-                          ^Runnable #(cancel! control {:error :query/timeout :phase :execution})
-                          (long (min Long/MAX_VALUE (max 0 (-' deadline (System/nanoTime)))))
-                          TimeUnit/NANOSECONDS)))
+                           (atom nil) parent (atom false) (atom #{}))]
+     ;; Register the child and its timer atomically with parent closure. A child
+     ;; that loses this race must never leave a scheduled task or reservation.
+     (locking (.-state control)
+       (when parent (check-active! parent))
+       (when-let [deadline (.-deadline control)]
+         (reset! (.-timer control)
+                 (.schedule ^ScheduledThreadPoolExecutor @scheduler
+                            ^Runnable #(cancel! control {:error :query/timeout :phase :execution})
+                            (long (min Long/MAX_VALUE (max 0 (-' deadline (System/nanoTime)))))
+                            TimeUnit/NANOSECONDS)))
+       (when parent (swap! (.-children ^Control parent) conj control)))
      control)))
 
 (defn limits [^Control control] (.-limits control))
@@ -157,16 +162,31 @@
       (reset! (.-status ^Reservation token) :transferred)))
   nil)
 
-(defn close! [^Control control]
-  (when-let [timer @(.-timer control)] (.cancel ^ScheduledFuture timer false))
+(defn close!
+  "Release this control and every descendant, including their deadline tasks."
+  [^Control control]
   (let [state (.-state control)]
     (locking state
-      (reset! (.-closed control) true)
-      (doseq [^Reservation token (:reservations @state)
-              :when (or (nil? (.-parent control)) (identical? control (.-control token)))]
-        (release! token))
-      (if (.-parent control)
-        (swap! state update :registrations
-               #(into #{} (remove (fn [^Registration r] (identical? control (.-control r)))) %))
-        (swap! state assoc :closed? true :registrations #{}))))
+      (when-not @(.-closed control)
+        (reset! (.-closed control) true)
+        (when-let [timer @(.-timer control)] (.cancel ^ScheduledFuture timer false))
+        (doseq [child @(.-children control)] (close! child))
+        (doseq [^Reservation token (:reservations @state)
+                :when (or (nil? (.-parent control)) (identical? control (.-control token)))]
+          (release! token))
+        (if-let [parent (.-parent control)]
+          (do
+            (swap! (.-children ^Control parent) disj control)
+            (swap! state update :registrations
+                   #(into #{} (remove (fn [^Registration r] (identical? control (.-control r)))) %)))
+          (swap! state assoc :closed? true :registrations #{})))))
   nil)
+
+(defn complete!
+  "Close a successful invocation atomically with its last cancellation check.
+  A deadline/cancellation that wins the race fails the invocation; cleanup still
+  releases its ledger and timers. Later cancellation cannot reopen completion."
+  [^Control control]
+  (locking (.-state control)
+    (try (check-active! control)
+         (finally (close! control)))))

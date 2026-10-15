@@ -103,6 +103,11 @@
         types (atom {})]
     (rt/charge! runtime bindings)
     (rt/charge! runtime clauses)
+    (let [available (into (set (keys bindings)) (mapcat contract/variables) patterns)
+          projected (into (set (dp/find-vars (:qfind parsed))) (map :symbol) (:qwith parsed))]
+      (when-not (and (set/subset? projected available)
+                    (every? #(set/subset? (contract/variables %) available) predicates))
+        (fail! :query-source/invalid :clauses)))
     (run! value/execution-value! (vals bindings))
     (doseq [clause clauses term (or (:terms clause) (:args clause)) :when (= :const (first term))]
       (value/execution-value! (second term)))

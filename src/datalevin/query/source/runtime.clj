@@ -60,7 +60,9 @@
         primary (atom nil)]
     (binding [*runtime* runtime]
       (try
-        (f runtime)
+        (let [result (f runtime)]
+          (source/check-active! control)
+          result)
         (catch Throwable e
           (let [error (redacted-error runtime (or (:phase (ex-data e)) :execution) e)]
             (reset! primary error)
@@ -74,7 +76,22 @@
                      (let [error (redacted-error runtime :close e)]
                        (if-let [original (or @primary @cleanup-error)]
                          (.addSuppressed ^Throwable original error)
-                         (reset! cleanup-error error))))))
+                         (let [^Throwable cancelled
+                               (try (source/check-active! control) nil
+                                    (catch Throwable e
+                                      (redacted-error runtime
+                                        (or (:phase (ex-data e)) :execution) e)))
+                               error (if cancelled
+                                       (doto cancelled (.addSuppressed error)) error)]
+                           ;; Cancellation can first become visible during
+                           ;; cleanup. Its category still precedes cleanup errors.
+                           (reset! cleanup-error error)
+                           (control/cancel! control (select-keys (ex-data error) [:error :phase]))))))))
             (reset! (:cleanup runtime) [])
-            (control/close! control)
+            (if (or @primary @cleanup-error)
+              (control/close! control)
+              (try (control/complete! control)
+                   (catch Throwable e
+                     (reset! cleanup-error
+                             (redacted-error runtime (or (:phase (ex-data e)) :execution) e)))))
             (when @cleanup-error (throw @cleanup-error))))))))
