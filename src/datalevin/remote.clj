@@ -19,7 +19,6 @@
    [datalevin.prepared :as prepared]
    [datalevin.txlog.transfer :as transfer]
    [datalevin.bits :as b]
-   [datalevin.datom :as d]
    [datalevin.lmdb :as l :refer [IWriting]]
    [taoensso.timbre :as log]
    [clojure.string :as str])
@@ -150,17 +149,11 @@
     (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
     s))
 
-(defn- normalize-remote-tx-data
-  [tx-data]
-  (mapv (fn [tx]
-          (if (d/datom? tx)
-            tx
-            (apply d/datom tx)))
-        tx-data))
-
-(defn- copy-out-tx-response-meta
-  [response]
-  (select-keys response [:db-info :new-attributes]))
+(defn- request-datoms
+  [client req datoms]
+  (if (= :copy-in (:mode req))
+    (cl/copy-in client req datoms c/+wire-datom-batch-size+)
+    (cl/request client req)))
 
 (defn- cached-ha-member-endpoints
   [db-info-or-opts]
@@ -230,6 +223,9 @@
   ([client db-name datoms datom-type simulated? writing?]
    (load-datoms* client db-name datoms datom-type simulated? writing? nil))
   ([client db-name datoms datom-type simulated? writing? ha-source]
+   (load-datoms* client db-name datoms datom-type simulated? writing? ha-source
+                 request-datoms))
+  ([client db-name datoms datom-type simulated? writing? ha-source send-fn]
    (let [tx? (#{:txs :txs+info :txs-ack} datom-type)
          t   (case datom-type
                :txs      :tx-data
@@ -270,9 +266,7 @@
                         :client-op-response-kind response-kind)))
          request-fn
          (fn [retry-client req]
-           (if (= :copy-in (:mode req))
-             (cl/copy-in retry-client req datoms c/+wire-datom-batch-size+)
-             (cl/request retry-client req)))
+           (send-fn retry-client req datoms))
          response
          (try
            (request-fn client req)
@@ -285,28 +279,13 @@
                        (cached-ha-member-endpoints ha-source)
                        e))
                  (throw e))))
-         {:keys [type message result err-data]
-          :as   response}
+         {:keys [type message result err-data]}
          response]
      (if (= type :error-response)
        (if (:resized err-data)
          (raise message err-data)
          (cl/retry-ha-write-request client req message err-data request-fn))
-       (cond
-         (and tx? (map? result) (contains? result :tx-data))
-         (merge
-           (update result :tx-data normalize-remote-tx-data)
-           (copy-out-tx-response-meta response))
-
-         (and tx? (sequential? result))
-         (let [[tx-data tempids] (split-with d/datom? result)]
-           (merge
-             {:tx-data (normalize-remote-tx-data tx-data)
-              :tempids (apply hash-map tempids)}
-             (copy-out-tx-response-meta response)))
-
-         :else
-         result)))))
+       (if tx? (cl/decode-tx-response response) result)))))
 
 ;; remote datalog db
 
@@ -651,7 +630,11 @@
     (abort-ha-transaction! tx-client :abort-transact db-name))
 
   (close-transact [_]
-    (close-ha-transaction! tx-client :close-transact db-name))
+    (let [result (close-ha-transaction! tx-client :close-transact db-name)]
+      ;; Raw imports can commit before the opening counters are consumed.
+      ;; The next DB view must fetch committed metadata and advance its floor.
+      (vreset! open-db-info (sampling-open-info @open-db-info))
+      result))
 
   ILMDB
   (kv-info [_] nil)

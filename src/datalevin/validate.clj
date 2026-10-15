@@ -1768,9 +1768,9 @@
   (when populated?
     (raise "Cannot delete attribute with datoms" {})))
 
-(defn validate-datom-list
-  "Validate that every element in a collection is a Datom."
-  [datoms]
-  (when-some [not-datom (first (drop-while d/datom? datoms))]
-    (raise "init-db expects list of Datoms, got " (type not-datom)
+(defn validate-datom
+  "Validate that a bulk-load input element is a Datom."
+  [datom]
+  (when-not (d/datom? datom)
+    (raise "init-db expects list of Datoms, got " (type datom)
              {:error :init-db})))

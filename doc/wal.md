@@ -140,6 +140,17 @@ Applications needing a memory bound must limit transaction sizes and concurrent
 submissions before calling the write APIs, including output from transaction
 functions and explicit transaction bodies.
 
+Remote `init-db` and `fill-db` inside an explicit WAL transaction encode each
+bulk batch into a spillable buffer. Up to 8 MiB of encoded row bytes stays in
+memory per transaction; crossing that limit moves the buffered prefix to a
+temporary file and sends subsequent batches directly to that file. Pending row
+objects and their encoding arenas can be released between batches. Small imports
+create no scratch file. Commit consumes the memory buffer or maps the file and
+appends one ordinary WAL record, preserving atomicity and replay; abort discards
+the buffer. Scratch files are deleted when their channels close, including on
+process exit. Input batches and encoding workspaces still consume memory, and
+the WAL record size limit still applies.
+
 The idle collection window works with private WAL `:strict`/`:relaxed`,
 `:extra` Datalog writes, and durable non-WAL stores. Native commit and, in strict
 or extra WAL mode, WAL sync finish before any caller or transaction listener

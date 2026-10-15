@@ -471,7 +471,7 @@
     (write-result! deps skey res)
     (let [{:keys [tx-data tempids]} res
           response-meta            (dissoc res :tx-data :tempids)]
-      ((:copy-out deps) skey (into tx-data tempids)
+      ((:copy-out deps) skey (into (vec tx-data) tempids)
        c/+wire-datom-batch-size+ nil response-meta))))
 
 (defn- with-runtime-store-read-access
@@ -1460,6 +1460,18 @@
                            (i/index-attr (dt-store deps server skey db-name writing?)
                                          attr))))))))
 
+(defn- refresh-db-after-resize!
+  [deps server db-name writing? previous]
+  (let [wlmdb (when writing?
+                (l/mark-write ((:get-kv-store deps) server db-name)))
+        store ((:get-store deps) server db-name writing?)
+        store (if writing? (st/transfer store wlmdb) store)
+        new-db (db/carry-runtime-opts (db/new-db store) previous)]
+    ((:update-db deps) server db-name
+     (fn [m]
+       (cond-> (assoc m (if writing? :wdt-db :dt-db) new-db)
+         writing? (assoc :wlmdb wlmdb :wstore store))))))
+
 (defn load-datoms
   [deps server skey {:keys [mode args writing?]}]
   (let [db-name (nth args 0)]
@@ -1472,25 +1484,34 @@
                 deps server db-name writing?
                 (fn []
                   (let [store (dt-store deps server skey db-name writing?)
+                        k (if writing? :wdt-db :dt-db)
+                        previous (get (db-state deps server db-name) k)
                         datoms (case mode
                                  :copy-in ((:copy-in deps) server skey)
                                  :request (nth args 1)
-                                 (raise "Missing :mode when loading datoms" {}))
-                        result (i/load-datoms store datoms)]
-                    ;; Raw loads bypass transact*, so publish the new entity
-                    ;; counter and invalidate queries before the next request.
-                    (when (seq datoms)
-                      (let [k (if writing? :wdt-db :dt-db)
-                            previous (get (db-state deps server db-name) k)
-                            target (i/last-modified store)]
-                        (st/mark-state-current! store target)
-                        (db/refresh-cache store target)
-                        ((:update-db deps) server db-name
-                         #(assoc % k (db/carry-runtime-opts
-                                       (db/new-db store nil previous)
-                                       previous)))
-                        (database-changed! deps server db-name writing?)))
-                    result)))]
+                                 (raise "Missing :mode when loading datoms" {}))]
+                    (try
+                      (when (and writing? (seq datoms))
+                        (kvtx/txlog-spool-pending!
+                          (kv/raw-lmdb (.-lmdb ^Store store))))
+                      (let [result (i/load-datoms store datoms)]
+                        ;; Raw loads bypass transact*, so publish the new entity
+                        ;; counter and invalidate queries before the next request.
+                        (when (seq datoms)
+                          (let [target (i/last-modified store)]
+                            (st/mark-state-current! store target)
+                            (db/refresh-cache store target)
+                            ((:update-db deps) server db-name
+                             #(assoc % k (db/carry-runtime-opts
+                                           (db/new-db store nil previous)
+                                           previous)))
+                            (database-changed! deps server db-name writing?)))
+                        result)
+                      (catch Exception e
+                        (when (l/resized? e)
+                          (refresh-db-after-resize!
+                            deps server db-name writing? previous))
+                        (throw e))))))]
           (if (= mode :copy-in)
             (write-complete! deps skey)
             (write-result! deps skey result)))))))
@@ -1720,17 +1741,7 @@
            (assoc report :db-before db0 :db-after @conn))))
      (catch Exception e
        (when (:resized (ex-data e))
-         (let [wlmdb (when writing?
-                       (l/mark-write ((:get-kv-store deps) server db-name)))
-               store ((:get-store deps) server db-name writing?)
-               store (if writing? (st/transfer store wlmdb) store)
-               new-db (db/carry-runtime-opts
-                       (db/new-db store)
-                       db0)]
-           ((:update-db deps) server db-name
-            (fn [m]
-              (cond-> (assoc m (if writing? :wdt-db :dt-db) new-db)
-                writing? (assoc :wlmdb wlmdb :wstore store))))))
+         (refresh-db-after-resize! deps server db-name writing? db0))
        (throw e)))))
 
 (defn- build-tx-response

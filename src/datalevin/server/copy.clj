@@ -108,6 +108,10 @@
          {:keys [^ByteBuffer write-bf wire-opts]} @state
          ^SocketChannel ch              (.channel skey)
          response                       (cond-> {:type :copy-out-response}
+                                          (map? data)
+                                          (assoc :copy-result-type :map)
+                                          (set? data)
+                                          (assoc :copy-result-type :set)
                                           copy-meta
                                           (assoc :copy-meta copy-meta)
                                           (seq response-meta)

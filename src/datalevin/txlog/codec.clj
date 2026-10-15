@@ -1328,6 +1328,26 @@
       (some? ha-term)
       (assoc :ha-term ha-term))))
 
+(def ^:const max-commit-row-header-size 36)
+
+(defn commit-row-payload-region
+  "Describe the encoded row region without retaining or consuming its buffer."
+  [^ByteBuffer body]
+  (let [bf (.duplicate body)
+        start (.position bf)
+        header (decode-commit-row-payload-prefix bf)]
+    (assoc (select-keys header [:major :op-count])
+           :offset (.position bf)
+           :header-size (- (.position bf) start))))
+
+(defn encode-commit-row-header
+  "Build an owned header for already encoded rows, with the commit's HA term."
+  ^ByteBuffer [major row-count opts]
+  (let [body (ByteBuffer/wrap (encode-commit-row-payload 0 0 [] opts))]
+    (.put body 4 (byte major))
+    (.putInt body (- (.limit body) 4) (int row-count))
+    body))
+
 (defrecord CommitRowGroup [bodies header-size body-size row-count major])
 
 (def ^:private ^Class object-array-class (Class/forName "[Ljava.lang.Object;"))

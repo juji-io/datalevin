@@ -690,9 +690,13 @@
                (if (= type :copy-done)
                  (merge
                    {:type :command-complete
-                    :result (persistent! data)}
+                    :result (let [items (persistent! data)]
+                              (case (:copy-result-type copy-out-response)
+                                :map (into {} items)
+                                :set (set items)
+                                items))}
                    (when (map? copy-out-response)
-                     (dissoc copy-out-response :type))
+                     (dissoc copy-out-response :type :copy-result-type))
                    (dissoc msg :type))
                  (raise "Server error while copying out data" {:msg msg})))
              (do (doseq [d msg] (conj! data d))
@@ -701,6 +705,29 @@
        (close conn)
        (when (nv/decoding-error? e) (throw e))
        (raise "Unable to receive copy:" e {:req req})))))
+
+(defn ^:no-doc decode-tx-response
+  "Decode an inline or copy-out transaction response into a transaction result.
+  Normalize datoms and tempid entries, retaining database and schema metadata
+  within the result so callers can safely discard the wire response envelope."
+  [{:keys [result] :as response}]
+  (let [normalize-datoms (fn [tx-data]
+                           (mapv (fn [tx]
+                                   (if (dd/datom? tx) tx (apply dd/datom tx)))
+                                 tx-data))
+        response-meta (select-keys response [:db-info :new-attributes])]
+    (cond
+      (and (map? result) (contains? result :tx-data))
+      (merge (update result :tx-data normalize-datoms) response-meta)
+
+      (sequential? result)
+      (let [[tx-data tempids] (split-with dd/datom? result)]
+        (merge {:tx-data (normalize-datoms tx-data)
+                :tempids (into {} tempids)}
+               response-meta))
+
+      :else
+      result)))
 
 (defn- copy-in*
   [conn req data batch-size ]
@@ -1602,14 +1629,18 @@
           (prepare-retry-client
             req retry-context host port disconnect-fn new-client-fn)]
       (try
-        (let [{:keys [type message result err-data]}
+        (let [{:keys [type message result err-data] :as response}
               (request-fn client req)]
           (if (= type :error-response)
             {:kind :error
              :message message
              :err-data err-data}
             {:kind :success
-             :result result}))
+             ;; Copy-out transaction metadata lives outside :result. Decode
+             ;; it before the retry API discards the response envelope.
+             :result (if (#{:tx-data :tx-data+db-info :tx-data-ack} (:type req))
+                       (decode-tx-response response)
+                       result)}))
         (catch Exception e
           (when cached?
             (evict-retry-client! base-client endpoint disconnect-fn))
@@ -1789,7 +1820,8 @@
   request error if the rejection is not retryable, retries are disabled, or the
   deadline expires. An ambiguous unprotected write raises :ha/write-indeterminate.
   Optional request-fn takes [client request] and returns a wire
-  response; remote stores supply it to replay copy-in payloads."
+  response; remote stores supply it to replay copy-in payloads. Transaction
+  results are decoded with their database and schema metadata before returning."
   ([client req message err-data]
    (retry-ha-write-request client req message err-data request))
   ([client req message err-data request-fn]
