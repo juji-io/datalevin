@@ -1,7 +1,8 @@
 # YCSB-style KV and Datalog benchmark
 
 Benchmarks Datalevin's KV and Datalog APIs in embedded and remote modes,
-with SQLite and PostgreSQL comparisons. Uses YCSB-style A–F workloads.
+with SQLite and PostgreSQL comparisons. Uses
+[YCSB-style](https://github.com/brianfrankcooper/YCSB) A–F workloads.
 
 ## Run
 
