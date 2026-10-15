@@ -675,7 +675,7 @@
   [^ByteBuffer bf ^long c ^long post-v]
   (let [ss (volatile! [])]
     (.position bf (- (.limit bf) c post-v))
-    (dotimes [_ c] (vswap! ss conj (short (get-byte bf))))
+    (dotimes [_ c] (vswap! ss conj (bit-and 0xff (long (get-byte bf)))))
     @ss))
 
 (defn- long-header
@@ -834,7 +834,7 @@
   ([bf] (get-homo-tuple bf 0))
   ([^ByteBuffer bf ^long outer-post-v]
    (let [hdr   (get-byte bf)
-         c     (short (get-byte bf))
+         c     (bit-and 0xff (long (get-byte bf)))
          tuple (volatile! [])]
      (if (known-size-types (header->type hdr))
        (dotimes [_ c] (vswap! tuple conj (get-value* bf hdr)))
@@ -859,7 +859,7 @@
 (defn- get-hete-tuple
   ([bf] (get-hete-tuple bf 0))
   ([^ByteBuffer bf ^long outer-post-v]
-   (let [c       (short (get-byte bf))
+   (let [c       (bit-and 0xff (long (get-byte bf)))
          tuple   (volatile! [])
          op      (.position bf)
          post-vs (->> (get-tuple-sizes bf c outer-post-v)

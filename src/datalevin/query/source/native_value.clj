@@ -14,10 +14,13 @@
 (defn scratch-bytes
   "Bound preflight cache/stack state independently of decoded collections."
   ^long [type ^long encoded-size]
-  (if (= type :data)
+  (cond
+    (= type :data)
     (+ (* 256 (min (long max-data-cache) encoded-size))
        (* 512 (min (long max-data-depth) encoded-size)))
-    (* 512 (count (:elements type)))))
+    (= :native-homogeneous-tuple (:kind type))
+    (* 512 (min 255 encoded-size))
+    :else (* 512 (count (:elements type)))))
 
 (defn- add-charge ^long [^long a ^long b]
   ;; Saturation still exceeds any available ledger space: the raw-buffer
@@ -124,25 +127,29 @@
                  :charge (add-charge 512 (add-charge (long (:charge metadata))
                                                     (long (:charge value)))))))
 
-      (or (= expected :data) (= :tuple (:kind expected)))
+      (or (= expected :data) (#{:tuple :native-homogeneous-tuple} (:kind expected)))
       (let [start (.position buffer)
             _ (skip! buffer 1)]
         (if-let [[kind size] (collection-layout kind buffer)]
           (let [size (long size)
-                tuple? (= :tuple (:kind expected))]
+                homogeneous? (= :native-homogeneous-tuple (:kind expected))
+                tuple? (or homogeneous? (= :tuple (:kind expected)))]
             ;; At least one tag per element is required, even for a cache ref.
             ;; Validate counts before any Nippy collection allocation.
             (need! buffer size)
             (when (and tuple? (not (and (= kind :vector)
-                                        (= size (count (:elements expected))))))
+                                        (if homogeneous? (<= 1 size 255)
+                                            (= size (count (:elements expected)))))))
               (fail! :query-source/invalid :native-value))
             ((:check! context))
             (loop [i 0, charge (+ 512 (* 128 size)), height 0]
               (if (= i size)
                 {:type (if tuple? expected kind) :charge charge :height (inc height)}
                 (let [_ (when (zero? (bit-and i 1023)) ((:check! context)))
-                      child (value! buffer (if tuple? (nth (:elements expected) i) :data)
-                                    context (inc (long depth)) true)]
+                      child (value! buffer (cond homogeneous? (:element expected)
+                                                 tuple? (nth (:elements expected) i)
+                                                 :else :data)
+                                    context (inc (long depth)) (not homogeneous?))]
                   (recur (inc i) (add-charge charge (long (:charge child)))
                          (max height (long (:height child))))))))
           (do (.position buffer start)
@@ -204,7 +211,12 @@
 
 (defn- context [type check!]
   {:cache (volatile! {}) :check! check!
-   :cache-limit (if (= type :data) max-data-cache (+ 3 (count (:elements type))))})
+   :cache-limit (cond (= type :data) max-data-cache
+                      (= :native-homogeneous-tuple (:kind type)) 258
+                      :else (+ 3 (count (:elements type))))})
+
+(defn- layout-charge? [type]
+  (or (= type :data) (= :native-homogeneous-tuple (:kind type))))
 
 (defn prepare-giant
   "Validate a raw Nippy datom without constructing its values. Returns a decoder
@@ -224,7 +236,7 @@
      (let [layout (value! buffer type context 0 false)]
        (value! buffer :long context 0 false)
        (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
-       {:retained-bytes (if (= type :data) (:charge layout) 0)
+       {:retained-bytes (if (layout-charge? type) (:charge layout) 0)
         :decode (fn []
                   (.position buffer start)
                   (impl/with-thaw-cache
@@ -233,10 +245,10 @@
                     (nippy/thaw-from-bb! buffer)))}))))
 
 (defn giant-value
-  "Decode a pre-reserved scalar or fixed tuple. Generic values must use
+  "Decode a pre-reserved scalar or fixed tuple. Other supported values must use
   prepare-giant and reserve its returned charge before invoking the decoder."
   [buffer type eid attribute]
-  (when (= type :data) (fail! :query-source/unsupported :native-value))
+  (when (layout-charge? type) (fail! :query-source/unsupported :native-value))
   ((:decode (prepare-giant buffer type eid attribute))))
 
 (defn- scalar-header [^long header]
@@ -275,6 +287,34 @@
     (when-not (= (.position buffer) end)
       (fail! :query-source/invalid :native-value))))
 
+(defn- inline-homogeneous-tuple! [^ByteBuffer buffer element]
+  (need! buffer 3)
+  (when-not (= c/type-homo-tuple (.get buffer))
+    (fail! :query-source/invalid :native-value))
+  (let [type (scalar-header (.get buffer))
+        n (bit-and 0xff (.get buffer))
+        fixed (case type
+                :boolean 1 :long 8 :float 4 :double 8 :instant 8 :uuid 16 nil)]
+    (when-not (and (= type element) (pos? n))
+      (fail! :query-source/invalid :native-value))
+    (if fixed
+      (when-not (= (.remaining buffer) (+ 2 (* n (long fixed))))
+        (fail! :query-source/invalid :native-value))
+      (let [sizes (- (.limit buffer) 2 n)
+            end (dec sizes)]
+        (when-not (and (<= (.position buffer) end)
+                       (= c/truncator (.get buffer end)))
+          (fail! :query-source/invalid :native-value))
+        (dotimes [i n]
+          (let [size (bit-and 0xff (.get buffer (int (+ sizes i))))
+                separator (+ (.position buffer) size)]
+            (when-not (and (< separator end)
+                           (= c/separator (.get buffer (int separator))))
+              (fail! :query-source/invalid :native-value))
+            (.position buffer (int (inc separator)))))
+        (when-not (= (.position buffer) end)
+          (fail! :query-source/invalid :native-value))))))
+
 (defn prepare-inline
   "Validate an inline AVG value, returning a decoder and additional charge.
   The caller must already reserve encoded buffers and scratch-bytes."
@@ -295,15 +335,16 @@
                       (.position buffer start)
                       (impl/with-thaw-cache (nippy/thaw-from-bb! buffer)))}))
        (do
-         (if (= :tuple (:kind type))
-           (inline-tuple! buffer (:elements type))
+         (case (:kind type)
+           :tuple (inline-tuple! buffer (:elements type))
+           :native-homogeneous-tuple (inline-homogeneous-tuple! buffer (:element type))
            (when-not (= type (scalar-header (.get buffer)))
              (fail! :query-source/invalid :native-value)))
          {:retained-bytes 0 :decode #(bits/avg->inline-value raw)})))))
 
 (defn inline-value
-  "Decode a pre-reserved scalar or fixed tuple. Generic values must use
+  "Decode a pre-reserved scalar or fixed tuple. Other supported values must use
   prepare-inline and reserve its returned charge before invoking the decoder."
   [raw type]
-  (when (= type :data) (fail! :query-source/unsupported :native-value))
+  (when (layout-charge? type) (fail! :query-source/unsupported :native-value))
   ((:decode (prepare-inline raw type))))

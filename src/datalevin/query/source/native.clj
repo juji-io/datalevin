@@ -47,12 +47,17 @@
       (when (and (value/scalar-types t) (not (#{:data :bytes} t))) t))))
 
 (defn- attribute-type [schema attribute]
-  (let [{:db/keys [valueType tupleTypes]} (schema attribute)]
+  (let [{:db/keys [valueType tupleTypes tupleType]} (schema attribute)]
     (or (logical-scalar valueType)
         (when (or (nil? valueType) (= valueType :db.type/data)
                   (and (= valueType :db.type/tuple) (nil? tupleTypes)
-                       (nil? (:db/tupleType (schema attribute)))))
+                       (nil? tupleType)))
           :data)
+        (when (and (= valueType :db.type/tuple) tupleType)
+          (when-let [element (logical-scalar tupleType)]
+            ;; Internal decoding contract; the SPI represents varying arities
+            ;; as :data, without promising a fixed positional tuple descriptor.
+            {:kind :native-homogeneous-tuple :element element}))
         (when (and (= valueType :db.type/tuple) (<= 2 (count tupleTypes) 255))
           (let [elements (mapv logical-scalar tupleTypes)]
             (when (every? some? elements) {:kind :tuple :elements elements})))
@@ -61,10 +66,13 @@
 (defn- matches-native-type? [type x]
   ;; Native heterogeneous tuples retain absent component values as nil. The
   ;; external descriptor still enforces its own (non-nullable) element types.
-  (if (= :tuple (:kind type))
-    (and (vector? x) (= (count x) (count (:elements type)))
-         (every? true? (map #(or (nil? %2) (value/matches-type? %1 %2))
-                           (:elements type) x)))
+  (case (:kind type)
+    :tuple (and (vector? x) (= (count x) (count (:elements type)))
+                (every? true? (map #(or (nil? %2) (value/matches-type? %1 %2))
+                                  (:elements type) x)))
+    :native-homogeneous-tuple
+    (and (vector? x) (<= 1 (count x) 255)
+         (every? #(value/matches-type? (:element type) %) x))
     (value/matches-type? type x)))
 
 (defn validate-types! [snapshots entries external-types bindings]
@@ -72,11 +80,14 @@
           pattern patterns
           :let [schema (:schema (get snapshots (.-store ^DB native)))
                 attribute (second (second (:terms pattern)))
-                t (attribute-type schema attribute)]]
-    (doseq [[term type] (map vector (:terms pattern) [:long :keyword t])]
+                t (attribute-type schema attribute)
+                logical (if (= :native-homogeneous-tuple (:kind t)) :data t)]]
+    (doseq [[term type logical-type]
+            (map vector (:terms pattern) [:long :keyword t] [:long :keyword logical])]
       (when (= :var (first term))
         (when-let [external (external-types (second term))]
-          (when-not (= external type) (fail! :query-source/unsupported :types))))
+          (when-not (= external logical-type)
+            (fail! :query-source/unsupported :types))))
       (when (or (= :const (first term))
                 (and (= :var (first term)) (contains? bindings (second term))))
         (when-not (matches-native-type? type (if (= :const (first term)) (second term)
@@ -84,8 +95,8 @@
           (fail! :query-source/unsupported :native-type))))))
 
 (defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type prepare emit eid]
-  ;; Reserve buffers and bounded preflight state first. Generic collections get
-  ;; a separate layout-derived reservation before decoding, held through emit.
+  ;; Reserve buffers and bounded preflight state first. Generic collections and
+  ;; giant homogeneous tuples get a separate layout-derived reservation, held through emit.
   ;; Retaining a row beyond emit requires the consumer's own reservation.
   (let [expanded-size (long expanded-size)
         attribute-size (long (value/value-charge attribute))
