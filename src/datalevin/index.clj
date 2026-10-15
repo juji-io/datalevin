@@ -197,6 +197,36 @@
                                raw-len)))
     (b/deserialize bs)))
 
+(defn- giant-zstd-buffer? [^ByteBuffer buffer]
+  (let [p (.position buffer)]
+    (and (<= giant-zstd-header-size (.remaining buffer))
+         (= (.getInt buffer p) 0x444C475A)
+         (= (.get buffer (+ p 4)) giant-zstd-version))))
+
+(defn giant-datom-raw-size
+  "Uncompressed byte count, without copying or decoding a borrowed giant value.
+  Consumers must reserve for both encoded and expanded buffers before decoding."
+  ^long [^ByteBuffer buffer]
+  (if (giant-zstd-buffer? buffer)
+    (let [size (.getInt buffer (+ (.position buffer) 5))]
+      (when (neg? size) (raise "Invalid giant value size" {}))
+      size)
+    (.remaining buffer)))
+
+(defn giant-datom-buffer
+  "Expose raw Nippy bytes, decompressing the storage Zstd envelope if present.
+  The caller must reserve giant-datom-raw-size plus the encoded size first.
+  Uncompressed buffers are borrowed and cannot outlive the read transaction."
+  ^ByteBuffer [^ByteBuffer buffer]
+  (if (giant-zstd-buffer? buffer)
+    (let [size (giant-datom-raw-size buffer)
+          bytes (b/get-bytes (.duplicate buffer))]
+      (ByteBuffer/wrap
+        (giant-zstd-decompress bytes giant-zstd-header-size
+                               (- (alength ^bytes bytes) giant-zstd-header-size)
+                               size)))
+    (.duplicate buffer)))
+
 (defn index->k
   ([index schema datom high?] (index->k index nil schema datom high?))
   ([index lmdb schema ^Datom datom high?]
