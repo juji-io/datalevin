@@ -4,6 +4,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.fake :as fake]
+            [datalevin.query.source.value :as value]
             [datalevin.query.source-test :refer [tuple-info category error-data]]
             [datalevin.util :as u])
   (:import [datalevin.query.source.control Control]
@@ -85,6 +86,29 @@
                                 (assoc-in [:query-source :limits :result-rows] 1)) s))))
     (is (= :close-session (last (remove #{:cancel-session} @(:events s)))))))
 
+(deftest large-result-windows-do-not-wrap
+  (let [s (fake/source tuple-info [[1 "a"] [2 "b"]])
+        query '{:find [?id] :in [$s] :where [[$s ?id _]]}]
+    (is (= #{} (d/q (assoc query :offset Long/MAX_VALUE :limit Long/MAX_VALUE) s)))
+    (is (= #{[2]} (d/q (assoc query :offset 1 :limit Long/MAX_VALUE) s)))))
+
+(deftest oversized-result-charge-does-not-wrap
+  (let [type {:kind :custom :name :test/large :version 1 :fingerprint "large:v1"}
+        x (reify value/IQuerySourceValue
+            (-logical-type [_] type)
+            (-retained-bytes [_] (quot Long/MAX_VALUE 3)))
+        info (assoc-in tuple-info [:pattern-contract :columns 1 :type] type)
+        s (fake/source info [[1 x]])
+        error (error-data
+                #(d/q '{:find [?id ?value] :in [$s] :where [[$s ?id ?value]]
+                        :query-source {:limits {:batch-bytes 9223372036854775807
+                                                :retained-bytes 9223372036854775807}}} s))]
+    ;; The batch and row scratch fit, but result deduplication charges three
+    ;; copies. Its exact charge exceeds a long and must reject before retaining.
+    (is (= :query-source/invalid (:error error)))
+    (is (= :reserve (:phase error)))
+    (is (= :close-session (last (remove #{:cancel-session} @(:events s)))))))
+
 (deftest redacted-explanations-and-failure
   (let [s (fake/source tuple-info [[1 "secret-value"]])
         plan (d/explain {:run? false} pairs-query s)]
@@ -93,6 +117,11 @@
     (is (not (.contains (pr-str plan) "secret-value")))
     (let [executed (d/explain {:run? true} pairs-query s)]
       (is (= 1 (:result-rows executed)))
+      (is (= 1 (:streamed-rows executed)))
+      (is (= 1 (get-in executed [:cursors 0 :metrics :rows]))))
+    (let [executed (d/explain {:run? true :intermediate-counts? false} pairs-query s)]
+      (is (= 1 (:result-rows executed)))
+      (is (not (contains? executed :streamed-rows)))
       (is (= 1 (get-in executed [:cursors 0 :metrics :rows])))))
   (let [s (fake/source tuple-info [[1 "secret"]]
                        {:fetch #(throw (ex-info "secret-primary" {}))

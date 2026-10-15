@@ -187,7 +187,9 @@
 (defn explain
   [opts query & inputs]
   (if (source-plan/source-inputs? inputs)
-    (source-exec/run query inputs opts)
+    ;; nil is the default explain options map, whereas the source executor
+    ;; reserves nil for ordinary query execution.
+    (source-exec/run query inputs (if (nil? opts) {} opts))
     (if-let [[store inputs'] (only-remote-db inputs)]
       (i/explain store opts query inputs')
       (apply explain* opts query inputs))))

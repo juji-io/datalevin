@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.query.source.control
   "Invocation-owned controls, cancellation deadlines, and shared resource ledger."
-  (:require [datalevin.query.source.value :refer [fail!]])
+  (:require [datalevin.query.source.value :as value :refer [fail!]])
   (:import [java.util.concurrent CompletableFuture ScheduledThreadPoolExecutor
             ThreadFactory TimeUnit ScheduledFuture]))
 
@@ -94,7 +94,7 @@
     (when (.isInterrupted (Thread/currentThread))
       (cancel! control {:error :query-source/cancelled :phase :execution}))
     (when (and (some? (.-deadline control))
-               (<= (.-deadline control) (System/nanoTime)))
+               (value/at-most? (.-deadline control) (System/nanoTime)))
       (cancel! control {:error :query/timeout :phase :execution}))
     (when-let [reason (:reason @state)]
       (fail! (:error reason) (:phase reason))))
@@ -127,7 +127,7 @@
       (check-active! control)
       (let [usage (merge-with +' (:usage @state) charges)]
         (doseq [[category attempted] usage]
-          (when (> attempted (get (.-limits control) category))
+          (when-not (value/at-most? attempted (long (get (.-limits control) category)))
             (fail! :query-source/limit :reserve
                    {:category category :maximum (get (.-limits control) category)
                     :attempted attempted})))
@@ -156,8 +156,9 @@
       (when-not (and (instance? Reservation token)
                     (identical? control (.-control ^Reservation token))
                     (= :owned @(.-status ^Reservation token))
-                    (>= (get (.-charges ^Reservation token) :retained-bytes 0) bytes)
-                    (>= (get (.-charges ^Reservation token) :in-flight-batches 0) 1))
+                    (value/at-most? bytes
+                      (long (get (.-charges ^Reservation token) :retained-bytes 0)))
+                    (>= (long (get (.-charges ^Reservation token) :in-flight-batches 0)) 1))
         (fail! :query-source/invalid :batch))
       (reset! (.-status ^Reservation token) :transferred)))
   nil)

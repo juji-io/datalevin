@@ -129,6 +129,25 @@
     (is (= :query/timeout (category #(source/check-active! c))))
     (control/close! c)))
 
+(deftest resource-limits-and-deadlines-preserve-large-integers
+  (let [c (control/create {:limits {:retained-bytes Long/MAX_VALUE}
+                          :timeout-ms Long/MAX_VALUE})
+        token (source/reserve! c {:retained-bytes (dec Long/MAX_VALUE) :in-flight-batches 1})]
+    (try
+      (is (nil? (source/check-active! c)))
+      (let [error (error-data #(source/reserve! c {:retained-bytes 2}))]
+        (is (= :query-source/limit (:error error)))
+        (is (= (inc' Long/MAX_VALUE) (:attempted error))))
+      (is (= (dec Long/MAX_VALUE) (:retained-bytes (control/usage c))))
+      (is (= :query-source/invalid
+             (category #(control/accept! c token (inc' Long/MAX_VALUE)))))
+      (is (= :query-source/invalid
+             (category #(control/accept! c token Double/NaN))))
+      (is (nil? (control/accept! c token (biginteger (dec Long/MAX_VALUE)))))
+      (source/release! token)
+      (is (zero? (:retained-bytes (control/usage c))))
+      (finally (control/close! c)))))
+
 (deftest concurrent-reservations-and-cancellation-registration
   (let [c (control/create {:limits {:retained-bytes 16}})
         start (promise)
@@ -224,7 +243,8 @@
       (doseq [bad [(assoc-in response [:alternatives 0 :covers] #{99})
                    (assoc-in response [:alternatives 0 :prefilters] #{0})
                    (update-in response [:alternatives 0 :columns] pop)
-                   (assoc-in response [:alternatives 0 :estimate :rows] Double/NaN)]]
+                   (assoc-in response [:alternatives 0 :estimate :rows] Double/NaN)
+                   (assoc-in response [:alternatives 0 :estimate :rows] (bigdec "-1E-1000"))]]
         (is (= :query-source/invalid (category #(contract/alternatives! request bad)))))
       (is (= :query-source/unsupported
              (category #(contract/alternatives! request

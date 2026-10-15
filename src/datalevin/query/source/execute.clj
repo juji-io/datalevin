@@ -76,10 +76,12 @@
                     (visit-rows (:rows batch) (fn [row]
                               (source/check-active! control)
                               (run! value/execution-value! row)
-                              (swap! (:explain runtime) update :streamed-rows inc)
+                              (when (:intermediate-counts? runtime)
+                                (swap! (:explain runtime) update :streamed-rows inc))
                               (let [scratch (source/reserve! control
-                                              {:retained-bytes (+' 512 (*' 256 (count columns))
-                                                                   (value/value-charge row))})]
+                                              {:retained-bytes
+                                               (value/add-charge (+ 512 (* 256 (count columns)))
+                                                                 (value/value-charge row))})]
                                 (try (emit (zipmap (map :variable columns) row))
                                      (finally (source/release! scratch))))))
                     (finally (when-let [token (:reservation batch)] (source/release! token))))]
@@ -116,6 +118,7 @@
 (defn- collect-result [runtime {:keys [parsed limit offset]}]
   (let [limit (if (or (instance? FindScalar (:qfind parsed))
                       (instance? FindTuple (:qfind parsed))) 1 limit)
+        offset (long offset)
         find-vars (vec (dp/find-vars (:qfind parsed)))
         vars (into find-vars (map :symbol) (:qwith parsed))
         elements (dp/find-elements (:qfind parsed))
@@ -125,15 +128,17 @@
         consumed (volatile! 0)
         stopped (volatile! false)
         save! (fn [row]
-                (let [bytes (+' 256 (value/value-charge row))]
+                (let [bytes (value/add-charge 256 (value/value-charge row))]
                   ;; The result quota is an error boundary, never a LIMIT.
                   (source/reserve! (:control runtime)
                                    {:result-rows 1 :result-bytes bytes :retained-bytes bytes})
                   (vswap! output conj row)))
         window! (fn [row]
-                  (let [n (vswap! consumed inc)]
+                  (let [n (long (vswap! consumed #(inc (long %))))]
                     (when (> n offset) (save! row))
-                    (when (and limit (>= n (+' offset limit)))
+                    ;; Subtract the validated offset to avoid overflowing its
+                    ;; sum with LIMIT, which can exceed Long/MAX_VALUE.
+                    (when (and limit (>= (- n offset) (long limit)))
                       (vreset! stopped true)
                       (reduced ::stop))))]
     {:accept (fn [binding]
@@ -142,7 +147,9 @@
                    ;; Also covers the aggregate's temporary grouping lists and
                    ;; projected tuple containers. Input state is quota-bound.
                    (source/reserve! (:control runtime)
-                                    {:retained-bytes (+' 512 (*' 3 (value/value-charge row)))})
+                                    {:retained-bytes
+                                     (value/add-charge 512
+                                       (value/multiply-charge 3 (value/value-charge row)))})
                    (.add seen row)
                    (when-not aggregate? (window! (mapv row (range (count find-vars))))))))
      :stopped? #(or @stopped (= 0 limit))
@@ -181,6 +188,12 @@
                             (join! row tables)))))
       (finish))))
 
+(defn- explain-options! [options]
+  (when (some? options)
+    (when-not (map? options) (fail! :query-source/invalid :explain))
+    (when-not (every? #{:run? :intermediate-counts?} (keys options))
+      (fail! :query-source/unsupported :explain))))
+
 (defn run
   "Execute or explain without consulting native query/result caches."
   [query inputs explain-options]
@@ -190,8 +203,12 @@
         options (:query-source raw)
         deadline (timeout/effective-deadline (:qtimeout parsed))]
     (binding [timeout/*deadline* deadline]
-      (rt/with-runtime {:limits (:limits options) :timeout-ms (timeout/time-left)}
+      (rt/with-runtime {:limits (:limits options) :timeout-ms (timeout/time-left)
+                        :intermediate-counts? (boolean
+                                               (and (:run? explain-options)
+                                                    (get explain-options :intermediate-counts? true)))}
         (fn [runtime]
+          (explain-options! explain-options)
           (let [prepared (plan/prepare! runtime parsed inputs options)]
             (native/with-views (keep :native (:entries prepared))
               (fn [snapshots]

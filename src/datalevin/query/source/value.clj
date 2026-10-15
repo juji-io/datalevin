@@ -23,6 +23,27 @@
 
 (defn plain-map? [x] (and (map? x) (not (record? x))))
 
+(defn add-charge
+  "Add fixed overhead with primitive dispatch for long charges and exact overflow."
+  [^long overhead charge]
+  (if (instance? Long charge)
+    (+' overhead (long charge))
+    (clojure.lang.Numbers/addP overhead charge)))
+
+(defn multiply-charge
+  "Scale a charge without truncating an arbitrarily large retained value."
+  [^long factor charge]
+  (if (instance? Long charge)
+    (*' factor (long charge))
+    (clojure.lang.Numbers/multiplyP factor charge)))
+
+(defn at-most?
+  "Compare against a long bound, preserving exact charges and deadlines beyond it."
+  [n ^long maximum]
+  (if (instance? Long n)
+    (<= (long n) maximum)
+    (clojure.lang.Numbers/lte n maximum)))
+
 (defn portable?
   "Metadata must be immutable EDN data; mutable dates/arrays are row values."
   [x]

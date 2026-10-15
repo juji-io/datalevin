@@ -188,7 +188,7 @@
         clauses (into {} (map (juxt :id identity)) (:clauses request))
         ids (set (keys clauses))
         types (variable-types request)]
-    (ensure! (and (vector? alternatives) (<= (count alternatives) (:max-alternatives request))
+    (ensure! (and (vector? alternatives) (<= (count alternatives) (long (:max-alternatives request)))
                   (= (count alternatives) (count (set (map :id alternatives))))) :planning)
     (doseq [a alternatives]
       (fields! a #{:id :plan :covers :prefilters :requires :columns :properties :estimate :explain}
@@ -227,7 +227,8 @@
         (ensure! (#{:unknown :low :medium :high} (:confidence estimate)) :planning)
         (doseq [k [:rows :row-bytes :startup-ms :per-row-ns :requests]]
           (let [n (get estimate k)]
-            (ensure! (or (nil? n) (and (number? n) (Double/isFinite (double n)) (<= 0 n)))
+            (ensure! (or (nil? n) (and (number? n) (Double/isFinite (double n))
+                                     (not (neg? (compare n 0)))))
                      :planning)
             (when (nil? n) (ensure! (= :unknown (:confidence estimate)) :planning)))))
       (fields! (:explain a) #{:label} #{} :planning)
@@ -275,7 +276,7 @@
                   (or (seq rows) (:exhausted? batch))) :batch)
     (doseq [[category actual maximum] [[:batch-rows (count rows) (:max-rows request)]
                                       [:batch-bytes bytes (:max-bytes request)]]]
-      (when (> actual maximum)
+      (when-not (v/at-most? actual (long maximum))
         (fail! :query-source/limit :batch {:category category :maximum maximum :attempted actual})))
     (when (or (seq rows) (:reservation batch))
       (control/accept! (:control request) (:reservation batch) bytes)))

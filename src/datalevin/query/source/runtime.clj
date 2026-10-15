@@ -15,7 +15,7 @@
 (def ^:private phases
   #{:descriptor :inputs :clauses :projection :window :execution-mode :context
     :types :native-view :native-type :native-value :equality :acquisition :session
-    :planning :open :fetch :batch :values :reserve :execution :metrics :close :syntax})
+    :planning :open :fetch :batch :values :reserve :execution :metrics :close :syntax :explain})
 
 (defn redacted-error [runtime phase error]
   ;; Only errors redacted by this invocation may retain diagnostic context.
@@ -75,13 +75,16 @@
 (defn charge!
   "Reserve before retaining a logical value and its ledger/container overhead."
   [runtime x]
-  (source/reserve! (:control runtime) {:retained-bytes (+' 256 (value/value-charge x))}))
+  (source/reserve! (:control runtime)
+                   {:retained-bytes (value/add-charge 256 (value/value-charge x))}))
 
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))
         runtime {:control control :query-id (UUID/randomUUID) :cleanup (atom [])
                  :redacted-errors (atom #{})
-                 :explain (atom {:sources [] :native-scans 0 :streamed-rows 0})}
+                 :intermediate-counts? (boolean (:intermediate-counts? options))
+                 :explain (atom (cond-> {:sources [] :native-scans 0}
+                                  (:intermediate-counts? options) (assoc :streamed-rows 0)))}
         primary (atom nil)]
     (binding [*runtime* runtime]
       (try

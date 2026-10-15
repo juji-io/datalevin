@@ -57,10 +57,10 @@
                            (case operator
                              := (= a b)
                              :not= (not= a b)
-                             :< (neg? (datom/compare-with-type a b))
-                             :<= (not (pos? (datom/compare-with-type a b)))
-                             :> (pos? (datom/compare-with-type a b))
-                             :>= (not (neg? (datom/compare-with-type a b)))))) predicates)) matches)))
+                             :< (neg? (long (datom/compare-with-type a b)))
+                             :<= (not (pos? (long (datom/compare-with-type a b))))
+                             :> (pos? (long (datom/compare-with-type a b)))
+                             :>= (not (neg? (long (datom/compare-with-type a b))))))) predicates)) matches)))
 
 (defrecord Cursor [columns rows position state metrics request events faults]
   source/IQuerySourceCursor
@@ -70,12 +70,12 @@
     (fault! faults :fetch)
     (swap! events conj :fetch)
     (let [rows @rows
-          start @position
+          start (long @position)
           batch (loop [index start, batch []]
                   (if (or (= index (count rows)) (= max-rows (count batch))) batch
                       (let [candidate (conj batch (nth rows index))
                             charge (source/batch-charge-bytes columns candidate)]
-                        (if (> charge max-bytes)
+                        (if-not (value/at-most? charge (long max-bytes))
                           (if (seq batch) batch
                               (value/fail! :query-source/limit :batch
                                            {:category :batch-bytes :maximum max-bytes

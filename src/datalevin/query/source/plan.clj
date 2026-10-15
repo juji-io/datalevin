@@ -160,7 +160,8 @@
         alternatives (:alternatives response)
         attempts (volatile! 0)]
     (letfn [(search [remaining covered selected]
-              (when (> (vswap! attempts inc) 4096) (fail! :query-source/unsupported :planning))
+              (when (> (long (vswap! attempts #(inc (long %)))) 4096)
+                (fail! :query-source/unsupported :planning))
               (if (empty? remaining) selected
                   (let [id (first (sort remaining))]
                     (some (fn [a]
