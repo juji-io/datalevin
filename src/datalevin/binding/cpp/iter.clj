@@ -24,6 +24,7 @@
    [java.lang AutoCloseable]
    [java.nio ByteBuffer]
    [java.util Iterator]
+   [com.github.luben.zstd Zstd]
    [org.bytedeco.javacpp SizeTPointer]))
 
 (defprotocol IKeyValCodec
@@ -43,7 +44,10 @@
   [^BufVal vp value-compressor rtx]
   (let [bf (.outBuf vp)]
     (if-let [compressor value-compressor]
-      (let [^ByteBuffer cbf (l/val-bf rtx)]
+      ;; Stored value frames carry their decoded size. Do not size every reader
+      ;; from the largest value ever written to the environment.
+      (let [size (Zstd/decompressedSize ^ByteBuffer bf)
+            ^ByteBuffer cbf (l/val-bf rtx size)]
         (bf-uncompress compressor bf cbf)
         (.flip cbf))
       bf)))

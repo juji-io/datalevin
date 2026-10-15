@@ -2,12 +2,17 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.protocol :as p]
+   [datalevin.protocol.context :as context]
    [taoensso.nippy :as nippy])
   (:import
+   [datalevin.io WireCompression]
    [java.io EOFException]
-   [java.nio ByteBuffer BufferOverflowException]))
+   [java.nio ByteBuffer BufferOverflowException]
+   [java.nio.channels SocketChannel]
+   [java.nio.channels.spi SelectorProvider]))
 
 (defn- buffer ^ByteBuffer [direct? size]
   (if direct? (ByteBuffer/allocateDirect size) (ByteBuffer/allocate size)))
@@ -76,8 +81,11 @@
         (let [[msg ^ByteBuffer grown] (p/receive-one-message dst)]
           (is (nil? msg))
           (is (> (.capacity grown) 16))
-          (.put grown bytes 16 (- (alength bytes) 16))
+          ;; Growth may fit exactly one frame; a socket read respects that
+          ;; capacity instead of appending every remaining frame at once.
+          (.put grown bytes 16 (- (.getInt src 1) 16))
           (is (= first-message (first (p/receive-one-message grown))))
+          (.put grown bytes (.getInt src 1) (- (alength bytes) (.getInt src 1)))
           (is (= next-message (first (p/receive-one-message grown))))
           (is (zero? (.position grown))))))))
 
@@ -140,3 +148,84 @@
           (p/write-message-bf bf value c/message-format-nippy opts)
           (is (pos? (bit-and (.get bf 0) c/message-flag-zstd)))
           (is (= value (first (p/receive-one-message bf opts)))))))))
+
+(deftest owned-buffer-retention-and-capacity-bounds
+  (is (= Integer/MAX_VALUE (bf/grown-capacity 1500000000 1500000001)))
+  (is (thrown? clojure.lang.ExceptionInfo
+               (bf/grown-capacity 16 (inc (long Integer/MAX_VALUE)))))
+  (let [buffer (doto (bf/allocate-buffer (* 2 bf/max-retained-buffer-capacity))
+                 (.putInt 42))
+        trimmed (bf/trim-buffer! buffer c/+buffer-size+)]
+    (try
+      (is (= c/+buffer-size+ (.capacity trimmed)))
+      (is (= 4 (.position trimmed)))
+      (is (= 42 (.getInt trimmed 0)))
+      (finally (bf/release-buffer! trimmed))))
+  (let [buffer (doto (bf/allocate-buffer (* 2 bf/max-retained-buffer-capacity))
+                 (.position (inc bf/max-retained-buffer-capacity)))]
+    (try
+      (is (identical? buffer (bf/trim-buffer! buffer c/+buffer-size+)))
+      (finally (bf/release-buffer! buffer)))))
+
+(defn- sink-channel ^SocketChannel [sent]
+  (proxy [SocketChannel] [(SelectorProvider/provider)]
+    (write [^ByteBuffer src]
+      (let [n (.remaining src)]
+        (swap! sent + n)
+        (.position src (.limit src))
+        n))
+    (implConfigureBlocking [_])
+    (implCloseSelectableChannel [])))
+
+(deftest oversized-wire-writes-release-on-success-and-serialization-error
+  (let [value (apply str (repeat (* 2 bf/max-retained-buffer-capacity) "x"))
+        buffer-v (volatile! (bf/allocate-buffer c/+buffer-size+))
+        sent (atom 0)]
+    (with-open [ch (sink-channel sent)]
+      (try
+        (p/write-message-growing! ch buffer-v {:value value} nil)
+        (is (> @sent bf/max-retained-buffer-capacity))
+        (is (= c/+buffer-size+ (.capacity ^ByteBuffer @buffer-v)))
+        (reset! sent 0)
+        (is (thrown-with-msg? EOFException #"custom serializer failure"
+                             (p/write-message-growing!
+                               ch buffer-v [value (BrokenWireValue.)] nil)))
+        (is (zero? @sent))
+        (is (= c/+buffer-size+ (.capacity ^ByteBuffer @buffer-v)))
+        (p/write-message-growing! ch buffer-v {:small true} nil)
+        (is (pos? @sent))
+        (finally (bf/release-buffer! @buffer-v))))))
+
+(deftest oversized-receive-preserves-following-frames
+  (let [value {:value (apply str (repeat (* 2 bf/max-retained-buffer-capacity) "x"))}
+        ;; Prebuffer two large frames and a small one: trimming must preserve
+        ;; the second large frame, then compact the small one into idle scratch.
+        buffer-v (volatile!
+                   (doto (bf/allocate-buffer (* 5 bf/max-retained-buffer-capacity))
+                     (p/write-message-bf value)
+                     (p/write-message-bf value)
+                     (p/write-message-bf {:small true})))]
+    (with-open [ch (sink-channel (atom 0))]
+      (try
+        (is (= value (p/receive-ch! ch buffer-v nil nil nil)))
+        (is (> (.capacity ^ByteBuffer @buffer-v) bf/max-retained-buffer-capacity))
+        (is (= value (p/receive-ch! ch buffer-v nil nil nil)))
+        (is (= c/+buffer-size+ (.capacity ^ByteBuffer @buffer-v)))
+        (is (= {:small true} (p/receive-ch! ch buffer-v nil nil nil)))
+        (is (zero? (.position ^ByteBuffer @buffer-v)))
+        (finally (bf/release-buffer! @buffer-v))))))
+
+(deftest oversized-compression-leases-leave-the-connection-cache
+  (with-open [^java.io.Closeable codec (context/create)]
+    (let [^WireCompression state (context/acquire-compression! codec)]
+      (.encodingBuffer state (* 2 bf/max-retained-buffer-capacity))
+      (context/release-compression! codec state)
+      (let [^WireCompression next-state (context/acquire-compression! codec)]
+        ;; The shared cache may hand back the same codec. Each lease is still
+        ;; exclusive; nested work must obtain a distinct compression context.
+        (let [nested (context/acquire-compression! codec)]
+          (is (not (identical? next-state nested)))
+          (context/release-compression! codec nested))
+        (.encodingBuffer next-state 8)
+        (context/release-compression! codec next-state)
+        (context/release-compression! codec (context/acquire-compression! codec))))))

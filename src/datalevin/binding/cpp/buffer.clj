@@ -14,13 +14,12 @@
    [datalevin.binding.cpp.iter :as iter]
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
-   [datalevin.constants :as c]
    [datalevin.interface :refer [bf-compress set-max-val-size]]
    [datalevin.lmdb :as l :refer [IBuffer IDB]]
    [datalevin.util :refer [raise]])
   (:import
    [datalevin.dtlvnative DTLV DTLV$MDB_val DTLV$MDB_stat]
-   [datalevin.cpp BufVal Cursor Dbi Stat Txn UnsafeAccess Util]
+   [datalevin.cpp BufVal Cursor Dbi Stat Txn Util]
    [java.nio BufferOverflowException ByteBuffer]
    [java.util.concurrent ConcurrentHashMap]
    [org.bytedeco.javacpp LongPointer]))
@@ -41,6 +40,9 @@
 
 (defprotocol ICloseableResource
   (close-resource! [_]))
+
+(defprotocol IValueScratch
+  (trim-value-scratch! [_] "Release oversized input buffers after native use."))
 
 (definterface ^:private IIdBuffer
   (^void putKeyId [^long id])
@@ -84,7 +86,7 @@
   [^ByteBuffer buffer]
   (when buffer
     (try
-      (UnsafeAccess/clean buffer)
+      (bf/release-buffer! buffer)
       (catch Throwable _))))
 
 (defn close-cursor-quiet!
@@ -227,7 +229,7 @@
   (let [^long val-size (b/measure-size x)]
     (if (< Integer/MAX_VALUE val-size)
       (raise "Value size is too large" {:size val-size})
-      (let [try-size (* ^long c/+buffer-grow-factor+ val-size)]
+      (let [try-size (* 2 (max 1 val-size))]
         (if (< Integer/MAX_VALUE try-size)
           val-size
           try-size)))))
@@ -239,6 +241,7 @@
               ^:volatile-mutable ^BufVal vp
               ^ByteBuffer k-comp-bf
               ^:volatile-mutable ^ByteBuffer v-comp-bf
+              ^:unsynchronized-mutable ^long value-capacity-hint
               ^boolean dupsort?
               ^boolean dupfixed?
               ^boolean counted?
@@ -250,10 +253,19 @@
   (dbi-value-codec [_] value-codec)
 
   IEncodedInput
-  ;; Valid until the next serialization on this DBI. Compression consumes the
-  ;; scratch buffer's position but leaves the raw bytes in [0, limit).
+  ;; Consume before native put/delete or the next serialization on this DBI.
+  ;; Compression consumes scratch position but leaves raw bytes in [0, limit).
   (encodedKeyInput [_] (if key-codec k-comp-bf (.inBuf kp)))
   (encodedValueInput [_] (if value-codec v-comp-bf (.inBuf vp)))
+
+  IValueScratch
+  (trim-value-scratch! [_]
+    (when (> (.capacity ^ByteBuffer (.inBuf vp)) bf/max-retained-buffer-capacity)
+      (let [old-v-comp-bf v-comp-bf]
+        (set! value-capacity-hint (long (.capacity ^ByteBuffer (.inBuf vp))))
+        (.releaseLargeInput vp)
+        (set! v-comp-bf nil)
+        (clean-buffer-quiet! old-v-comp-bf))))
 
   IMultipleBuffer
   (multipleValBuffer [_ size]
@@ -293,18 +305,27 @@
                (.dbi-name this) ": " e {:value x :type t}))))
   (put-val [this x t]
     (try
+      ;; A remembered size is only a cache hint, never a request to allocate.
+      ;; Repeated large writes avoid both remeasuring and allocating the value.
+      (when (> value-capacity-hint bf/max-retained-buffer-capacity)
+        (.tryCachedCapacity vp value-capacity-hint))
+      (when (and value-codec (nil? v-comp-bf))
+        (set! v-comp-bf (bf/allocate-buffer (.capacity ^ByteBuffer (.inBuf vp)))))
       (put-bufval vp x t value-codec v-comp-bf)
       (catch BufferOverflowException _
         (let [size          (val-size x)
-              old-vp        vp
               old-v-comp-bf v-comp-bf]
-          (set! vp (new-bufval size))
-          (set! v-comp-bf (bf/allocate-buffer size))
-          (close-bufval-quiet! old-vp)
+          (.ensureCapacity vp size)
+          (set! v-comp-bf (when value-codec (bf/allocate-buffer size)))
           (clean-buffer-quiet! old-v-comp-bf)
           (set-max-val-size lmdb size)
-          (put-bufval vp x t value-codec v-comp-bf)))
+          (try
+            (put-bufval vp x t value-codec v-comp-bf)
+            (catch Throwable e
+              (trim-value-scratch! this)
+              (throw e)))))
       (catch Exception e
+        (trim-value-scratch! this)
         (raise "Error putting r/w value buffer of "
                (.dbi-name this) ": " e {:value x :type t}))))
 
@@ -319,6 +340,8 @@
                (.dbi-name this) ": " e {:value id :type :id}))))
   (putValId [this id]
     (try
+      (when (and value-codec (nil? v-comp-bf))
+        (set! v-comp-bf (bf/allocate-buffer (.capacity ^ByteBuffer (.inBuf vp)))))
       (put-id-bufval vp id value-codec v-comp-bf)
       (catch BufferOverflowException _
         ;; Preserve the generic buffer-growth behavior on the exceptional path.
@@ -341,9 +364,13 @@
         (catch BufferOverflowException _
           (raise "Key cannot be larger than 511 bytes after encoding."
                  {:input x})))))
-  (put [_ txn flags] (.put db txn kp vp (kv-flags flags)))
+  (put [this txn flags]
+    (try (.put db txn kp vp (kv-flags flags))
+         (finally (trim-value-scratch! this))))
   (put [this txn] (.put this txn nil))
-  (del [_ txn all?] (if all? (.del db txn kp nil) (.del db txn kp vp)))
+  (del [this txn all?]
+    (try (if all? (.del db txn kp nil) (.del db txn kp vp))
+         (finally (trim-value-scratch! this))))
   (del [this txn] (.del this txn true))
   (get-kv [_ rtx]
     (let [^BufVal kp (iter/rtx-key-buf rtx)

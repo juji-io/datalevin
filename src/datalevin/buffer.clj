@@ -15,7 +15,8 @@
   (:import
    [java.util.concurrent ArrayBlockingQueue]
    [java.nio ByteBuffer]
-   [datalevin.utl BufOps]))
+   [datalevin.utl BufOps]
+   [datalevin.io ScratchBufferPool]))
 
 (defn buffer-transfer
   "Transfer content from one bytebuffer to another"
@@ -72,14 +73,56 @@
 (defn allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
   ^ByteBuffer [size]
-  (ByteBuffer/allocateDirect size))
+  (.acquireBuffer (ScratchBufferPool/shared) (int size)))
+
+(def ^:const max-retained-buffer-capacity
+  "Maximum capacity retained by an idle connection or value scratch owner."
+  (* 1024 1024))
+
+(defn release-buffer!
+  "Return an exclusively owned allocation to the shared byte-budgeted cache,
+  or release it. Never pass a slice or borrowed view."
+  [^ByteBuffer buffer]
+  (.releaseBuffer (ScratchBufferPool/shared) buffer)
+  nil)
+
+(defn grown-capacity
+  "Geometric buffer growth with checked JVM capacity bounds."
+  ^long [^long capacity ^long required]
+  (when (or (neg? required) (> required Integer/MAX_VALUE))
+    (throw (ex-info "Buffer size is too large" {:size required})))
+  (min (long Integer/MAX_VALUE) (max required (* 2 capacity))))
+
+(defn resize-buffer!
+  "Replace an owned buffer in write mode, preserving its buffered bytes and
+  releasing its old allocation. No views of the old buffer may remain in use."
+  ^ByteBuffer [^ByteBuffer buffer ^long capacity]
+  (let [replacement (or (when (> capacity (.capacity buffer))
+                          (.cachedBuffer (ScratchBufferPool/shared) (int capacity)))
+                        (allocate-buffer capacity))]
+    (.flip buffer)
+    (.put replacement buffer)
+    (release-buffer! buffer)
+    replacement))
+
+(defn trim-buffer!
+  "Bound idle retention, preserving any unread bytes in a write-mode buffer.
+  Large pending frames keep their allocation until they have been consumed."
+  ^ByteBuffer [^ByteBuffer buffer ^long initial-capacity]
+  (if (and (> (.capacity buffer) max-retained-buffer-capacity)
+           (<= (.position buffer) max-retained-buffer-capacity))
+    (resize-buffer! buffer (max initial-capacity (.position buffer)))
+    buffer))
 
 (defn get-direct-buffer
   ([] (get-direct-buffer (+ c/+max-key-size+ Integer/BYTES)))
   (^ByteBuffer [^long size]
    (take-buffer! direct-buffers allocate-buffer size)))
 
-(defn return-direct-buffer [bf] (return-buffer! direct-buffers bf))
+(defn return-direct-buffer [^ByteBuffer bf]
+  (if (> (.capacity bf) max-pooled-buffer-capacity)
+    (do (release-buffer! bf) false)
+    (return-buffer! direct-buffers bf)))
 
 (defn hex-buffer [^ByteBuffer sb]
   (let [sa (byte-array (.remaining sb))]

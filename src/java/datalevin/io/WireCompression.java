@@ -5,24 +5,52 @@ package datalevin.io;
 import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdCompressCtx;
 import com.github.luben.zstd.ZstdDecompressCtx;
+import datalevin.cpp.UnsafeAccess;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 
 /** Scratch buffers and native contexts leased exclusively by one wire codec.
  * Returned buffers remain valid until the lease is released. */
 public final class WireCompression implements Closeable {
+    private final ScratchBufferPool pool;
     private ZstdCompressCtx compressor;
     private ZstdDecompressCtx decompressor;
     private ByteBuffer raw, packed, input;
     private int level = Integer.MIN_VALUE;
     private boolean closed;
 
-    private static ByteBuffer ensure(ByteBuffer buffer, int size) {
+    public WireCompression() { this(ScratchBufferPool.shared()); }
+
+    public WireCompression(ScratchBufferPool pool) { this.pool = pool; }
+
+    private static void release(ByteBuffer buffer) {
+        try { UnsafeAccess.clean(buffer); }
+        catch (RuntimeException ignored) { /* Fall back to the JVM cleaner. */ }
+    }
+
+    /** Whether this completed lease should be discarded instead of cached. */
+    public boolean oversized(int maximum) {
+        return (raw != null && raw.capacity() > maximum)
+            || (packed != null && packed.capacity() > maximum)
+            || (input != null && input.capacity() > maximum);
+    }
+
+    /** Actual owned buffer capacity charged to the shared idle cache. */
+    public long bufferBytes() {
+        return (raw == null ? 0L : raw.capacity())
+             + (packed == null ? 0L : packed.capacity())
+             + (input == null ? 0L : input.capacity());
+    }
+
+    private ByteBuffer ensure(ByteBuffer buffer, int size) {
         if (size < 0) throw new IllegalArgumentException("Wire payload too large");
         if (buffer == null || buffer.capacity() < size) {
             long capacity = Math.max(8192L, size);
             if (buffer != null) capacity = Math.max(capacity, 2L * buffer.capacity());
-            buffer = ByteBuffer.allocateDirect((int) Math.min(Integer.MAX_VALUE, capacity));
+            ByteBuffer previous = buffer;
+            buffer = pool.acquireBuffer(
+                (int) Math.min(Integer.MAX_VALUE, capacity));
+            pool.releaseBuffer(previous);
         }
         buffer.clear();
         return buffer;
@@ -102,10 +130,16 @@ public final class WireCompression implements Closeable {
         try {
             if (compressor != null) compressor.close();
         } finally {
-            if (decompressor != null) decompressor.close();
-            compressor = null;
-            decompressor = null;
-            raw = packed = input = null;
+            try {
+                if (decompressor != null) decompressor.close();
+            } finally {
+                compressor = null;
+                decompressor = null;
+                release(raw);
+                release(packed);
+                release(input);
+                raw = packed = input = null;
+            }
         }
     }
 }

@@ -649,6 +649,26 @@ before the next socket read. Slow handlers apply socket backpressure without
 adding requests to an application queue. HA and replica loops use a separate
 bounded background executor.
 
+Large values can temporarily grow socket and compression buffers. Idle owners
+retain buffers of at most 1 MiB each; larger socket buffers return to 64 KiB once
+their pending frames have been consumed. Large buffers and wire compression
+contexts return to a shared cache for reuse across operations and workers.
+The cache retains at most 64 MiB of buffer capacity in total and expires entries
+after 30 seconds without reuse. A daemon sweeps expired entries even when no
+requests arrive. Native compression contexts expire with their cached buffers.
+
+Set JVM properties `-Ddatalevin.buffer-cache-bytes=134217728` and
+`-Ddatalevin.buffer-cache-idle-ms=30000` to change the shared budget and idle
+timeout; a zero byte budget disables caching. Values larger than the budget
+are still supported, but their buffers are freed after use. The budget covers
+idle buffer capacity, not active requests or native codec working memory.
+
+Storage readers allocate decompression scratch on demand and return large
+scratch when the outermost read ends. Large storage write buffers return after
+their native put/delete completes. Writers keep their small fallback buffer and
+use the previous large size only as a cache hint, so repeated large writes can
+reuse allocations without making every worker retain the largest value.
+
 Explicit transactions are pinned to the connection that opens them. Its thread
 owns the native transaction through commit or abort. Another socket cannot use
 that transaction, even within the same authenticated session. Clients using the

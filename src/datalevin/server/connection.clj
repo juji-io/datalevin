@@ -45,6 +45,18 @@
           (when-not (identical? thread (Thread/currentThread))
             (.interrupt thread)))))))
 
+(defn write-message!
+  "Send on the connection owner, retaining only bounded idle scratch. Lock the
+  stable attachment rather than a buffer that may be replaced during a write."
+  [^SelectionKey key message]
+  (let [state (.attachment key)]
+    (locking state
+      (let [{:keys [write-bf wire-opts]} @state
+            buffer-v (volatile! write-bf)]
+        (try
+          (p/write-message-growing! (.channel key) buffer-v message wire-opts)
+          (finally (vswap! state assoc :write-bf @buffer-v)))))))
+
 (defn accept!
   "Start one thread for an accepted socket. Publish its ID, key and thread
   before starting it; remove ownership only after the read loop and cleanup exit."

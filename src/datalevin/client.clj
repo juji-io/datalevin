@@ -22,7 +22,7 @@
    [datalevin.protocol.context :as context]
    [datalevin.prepared :as prepared])
   (:import
-   [java.nio ByteBuffer BufferOverflowException]
+   [java.nio ByteBuffer]
    [java.nio.channels SocketChannel Selector SelectionKey]
    [java.util UUID WeakHashMap Collections LinkedHashMap]
    [datalevin.prepared Request]
@@ -38,7 +38,8 @@
   (close [conn]))
 
 (definterface IConnectionIO
-  (exchange [message wire-options]))
+  (exchange [message wire-options])
+  (releaseBuffers []))
 
 (defonce ^:private ^ConcurrentHashMap connection-wire-opts
   ;; Lifecycle/reset registry only. I/O reads the connection's own reference.
@@ -181,20 +182,20 @@
                               receive-buffer
                               ^LinkedHashMap prepared-handles]
   IConnectionIO
+  (releaseBuffers [this]
+    (locking this
+      (try (.close ^java.io.Closeable context)
+           (finally
+             (bf/release-buffer! bf)
+             (set! bf nil)
+             (vreset! receive-buffer nil)))))
+
   (exchange [_ msg wire-opts]
     ;; The caller owns the connection monitor. Grow only before sending.
     (context/with-context context
-      (loop []
-        (when-not (try
-                    (p/write-message-owned ch bf msg wire-opts)
-                    true
-                    (catch BufferOverflowException _ false))
-          (set! bf (bf/allocate-buffer
-                     (* ^long c/+buffer-grow-factor+ (.capacity bf))))
-          (recur)))
-      (.clear bf)
       (vreset! receive-buffer bf)
       (try
+        (p/write-message-growing! ch receive-buffer msg wire-opts)
         (p/receive-ch! ch receive-buffer wire-opts time-out
                       (when-not (.isBlocking ch) read-selector))
         (finally (set! bf @receive-buffer)))))
@@ -247,14 +248,10 @@
     (locking this
       (try
         (context/with-context context
-          (loop []
-            (when-not (try
-                        (p/write-message-owned ch bf msg (.get wire-options))
-                        true
-                        (catch BufferOverflowException _ false))
-              (set! bf (bf/allocate-buffer
-                         (* ^long c/+buffer-grow-factor+ (.capacity bf))))
-              (recur))))
+          (vreset! receive-buffer bf)
+          (try
+            (p/write-message-growing! ch receive-buffer msg (.get wire-options))
+            (finally (set! bf @receive-buffer))))
         (catch Exception e
           (raise "Error sending message: " e {:msg msg})))))
 
@@ -289,7 +286,7 @@
               (vreset! read-selector nil)
               (clear-conn-wire-opts! ch)))))
       (finally
-        (locking this (.close ^java.io.Closeable context))))))
+        (.releaseBuffers this)))))
 
 #_{:clj-kondo/ignore [:redefined-var]}
 (defn ^:no-doc ->Connection

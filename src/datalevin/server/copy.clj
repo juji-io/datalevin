@@ -19,7 +19,6 @@
    [datalevin.util :as u :refer [raise]]
    [taoensso.timbre :as log])
   (:import
-   [java.nio ByteBuffer]
    [java.nio.channels SelectionKey SocketChannel]
    [java.nio.file Files OpenOption]
    [java.security MessageDigest]
@@ -60,6 +59,7 @@
   (let [state                      (.attachment skey)
         {:keys [read-bf write-bf wire-opts]} @state
         ^SocketChannel ch          (.channel skey)
+        buffer-v                   (volatile! read-bf)
         data                       (transient [])
         decode-error               (volatile! nil)
         reader                     nv/*wire-reader*
@@ -75,10 +75,11 @@
                               wire-opts)
     ;; The connection owner has compacted the opening request.
     ;; Any coalesced copy batches already in read-bf belong to this transfer.
-    (loop [bf read-bf]
-      (let [[msg bf'] (binding [nv/*wire-reader* read-native]
-                        (p/receive-ch ch bf wire-opts))]
-        (when-not (identical? bf bf') (vswap! state assoc :read-bf bf'))
+    (loop []
+      (let [msg (try
+                  (binding [nv/*wire-reader* read-native]
+                    (p/receive-ch! ch buffer-v wire-opts nil nil))
+                  (finally (vswap! state assoc :read-bf @buffer-v)))]
         (if (map? msg)
           (let [{:keys [type]} msg]
             (case type
@@ -89,7 +90,7 @@
           (do
             (when-not @decode-error
               (doseq [d msg] (conj! data d)))
-            (recur bf')))))
+            (recur)))))
     ;; Drain through :copy-done before reporting a decode failure so the next
     ;; request starts at a message boundary and no partial transaction runs.
     (when-let [e @decode-error] (throw e))
@@ -105,8 +106,6 @@
    (copy-out deps skey data batch-size copy-meta nil))
   ([deps ^SelectionKey skey data batch-size copy-meta response-meta]
    (let [state                          (.attachment skey)
-         {:keys [^ByteBuffer write-bf wire-opts]} @state
-         ^SocketChannel ch              (.channel skey)
          response                       (cond-> {:type :copy-out-response}
                                           (map? data)
                                           (assoc :copy-result-type :map)
@@ -116,12 +115,11 @@
                                           (assoc :copy-meta copy-meta)
                                           (seq response-meta)
                                           (merge response-meta))]
-     (locking write-bf
-       (p/write-message-blocking ch write-bf response wire-opts)
+     (locking state
+       ((:write-message-fn deps) skey response)
        (doseq [batch (partition batch-size batch-size nil data)]
          ((:write-message-fn deps) skey batch))
-       (p/write-message-blocking ch write-bf {:type :copy-done}
-                                 wire-opts))
+       ((:write-message-fn deps) skey {:type :copy-done}))
      (log/debug "Copied out" (count data) "data items"))))
 
 (defn copy-file-out

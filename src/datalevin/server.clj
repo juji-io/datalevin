@@ -13,7 +13,6 @@
   (:require
    [datalevin.util :as u :refer [raise]]
    [datalevin.core :as d]
-   [datalevin.buffer :as bf]
    [datalevin.db :as db]
    [datalevin.udf :as udf]
    [datalevin.custom-data :as custom]
@@ -47,7 +46,6 @@
    [taoensso.timbre :as log]
    [clojure.string :as s])
   (:import
-   [java.nio ByteBuffer BufferOverflowException]
    [java.nio.channels Selector SelectionKey ClosedSelectorException
     ServerSocketChannel SocketChannel]
    [java.net InetAddress InetSocketAddress]
@@ -1213,15 +1211,7 @@
 (defn- write-message
   "write a message to channel, auto grow the buffer"
   [^SelectionKey skey msg]
-  (let [state                          (.attachment skey)
-        {:keys [^ByteBuffer write-bf wire-opts]} @state
-        ^SocketChannel  ch             (.channel skey)]
-    (try
-      (p/write-message-blocking ch write-bf msg wire-opts)
-      (catch BufferOverflowException _
-        (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
-          (vswap! state assoc :write-bf (bf/allocate-buffer size))
-          (write-message skey msg))))))
+  (connection/write-message! skey msg))
 
 (declare new-connection-context)
 

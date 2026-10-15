@@ -6,6 +6,7 @@ import static datalevin.cpp.UnsafeAccess.UNSAFE;
 import java.lang.reflect.InaccessibleObjectException;
 
 import datalevin.dtlvnative.DTLV;
+import datalevin.io.ScratchBufferPool;
 import java.lang.reflect.Field;
 
 import org.bytedeco.javacpp.*;
@@ -57,15 +58,22 @@ public class BufVal implements AutoCloseable {
     }
 
     private Pointer data;
+    private final ScratchBufferPool pool;
     private ByteBuffer inBuf;
+    private ByteBuffer smallInBuf;
     private long inAddr;
     private ByteBuffer outBuf;
     private DTLV.MDB_val ptr;
 
     public BufVal(long size) {
+        this(size, ScratchBufferPool.shared());
+    }
+
+    public BufVal(long size, ScratchBufferPool pool) {
+        this.pool = pool;
 
         // internal fixed BF
-        inBuf = ByteBuffer.allocateDirect((int) size);
+        inBuf = pool.acquireBuffer(Math.toIntExact(size));
         inBuf.order(ByteOrder.BIG_ENDIAN);
         data = new Pointer(inBuf);
         inAddr = data.address();
@@ -136,6 +144,42 @@ public class BufVal implements AutoCloseable {
         return inBuf;
     }
 
+    private void replaceInput(ByteBuffer replacement) {
+        ByteBuffer previous = inBuf;
+        inBuf = replacement;
+        data = new Pointer(inBuf);
+        inAddr = data.address();
+        reset();
+        if (previous.capacity() <= ScratchBufferPool.LOCAL_LIMIT && smallInBuf == null)
+            smallInBuf = previous;
+        else pool.releaseBuffer(previous);
+    }
+
+    /** Grow only before encoding. No views of the old input may remain in use. */
+    public void ensureCapacity(long minimum) {
+        if (minimum > inBuf.capacity())
+            replaceInput(pool.acquireBuffer(Math.toIntExact(minimum)));
+    }
+
+    /** Reuse a previously needed size if cached, without allocating from a hint. */
+    public void tryCachedCapacity(long minimum) {
+        if (minimum > inBuf.capacity()) {
+            ByteBuffer cached = pool.cachedBuffer(Math.toIntExact(minimum));
+            if (cached != null) replaceInput(cached);
+        }
+    }
+
+    /** Return large input storage after native use and restore the small buffer. */
+    public void releaseLargeInput() {
+        if (inBuf.capacity() > ScratchBufferPool.LOCAL_LIMIT) {
+            ByteBuffer replacement = smallInBuf;
+            smallInBuf = null;
+            if (replacement == null) replacement = pool.acquireBuffer(16384);
+            replacement.clear();
+            replaceInput(replacement);
+        }
+    }
+
     protected void unsafeIn(final long ptrAddr, final long address,
                             final long size) {
       UNSAFE.putLong(ptrAddr + STRUCT_FIELD_OFFSET_SIZE, size);
@@ -182,17 +226,21 @@ public class BufVal implements AutoCloseable {
     public void close() {
         final DTLV.MDB_val localPtr = this.ptr;
         final ByteBuffer localInBuf = this.inBuf;
+        final ByteBuffer localSmallInBuf = this.smallInBuf;
 
         this.ptr = null;
         this.data = null;
         this.inBuf = null;
+        this.smallInBuf = null;
         this.outBuf = null;
         this.inAddr = 0L;
 
-        if (localPtr != null) {
-            localPtr.close();
+        try {
+            if (localPtr != null) localPtr.close();
+        } finally {
+            pool.releaseBuffer(localInBuf);
+            pool.releaseBuffer(localSmallInBuf);
         }
-        UnsafeAccess.clean(localInBuf);
     }
 
 }

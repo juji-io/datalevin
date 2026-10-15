@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Analytics] infrastructure to work with external data source over virtual
+  relation.
+### Improved
+- [Buffer] Allocate large (> 1 MiB) direct memory buffers on demand and release
+  them after idle budget (time and space).
+
 ## 1.2.5 (2026-10-14)
 
 ### Fixed

@@ -20,6 +20,7 @@
    [datalevin.protocol :as p]
    [datalevin.protocol.context :as codec]
    [datalevin.server.deps :as sdeps]
+   [datalevin.server.connection :as connection]
    [datalevin.server.prepared :as prepared]
    [datalevin.util :as u :refer [raise]]
    [taoensso.timbre :as log])
@@ -164,19 +165,13 @@
 
 (defn- error-response
   [^SelectionKey skey error-msg error-data]
-  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)
-        ^SocketChannel ch (.channel skey)]
-    (p/write-message-blocking ch write-bf
-                              {:type     :error-response
-                               :message  error-msg
-                               :err-data error-data}
-                              wire-opts)))
+  (connection/write-message! skey {:type :error-response
+                                   :message error-msg
+                                   :err-data error-data}))
 
 (defn- reopen-response
   [^SelectionKey skey msg]
-  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)
-        ^SocketChannel ch (.channel skey)]
-    (p/write-message-blocking ch write-bf msg wire-opts)))
+  (connection/write-message! skey msg))
 
 (defn handle-message-error!
   [deps ^SelectionKey skey e]
@@ -427,15 +422,18 @@
             (let [^ByteBuffer read-bf (:read-bf @state)]
               (if (p/extract-message read-bf read-message! handle-message!)
                 ;; Copy-in may have grown the shared buffer. Fetch it afresh.
-                (recur)
+                (do
+                  (vswap! state update :read-bf bf/trim-buffer! c/+buffer-size+)
+                  (recur))
                 (let [^ByteBuffer read-bf
                       (if (.hasRemaining read-bf)
                         read-bf
-                        (let [buffer (bf/allocate-buffer
-                                       (* (long c/+buffer-grow-factor+)
-                                          (.capacity read-bf)))]
-                          (.flip read-bf)
-                          (bf/buffer-transfer read-bf buffer)
+                        ;; Grow with bytes actually received, rather than
+                        ;; allocating an entire request from its header alone.
+                        (let [buffer (bf/resize-buffer!
+                                       read-bf
+                                       (bf/grown-capacity (.capacity read-bf)
+                                                          (inc (.capacity read-bf))))]
                           (vswap! state assoc :read-bf buffer)
                           buffer))
                       ^int readn (p/read-ch ch read-bf)]
@@ -448,4 +446,10 @@
           ;; Interrupts cancel transport waits; native abort still runs here on
           ;; the same thread that opened the transaction.
           (Thread/interrupted)
-          (close-read-connection! deps server skey))))))
+          (try (close-read-connection! deps server skey)
+               (finally
+                 ;; Only the owning thread can release buffers: close! may be
+                 ;; called by another thread to interrupt a blocked socket read.
+                 (bf/release-buffer! (:read-bf @state))
+                 (bf/release-buffer! (:write-bf @state))
+                 (vswap! state dissoc :read-bf :write-bf))))))))

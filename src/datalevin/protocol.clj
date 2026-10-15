@@ -467,29 +467,55 @@
    (locking bf
      (write-message-owned ch bf msg wire-opts))))
 
+(defn write-message-growing!
+  "Send with an exclusively owned buffer holder. Grow before sending and
+  release oversized scratch even when serialization or transport fails."
+  [ch buffer-v msg wire-opts]
+  (try
+    (loop []
+      (let [^ByteBuffer buffer @buffer-v]
+        (when-not (try
+                    (write-message-owned ch buffer msg wire-opts)
+                    true
+                    (catch BufferOverflowException e
+                      (when (= Integer/MAX_VALUE (.capacity buffer)) (throw e))
+                      false))
+          (.clear buffer)
+          (vreset! buffer-v
+                   (bf/resize-buffer! buffer
+                                      (bf/grown-capacity (.capacity buffer)
+                                                         (inc (.capacity buffer)))))
+          (recur))))
+    (finally
+      (let [^ByteBuffer buffer @buffer-v]
+        (.clear buffer)
+        (vreset! buffer-v (bf/trim-buffer! buffer c/+buffer-size+))))))
+
+(defn grow-read-buffer
+  "Grow an owned write-mode buffer to fit its declared frame length."
+  ^ByteBuffer [^ByteBuffer buffer]
+  (if (>= (.position buffer) c/message-header-size)
+    (let [length (.getInt buffer 1)]
+      (when (< length c/message-header-size)
+        (raise "Message corruption: length is less than header size"
+               {:length length}))
+      (if (> length (.capacity buffer))
+        (bf/resize-buffer! buffer (bf/grown-capacity (.capacity buffer) length))
+        buffer))
+    buffer))
+
 (defn receive-one-message!
   "Consume a frame using a connection-owned buffer volatile. Return the message
   or nil for an incomplete frame, and publish any buffer growth to buffer-v."
   [buffer-v wire-opts]
-  (let [^ByteBuffer read-bf @buffer-v
+  (let [^ByteBuffer read-bf (grow-read-buffer @buffer-v)
+        _ (vreset! buffer-v read-bf)
         pos (.position read-bf)]
     (when (>= pos c/message-header-size)
       (.flip read-bf)
       (let [available (.limit read-bf)
             fmt       (.get read-bf)
-            length    ^int (.getInt read-bf)
-            _         (when (< length c/message-header-size)
-                        (raise "Message corruption: length is less than header size"
-                               {:length length}))
-            read-bf   (if (< (.capacity read-bf) length)
-                        (let [^ByteBuffer bf
-                              (ByteBuffer/allocateDirect
-                                (* ^long c/+buffer-grow-factor+ length))]
-                          (.rewind read-bf)
-                          (bf/buffer-transfer read-bf bf)
-                          (vreset! buffer-v bf)
-                          bf)
-                        read-bf)]
+            length    ^int (.getInt read-bf)]
         (if (< available length)
           (do (doto read-bf
                 (.limit (.capacity read-bf))
@@ -577,6 +603,7 @@
               (= readn -1) (do (.close ch)
                                (raise "Socket channel is closed." {}))))))
       (finally
+        (vreset! buffer-v (bf/trim-buffer! @buffer-v c/+buffer-size+))
         (when-not read-selector
           (when-let [^Selector sel @selector-v]
             (.close sel)))

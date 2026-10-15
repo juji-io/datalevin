@@ -90,7 +90,7 @@
 
 (defprotocol ICompress
   (key-bf [this] "return the working buffer for key compression")
-  (val-bf [this] "return the working buffer for value compression"))
+  (val-bf [this] [this size] "Return value scratch, growing on demand to size."))
 
 (defprotocol IDB
   (dbi [this] "Return the underlying dbi")

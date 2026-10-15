@@ -32,7 +32,7 @@
    [datalevin.interface :as i
     :refer [IList ILMDB IAdmin open-dbi close-kv env-dir close-vecs
             transact-kv stat key-compressor
-            val-compressor set-max-val-size max-val-size
+            val-compressor
             set-key-compressor set-val-compressor]]
    [datalevin.lmdb :as l
     :refer [open-kv IBuffer IRange IRtx IWriting ICompress]])
@@ -177,7 +177,18 @@
 
   ICompress
   (key-bf [_] (.clear k-comp-bf))
-  (val-bf [_] (.clear v-comp-bf))
+  (val-bf [this] (.val-bf this c/+max-key-size+))
+  (val-bf [_ size]
+    (let [size (long size)
+          capacity (long (if v-comp-bf (.capacity v-comp-bf) 0))]
+      (when (or (nil? v-comp-bf) (< capacity size))
+        (let [replacement (bf/allocate-buffer
+                            (bf/grown-capacity capacity
+                                               (max size (long c/*init-val-size*))))
+              old v-comp-bf]
+          (set! v-comp-bf replacement)
+          (bf/release-buffer! old)))
+      (.clear v-comp-bf)))
 
   iter/IRtxInternals
   (rtx-txn [_] txn)
@@ -189,7 +200,7 @@
   (rtx-stop-val-buf [_] stop-vp)
 
   IListSeekBuffer
-  (filter-list-id-int-prefix! [_ cur in id-idx prefix out]
+  (filter-list-id-int-prefix! [this cur in id-idx prefix out]
     (let [^Cursor cur       cur
           ^List in         in
           ^Collection out  out
@@ -197,8 +208,10 @@
           prefix           (long prefix)
           nt               (.size in)
           key-compressor   (key-compressor lmdb)
+          value-compressor (val-compressor lmdb)
           ^BufVal cur-val  (.val cur)]
-      (buffer/put-bufval start-vp prefix :int (val-compressor lmdb) v-comp-bf)
+      (buffer/put-bufval start-vp prefix :int value-compressor
+                         (when value-compressor (.val-bf this)))
       (loop [i           (long 0)
              last-id     (long 0)
              last-found? false
@@ -358,7 +371,12 @@
   (reset [this]
     (vswap! depth u/long-dec)
     (when (zero? ^long @depth)
-      (.reset txn))
+      (.reset txn)
+      (when (and v-comp-bf
+                 (> (.capacity v-comp-bf) bf/max-retained-buffer-capacity))
+        (let [old v-comp-bf]
+          (set! v-comp-bf nil)
+          (bf/release-buffer! old))))
     this)
 
   (renew [this]
@@ -391,8 +409,8 @@
           (buffer/close-bufval-quiet! stop-kp*)
           (buffer/close-bufval-quiet! start-vp*)
           (buffer/close-bufval-quiet! stop-vp*)
-          (buffer/clean-buffer-quiet! k-comp-bf*)
-          (buffer/clean-buffer-quiet! v-comp-bf*))
+          (buffer/clean-buffer-quiet! k-comp-bf*))
+        (buffer/clean-buffer-quiet! v-comp-bf*)
         (doseq [^AutoCloseable lease native-leases] (.close lease))
         (.clear native-leases)))
     nil))
@@ -473,26 +491,22 @@
         (close-rtx-quiet! rtx)))))
 
 (defn- reusable-reader-rtx
-  [this ^ThreadLocal tl-reader ^ConcurrentHashMap reader-registry]
+  [_this ^ThreadLocal tl-reader ^ConcurrentHashMap reader-registry]
   (let [thread (Thread/currentThread)]
     (when-not (.isVirtual thread)
       (when-let [^Rtx rtx (.get tl-reader)]
-        (if (<= (long (max-val-size this))
-                ^int (.capacity ^ByteBuffer (l/val-bf rtx)))
-          (try
-            (.renew rtx)
-            (catch Exception _
-              ;; Storage faults can leave a cached reader txn stale even though
-              ;; the LMDB env itself remains valid. Drop the stale reader and let
-              ;; the caller open a fresh one instead of surfacing a misleading
-              ;; "multiple connections" error for subsequent reads.
-              (discard-thread-reader! tl-reader reader-registry thread rtx)))
-          (discard-thread-reader! tl-reader reader-registry thread rtx))))))
+        (try
+          (.renew rtx)
+          (catch Exception _
+            ;; Storage faults can leave a cached reader txn stale even though
+            ;; the LMDB env itself remains valid. Drop the stale reader and let
+            ;; the caller open a fresh one instead of surfacing a misleading
+            ;; "multiple connections" error for subsequent reads.
+            (discard-thread-reader! tl-reader reader-registry thread rtx)))))))
 
 (defn- fresh-reader-rtx
   [this ^Env env ^ThreadLocal tl-reader ^ConcurrentHashMap reader-registry]
   (let [thread        (Thread/currentThread)
-        max-val-size* (long (max-val-size this))
         rtx (Rtx. this
                   (Txn/createReadOnly env)
                   (volatile! 1)
@@ -503,7 +517,7 @@
                   (buffer/new-bufval c/+max-key-size+)
                   (buffer/new-bufval c/+max-key-size+)
                   (bf/allocate-buffer c/+max-key-size+)
-                  (bf/allocate-buffer max-val-size*)
+                  nil
                   (volatile! false)
                   (AtomicBoolean.)
                   true (ArrayList. 1) nil)]
@@ -660,7 +674,6 @@
                   ^BufVal start-vp-w
                   ^BufVal stop-vp-w
                   ^ByteBuffer k-comp-bf-w
-                  ^:volatile-mutable ^ByteBuffer v-comp-bf-w
                   write-txn
                   writing?
                   ^:volatile-mutable k-comp
@@ -723,7 +736,7 @@
   (mark-write [_]
     (->CppLMDB
       env info tl-reader reader-registry dbis scheduled-sync kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w v-comp-bf-w
+      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w
       write-txn true k-comp v-comp
       (if writer-context
         (.fork writer-context (Thread/currentThread) @write-txn)
@@ -743,8 +756,6 @@
         (.clear start-vp-w)
         (.clear stop-vp-w)
         (.clear k-comp-bf-w)
-        (when-some [^ByteBuffer bf v-comp-bf-w]
-          (.clear bf))
         (vreset! write-txn (Rtx. this
                                 (Txn/create env)
                                 (volatile! 1)
@@ -755,7 +766,7 @@
                                 start-vp-w
                                 stop-vp-w
                                 k-comp-bf-w
-                                v-comp-bf-w
+                                nil
                                 (volatile! false)
                                 (AtomicBoolean.)
                                 false (let [leases (ArrayList. 1)]
@@ -769,7 +780,7 @@
   (withMeta [_ m]
     (->CppLMDB
       env info tl-reader reader-registry dbis scheduled-sync kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w v-comp-bf-w
+      stop-kp-w start-vp-w stop-vp-w k-comp-bf-w
       write-txn writing? k-comp v-comp writer-context m))
   (meta [_] meta)
 
@@ -777,7 +788,6 @@
   (max-val-size [_] (or (:max-val-size @info) c/*init-val-size*))
 
   (set-max-val-size [_ size]
-    (set! v-comp-bf-w (bf/allocate-buffer size))
     (vswap! info assoc :max-val-size size :max-val-size-changed? true))
 
   (close-kv [this]
@@ -833,7 +843,6 @@
           (buffer/close-bufval-quiet! start-vp-w)
           (buffer/close-bufval-quiet! stop-vp-w)
           (buffer/clean-buffer-quiet! k-comp-bf-w)
-          (buffer/clean-buffer-quiet! v-comp-bf-w)
           (try
             (.sync env 1)
             (catch Throwable e
@@ -960,7 +969,7 @@
                            (Dbi/create env dbi-name (buffer/kv-flags flags)))
                 db       (buffer/->DBI this (when-not raw? k-comp)
                                (when-not (or raw? dupfixed?) v-comp)
-                               dbi kp vp kc vc
+                               dbi kp vp kc vc 0
                                dupsort? dupfixed? counted?
                                ;; The custom KV adapter validates logical data;
                                ;; this DBI receives encoded references and bytes.
@@ -1696,7 +1705,6 @@
                                    (buffer/new-bufval c/+max-key-size+)
                                    (buffer/new-bufval c/+max-key-size+)
                                    (bf/allocate-buffer c/+max-key-size+)
-                                   nil
                                    (volatile! nil)
                                    false
                                    nil
@@ -1739,9 +1747,6 @@
             (lifecycle/register-shutdown-hook!
               dir (Thread. #(lifecycle/run-shutdown-close! dir lmdb)))
             (lifecycle/start-scheduled-sync (.-scheduled-sync lmdb) dir lmdb)))
-        ;; Every environment needs the write transaction's value scratch buffer,
-        ;; including in-memory and temporary stores that skip persisted metadata.
-        (set-max-val-size lmdb (max-val-size lmdb))
         ;; Initialization precedes WAL recovery and logging. Persist its
         ;; metadata even when snapshot bootstrapping is disabled.
         (when wal-default? (.sync env 1))

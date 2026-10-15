@@ -4,11 +4,12 @@
   "Reusable wire codec state owned by an exclusively used connection.
   Nippy references remain local to a single message, including failed messages."
   (:require [datalevin.bits :as b]
+            [datalevin.buffer :as bf]
             [datalevin.native-value :as nv]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.impl :as impl])
   (:import [clojure.lang Associative ISeq]
-           [datalevin.io WireCompression]
+           [datalevin.io ScratchBufferPool WireCompression]
            [taoensso.nippy.impl CacheState]
            [java.util Map List LinkedHashMap]))
 
@@ -41,6 +42,16 @@
   (prepared-handles [context])
   (acquire-compression! [context])
   (release-compression! [context compression]))
+
+(defn acquire-compression-state!
+  ^WireCompression []
+  (.acquireCompression (ScratchBufferPool/shared)))
+
+(defn release-compression-state!
+  [^WireCompression state]
+  (if (.oversized state bf/max-retained-buffer-capacity)
+    (.releaseCompression (ScratchBufferPool/shared) state)
+    (.close state)))
 
 (defn- cache-size ^long [^CacheState cache]
   (max (max (.size ^Map (.-freeze-idxs cache)) (.size ^Map (.-kw-idxs cache)))
@@ -75,15 +86,19 @@
   (prepared-handles [_] handles)
   (acquire-compression! [_]
     (if compression-active?
-      (WireCompression.)
+      (acquire-compression-state!)
       (do
-        (when-not compression (set! compression (WireCompression.)))
+        (when-not compression (set! compression (acquire-compression-state!)))
         (set! compression-active? true)
         compression)))
   (release-compression! [_ state]
     (if (identical? compression state)
-      (set! compression-active? false)
-      (.close ^WireCompression state)))
+      (try
+        (when (.oversized compression bf/max-retained-buffer-capacity)
+          (set! compression nil)
+          (release-compression-state! state))
+        (finally (set! compression-active? false)))
+      (release-compression-state! state)))
   (bindings [this]
     ;; Security policy follows the current caller, even when a pool connection
     ;; moves between threads or databases. Do not capture native readers here.
@@ -148,11 +163,11 @@
 (defmacro with-compression [[state] & body]
   `(let [context# *context*
          ~(with-meta state (assoc (meta state) :tag 'datalevin.io.WireCompression))
-         (if context# (acquire-compression! context#) (WireCompression.))]
+         (if context# (acquire-compression! context#) (acquire-compression-state!))]
      (try ~@body
           (finally
             (if context# (release-compression! context# ~state)
-                (.close ~state))))))
+                (release-compression-state! ~state))))))
 
 (defmacro with-wire-bindings [mode allowlist & body]
   `(let [allowlist# ~allowlist
