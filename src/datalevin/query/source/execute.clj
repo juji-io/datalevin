@@ -5,6 +5,7 @@
             [datalevin.query.aggregate :as aggregate]
             [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
+            [datalevin.query.source.join :as join]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.plan :as plan]
             [datalevin.query.source.runtime :as rt]
@@ -178,12 +179,13 @@
                                 @rows)))
                        (butlast readers))
                  input-tables)
-        {:keys [accept finish stopped?]} (collect-result runtime prepared)]
+        {:keys [accept finish stopped?]} (collect-result runtime prepared)
+        steps (volatile! nil)]
     (letfn [(join! [row remaining]
               (source/check-active! (:control runtime))
               (if (stopped?) (reduced ::stop)
-                  (if-let [table (first remaining)]
-                    (visit-rows table (fn [right]
+                  (if-let [step (first remaining)]
+                    (visit-rows (join/candidates step row) (fn [right]
                               (when-let [joined (merge-row row right)]
                                 (let [token (rt/charge! runtime joined)]
                                   (try (join! joined (next remaining))
@@ -192,7 +194,10 @@
       (when (and (every? seq tables) (not (stopped?)))
         ((last readers) (fn [row]
                           (when-let [row (merge-row bindings row)]
-                            (join! row tables)))))
+                            (when-not @steps
+                              (vreset! steps (if (seq tables)
+                                               (join/prepare! runtime row tables) [])))
+                            (join! row @steps)))))
       (finish))))
 
 (defn- explain-options! [options]
