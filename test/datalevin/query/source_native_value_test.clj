@@ -74,8 +74,7 @@
     (doseq [bad-type [(tuple-type [:long :string :long])
                      (tuple-type [:string :long])]]
       (is (= :query-source/invalid (category #(decode bytes bad-type))))))
-  (doseq [value [[1 {:not "a scalar"}] [1 ["nested"]]
-                (with-meta [1 "value"] {:not "allowed"})]]
+  (doseq [value [[1 {:not "a scalar"}] [1 ["nested"]]]]
     (is (= :query-source/unsupported
            (category #(decode (bits/serialize (datom/datom 1 :test/value value))
                               (tuple-type [:long :string]))))))

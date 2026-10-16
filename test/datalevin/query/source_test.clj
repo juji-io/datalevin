@@ -192,6 +192,31 @@
     (is (= (repeat 4 [1 2 3]) (mapv vec (next values))))
     (is (= :close-session (last @(:events fake))))))
 
+(deftest owned-metadata-survives-advance-and-close
+  (doseq [x [[1] {:a 1} #{1} '(1) 'value]]
+    (let [bytes (byte-array [1 2])
+          date (java.util.Date. 1000)
+          x (with-meta x {:bytes bytes :nested (with-meta 'leaf {:date date})})
+          info (assoc tuple-info :pattern-contract
+                      {:kind :tuple :columns [{:type :data :nullable? false}]})
+          clauses [{:id 0 :kind :pattern :terms [[:var '?value]]}]
+          s (fake/source info (vec (repeat 5 [x])))
+          result (harness/run! s clauses
+                              {:limits {:batch-rows 2}
+                               :consume (fn [_] (aset-byte bytes 0 (byte 9)) (.setTime date 9000))})
+          values (mapv first (:rows result))
+          stamp #(-> % meta :nested meta :date)]
+      (is (= (repeat 5 x) values))
+      (doseq [v values]
+        (is (= [1 2] (vec (:bytes (meta v)))))
+        (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
+      (aset-byte ^bytes (:bytes (meta (first values))) 0 (byte 8))
+      (.setTime ^java.util.Date (stamp (first values)) 8000)
+      (doseq [v (next values)]
+        (is (= [1 2] (vec (:bytes (meta v)))))
+        (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
+      (is (= :close-session (last @(:events s)))))))
+
 (deftest acquisition-and-planning-failures-clean-up-only-acquired-resources
   (doseq [[phase category expected]
           [[:acquisition :query-source/unauthorized []]

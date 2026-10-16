@@ -3,10 +3,18 @@
   (:require [clojure.test :as test]
             [datalevin.query.source-test]
             [datalevin.query.source-execution-test]
-            [datalevin.query.source-native-value-test]))
+            [datalevin.query.source-native-value-test]
+            [datalevin.query.source-native-data-test]
+            [datalevin.query.source-native-variable-tuple-test]
+            [datalevin.query.source-native-compression-test]
+            [datalevin.query.source-native-metadata-test]))
 
 (defn -main [& _]
   (let [{:keys [fail error]} (test/run-tests 'datalevin.query.source-test
                                            'datalevin.query.source-execution-test
-                                           'datalevin.query.source-native-value-test)]
+                                           'datalevin.query.source-native-value-test
+                                           'datalevin.query.source-native-data-test
+                                           'datalevin.query.source-native-variable-tuple-test
+                                           'datalevin.query.source-native-compression-test
+                                           'datalevin.query.source-native-metadata-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

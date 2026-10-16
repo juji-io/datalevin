@@ -4,17 +4,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.value :as value])
-  (:import [java.util Date Objects]))
-
-(defn- owned-copy [x]
-  (cond
-    (bytes? x) (aclone ^bytes x)
-    (instance? Date x) (Date. (.getTime ^Date x))
-    (vector? x) (mapv owned-copy x)
-    (value/plain-map? x) (into {} (map (fn [[k v]] [(owned-copy k) (owned-copy v)])) x)
-    (set? x) (into #{} (map owned-copy) x)
-    (list? x) (apply list (map owned-copy x))
-    :else x))
+  (:import [java.util Objects]))
 
 (defn- open! [state]
   (when (:closed? @state)
@@ -86,7 +76,7 @@
                         (source/reserve! control {:retained-bytes bytes :in-flight-batches 1}))]
       ;; The fake owns its immutable snapshot; copy mutable leaves for each handoff.
       (try
-        (let [owned (owned-copy batch)]
+        (let [owned (value/owned-copy batch)]
           (swap! position + (count batch))
           (swap! metrics #(-> % (update :batches inc) (update :rows + (count batch))
                               (update :charged-bytes + bytes)))
@@ -162,7 +152,7 @@
                      (select-keys request [:spi-version :features :consistency])
                      {:session-id :fake-session :authorization-token :fake-policy
                       :acquired-at-ms 0 :data-version nil})
-               descriptor (atom (owned-copy @rows)) request (atom {}) (atom []) (atom {})
+               descriptor (atom (value/owned-copy @rows)) request (atom {}) (atom []) (atom {})
                events faults))
   (-plan-source [_ session request]
     (open! (:state session))

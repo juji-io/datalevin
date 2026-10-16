@@ -23,6 +23,25 @@
 
 (defn plain-map? [x] (and (map? x) (not (record? x))))
 
+(defn owned-copy
+  "Detach mutable leaves in supported values, including metadata. Custom values
+  follow their immutable opt-in contract and are retained as supplied. The
+  caller must reserve the value's charge before copying retained query state."
+  [x]
+  (if (satisfies? IQuerySourceValue x)
+    x
+    (let [copy (cond
+                 (bytes? x) (aclone ^bytes x)
+                 (= Date (class x)) (Date. (.getTime ^Date x))
+                 (vector? x) (mapv owned-copy x)
+                 (plain-map? x) (into {} (map (fn [[k v]] [(owned-copy k) (owned-copy v)])) x)
+                 (set? x) (into #{} (map owned-copy) x)
+                 (list? x) (apply list (map owned-copy x))
+                 :else x)]
+      (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
+        (with-meta copy (owned-copy metadata))
+        copy))))
+
 (defn add-charge
   "Add fixed overhead with primitive dispatch for long charges and exact overflow."
   [^long overhead charge]

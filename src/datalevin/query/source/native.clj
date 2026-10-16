@@ -97,7 +97,8 @@
 
 (defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type payload prepare emit eid]
   ;; Reserve buffers and bounded preflight state first. Generic collections and
-  ;; giant homogeneous tuples get a separate layout-derived reservation, held through emit.
+  ;; giant homogeneous tuples or metadata get a separate layout-derived
+  ;; reservation, held through emit.
   ;; Retaining a row beyond emit requires the consumer's own reservation.
   (let [expanded-size (long expanded-size)
         attribute-size (long (value/value-charge attribute))
@@ -105,7 +106,7 @@
         token (source/reserve! control
                 {:retained-bytes (+ 4096 (long (.remaining buffer))
                                    (* 8 expanded-size) attribute-size
-                                   (native-value/scratch-bytes type expanded-size))})]
+                                   (native-value/scratch-bytes type expanded-size (boolean payload)))})]
     (try
       (let [visit (fn [buffer]
                     (let [{:keys [decode retained-bytes]} (prepare buffer)

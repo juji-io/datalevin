@@ -11,16 +11,24 @@
 (def ^:private max-data-depth 64)
 (def ^:private max-data-cache 256)
 
+(defn- metadata-capable? [type]
+  (or (#{:data :symbol :vector :map :set :list} type)
+      (#{:tuple :native-homogeneous-tuple} (:kind type))))
+
 (defn scratch-bytes
-  "Bound preflight cache/stack state independently of decoded collections."
-  ^long [type ^long encoded-size]
-  (cond
-    (= type :data)
-    (+ (* 256 (min (long max-data-cache) encoded-size))
-       (* 512 (min (long max-data-depth) encoded-size)))
-    (= :native-homogeneous-tuple (:kind type))
-    (* 512 (min 255 encoded-size))
-    :else (* 512 (count (:elements type)))))
+  "Bound preflight cache/stack state independently of decoded collections.
+  Inline typed encodings can disable metadata, which only Nippy preserves."
+  (^long [type encoded-size] (scratch-bytes type encoded-size true))
+  (^long [type encoded-size metadata?]
+   (let [encoded-size (long encoded-size)
+         tuple-scratch (if (= :native-homogeneous-tuple (:kind type))
+                         (* 512 (min 255 encoded-size))
+                         (* 512 (count (:elements type))))]
+     (if (or (= type :data) (and metadata? (metadata-capable? type)))
+       (max tuple-scratch
+            (+ (* 256 (min (long max-data-cache) encoded-size))
+               (* 512 (min (long max-data-depth) encoded-size))))
+       tuple-scratch))))
 
 (defn- add-charge ^long [^long a ^long b]
   ;; Saturation still exceeds any available ledger space: the raw-buffer
@@ -112,17 +120,18 @@
           (skip! buffer 1)
           {:type :nil :charge 512 :height 0})
 
-      (and (= expected :data) (= kind :meta))
+      (and (metadata-capable? expected) (= kind :meta))
       (do
         (skip! buffer 1)
         (let [depth (inc (long depth))
               metadata (value! buffer :data context depth true)
               _ (when-not (#{:map :nil} (:type metadata))
                   (fail! :query-source/invalid :native-value))
-              value (value! buffer :data context depth nullable?)]
-          (when-not (#{:vector :map :set :list :symbol} (:type value))
+              value (value! buffer expected context depth nullable?)]
+          (when-not (metadata-capable? (:type value))
             (fail! :query-source/invalid :native-value))
           (assoc value
+                 :metadata? true
                  :height (inc (max (long (:height metadata)) (long (:height value))))
                  :charge (add-charge 512 (add-charge (long (:charge metadata))
                                                     (long (:charge value)))))))
@@ -142,16 +151,18 @@
                                             (= size (count (:elements expected)))))))
               (fail! :query-source/invalid :native-value))
             ((:check! context))
-            (loop [i 0, charge (+ 512 (* 128 size)), height 0]
+            (loop [i 0, charge (+ 512 (* 128 size)), height 0, metadata? false]
               (if (= i size)
-                {:type (if tuple? expected kind) :charge charge :height (inc height)}
+                (cond-> {:type (if tuple? expected kind) :charge charge :height (inc height)}
+                  metadata? (assoc :metadata? true))
                 (let [_ (when (zero? (bit-and i 1023)) ((:check! context)))
                       child (value! buffer (cond homogeneous? (:element expected)
                                                  tuple? (nth (:elements expected) i)
                                                  :else :data)
                                     context (inc (long depth)) (not homogeneous?))]
                   (recur (inc i) (add-charge charge (long (:charge child)))
-                         (max height (long (:height child))))))))
+                         (max height (long (:height child)))
+                         (or metadata? (:metadata? child)))))))
           (do (.position buffer start)
               (scalar-body! buffer expected))))
 
@@ -211,9 +222,9 @@
 
 (defn- context [type check!]
   {:cache (volatile! {}) :check! check!
-   :cache-limit (cond (= type :data) max-data-cache
-                      (= :native-homogeneous-tuple (:kind type)) 258
-                      :else (+ 3 (count (:elements type))))})
+   :cache-limit (max (long (if (metadata-capable? type) max-data-cache 0))
+                    (if (= :native-homogeneous-tuple (:kind type)) 258
+                        (+ 3 (count (:elements type)))))})
 
 (defn- layout-charge? [type]
   (or (= type :data) (= :native-homogeneous-tuple (:kind type))))
@@ -236,7 +247,7 @@
      (let [layout (value! buffer type context 0 false)]
        (value! buffer :long context 0 false)
        (when (.hasRemaining buffer) (fail! :query-source/invalid :native-value))
-       {:retained-bytes (if (layout-charge? type) (:charge layout) 0)
+       {:retained-bytes (if (or (layout-charge? type) (:metadata? layout)) (:charge layout) 0)
         :decode (fn []
                   (.position buffer start)
                   (impl/with-thaw-cache
@@ -245,11 +256,13 @@
                     (nippy/thaw-from-bb! buffer)))}))))
 
 (defn giant-value
-  "Decode a pre-reserved scalar or fixed tuple. Other supported values must use
-  prepare-giant and reserve its returned charge before invoking the decoder."
+  "Decode a pre-reserved scalar or fixed tuple without metadata. Values needing
+  an additional layout charge must use prepare-giant and reserve it first."
   [buffer type eid attribute]
   (when (layout-charge? type) (fail! :query-source/unsupported :native-value))
-  ((:decode (prepare-giant buffer type eid attribute))))
+  (let [{:keys [retained-bytes decode]} (prepare-giant buffer type eid attribute)]
+    (when (pos? (long retained-bytes)) (fail! :query-source/unsupported :native-value))
+    (decode)))
 
 (defn- scalar-header [^long header]
   (case header
