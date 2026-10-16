@@ -3,7 +3,7 @@
 
 use datalevin_codec::bits::{
     self, BigIntegerError, DecimalError, IntegerWidth, ScalarError, ScalarType, ScalarValue,
-    VariableType,
+    TupleElement, TupleError, TupleRead, VariableType,
 };
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
@@ -179,6 +179,9 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/tuple-header" | "bits/encode-tuple" | "bits/decode-tuple" => {
+            tuple_operation(operation, arguments)
+        }
         "bits/encode-bigdec" | "bits/decode-bigdec" => decimal_operation(operation, arguments),
         "bits/type-size" => {
             let [argument] = arguments.as_slice() else {
@@ -263,6 +266,173 @@ fn dispatch(request: &Value) -> Value {
             &format!("Rust operation is not implemented: {operation}"),
         ),
     }
+}
+
+fn tuple_error(error: TupleError) -> Value {
+    match error {
+        TupleError::Empty => map(vec![("empty", Value::Bool(true))]),
+        TupleError::Host(index) => map(vec![("host-error", Value::int(index as i64))]),
+        TupleError::TooLarge(index) => map(vec![("too-large", Value::int(index as i64))]),
+        TupleError::Integer(error) => bigint_error(error),
+        TupleError::DecimalRange => java_error(
+            "java.lang.AssertionError",
+            "Assert failed: Unscaled value of big decimal cannot go beyond the range of\n             [-2^1015, 2^1015-1]\n(< n 128)",
+        ),
+        TupleError::Scalar(ScalarError::NaN(kind)) => java_error(
+            "java.lang.AssertionError",
+            &format!(
+                "Assert failed: Cannot index NaN\n(not ({}/isNaN x))",
+                if kind == ScalarType::Float {
+                    "Float"
+                } else {
+                    "Double"
+                }
+            ),
+        ),
+        TupleError::Scalar(ScalarError::InvalidBoolean) => map(vec![
+            ("status", keyword("error")),
+            (
+                "error",
+                map(vec![
+                    ("class", text("clojure.lang.ExceptionInfo")),
+                    (
+                        "message",
+                        text("Illegal value, expecting a Datalevin boolean value"),
+                    ),
+                    ("data", map(vec![])),
+                ]),
+            ),
+        ]),
+        TupleError::Named => java_error(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index 0 out of bounds for length 0",
+        ),
+        TupleError::Header(header) => {
+            protocol_error(&format!("No matching clause: {}", header as i8))
+        }
+        TupleError::Buffer => protocol_error("Tuple buffer operation failed"),
+        _ => protocol_error("Invalid tuple payload"),
+    }
+}
+
+fn tuple_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/decode-tuple" {
+        let [bytes, position, homogeneous, order] = arguments else {
+            return protocol_error("Tuple decoding requires bytes, position, shape and byte order");
+        };
+        let (
+            Some(Value::Bytes(bytes)),
+            Some(Value::Long(position)),
+            Some(Value::Bool(homogeneous)),
+            Some(Value::Bool(little)),
+        ) = (
+            value_argument(bytes),
+            value_argument(position),
+            value_argument(homogeneous),
+            value_argument(order),
+        )
+        else {
+            return protocol_error("Invalid tuple decoding arguments");
+        };
+        if *position < 0 || *position as u64 > bytes.len() as u64 {
+            return protocol_error("Invalid tuple buffer position");
+        }
+        let (reads, result) = bits::decode_tuple(bytes, *position as usize, *homogeneous, *little);
+        return success(map(vec![
+            (
+                "reads",
+                Value::Vector(
+                    reads
+                        .into_iter()
+                        .map(|read| match read {
+                            TupleRead::Bytes(size) => {
+                                Value::Vector(vec![keyword("bytes"), Value::Long(size)])
+                            }
+                            TupleRead::Position(position) => {
+                                Value::Vector(vec![keyword("position"), Value::Long(position)])
+                            }
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "result",
+                match result {
+                    Ok(value) => success(value),
+                    Err(error) => tuple_error(error),
+                },
+            ),
+        ]));
+    }
+    let Some(Some(Value::Vector(types))) = arguments.first().map(value_argument) else {
+        return protocol_error("Tuple encoding requires a vector of types");
+    };
+    let Some(types): Option<Vec<&str>> = types
+        .iter()
+        .map(|kind| match kind {
+            Value::Keyword(kind) => Some(kind.as_ref()),
+            _ => None,
+        })
+        .collect()
+    else {
+        return unsupported(operation, "Tuple component type is not implemented");
+    };
+    let Some(header) = bits::tuple_header(&types) else {
+        return unsupported(operation, "Tuple component type is not implemented");
+    };
+    if operation == "bits/tuple-header" {
+        return if arguments.len() == 1 {
+            success(Value::Bytes(vec![header]))
+        } else {
+            protocol_error("Tuple header requires one type vector")
+        };
+    }
+    let [_, values, count, order] = arguments else {
+        return protocol_error("Tuple encoding requires types, components, count and byte order");
+    };
+    let (Some(Value::Vector(values)), Some(Value::Long(count)), Some(Value::Bool(little))) = (
+        value_argument(values),
+        value_argument(count),
+        value_argument(order),
+    ) else {
+        return protocol_error("Invalid tuple encoding arguments");
+    };
+    let expected = if types.len() == 1 {
+        *count
+    } else {
+        types.len() as i64
+    };
+    if *count < 0 || expected < 0 || expected as u64 != values.len() as u64 {
+        return protocol_error("Tuple component count does not match the input");
+    }
+    let Some(values): Option<Vec<TupleElement>> = values
+        .iter()
+        .map(|element| {
+            if let Some(Value::Long(index)) = field(element, "error") {
+                if *index < 0 {
+                    return None;
+                }
+                Some(TupleElement::HostError {
+                    index: *index as usize,
+                    lookup: field(element, "lookup?") == Some(&Value::Bool(true)),
+                })
+            } else {
+                field(element, "value").cloned().map(TupleElement::Value)
+            }
+        })
+        .collect()
+    else {
+        return protocol_error("Invalid tuple component descriptors");
+    };
+    success(Value::Vector(
+        bits::encode_tuple(&types, &values, *count as usize, *little)
+            .into_iter()
+            .map(|field| match field {
+                Ok(bytes) => success(Value::Bytes(bytes)),
+                Err(error) => tuple_error(error),
+            })
+            .collect(),
+    ))
 }
 
 fn variable_type(kind: &str) -> Option<VariableType> {
@@ -581,6 +751,9 @@ fn main() -> io::Result<()> {
                     keyword("bits/encode-bigdec"),
                     keyword("bits/decode-bigdec"),
                     keyword("bits/type-size"),
+                    keyword("bits/tuple-header"),
+                    keyword("bits/encode-tuple"),
+                    keyword("bits/decode-tuple"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

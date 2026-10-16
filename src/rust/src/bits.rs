@@ -1,5 +1,6 @@
 //! Standalone byte formats exposed by `datalevin.bits`.
 
+use crate::nippy::Value;
 use std::fmt;
 
 const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -559,4 +560,484 @@ pub fn decode_named(bytes: &[u8]) -> Option<String> {
     } else {
         &bytes
     }))
+}
+
+/// A binding may defer a failed JVM cast/lookup until its component is reached.
+/// This keeps earlier writes observable even when a later input is invalid.
+pub enum TupleElement {
+    Value(Value),
+    HostError { index: usize, lookup: bool },
+}
+
+#[derive(Debug)]
+pub enum TupleError {
+    Empty,
+    Host(usize),
+    TooLarge(usize),
+    Scalar(ScalarError),
+    Integer(BigIntegerError),
+    DecimalRange,
+    Named,
+    Header(u8),
+    Buffer,
+    WrongValue,
+}
+
+pub type TupleWrite = Result<Vec<u8>, TupleError>;
+
+fn tuple_scalar(kind: &str) -> Option<ScalarType> {
+    Some(match kind {
+        "long" => ScalarType::Long,
+        "float" => ScalarType::Float,
+        "double" => ScalarType::Double,
+        "boolean" => ScalarType::Boolean,
+        "instant" => ScalarType::Instant,
+        "uuid" => ScalarType::Uuid,
+        _ => return None,
+    })
+}
+
+fn tuple_fixed(kind: &str) -> bool {
+    kind == "int" || tuple_scalar(kind).is_some()
+}
+
+pub fn tuple_header(types: &[&str]) -> Option<u8> {
+    if types.iter().any(|kind| {
+        !tuple_fixed(kind)
+            && !matches!(
+                *kind,
+                "string" | "bytes" | "keyword" | "symbol" | "bigint" | "bigdec"
+            )
+    }) {
+        return None;
+    }
+    Some(if types.len() == 1 { 0xf3 } else { 0xf4 })
+}
+
+fn tuple_extreme(value: &Value) -> Option<bool> {
+    match value {
+        Value::Keyword(value) if value.as_ref() == "db.value/sysMin" => Some(false),
+        Value::Keyword(value) if value.as_ref() == "db.value/sysMax" => Some(true),
+        _ => None,
+    }
+}
+
+fn component_header(kind: &str, value: &TupleElement) -> Result<u8, TupleError> {
+    if let TupleElement::HostError {
+        index,
+        lookup: true,
+    } = value
+    {
+        return Err(TupleError::Host(*index));
+    }
+    if kind == "long" {
+        return match value {
+            TupleElement::HostError { index, .. } => Err(TupleError::Host(*index)),
+            TupleElement::Value(Value::Long(value)) => Ok(ScalarType::Long.header(*value < 0)),
+            TupleElement::Value(value) => tuple_extreme(value)
+                .map(|maximum| ScalarType::Long.header(!maximum))
+                .ok_or(TupleError::WrongValue),
+        };
+    }
+    Ok(if kind == "int" {
+        0xc2
+    } else if let Some(kind) = tuple_scalar(kind) {
+        kind.header(false)
+    } else {
+        match kind {
+            "string" => VariableType::String,
+            "bytes" => VariableType::Bytes,
+            "keyword" => VariableType::Keyword,
+            "symbol" => VariableType::Symbol,
+            "bigint" => VariableType::BigInteger,
+            "bigdec" => VariableType::BigDecimal,
+            _ => return Err(TupleError::WrongValue),
+        }
+        .header()
+    })
+}
+
+fn component_writes(
+    kind: &str,
+    header: u8,
+    element: &TupleElement,
+    little: bool,
+) -> Result<Vec<Vec<u8>>, TupleError> {
+    let value = match element {
+        TupleElement::Value(value) => value,
+        TupleElement::HostError { index, .. } => return Err(TupleError::Host(*index)),
+    };
+    let extreme = tuple_extreme(value);
+    if !tuple_fixed(kind) {
+        if let Some(maximum) = extreme {
+            return Ok(vec![if maximum { vec![255; 255] } else { vec![0] }]);
+        }
+        let bytes = match (kind, value) {
+            ("string", Value::CharArray(units)) => encode_utf16(units),
+            ("bytes", Value::Bytes(bytes)) => bytes.clone(),
+            ("keyword" | "symbol", Value::Vector(parts)) => {
+                let [Value::CharArray(name), namespace] = parts.as_slice() else {
+                    return Err(TupleError::WrongValue);
+                };
+                let namespace = match namespace {
+                    Value::Null => None,
+                    Value::CharArray(units) => Some(units.as_slice()),
+                    _ => return Err(TupleError::WrongValue),
+                };
+                encode_named(name, namespace)
+            }
+            ("bigint", Value::BigInteger(bytes)) => {
+                encode_bigint(bytes).map_err(TupleError::Integer)?
+            }
+            ("bigdec", Value::BigDecimal { unscaled, scale }) => {
+                // The tuple helper uses a temporary BIG_ENDIAN buffer and
+                // validates its integer before calculating the approximation.
+                if canonical_integer(unscaled)
+                    .map_err(TupleError::Integer)?
+                    .len()
+                    >= 128
+                {
+                    return Err(TupleError::DecimalRange);
+                }
+                let mut bytes = Vec::new();
+                for field in decimal_fields(unscaled, *scale, false) {
+                    bytes.extend(field.map_err(|error| match error {
+                        DecimalError::Integer(error) => TupleError::Integer(error),
+                        DecimalError::Scalar(error) => TupleError::Scalar(error),
+                        _ => TupleError::WrongValue,
+                    })?);
+                }
+                bytes
+            }
+            _ => return Err(TupleError::WrongValue),
+        };
+        return Ok(vec![bytes]);
+    }
+    if kind == "int" {
+        let value = match (extreme, value) {
+            (Some(maximum), _) => {
+                if maximum {
+                    i32::MAX
+                } else {
+                    i32::MIN
+                }
+            }
+            (None, Value::Integer(value)) => *value,
+            (None, Value::Long(value)) => {
+                i32::try_from(*value).map_err(|_| TupleError::WrongValue)?
+            }
+            _ => return Err(TupleError::WrongValue),
+        };
+        return Ok(vec![
+            IntegerWidth::Int.encode(i64::from(value ^ i32::MIN), little),
+        ]);
+    }
+    let scalar = tuple_scalar(kind).ok_or(TupleError::WrongValue)?;
+    let value = if let Some(maximum) = extreme {
+        match scalar {
+            ScalarType::Long => ScalarValue::Integer(match (header == 0xc0, maximum) {
+                (true, false) => i64::MIN,
+                (true, true) => -1,
+                (false, false) => 0,
+                (false, true) => i64::MAX,
+            }),
+            ScalarType::Float => ScalarValue::Float(if maximum {
+                f32::INFINITY
+            } else {
+                f32::NEG_INFINITY
+            }),
+            ScalarType::Double => ScalarValue::Double(if maximum {
+                f64::INFINITY
+            } else {
+                f64::NEG_INFINITY
+            }),
+            ScalarType::Instant => ScalarValue::Integer(if maximum { i64::MAX } else { i64::MIN }),
+            ScalarType::Boolean => ScalarValue::Boolean(maximum),
+            ScalarType::Uuid => ScalarValue::Uuid([if maximum { 255 } else { 0 }; 16]),
+            _ => return Err(TupleError::WrongValue),
+        }
+    } else {
+        match value {
+            Value::Long(value) => ScalarValue::Integer(*value),
+            Value::Float(value) => ScalarValue::Float(f32::from_bits(*value)),
+            Value::Double(value) => ScalarValue::Double(f64::from_bits(*value)),
+            Value::Bool(value) => ScalarValue::Boolean(*value),
+            Value::Date(value) => ScalarValue::Integer(*value),
+            Value::Uuid(value) => ScalarValue::Uuid(*value),
+            _ => return Err(TupleError::WrongValue),
+        }
+    };
+    let bytes = scalar.encode(value, little).map_err(TupleError::Scalar)?;
+    Ok(if scalar == ScalarType::Uuid {
+        vec![bytes[..8].to_vec(), bytes[8..].to_vec()]
+    } else {
+        vec![bytes]
+    })
+}
+
+/// Encode the tuple body as atomic field writes. The binding writes the outer
+/// tuple header first and stops applying fields at its first buffer/codec error.
+pub fn encode_tuple(
+    types: &[&str],
+    values: &[TupleElement],
+    count: usize,
+    little: bool,
+) -> Vec<TupleWrite> {
+    let mut writes = Vec::new();
+    let result = (|| {
+        let homogeneous = types.len() == 1;
+        let expected = if homogeneous { count } else { types.len() };
+        if tuple_header(types).is_none() || values.len() != expected {
+            return Err(TupleError::WrongValue);
+        }
+        if homogeneous && count == 0 {
+            return Err(TupleError::Empty);
+        }
+        let count = if homogeneous { count } else { types.len() };
+        let header = if homogeneous {
+            let header = component_header(types[0], &values[0])?;
+            writes.push(Ok(vec![header]));
+            header
+        } else {
+            0
+        };
+        writes.push(Ok(vec![count as u8]));
+        let mut sizes = Vec::new();
+        for (index, element) in values.iter().take(count).enumerate() {
+            let kind = types[if homogeneous { 0 } else { index }];
+            if let TupleElement::HostError {
+                index,
+                lookup: true,
+            } = element
+            {
+                return Err(TupleError::Host(*index));
+            }
+            let nil = !homogeneous && matches!(element, TupleElement::Value(Value::Null));
+            let header = if homogeneous {
+                header
+            } else {
+                let header = if nil {
+                    0
+                } else {
+                    component_header(kind, element)?
+                };
+                writes.push(Ok(vec![header]));
+                header
+            };
+            let fixed = nil || tuple_fixed(kind);
+            let mut size = usize::from(!homogeneous);
+            if !nil {
+                for bytes in component_writes(kind, header, element, little)? {
+                    size += bytes.len();
+                    writes.push(Ok(bytes));
+                }
+            }
+            if !homogeneous && !fixed {
+                writes.push(Ok(vec![0]));
+                size += 1;
+            }
+            if (!homogeneous || !fixed) && size > 257 {
+                return Err(TupleError::TooLarge(index));
+            }
+            if homogeneous && !fixed {
+                writes.push(Ok(vec![0]));
+            }
+            sizes.push(size as u8);
+        }
+        if !homogeneous || !tuple_fixed(types[0]) {
+            writes.push(Ok(vec![255]));
+            writes.extend(sizes.into_iter().map(|size| Ok(vec![size])));
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        writes.push(Err(error));
+    }
+    writes
+}
+
+/// Replay these JVM buffer operations even on decode failure. Bounds checks,
+/// mark invalidation and exception messages then come from the actual buffer.
+pub enum TupleRead {
+    Bytes(i64),
+    Position(i64),
+}
+
+struct TupleCursor<'a> {
+    bytes: &'a [u8],
+    position: usize,
+    reads: Vec<TupleRead>,
+}
+
+impl<'a> TupleCursor<'a> {
+    fn read(&mut self, size: i64) -> Result<&'a [u8], TupleError> {
+        self.reads.push(TupleRead::Bytes(size));
+        if size < 0 || size as u64 > (self.bytes.len() - self.position) as u64 {
+            return Err(TupleError::Buffer);
+        }
+        let start = self.position;
+        self.position += size as usize;
+        Ok(&self.bytes[start..self.position])
+    }
+    fn seek(&mut self, position: i64) -> Result<(), TupleError> {
+        self.reads.push(TupleRead::Position(position));
+        if position < 0 || position as u64 > self.bytes.len() as u64 {
+            return Err(TupleError::Buffer);
+        }
+        self.position = position as usize;
+        Ok(())
+    }
+    fn byte(&mut self) -> Result<u8, TupleError> {
+        Ok(self.read(1)?[0])
+    }
+    fn value(&mut self, header: u8, post: i64, little: bool) -> Result<Value, TupleError> {
+        let kind = header_type(header)?;
+        if kind == "int" {
+            let integer = IntegerWidth::Int.decode(self.read(4)?, little).unwrap() as i32;
+            return Ok(Value::Integer(integer ^ i32::MIN));
+        }
+        if let Some(kind) = tuple_scalar(kind) {
+            let width = match kind {
+                ScalarType::Boolean => 1,
+                ScalarType::Float => 4,
+                ScalarType::Uuid => 16,
+                _ => 8,
+            };
+            let mut bytes = self.read(if width == 16 { 8 } else { width })?.to_vec();
+            if width == 16 {
+                bytes.extend(self.read(8)?);
+            }
+            return kind
+                .decode(&bytes, little)
+                .map(|value| match value {
+                    ScalarValue::Integer(value) => {
+                        if kind == ScalarType::Instant {
+                            Value::Date(value)
+                        } else {
+                            Value::Long(value)
+                        }
+                    }
+                    ScalarValue::Float(value) => Value::Float(value.to_bits()),
+                    ScalarValue::Double(value) => Value::Double(value.to_bits()),
+                    ScalarValue::Boolean(value) => Value::Bool(value),
+                    ScalarValue::Uuid(bytes) => Value::Uuid(bytes),
+                })
+                .map_err(TupleError::Scalar);
+        }
+        if matches!(kind, "bigint" | "bigdec") {
+            let approximate = if kind == "bigdec" {
+                self.read(8)?.to_vec()
+            } else {
+                vec![]
+            };
+            let prefix = self.byte()?;
+            let mut integer = vec![prefix];
+            integer.extend(self.read(bigint_length(prefix) as i64)?);
+            let unscaled = decode_bigint(&integer).map_err(TupleError::Integer)?;
+            return if kind == "bigint" {
+                Ok(Value::BigInteger(unscaled))
+            } else {
+                let mut bytes = approximate;
+                bytes.extend(integer);
+                bytes.extend(self.read(1)?);
+                bytes.extend(self.read(4)?);
+                let (unscaled, scale) =
+                    decode_decimal(&bytes, little).map_err(|_| TupleError::WrongValue)?;
+                Ok(Value::BigDecimal { unscaled, scale })
+            };
+        }
+        let size = self.bytes.len() as i64 - self.position as i64 - post;
+        let bytes = self.read(size)?;
+        Ok(match kind {
+            "bytes" => Value::Bytes(bytes.to_vec()),
+            "string" => Value::Text(decode_utf8(bytes)),
+            "keyword" | "symbol" => {
+                let name = decode_named(bytes).ok_or(TupleError::Named)?;
+                if kind == "keyword" {
+                    Value::Keyword(name.into())
+                } else {
+                    Value::Symbol(name)
+                }
+            }
+            _ => return Err(TupleError::WrongValue),
+        })
+    }
+    fn tuple(&mut self, homogeneous: bool, little: bool) -> Result<Value, TupleError> {
+        self.byte()?; // The public reader consumes but does not validate this tag.
+        let header = if homogeneous { self.byte()? } else { 0 };
+        let count = usize::from(self.byte()?);
+        let mut values = Vec::new();
+        if homogeneous && tuple_fixed(header_type(header)?) {
+            for _ in 0..count {
+                values.push(self.value(header, 0, little)?);
+            }
+        } else {
+            let start = self.position;
+            self.seek(self.bytes.len() as i64 - count as i64)?;
+            let mut sizes = Vec::new();
+            for _ in 0..count {
+                sizes.push(i64::from(self.byte()?));
+            }
+            let end = self.position;
+            let mut posts = vec![0i64; count];
+            let mut suffix = 0;
+            for index in (0..count).rev() {
+                posts[index] = suffix + count as i64 + if homogeneous { 2 } else { 1 };
+                suffix += sizes[index] + i64::from(homogeneous);
+            }
+            self.seek(start as i64)?;
+            for post in posts {
+                let header = if homogeneous { header } else { self.byte()? };
+                let fixed = header == 0 || tuple_fixed(header_type(header)?);
+                values.push(if header == 0 {
+                    Value::Null
+                } else {
+                    self.value(header, post + i64::from(!homogeneous && !fixed), little)?
+                });
+                if !fixed {
+                    self.byte()?;
+                }
+            }
+            self.seek(end as i64)?;
+        }
+        Ok(Value::Vector(values))
+    }
+}
+
+fn header_type(header: u8) -> Result<&'static str, TupleError> {
+    Ok(match header {
+        0xc0 | 0xc1 | 0xf8 => "long",
+        0xc2 => "int",
+        0xf1 => "bigint",
+        0xf2 => "bigdec",
+        0xf5 => "float",
+        0xf6 => "double",
+        0xf7 => "instant",
+        0xf9 => "uuid",
+        0xfa => "string",
+        0xfb => "keyword",
+        0xfc => "symbol",
+        0xfd => "boolean",
+        0xfe => "bytes",
+        _ => return Err(TupleError::Header(header)),
+    })
+}
+
+pub fn decode_tuple(
+    bytes: &[u8],
+    position: usize,
+    homogeneous: bool,
+    little: bool,
+) -> (Vec<TupleRead>, Result<Value, TupleError>) {
+    let mut cursor = TupleCursor {
+        bytes,
+        position,
+        reads: Vec::new(),
+    };
+    let result = if position <= bytes.len() {
+        cursor.tuple(homogeneous, little)
+    } else {
+        Err(TupleError::WrongValue)
+    };
+    (cursor.reads, result)
 }

@@ -289,6 +289,79 @@
       (invoke-peer! peer session :bits/decode-bigdec
                     [bytes (= ByteOrder/LITTLE_ENDIAN (.order buffer))]))))
 
+(defn- tuple-input [value value-type]
+  (if (#{:db.value/sysMin :db.value/sysMax} value)
+    value
+    (do
+      (when (and (keyword? value) (not= value-type :keyword))
+        (if (= value-type :long)
+          (raise "Expecting long, got keyword" value {})
+          (raise "Expect other data types, got keyword instead: " value {})))
+      (case value-type
+        :long (long value)
+        :int (clojure.lang.RT/intCast value)
+        :float (float value)
+        :double (double value)
+        :boolean (boolean value)
+        :instant (Date. (.getTime ^Date value))
+        :uuid (do (.getMostSignificantBits ^UUID value) value)
+        :string (.toCharArray ^String value)
+        :bytes (let [_ (alength ^bytes value)] value)
+        :bigint (do (.toByteArray ^BigInteger value) value)
+        :bigdec (do (.unscaledValue ^BigDecimal value) value)
+        (:keyword :symbol) [(.toCharArray ^String (name value))
+                           (some-> ^String (namespace value) .toCharArray)]))))
+
+(defn- tuple-component [errors values index value-type heterogeneous?]
+  (let [failed (fn [error lookup?]
+                 (let [index (dec (count (swap! errors conj error)))]
+                   {:error (long index) :lookup? lookup?}))
+        input (try {:value (nth values index)}
+                   (catch Exception error (failed error true)))]
+    (if (contains? input :error)
+      input
+      (try
+        {:value (if (and heterogeneous? (nil? (:value input)))
+                  nil
+                  (tuple-input (:value input) value-type))}
+        (catch Exception error (failed error false))))))
+
+(defn- put-tuple! [peer session ^ByteBuffer buffer values types]
+  (.put buffer ^bytes (invoke-peer! peer session :bits/tuple-header [types]))
+  (let [homogeneous? (= 1 (count types))
+        count (if homogeneous? (count values) (count types))
+        errors (atom [])
+        components (mapv #(tuple-component errors values %
+                                            (nth types (if homogeneous? 0 %))
+                                            (not homogeneous?)) (range count))
+        fields (invoke-peer! peer session :bits/encode-tuple
+                             [types components (long count)
+                              (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    (doseq [field fields]
+      (cond
+        (:empty field)
+        (raise "Cannot store an empty homogeneous tuple"
+                 {:error :data/validation :value values :tuple-type (first types)})
+        (contains? field :host-error) (throw (nth @errors (:host-error field)))
+        (contains? field :too-large)
+        (raise "The maximal tuple element size is\n                              255 bytes"
+                 {:too-large (nth values (:too-large field))})
+        :else (.put buffer ^bytes (result-value session :bits/put-buffer field))))))
+
+(defn- read-tuple! [peer session ^ByteBuffer buffer types]
+  (let [bytes (bits/get-bytes (doto (.duplicate buffer) (.position 0)))
+        {:keys [reads result]} (invoke-peer! peer session :bits/decode-tuple
+                                             [bytes (long (.position buffer))
+                                              (= 1 (count types))
+                                              (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    ;; Rust decides framing, field widths and cursor movement. Replay on the
+    ;; caller's buffer so JVM bounds exceptions and mark invalidation stay exact.
+    (doseq [[operation amount] reads]
+      (case operation
+        :bytes (bits/get-bytes buffer amount)
+        :position (.position buffer (int amount))))
+    (result-value session :bits/read-buffer result)))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
@@ -327,8 +400,10 @@
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
                  :else (raise "Raw value must be bytes or ByteBuffer, got "
                                (type value) {:input value}))
-          (adapter/unsupported! :adapter operation
-                                (str "Rust buffer codec is not implemented for " value-type))))
+          (if (vector? value-type)
+            (put-tuple! peer session buffer value value-type)
+            (adapter/unsupported! :adapter operation
+                                  (str "Rust buffer codec is not implemented for " value-type)))))
 
       :bits/read-buffer
       (let [[^ByteBuffer buffer value-type] arguments]
@@ -343,8 +418,10 @@
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
-          (adapter/unsupported! :adapter operation
-                                (str "Rust buffer codec is not implemented for " value-type))))
+          (if (vector? value-type)
+            (read-tuple! peer session buffer value-type)
+            (adapter/unsupported! :adapter operation
+                                  (str "Rust buffer codec is not implemented for " value-type)))))
 
       (invoke-peer! peer session operation arguments)))
   (stop! [_] (stop-peer! peer))

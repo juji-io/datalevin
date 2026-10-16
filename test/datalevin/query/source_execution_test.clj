@@ -203,6 +203,8 @@
                          {:db/id 2 :item/body "wanted"}])
       (is (= #{["wanted"]} (d/q q @conn s 2)))
       (is (= #{} (d/q q @conn s 3)))
+      (doseq [[binding ids] [['[?id ...] [2 2]] ['[[?id ?label]] [[2 :a] [2 :b]]]]]
+        (is (= #{["wanted"]} (d/q (assoc q :in ['$ '$s binding]) @conn s ids))))
       (let [missing '[:find ?value :where [2 :item/absent ?value]]]
         (is (= #{} (d/q missing @conn)))
         (d/transact! conn [[:db/add 2 :item/absent "fresh"]])
@@ -424,5 +426,8 @@
       (is (= #{[2 large]} (d/q q @conn rows 2) (d/q q @conn s 2)))
       (let [bounded (assoc q :query-source {:limits {:retained-bytes 65536}})]
         (is (= :query-source/limit (category #(d/q bounded @conn s 2))))
-        (is (= #{[1 small]} (d/q bounded @conn s 1))))
+        (is (= #{[1 small]} (d/q bounded @conn s 1)))
+        (is (= #{[1 small]}
+               (d/q (assoc bounded :in '[$ $s [?e ...]]) @conn
+                    (fake/source info [[1 small]]) [1 1]))))
       (finally (d/close conn) (u/delete-files dir)))))

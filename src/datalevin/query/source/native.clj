@@ -156,8 +156,7 @@
                 ^ByteBuffer raw (lmdb/v entry)
                 result (when (= attribute (attrs (bits/avg->aid raw)))
                          (visit rtx raw eid))]
-            (when-not (reduced? result)
-              (recur))))))
+            (if (reduced? result) result (recur))))))
     (throw e)))
 
 (defn scan-keys!

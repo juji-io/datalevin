@@ -7,7 +7,7 @@
             [datalevin.util :as u])
   (:import [clojure.lang Seqable]
            [datalevin.parser BindScalar BindTuple BindColl BindIgnore Variable SrcVar]
-           [java.util Iterator Map]))
+           [java.util Iterator LinkedHashSet Map]))
 
 (defn- column [binding]
   (cond
@@ -112,3 +112,22 @@
           row rows]
     (source/check-active! control)
     (check! (row variable))))
+
+(defn with-entity-ids
+  "Visit distinct entity IDs from an owned input relation after native type
+  validation. Input rows remain intact for joins, including their duplicates
+  and other columns. The temporary set borrows already charged Long values."
+  [control rows variable f]
+  (let [token (source/reserve! control
+                {:retained-bytes (value/add-charge 512
+                                   (value/multiply-charge 128 (count rows)))})
+        ids (LinkedHashSet.)]
+    (try
+      (doseq [row rows]
+        (source/check-active! control)
+        (.add ids (row variable)))
+      (source/check-active! control)
+      (f ids)
+      (finally
+        (.clear ids)
+        (source/release! token)))))

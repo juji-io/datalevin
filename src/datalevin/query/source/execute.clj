@@ -5,6 +5,7 @@
             [datalevin.query.aggregate :as aggregate]
             [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
+            [datalevin.query.source.inputs :as input]
             [datalevin.query.source.join :as join]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.plan :as plan]
@@ -93,7 +94,7 @@
           (swap! (:explain runtime) update :cursors (fnil conj [])
                  {:source symbol :metrics (rt/invoke runtime :metrics #(metrics cursor))}))))))
 
-(defn- native-reader [runtime snapshots bindings {:keys [native patterns symbol]}]
+(defn- native-reader [runtime snapshots bindings input-data {:keys [native patterns symbol]}]
   (mapv (fn [pattern]
           (let [terms (:terms pattern)
                 [entity-tag entity] (first terms)
@@ -101,18 +102,28 @@
                             :const entity
                             :var (get bindings entity)
                             nil)
+                relation (when (= :var entity-tag)
+                           ;; The parser requires distinct :in variables, so at
+                           ;; most one relational input can bind this entity.
+                           (some #(when (contains? (:variables %) entity) %) (:relations input-data)))
                 keys-only? (= :ignore (first (nth terms 2)))
                 terms (if keys-only? (pop terms) terms)
                 read! (if keys-only? native/scan-keys! native/scan!)]
             (fn [emit]
               (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
                 (fn [runtime]
-                  (swap! (:explain runtime) update :native-scans inc)
-                  (read! (:control runtime) (get snapshots (.-store ^DB native))
-                         (second (second terms)) entity-id
-                         (fn [row]
-                           (when-let [binding (match-row bindings terms row)]
-                             (emit binding))))))))) patterns))
+                  (let [control (:control runtime)
+                        scan (fn [entity-id]
+                               (source/check-active! control)
+                               (swap! (:explain runtime) update :native-scans inc)
+                               (read! control (get snapshots (.-store ^DB native))
+                                      (second (second terms)) entity-id
+                                      (fn [row]
+                                        (when-let [binding (match-row bindings terms row)]
+                                          (emit binding)))))]
+                    (if relation
+                      (input/with-entity-ids control (:rows relation) entity #(visit-rows % scan))
+                      (scan entity-id)))))))) patterns))
 
 (defn- result-shape [parsed rows]
   (let [rows (if-let [return (:qreturn-map parsed)]
@@ -178,7 +189,7 @@
                  result))}))
 
 (defn- execute! [runtime {:keys [entries fragments bindings input-data predicates] :as prepared} snapshots]
-  (let [readers (into (vec (mapcat #(native-reader runtime snapshots bindings %) (filter :native entries)))
+  (let [readers (into (vec (mapcat #(native-reader runtime snapshots bindings input-data %) (filter :native entries)))
                       (map #(source-reader runtime %) fragments))
         readers (if (seq readers) readers [(fn [emit] (emit bindings))])
         input-tables (mapv :rows (:relations input-data))
