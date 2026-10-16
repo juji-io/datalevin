@@ -195,12 +195,21 @@
     (fn [chunk]
       (eav-filter-presence-chunk lmdb chunk eid-idx aid))))
 
+(defn- scan-attrs-known? [schema attrs-v]
+  (every? #(some? (:db/aid (schema (first %)))) attrs-v))
+
 (defn prepare-eav-scan-v-list
   "Compile schema-dependent EAV scan metadata. The returned reader accepts
   [lmdb tuples entity-column]; snapshots, cursors and predicate state remain
   execution-local. Rebuild this reader when the schema changes."
   [schema attrs-v]
-  (when (seq attrs-v)
+  (cond
+    (empty? attrs-v) nil
+    ;; Every requested attribute is required by this scan's conjunction. A
+    ;; missing schema entry proves it empty, before compiling numeric aid arrays.
+    (not (scan-attrs-known? schema attrs-v))
+    (fn [_ _ _] (FastList.))
+    :else
     (let [attr->aid   #(:db/aid (schema %))
           get-aid     (comp attr->aid first)
           attrs-v     (sort-by get-aid attrs-v)
@@ -996,7 +1005,7 @@
 
   (eav-scan-v
     [_ in out eid-idx attrs-v]
-    (if (seq attrs-v)
+    (if (and (seq attrs-v) (scan-attrs-known? schema attrs-v))
       (let [attr->aid #(:db/aid (schema %))
             get-aid   (comp attr->aid first)
             attrs-v   (sort-by get-aid attrs-v)
@@ -1034,6 +1043,8 @@
                     (recur (p/produce in)))))))
           (raise "Fail to eav-scan-v: " e
                    {:eid-idx eid-idx :attrs-v attrs-v})))
+      ;; Drain a pipe even when a missing attribute makes the result empty,
+      ;; so its producer can complete without waiting on an unread batch.
       (loop []
         (when (p/produce in)
           (recur)))))

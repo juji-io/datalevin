@@ -142,6 +142,15 @@ fn canonical_integer(mut bytes: &[u8]) -> Result<&[u8], BigIntegerError> {
     Ok(bytes)
 }
 
+/// Number of signed integer payload bytes following its sortable length byte.
+pub fn bigint_length(prefix: u8) -> usize {
+    usize::from(if prefix >= 128 {
+        prefix ^ 128
+    } else {
+        127 - prefix
+    })
+}
+
 /// Prefix a signed big-endian integer with its sortable sign/length byte.
 pub fn encode_bigint(bytes: &[u8]) -> Result<Vec<u8>, BigIntegerError> {
     let bytes = canonical_integer(bytes)?;
@@ -346,4 +355,106 @@ impl ScalarType {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariableType {
+    String,
+    Bytes,
+    Keyword,
+    Symbol,
+    BigInteger,
+}
+
+impl VariableType {
+    pub fn header(self) -> u8 {
+        match self {
+            Self::String => 0xfa,
+            Self::Bytes => 0xfe,
+            Self::Keyword => 0xfb,
+            Self::Symbol => 0xfc,
+            Self::BigInteger => 0xf1,
+        }
+    }
+}
+
+/// Match String.getBytes(UTF_8): unpaired UTF-16 surrogates become '?'.
+pub fn encode_utf16(units: &[u16]) -> Vec<u8> {
+    char::decode_utf16(units.iter().copied())
+        .map(|value| value.unwrap_or('?'))
+        .collect::<String>()
+        .into_bytes()
+}
+
+/// Match Java's replacement decoder. In particular, a three-byte surrogate
+/// encoding is one malformed unit, unlike Rust's standard UTF-8 lossy decoder.
+pub fn decode_utf8(bytes: &[u8]) -> String {
+    let mut decoded = String::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let first = bytes[index];
+        let width = match first {
+            0..=127 => {
+                decoded.push(char::from(first));
+                index += 1;
+                continue;
+            }
+            0xc2..=0xdf => 2,
+            0xe0..=0xef => 3,
+            0xf0..=0xf4 => 4,
+            _ => {
+                decoded.push('\u{fffd}');
+                index += 1;
+                continue;
+            }
+        };
+        let mut length = 1;
+        let mut codepoint = u32::from(first & (0x7f >> width));
+        while length < width {
+            let Some(&next) = bytes.get(index + length) else {
+                break;
+            };
+            if !(0x80..=0xbf).contains(&next)
+                || (length == 1
+                    && ((first == 0xe0 && next < 0xa0)
+                        || (first == 0xf0 && next < 0x90)
+                        || (first == 0xf4 && next >= 0x90)))
+            {
+                break;
+            }
+            codepoint = (codepoint << 6) | u32::from(next & 63);
+            length += 1;
+        }
+        decoded.push(if length == width {
+            char::from_u32(codepoint).unwrap_or('\u{fffd}')
+        } else {
+            '\u{fffd}'
+        });
+        index += length;
+    }
+    decoded
+}
+
+/// Namespace/name storage uses one NUL separator, including unqualified names.
+pub fn encode_named(name: &[u16], namespace: Option<&[u16]>) -> Vec<u8> {
+    let mut bytes = namespace.map(encode_utf16).unwrap_or_default();
+    bytes.push(0);
+    bytes.extend(encode_utf16(name));
+    bytes
+}
+
+/// Only the first separator is replaced, then one leading slash is removed.
+pub fn decode_named(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut bytes = bytes.to_vec();
+    if let Some(separator) = bytes.iter().position(|&byte| byte == 0) {
+        bytes[separator] = b'/';
+    }
+    Some(decode_utf8(if bytes[0] == b'/' {
+        &bytes[1..]
+    } else {
+        &bytes
+    }))
 }

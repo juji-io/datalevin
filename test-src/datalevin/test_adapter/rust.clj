@@ -9,6 +9,7 @@
   (:import
    [java.io DataInputStream DataOutputStream]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
+   [java.math BigInteger]
    [java.nio ByteBuffer ByteOrder]
    [java.util Date UUID]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
@@ -108,6 +109,7 @@
                "java.lang.IllegalStateException" (IllegalStateException. message)
                "java.lang.NumberFormatException" (NumberFormatException. message)
                "java.lang.AssertionError" (AssertionError. ^Object message)
+               "java.lang.ArrayIndexOutOfBoundsException" (ArrayIndexOutOfBoundsException. message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))
@@ -231,6 +233,30 @@
     (invoke-peer! peer session :bits/decode-scalar
                   [bytes value-type (= ByteOrder/LITTLE_ENDIAN (.order buffer))])))
 
+(defn- put-variable! [peer session ^ByteBuffer buffer value value-type]
+  (.put buffer ^bytes (invoke-peer! peer session :bits/variable-header [value-type]))
+  (let [payload (case value-type
+                  :string (.toCharArray ^String value)
+                  :bytes (let [_ (alength ^bytes value)] value)
+                  :bigint (.toByteArray ^BigInteger value)
+                  (:keyword :symbol)
+                  (let [name (.toCharArray ^String (name value))
+                        namespace (namespace value)]
+                    [name (some-> ^String namespace .toCharArray)]))]
+    (.put buffer ^bytes (invoke-peer! peer session :bits/encode-variable [payload value-type]))))
+
+(defn- read-variable! [peer session ^ByteBuffer buffer value-type]
+  (bits/get-bytes buffer 1)
+  (let [bytes (if (= value-type :bigint)
+                (let [prefix (bits/get-bytes buffer 1)
+                      length (int (invoke-peer! peer session :bits/bigint-length [prefix]))
+                      bytes (byte-array (inc length))]
+                  (aset-byte bytes 0 (aget prefix 0))
+                  (.get buffer bytes 1 length)
+                  bytes)
+                (bits/get-bytes buffer))]
+    (invoke-peer! peer session :bits/decode-variable [bytes value-type])))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
@@ -255,6 +281,8 @@
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
           (:data nil) (serialize-buffer! peer session buffer value)
+          (:string :bytes :keyword :symbol :bigint)
+          (put-variable! peer session buffer value value-type)
           (:long :float :double :boolean :instant :instant-pre-06 :uuid)
           (put-scalar! peer session buffer value value-type)
           (:byte :short :int :id) (put-integer! peer session buffer value value-type)
@@ -273,6 +301,8 @@
       (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
           (:data nil) (deserialize-buffer! peer session buffer)
+          (:string :bytes :keyword :symbol :bigint)
+          (read-variable! peer session buffer value-type)
           (:long :float :double :boolean :instant :instant-pre-06 :uuid)
           (read-scalar! peer session buffer value-type)
           (:byte :short :int :id) (read-integer! peer session buffer value-type)

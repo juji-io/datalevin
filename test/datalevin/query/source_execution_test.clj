@@ -189,6 +189,27 @@
       (is (empty? @(:events s)))
       (finally (d/close conn) (u/delete-files dir)))))
 
+(deftest bound-native-entity-skips-unrelated-giant-values
+  (let [dir (u/tmp-dir (str "source-bound-entity-" (random-uuid)))
+        conn (d/create-conn dir {:item/body {:db/valueType :db.type/string}}
+                            {:wal? false :background-sampling? false})
+        s (fake/source tuple-info [[2 "source"]])
+        q '{:find [?body] :in [$ $s ?id]
+            :where [[?id :item/body ?body] [$s ?id _]]
+            :query-source {:limits {:retained-bytes 65536}}}]
+    (try
+      (d/transact! conn [{:db/id 1 :item/body (.repeat "x" 131072)}
+                         {:db/id 2 :item/body "wanted"}])
+      (is (= #{["wanted"]} (d/q q @conn s 2)))
+      (is (= #{} (d/q q @conn s 3)))
+      (let [missing '[:find ?value :where [2 :item/absent ?value]]]
+        (is (= #{} (d/q missing @conn)))
+        (d/transact! conn [[:db/add 2 :item/absent "fresh"]])
+        (is (= #{["fresh"]} (d/q missing @conn))))
+      ;; A selected giant still enforces the decoding budget.
+      (is (= :query-source/limit (category #(d/q q @conn s 1))))
+      (finally (d/close conn) (u/delete-files dir)))))
+
 (deftest bound-native-decimal-joins-match-source-key-equality
   (let [dir (u/tmp-dir (str "source-decimal-join-" (random-uuid)))
         conn (d/get-conn dir {:item/amount {:db/valueType :db.type/bigdec}})

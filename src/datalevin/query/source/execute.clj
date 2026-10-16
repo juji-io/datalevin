@@ -96,6 +96,11 @@
 (defn- native-reader [runtime snapshots bindings {:keys [native patterns symbol]}]
   (mapv (fn [pattern]
           (let [terms (:terms pattern)
+                [entity-tag entity] (first terms)
+                entity-id (case entity-tag
+                            :const entity
+                            :var (get bindings entity)
+                            nil)
                 keys-only? (= :ignore (first (nth terms 2)))
                 terms (if keys-only? (pop terms) terms)
                 read! (if keys-only? native/scan-keys! native/scan!)]
@@ -104,7 +109,7 @@
                 (fn [runtime]
                   (swap! (:explain runtime) update :native-scans inc)
                   (read! (:control runtime) (get snapshots (.-store ^DB native))
-                         (second (second terms))
+                         (second (second terms)) entity-id
                          (fn [row]
                            (when-let [binding (match-row bindings terms row)]
                              (emit binding))))))))) patterns))

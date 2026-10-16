@@ -2,7 +2,7 @@
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
 use datalevin_codec::bits::{
-    self, BigIntegerError, IntegerWidth, ScalarError, ScalarType, ScalarValue,
+    self, BigIntegerError, IntegerWidth, ScalarError, ScalarType, ScalarValue, VariableType,
 };
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
@@ -178,6 +178,10 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/variable-header"
+        | "bits/encode-variable"
+        | "bits/decode-variable"
+        | "bits/bigint-length" => variable_operation(operation, arguments),
         "bits/scalar-header" | "bits/encode-scalar" | "bits/decode-scalar" => {
             scalar_operation(operation, arguments)
         }
@@ -242,6 +246,102 @@ fn dispatch(request: &Value) -> Value {
             operation,
             &format!("Rust operation is not implemented: {operation}"),
         ),
+    }
+}
+
+fn variable_type(kind: &str) -> Option<VariableType> {
+    Some(match kind {
+        "string" => VariableType::String,
+        "bytes" => VariableType::Bytes,
+        "keyword" => VariableType::Keyword,
+        "symbol" => VariableType::Symbol,
+        "bigint" => VariableType::BigInteger,
+        _ => return None,
+    })
+}
+
+fn variable_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/bigint-length" {
+        let [argument] = arguments else {
+            return protocol_error("BigInteger length requires one prefix");
+        };
+        let Some(Value::Bytes(prefix)) = value_argument(argument) else {
+            return protocol_error("BigInteger length requires a byte array");
+        };
+        let [prefix] = prefix.as_slice() else {
+            return protocol_error("BigInteger length requires exactly one byte");
+        };
+        return success(Value::int(bits::bigint_length(*prefix) as i64));
+    }
+    if operation == "bits/variable-header" {
+        let [argument] = arguments else {
+            return protocol_error("Variable header requires one type");
+        };
+        let Some(Value::Keyword(kind)) = value_argument(argument) else {
+            return protocol_error("Variable header requires a keyword");
+        };
+        return match variable_type(kind) {
+            Some(kind) => success(Value::Bytes(vec![kind.header()])),
+            None => unsupported(operation, "Variable storage type is not implemented"),
+        };
+    }
+    let [value, kind] = arguments else {
+        return protocol_error("Variable codec requires value and type arguments");
+    };
+    let (Some(value), Some(Value::Keyword(kind))) = (value_argument(value), value_argument(kind))
+    else {
+        return protocol_error("Invalid variable codec argument descriptors");
+    };
+    let Some(kind) = variable_type(kind) else {
+        return unsupported(operation, "Variable storage type is not implemented");
+    };
+    if operation == "bits/encode-variable" {
+        let bytes = match (kind, value) {
+            (VariableType::String, Value::CharArray(units)) => bits::encode_utf16(units),
+            (VariableType::Bytes, Value::Bytes(bytes)) => bytes.clone(),
+            (VariableType::BigInteger, Value::Bytes(bytes)) => match bits::encode_bigint(bytes) {
+                Ok(bytes) => bytes,
+                Err(error) => return bigint_error(error),
+            },
+            (VariableType::Keyword | VariableType::Symbol, Value::Vector(parts)) => {
+                let [Value::CharArray(name), namespace] = parts.as_slice() else {
+                    return protocol_error("Named values require name and namespace UTF-16 arrays");
+                };
+                let namespace = match namespace {
+                    Value::Null => None,
+                    Value::CharArray(units) => Some(units.as_slice()),
+                    _ => return protocol_error("Named namespace requires UTF-16 or nil"),
+                };
+                bits::encode_named(name, namespace)
+            }
+            _ => return protocol_error("Incorrect value for variable storage type"),
+        };
+        success(Value::Bytes(bytes))
+    } else {
+        let Value::Bytes(bytes) = value else {
+            return protocol_error("Variable decoding requires a byte array");
+        };
+        success(match kind {
+            VariableType::String => Value::Text(bits::decode_utf8(bytes)),
+            VariableType::Bytes => Value::Bytes(bytes.clone()),
+            VariableType::BigInteger => match bits::decode_bigint(bytes) {
+                Ok(bytes) => Value::BigInteger(bytes),
+                Err(error) => return bigint_error(error),
+            },
+            VariableType::Keyword | VariableType::Symbol => {
+                let Some(name) = bits::decode_named(bytes) else {
+                    return java_error(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        "Index 0 out of bounds for length 0",
+                    );
+                };
+                if kind == VariableType::Keyword {
+                    keyword(&name)
+                } else {
+                    Value::Symbol(name)
+                }
+            }
+        })
     }
 }
 
@@ -397,6 +497,10 @@ fn main() -> io::Result<()> {
                     keyword("bits/scalar-header"),
                     keyword("bits/encode-scalar"),
                     keyword("bits/decode-scalar"),
+                    keyword("bits/variable-header"),
+                    keyword("bits/encode-variable"),
+                    keyword("bits/decode-variable"),
+                    keyword("bits/bigint-length"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

@@ -133,10 +133,13 @@
       (finally (source/release! token)))))
 
 (defn- scan-attribute!
-  [control {:keys [kv attrs]} attribute visit]
+  [control {:keys [kv attrs]} attribute entity-id visit]
   (scan/scan kv c/eav
     (with-open [^AutoCloseable iterator
-                (.iterator ^Iterable (lmdb/iterate-list dbi rtx cur [:all] :id [:all] :avg))]
+                (.iterator ^Iterable
+                  (lmdb/iterate-list dbi rtx cur
+                                     (if (some? entity-id) [:closed entity-id entity-id] [:all])
+                                     :id [:all] :avg))]
       (loop []
         (source/check-active! control)
         (when (.hasNext ^Iterator iterator)
@@ -152,34 +155,40 @@
 (defn scan-keys!
   "Visit owned [entity attribute] pairs for an explicit value wildcard. Each
   matching index entry contributes one pair, including cardinality-many facts.
-  Reserve the temporary row before scanning; never read or decode its payload."
-  [control snapshot attribute emit]
-  (let [token (source/reserve! control
-                {:retained-bytes (value/add-charge 512 (value/value-charge attribute))})]
-    (try
-      (scan-attribute! control snapshot attribute
-                      (fn [_ _ eid] (emit [eid attribute])))
-      (finally (source/release! token)))))
+  Reserve the temporary row before scanning; never read or decode its payload.
+  A supplied entity ID restricts the EAV cursor to that entity."
+  ([control snapshot attribute emit]
+   (scan-keys! control snapshot attribute nil emit))
+  ([control snapshot attribute entity-id emit]
+   (let [token (source/reserve! control
+                 {:retained-bytes (value/add-charge 512 (value/value-charge attribute))})]
+     (try
+       (scan-attribute! control snapshot attribute entity-id
+                       (fn [_ _ eid] (emit [eid attribute])))
+       (finally (source/release! token))))))
 
 (defn scan!
-  "Visit owned datoms from one pinned EAV scan without a full-result collector."
-  [control {:keys [kv schema] :as snapshot} attribute emit]
-  (let [type (attribute-type schema attribute)
-        check! #(source/check-active! control)]
-    (scan-attribute! control snapshot attribute
-      (fn [rtx ^ByteBuffer raw eid]
-        (let [giant (bits/avg->giant-id raw)]
-          (if (= c/normal giant)
-            (visit-value control raw (.remaining raw) attribute type
-                         (when (= type :data) #(native-value/inline-data-buffer raw))
-                         (if (= type :data)
-                           #(native-value/prepare-data % check!)
-                           #(native-value/prepare-inline % type check!)) emit eid)
-            (let [giants (i/get-dbi kv c/giants false)]
-              (lmdb/put-read-key giants rtx giant :id)
-              (if-let [buffer (lmdb/get-kv giants rtx)]
-                (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                             #(index/giant-datom-buffer buffer)
-                             #(native-value/prepare-giant % type eid attribute check!)
-                             emit eid)
-                (fail! :query-source/invalid :native-value)))))))))
+  "Visit owned datoms from one pinned EAV scan without a full-result collector.
+  A supplied entity ID restricts the cursor before any payload reads or decoding."
+  ([control snapshot attribute emit]
+   (scan! control snapshot attribute nil emit))
+  ([control {:keys [kv schema] :as snapshot} attribute entity-id emit]
+   (let [type (attribute-type schema attribute)
+         check! #(source/check-active! control)]
+     (scan-attribute! control snapshot attribute entity-id
+       (fn [rtx ^ByteBuffer raw eid]
+         (let [giant (bits/avg->giant-id raw)]
+           (if (= c/normal giant)
+             (visit-value control raw (.remaining raw) attribute type
+                          (when (= type :data) #(native-value/inline-data-buffer raw))
+                          (if (= type :data)
+                            #(native-value/prepare-data % check!)
+                            #(native-value/prepare-inline % type check!)) emit eid)
+             (let [giants (i/get-dbi kv c/giants false)]
+               (lmdb/put-read-key giants rtx giant :id)
+               (if-let [buffer (lmdb/get-kv giants rtx)]
+                 (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
+                              #(index/giant-datom-buffer buffer)
+                              #(native-value/prepare-giant % type eid attribute check!)
+                              emit eid)
+                 (fail! :query-source/invalid :native-value))))))))))
