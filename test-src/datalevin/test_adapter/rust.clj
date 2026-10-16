@@ -112,6 +112,7 @@
                "java.lang.NumberFormatException" (NumberFormatException. message)
                "java.lang.AssertionError" (AssertionError. ^Object message)
                "java.lang.ArrayIndexOutOfBoundsException" (ArrayIndexOutOfBoundsException. message)
+               "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))
@@ -197,6 +198,26 @@
         bytes (bits/get-bytes buffer width)]
     (invoke-peer! peer session :bits/decode-integer
                   [bytes value-type (= ByteOrder/LITTLE_ENDIAN (.order buffer))])))
+
+(defn- put-ints! [peer session ^ByteBuffer buffer value sorted?]
+  (let [_ (alength ^ints value)
+        words (invoke-peer! peer session :bits/encode-ints
+                            [value sorted? (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    (doseq [^bytes word words] (.put buffer word))))
+
+(defn- read-ints! [peer session ^ByteBuffer buffer sorted?]
+  (let [little? (= ByteOrder/LITTLE_ENDIAN (.order buffer))
+        {:keys [size compressed?]}
+        (invoke-peer! peer session :bits/ints-header [(bits/get-bytes buffer 4) little?])
+        ;; Match the JVM array length cast before checking adapter transport limits.
+        _ (when (> size Integer/MAX_VALUE)
+            (throw (NegativeArraySizeException. (str (unchecked-int size)))))
+        size (int size)]
+    (when (> size (quot (- max-frame-bytes 1024) 4))
+      (adapter/unsupported! :adapter :bits/read-buffer "Integer array exceeds the adapter frame limit"))
+    (let [words (byte-array (* size 4))]
+      (dotimes [i size] (.get buffer words (* i 4) 4))
+      (invoke-peer! peer session :bits/decode-ints [words compressed? sorted? little?]))))
 
 (defn- put-scalar! [peer session ^ByteBuffer buffer value value-type]
   (let [negative? (when (= value-type :long)
@@ -518,6 +539,14 @@
         (case value-type
           :avg (put-avg! peer session buffer value)
           :attr (put-attr! peer session buffer value)
+          :ints (put-ints! peer session buffer value false)
+          :doc-info (let [[id count positions] value]
+                      (put-integer! peer session buffer id :int)
+                      (put-integer! peer session buffer count :short)
+                      (put-ints! peer session buffer positions false))
+          :pos-info (let [[positions offsets] value]
+                      (put-ints! peer session buffer positions true)
+                      (put-ints! peer session buffer offsets true))
           (:data nil) (serialize-buffer! peer session buffer value)
           :bigdec (put-decimal! peer session buffer value)
           (:string :bytes :keyword :symbol :bigint)
@@ -533,7 +562,7 @@
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
                  :else (raise "Raw value must be bytes or ByteBuffer, got "
                                (type value) {:input value}))
-          (:ints :bitmap :term-info :doc-info :pos-info)
+          (:bitmap :term-info)
           (adapter/unsupported! :adapter operation
                                 (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
@@ -546,6 +575,12 @@
         (case value-type
           :avg (read-avg! peer session buffer :avg)
           :attr (invoke-peer! peer session :bits/decode-attr [(bits/get-bytes buffer)])
+          :ints (read-ints! peer session buffer false)
+          :doc-info [(read-integer! peer session buffer :int)
+                     (read-integer! peer session buffer :short)
+                     (read-ints! peer session buffer false)]
+          :pos-info [(read-ints! peer session buffer true)
+                     (read-ints! peer session buffer true)]
           (:data nil) (deserialize-buffer! peer session buffer)
           :bigdec (read-decimal! peer session buffer)
           (:string :bytes :keyword :symbol :bigint)
@@ -556,7 +591,7 @@
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
-          (:ints :bitmap :term-info :query-term-info :doc-info :pos-info)
+          (:bitmap :term-info :query-term-info)
           (adapter/unsupported! :adapter operation
                                 (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)

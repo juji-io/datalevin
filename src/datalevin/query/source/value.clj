@@ -70,16 +70,19 @@
     (clojure.lang.Numbers/lte n maximum)))
 
 (defn portable?
-  "Metadata must be immutable EDN data; mutable dates/arrays are row values."
+  "Metadata, including Clojure metadata, must be immutable EDN data.
+  Mutable dates/arrays are row values, not descriptor or plan metadata."
   [x]
-  (cond
-    (or (nil? x) (boolean? x) (string? x) (keyword? x) (symbol? x)
-        (uuid? x) (integer? x) (decimal? x) (char? x) (ratio? x)) true
-    (or (double? x) (float? x)) (Double/isFinite (double x))
-    (custom-comparator? x) false
-    (plain-map? x) (every? (fn [[k v]] (and (portable? k) (portable? v))) x)
-    (or (vector? x) (set? x) (list? x)) (every? portable? x)
-    :else false))
+  (and
+    (cond
+      (or (nil? x) (boolean? x) (string? x) (keyword? x) (symbol? x)
+          (uuid? x) (integer? x) (decimal? x) (char? x) (ratio? x)) true
+      (or (double? x) (float? x)) (Double/isFinite (double x))
+      (custom-comparator? x) false
+      (plain-map? x) (every? (fn [[k v]] (and (portable? k) (portable? v))) x)
+      (or (vector? x) (set? x) (list? x)) (every? portable? x)
+      :else false)
+    (if-let [metadata (meta x)] (portable? metadata) true)))
 
 (declare value-charge)
 

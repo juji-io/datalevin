@@ -175,6 +175,8 @@
                                  "checkouts/datalevin/src/rust/test-adapter/src/main.rs"
                                  "checkouts/datalevin/src/rust/src/lib.rs"
                                  "checkouts/datalevin/src/rust/src/bits.rs"
+                                 "checkouts/datalevin/src/rust/src/nippy/mod.rs"
+                                 "checkouts/datalevin/src/rust/src/nippy/integers.rs"
                                  "checkouts/datalevin/src/rust/src/nippy/write.rs"]
                                 (keep :file (:tests selection))
                                 (mapcat :support-files (:tests selection))))]

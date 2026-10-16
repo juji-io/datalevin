@@ -504,6 +504,93 @@ pub fn decode_attr(bytes: &[u8]) -> String {
     decode_utf8(bytes)
 }
 
+/// Each word is a separate buffer write, including the signed word-count
+/// prefix. Arrays of up to three elements retain their uncompressed layout.
+pub fn encode_ints(input: &[i32], sorted: bool, little: bool) -> Vec<[u8; 4]> {
+    let compressed = input.len() > 3;
+    let words = if compressed {
+        if sorted {
+            crate::nippy::integers::compress_sorted(input)
+        } else {
+            crate::nippy::integers::compress(input)
+        }
+    } else {
+        input.to_vec()
+    };
+    let count = words.len() as i32;
+    std::iter::once(if compressed { -count } else { count })
+        .chain(words)
+        .map(|word| {
+            if little {
+                word.to_le_bytes()
+            } else {
+                word.to_be_bytes()
+            }
+        })
+        .collect()
+}
+
+pub fn ints_header(bytes: [u8; 4], little: bool) -> (u32, bool) {
+    let count = if little {
+        i32::from_le_bytes(bytes)
+    } else {
+        i32::from_be_bytes(bytes)
+    };
+    (count.unsigned_abs(), count < 0)
+}
+
+#[derive(Debug)]
+pub enum IntArrayError {
+    NegativeSize(i32),
+    EmptySortedBlock,
+    Limit,
+    Compressed(crate::nippy::ErrorKind),
+    Length,
+}
+
+/// The caller consumes each complete word before decoding, preserving buffer
+/// underflow progress. Bound the expanded output before allocating it.
+pub fn decode_ints(
+    bytes: &[u8],
+    compressed: bool,
+    sorted: bool,
+    little: bool,
+    max_values: usize,
+) -> Result<Vec<i32>, IntArrayError> {
+    if !bytes.len().is_multiple_of(4) {
+        return Err(IntArrayError::Length);
+    }
+    let words: Vec<i32> = bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(|word| {
+            if little {
+                i32::from_le_bytes(word)
+            } else {
+                i32::from_be_bytes(word)
+            }
+        })
+        .collect();
+    if !compressed {
+        return Ok(words);
+    }
+    let count = *words.first().ok_or(IntArrayError::Length)?;
+    if count < 0 {
+        return Err(IntArrayError::NegativeSize(count));
+    }
+    if count as usize > max_values {
+        return Err(IntArrayError::Limit);
+    }
+    // IntegratedBinaryPacking reads the last output even for a zero-length
+    // block when a compressed body remains; retain the JVM reader's error.
+    if sorted && count == 0 && words.len() > 1 {
+        return Err(IntArrayError::EmptySortedBlock);
+    }
+    crate::nippy::integers::decompress_storage(&words, sorted).map_err(IntArrayError::Compressed)
+}
+
 /// Match Java's replacement decoder. In particular, a three-byte surrogate
 /// encoding is one malformed unit, unlike Rust's standard UTF-8 lossy decoder.
 pub fn decode_utf8(bytes: &[u8]) -> String {

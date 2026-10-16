@@ -210,6 +210,9 @@ fn dispatch(request: &Value) -> Value {
         }
         "bits/encode-integer" | "bits/decode-integer" => integer_operation(operation, arguments),
         "bits/encode-attr" | "bits/decode-attr" => attr_operation(operation, arguments),
+        "bits/encode-ints" | "bits/ints-header" | "bits/decode-ints" => {
+            ints_operation(operation, arguments)
+        }
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -643,6 +646,98 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
     ]))
 }
 
+fn ints_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/ints-header" {
+        let [bytes, order] = arguments else {
+            return protocol_error("Integer array header requires bytes and byte order");
+        };
+        let (Some(Value::Bytes(bytes)), Some(Value::Bool(little))) =
+            (value_argument(bytes), value_argument(order))
+        else {
+            return protocol_error("Invalid integer array header arguments");
+        };
+        let Ok(bytes) = bytes.as_slice().try_into() else {
+            return protocol_error("Integer array header requires four bytes");
+        };
+        let (size, compressed) = bits::ints_header(bytes, *little);
+        return success(map(vec![
+            ("size", Value::Long(i64::from(size))),
+            ("compressed?", Value::Bool(compressed)),
+        ]));
+    }
+    if operation == "bits/encode-ints" {
+        let [values, sorted, order] = arguments else {
+            return protocol_error(
+                "Integer array encoding requires values, sorted mode and byte order",
+            );
+        };
+        let (Some(Value::IntArray(values)), Some(Value::Bool(sorted)), Some(Value::Bool(little))) = (
+            value_argument(values),
+            value_argument(sorted),
+            value_argument(order),
+        ) else {
+            return protocol_error("Invalid integer array encoding arguments");
+        };
+        let words = bits::encode_ints(values, *sorted, *little);
+        if words.len() > (MAX_FRAME_BYTES - 1024) / 8 {
+            return unsupported(
+                operation,
+                "Integer array writes exceed the adapter frame limit",
+            );
+        }
+        return success(Value::Vector(
+            words
+                .into_iter()
+                .map(|word| Value::Bytes(word.to_vec()))
+                .collect(),
+        ));
+    }
+    let [bytes, compressed, sorted, order] = arguments else {
+        return protocol_error(
+            "Integer array decoding requires bytes, compression, sorted mode and byte order",
+        );
+    };
+    let (
+        Some(Value::Bytes(bytes)),
+        Some(Value::Bool(compressed)),
+        Some(Value::Bool(sorted)),
+        Some(Value::Bool(little)),
+    ) = (
+        value_argument(bytes),
+        value_argument(compressed),
+        value_argument(sorted),
+        value_argument(order),
+    )
+    else {
+        return protocol_error("Invalid integer array decoding arguments");
+    };
+    match bits::decode_ints(
+        bytes,
+        *compressed,
+        *sorted,
+        *little,
+        (MAX_FRAME_BYTES - 1024) / 4,
+    ) {
+        Ok(values) => success(Value::IntArray(values)),
+        Err(bits::IntArrayError::NegativeSize(size)) => {
+            java_error("java.lang.NegativeArraySizeException", &size.to_string())
+        }
+        Err(bits::IntArrayError::EmptySortedBlock) => java_error(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index -1 out of bounds for length 0",
+        ),
+        Err(bits::IntArrayError::Limit) => unsupported(
+            operation,
+            "Expanded integer array exceeds the adapter frame limit",
+        ),
+        Err(bits::IntArrayError::Compressed(error)) => unsupported(
+            operation,
+            &format!("Malformed JavaFastPFOR error mapping is not implemented: {error:?}"),
+        ),
+        Err(bits::IntArrayError::Length) => protocol_error("Invalid integer array payload length"),
+    }
+}
+
 fn attr_operation(operation: &str, arguments: &[Value]) -> Value {
     let [argument] = arguments else {
         return protocol_error("Attribute codec requires exactly one value");
@@ -976,6 +1071,9 @@ fn main() -> io::Result<()> {
                     keyword("bits/decode-variable"),
                     keyword("bits/encode-attr"),
                     keyword("bits/decode-attr"),
+                    keyword("bits/encode-ints"),
+                    keyword("bits/ints-header"),
+                    keyword("bits/decode-ints"),
                     keyword("bits/bigint-length"),
                     keyword("bits/encode-bigdec"),
                     keyword("bits/decode-bigdec"),

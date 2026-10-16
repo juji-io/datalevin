@@ -191,9 +191,14 @@
         types (variable-types request)]
     (ensure! (and (vector? alternatives) (<= (count alternatives) (long (:max-alternatives request)))
                   (= (count alternatives) (count (set (map :id alternatives))))) :planning)
+    ;; Only explicit plan handles are opaque. Validate extension fields and
+    ;; Clojure metadata as well as the required fields, without visiting handles.
+    (ensure! (and (v/portable? (dissoc response :alternatives))
+                  (v/portable? (meta alternatives))) :planning)
     (doseq [a alternatives]
       (fields! a #{:id :plan :covers :prefilters :requires :columns :properties :estimate :explain}
                #{} :planning)
+      (ensure! (v/portable? (dissoc a :plan)) :planning)
       (ensure! (and (identifier? (:id a)) (some? (:plan a))
                     (set? (:covers a)) (set? (:prefilters a))
                     (set/subset? (:covers a) ids) (set/subset? (:prefilters a) ids)

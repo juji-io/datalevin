@@ -6,7 +6,7 @@
 
 mod bitmap;
 mod compression;
-mod integers;
+pub(crate) mod integers;
 mod java_array;
 mod read;
 mod write;

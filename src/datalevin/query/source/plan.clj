@@ -210,6 +210,12 @@
                       _ (contract/planning-request! request)
                       response (rt/invoke runtime :planning #(source/-plan-source source session request))
                       selected (select-cover request response (:allow-once? entry))]
+                  (doseq [alternative selected]
+                    (rt/with-context runtime {:alternative-id (:id alternative)}
+                      (fn [runtime]
+                        ;; Core retains the selected envelope; the provider
+                        ;; accounts for opaque handle state through its session.
+                        (rt/charge! runtime (dissoc alternative :plan)))))
                   (swap! (:explain runtime) update :sources conj
                          {:source symbol :consistency (:consistency request)
                           :pattern-count (count (:patterns entry))

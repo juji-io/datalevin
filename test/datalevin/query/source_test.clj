@@ -19,6 +19,19 @@
   (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn category [f] (:error (error-data f)))
 
+(deftest portable-envelopes-include-clojure-metadata
+  (doseq [x ['id [] {} #{} '() (sorted-map) (sorted-set)]
+          mutable [(java.util.Date.) (byte-array [1]) (atom :value) (Object.)]]
+    (is (false? (value/portable? (with-meta x {:hidden mutable}))))
+    (is (false? (value/portable? {:nested [(with-meta x {:hidden mutable})]}))))
+  (let [metadata {:source (with-meta 'declared {:revision [1 :stable]})}
+        descriptor (with-meta tuple-info metadata)]
+    (is (true? (value/portable? descriptor)))
+    (is (identical? descriptor (source/validate-source-info! descriptor))))
+  (is (= :query-source/invalid
+         (category #(source/validate-source-info!
+                      (with-meta tuple-info {:hidden (atom :mutable)}))))))
+
 (deftest descriptor-contract
   (is (= tuple-info (source/validate-source-info! tuple-info)))
   (is (= {:spi-version 1 :features #{}}
@@ -288,6 +301,11 @@
         response (source/-plan-source fake session request)]
     (try
       (is (= response (contract/alternatives! request response)))
+      (let [handle (Object.)
+            opaque (assoc-in response [:alternatives 0 :plan] handle)]
+        (is (identical? handle
+                       (get-in (contract/alternatives! request opaque)
+                               [:alternatives 0 :plan]))))
       (doseq [bad [(assoc-in response [:alternatives 0 :covers] #{99})
                    (assoc-in response [:alternatives 0 :prefilters] #{0})
                    (update-in response [:alternatives 0 :columns] pop)

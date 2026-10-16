@@ -107,7 +107,26 @@ fn unpack<const WIDTH: usize>(words: &[i32], output: &mut [i32]) {
     each_element!(get);
 }
 
-pub(super) fn compress(input: &[i32]) -> Vec<i32> {
+pub(crate) fn compress(input: &[i32]) -> Vec<i32> {
+    compress_words(input, None)
+}
+
+/// IntegratedIntCompressor stores wrapping deltas, except that full-width
+/// packed blocks store absolute values. Its VariableByte tail uses deltas.
+pub(crate) fn compress_sorted(input: &[i32]) -> Vec<i32> {
+    let mut previous = 0i32;
+    let deltas: Vec<i32> = input
+        .iter()
+        .map(|&value| {
+            let delta = value.wrapping_sub(previous);
+            previous = value;
+            delta
+        })
+        .collect();
+    compress_words(&deltas, Some(input))
+}
+
+fn compress_words(input: &[i32], absolute: Option<&[i32]>) -> Vec<i32> {
     let mut out = Vec::with_capacity(input.len() + input.len() / 32 + 12);
     out.push(input.len() as i32);
     let packed = input.len() / 32 * 32;
@@ -130,7 +149,12 @@ pub(super) fn compress(input: &[i32]) -> Vec<i32> {
         for &width in widths.iter().take(groups) {
             let start = out.len();
             out.resize(start + width as usize, 0);
-            by_width!(width, pack, &input[pos..pos + 32], &mut out[start..]);
+            let values = if width == 32 {
+                absolute.unwrap_or(input)
+            } else {
+                input
+            };
+            by_width!(width, pack, &values[pos..pos + 32], &mut out[start..]);
             pos += 32;
         }
     }
@@ -164,12 +188,33 @@ pub(super) fn compress(input: &[i32]) -> Vec<i32> {
 }
 
 /// Caller checks the output length and allocation budget before entry.
-pub(super) fn decompress(input: &[i32]) -> std::result::Result<Vec<i32>, ErrorKind> {
+pub(crate) fn decompress(input: &[i32]) -> std::result::Result<Vec<i32>, ErrorKind> {
+    decompress_words(input, false, true)
+}
+
+/// Storage readers retain JavaFastPFOR's permissive marker and unused tail
+/// words. Nippy's bounded decoder continues to validate the entire payload.
+pub(crate) fn decompress_storage(
+    input: &[i32],
+    sorted: bool,
+) -> std::result::Result<Vec<i32>, ErrorKind> {
+    decompress_words(input, sorted, false)
+}
+
+fn decompress_words(
+    input: &[i32],
+    integrated: bool,
+    strict: bool,
+) -> std::result::Result<Vec<i32>, ErrorKind> {
     let n = *input.first().ok_or(ErrorKind::Truncated)?;
     let n = usize::try_from(n).map_err(|_| ErrorKind::InvalidLength)?;
+    if n == 0 && !strict {
+        return Ok(Vec::new());
+    }
     let packed = n / 32 * 32;
     let mut out = Vec::with_capacity(n);
     let mut pos = 1;
+    let mut previous = 0i32;
     while out.len() < packed {
         let groups = if packed - out.len() >= 128 { 4 } else { 1 };
         let header = *input.get(pos).ok_or(ErrorKind::Truncated)? as u32;
@@ -187,11 +232,19 @@ pub(super) fn decompress(input: &[i32]) -> std::result::Result<Vec<i32>, ErrorKi
             let start = out.len();
             out.resize(start + 32, 0);
             by_width!(width, unpack, words, &mut out[start..]);
+            if integrated {
+                for value in &mut out[start..] {
+                    if width != 32 {
+                        *value = value.wrapping_add(previous);
+                    }
+                    previous = *value;
+                }
+            }
             pos += width;
         }
     }
     if packed == 0 {
-        if input.get(pos) != Some(&0) {
+        if strict && input.get(pos) != Some(&0) {
             return Err(ErrorKind::InvalidValue);
         }
         pos += 1;
@@ -208,7 +261,13 @@ pub(super) fn decompress(input: &[i32]) -> std::result::Result<Vec<i32>, ErrorKi
             }
             value |= (byte & 127) << shift;
             if byte & 128 != 0 {
-                out.push(value as i32);
+                let value = if integrated {
+                    (value as i32).wrapping_add(previous)
+                } else {
+                    value as i32
+                };
+                out.push(value);
+                previous = value;
                 break;
             }
             if shift == 28 {
@@ -216,10 +275,10 @@ pub(super) fn decompress(input: &[i32]) -> std::result::Result<Vec<i32>, ErrorKi
             }
         }
     }
-    if byte_pos.div_ceil(4) != input.len() {
+    if strict && byte_pos.div_ceil(4) != input.len() {
         return Err(ErrorKind::TrailingBytes);
     }
-    for i in byte_pos..input.len() * 4 {
+    for i in byte_pos..if strict { input.len() * 4 } else { byte_pos } {
         if (input[i / 4] as u32 >> (i % 4 * 8)) & 255 != 0 {
             return Err(ErrorKind::InvalidValue);
         }

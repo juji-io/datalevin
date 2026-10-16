@@ -176,7 +176,7 @@
         s (fake/source tuple-info rows)
         query '{:find [?label] :in [$ $s]
                 :where [[?e :item/blob _] [$s ?e ?label]]
-                :query-source {:limits {:retained-bytes 32768}}}]
+                :query-source {:limits {:retained-bytes 40960}}}]
     (try
       (d/transact! conn [{:db/id 1 :item/blob (byte-array 131072)}
                          {:db/id 2 :item/blob (byte-array [1 2])}])
@@ -425,7 +425,7 @@
       (d/transact! conn [{:db/id 1 :item/custom small} {:db/id 2 :item/custom large}])
       (is (= #{[1 small]} (d/q q @conn rows 1) (d/q q @conn s 1)))
       (is (= #{[2 large]} (d/q q @conn rows 2) (d/q q @conn s 2)))
-      (let [bounded (assoc q :query-source {:limits {:retained-bytes 65536}})]
+      (let [bounded (assoc q :query-source {:limits {:retained-bytes 81920}})]
         (is (= :query-source/limit (category #(d/q bounded @conn s 2))))
         (is (= #{[1 small]} (d/q bounded @conn s 1)))
         (is (= #{[1 small]}

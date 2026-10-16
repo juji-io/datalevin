@@ -436,9 +436,19 @@
              {:error :custom-type/migration}))
   (let [d (dir (.-store ^DB @conn))]
     (try
-      (let [dumpfile (str d u/+separator+ "dl-dump")]
+      (let [dumpfile (str d u/+separator+ "dl-dump")
+            derived  (datalog-derived-dbis (conn/schema conn) (conn/opts conn))]
         (dump conn dumpfile)
         (conn/clear conn)
+        ;; clear removes primary data and schema. Secondary indexes still
+        ;; contain references using the old attribute/giant IDs, which can be
+        ;; reassigned when load rebuilds the store.
+        (let [lmdb (l/open-kv d)]
+          (try
+            (doseq [dbi (i/list-dbis lmdb)
+                    :when (contains? derived dbi)]
+              (i/clear-dbi lmdb dbi))
+            (finally (i/close-kv lmdb))))
         (load d schema opts dumpfile)
         (conn/create-conn d))
       (catch Exception e
