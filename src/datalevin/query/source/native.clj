@@ -38,9 +38,8 @@
               (let [kv (.-lmdb store)]
                 (storage/maybe-ensure-current! store)
                 (custom/with-snapshot kv
-                  (let [schema (schema/load-schema kv)
-                        attrs (into {} (map (fn [[a props]] [(:db/aid props) a])) schema)]
-                    (pin (next stores) (assoc snapshots store {:kv kv :attrs attrs :schema schema})))))
+                  (let [schema (schema/load-schema kv)]
+                    (pin (next stores) (assoc snapshots store {:kv kv :schema schema})))))
               (f snapshots)))]
     (pin (distinct (map #(.-store ^DB %) databases)) {})))
 
@@ -140,30 +139,60 @@
           (visit buffer)))
       (finally (source/release! token)))))
 
+(defn- visit-range!
+  [control dbi rtx cur k-range k-type v-range v-type ave? visit]
+  (with-open [^AutoCloseable iterator
+              (.iterator ^Iterable
+                (lmdb/iterate-list dbi rtx cur k-range k-type v-range v-type))]
+    (loop []
+      (source/check-active! control)
+      (when (.hasNext ^Iterator iterator)
+        (let [entry (.next ^Iterator iterator)
+              eid (bits/read-buffer (if ave? (lmdb/v entry) (lmdb/k entry)) :id)
+              raw (if ave? (lmdb/k entry) (lmdb/v entry))
+              result (visit rtx raw eid)]
+          (if (reduced? result) result (recur)))))))
+
 (defn- scan-attribute!
-  [control {:keys [kv attrs]} attribute entity-id visit]
-  (scan/scan kv c/eav
-    (with-open [^AutoCloseable iterator
-                (.iterator ^Iterable
-                  (lmdb/iterate-list dbi rtx cur
-                                     (if (some? entity-id) [:closed entity-id entity-id] [:all])
-                                     :id [:all] :avg))]
-      (loop []
-        (source/check-active! control)
-        (when (.hasNext ^Iterator iterator)
-          (let [entry (.next ^Iterator iterator)
-                eid (bits/read-buffer (lmdb/k entry) :id)
-                ^ByteBuffer raw (lmdb/v entry)
-                result (when (= attribute (attrs (bits/avg->aid raw)))
-                         (visit rtx raw eid))]
-            (if (reduced? result) result (recur))))))
-    (throw e)))
+  [control {:keys [kv schema]} attribute entity-id visit]
+  (source/check-active! control)
+  (when-let [aid (:db/aid (schema attribute))]
+    ;; AVG starts with an unsigned four-byte attribute ID in both indexes.
+    ;; Prefix bounds include every value/header, giant ID, and custom order key
+    ;; without consulting a value codec. The successor also works at amax.
+    (let [aid (int aid)
+          attr-range [:closed-open aid (unchecked-inc-int aid)]
+          noindex? (:db/noindex (schema attribute))
+          ave? (and (nil? entity-id) (not noindex?))]
+      (scan/scan kv (if ave? c/ave c/eav)
+        (cond
+          ave? (visit-range! control dbi rtx cur attr-range :int [:all] :id true visit)
+          (some? entity-id)
+          (visit-range! control dbi rtx cur [:closed entity-id entity-id] :id
+                        attr-range :int false visit)
+          :else
+          ;; Unindexed attributes have no AVE entries. Walk entity keys once,
+          ;; seeking only this attribute's duplicates for each. Keep cancellation
+          ;; checks between entities, even when none has the requested attribute.
+          (with-open [^AutoCloseable entities
+                      (.iterator ^Iterable (lmdb/iterate-key dbi rtx cur [:all] :id))]
+            (scan/scan kv c/eav
+              (loop []
+                (source/check-active! control)
+                (when (.hasNext ^Iterator entities)
+                  (let [eid (bits/read-buffer (lmdb/k (.next ^Iterator entities)) :id)
+                        result (visit-range! control dbi rtx cur [:closed eid eid] :id
+                                             attr-range :int false visit)]
+                    (if (reduced? result) result (recur)))))
+              (throw e))))
+        (throw e)))))
 
 (defn scan-keys!
   "Visit owned [entity attribute] pairs for an explicit value wildcard. Each
   matching index entry contributes one pair, including cardinality-many facts.
   Reserve the temporary row before scanning; never read or decode its payload.
-  A supplied entity ID restricts the EAV cursor to that entity."
+  Use the attribute's AVE range, or an attribute-bounded EAV range when the
+  entity is supplied or the attribute is unindexed."
   ([control snapshot attribute emit]
    (scan-keys! control snapshot attribute nil emit))
   ([control snapshot attribute entity-id emit]
@@ -175,8 +204,8 @@
        (finally (source/release! token))))))
 
 (defn scan!
-  "Visit owned datoms from one pinned EAV scan without a full-result collector.
-  A supplied entity ID restricts the cursor before any payload reads or decoding."
+  "Visit owned datoms from a pinned attribute scan without a full-result collector.
+  Entity and attribute bounds apply before any payload reads or decoding."
   ([control snapshot attribute emit]
    (scan! control snapshot attribute nil emit))
   ([control {:keys [kv] :as snapshot} attribute entity-id emit]

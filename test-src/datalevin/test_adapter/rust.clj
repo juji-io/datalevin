@@ -259,6 +259,17 @@
                 (bits/get-bytes buffer))]
     (invoke-peer! peer session :bits/decode-variable [bytes value-type])))
 
+(defn- put-attr! [peer session ^ByteBuffer buffer value]
+  ;; String conversion and substring are JVM value operations. Rust encodes
+  ;; their UTF-16 units and checks the byte limit before the first buffer write.
+  (let [^String text (subs (str value) 1)]
+    (.put buffer ^bytes (invoke-peer! peer session :bits/encode-attr [(.toCharArray text)]))))
+
+(defn- declared-type! [value-type]
+  (when (qualified-keyword? value-type)
+    (raise "Custom storage types require a declared DBI"
+           {:error :custom-type/undeclared :type value-type})))
+
 (defn- put-decimal! [peer session ^ByteBuffer buffer value]
   (.put buffer ^bytes (invoke-peer! peer session :bits/variable-header [:bigdec]))
   (let [^BigDecimal decimal value
@@ -506,6 +517,7 @@
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
           :avg (put-avg! peer session buffer value)
+          :attr (put-attr! peer session buffer value)
           (:data nil) (serialize-buffer! peer session buffer value)
           :bigdec (put-decimal! peer session buffer value)
           (:string :bytes :keyword :symbol :bigint)
@@ -521,15 +533,19 @@
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
                  :else (raise "Raw value must be bytes or ByteBuffer, got "
                                (type value) {:input value}))
+          (:ints :bitmap :term-info :doc-info :pos-info)
+          (adapter/unsupported! :adapter operation
+                                (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
             (put-tuple! peer session buffer value value-type)
-            (adapter/unsupported! :adapter operation
-                                  (str "Rust buffer codec is not implemented for " value-type)))))
+            (do (declared-type! value-type)
+                (serialize-buffer! peer session buffer value)))))
 
       :bits/read-buffer
       (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
           :avg (read-avg! peer session buffer :avg)
+          :attr (invoke-peer! peer session :bits/decode-attr [(bits/get-bytes buffer)])
           (:data nil) (deserialize-buffer! peer session buffer)
           :bigdec (read-decimal! peer session buffer)
           (:string :bytes :keyword :symbol :bigint)
@@ -540,10 +556,13 @@
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
+          (:ints :bitmap :term-info :query-term-info :doc-info :pos-info)
+          (adapter/unsupported! :adapter operation
+                                (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
             (read-tuple! peer session buffer value-type)
-            (adapter/unsupported! :adapter operation
-                                  (str "Rust buffer codec is not implemented for " value-type)))))
+            (do (declared-type! value-type)
+                (deserialize-buffer! peer session buffer)))))
 
       (invoke-peer! peer session operation arguments)))
   (stop! [_] (stop-peer! peer))

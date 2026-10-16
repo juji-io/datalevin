@@ -120,24 +120,24 @@
              :variables (into #{} (keep #(when (= :var (first %)) (second %))) terms)
              :read
              (fn [tables emit]
-              (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
-                (fn [runtime]
-                  (let [control (:control runtime)
-                        rows (or (:rows relation)
-                                 (when (and (= :var entity-tag)
-                                            (not (contains? bindings entity)))
-                                   (some #(when (contains? (first %) entity) %) tables)))
-                        scan (fn [entity-id]
-                               (source/check-active! control)
-                               (swap! (:explain runtime) update :native-scans inc)
-                               (read! control (get snapshots (.-store ^DB native))
-                                      (second (second terms)) entity-id
-                                      (fn [row]
-                                        (when-let [binding (match-row bindings terms row)]
-                                          (emit binding)))))]
-                    (if rows
-                      (input/with-entity-ids control rows entity #(visit-rows % scan))
-                      (scan entity-id))))))})) patterns))
+               (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
+                 (fn [runtime]
+                   (let [control (:control runtime)
+                         rows (or (:rows relation)
+                                  (when (and (= :var entity-tag)
+                                             (not (contains? bindings entity)))
+                                    (some #(when (contains? (first %) entity) %) tables)))
+                         scan (fn [entity-id]
+                                (source/check-active! control)
+                                (swap! (:explain runtime) update :native-scans inc)
+                                (read! control (get snapshots (.-store ^DB native))
+                                       (second (second terms)) entity-id
+                                       (fn [row]
+                                         (when-let [binding (match-row bindings terms row)]
+                                           (emit binding)))))]
+                     (if rows
+                       (input/with-entity-ids control rows entity #(visit-rows % scan))
+                       (scan entity-id))))))})) patterns))
 
 (defn- readers [runtime snapshots {:keys [entries fragments bindings input-data]}]
   (let [native (vec (mapcat #(native-reader runtime snapshots bindings input-data %)

@@ -489,6 +489,21 @@ pub fn encode_utf16(units: &[u16]) -> Vec<u8> {
         .into_bytes()
 }
 
+/// Attribute names have no header and are limited by LMDB's 511-byte key size.
+/// The binding strips the first UTF-16 unit from the value's string form.
+pub fn encode_attr(units: &[u16]) -> Result<Vec<u8>, usize> {
+    let bytes = encode_utf16(units);
+    if bytes.len() > 511 {
+        Err(bytes.len())
+    } else {
+        Ok(bytes)
+    }
+}
+
+pub fn decode_attr(bytes: &[u8]) -> String {
+    decode_utf8(bytes)
+}
+
 /// Match Java's replacement decoder. In particular, a three-byte surrogate
 /// encoding is one malformed unit, unlike Rust's standard UTF-8 lossy decoder.
 pub fn decode_utf8(bytes: &[u8]) -> String {

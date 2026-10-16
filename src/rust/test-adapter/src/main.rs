@@ -209,6 +209,7 @@ fn dispatch(request: &Value) -> Value {
             scalar_operation(operation, arguments)
         }
         "bits/encode-integer" | "bits/decode-integer" => integer_operation(operation, arguments),
+        "bits/encode-attr" | "bits/decode-attr" => attr_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -642,6 +643,25 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
     ]))
 }
 
+fn attr_operation(operation: &str, arguments: &[Value]) -> Value {
+    let [argument] = arguments else {
+        return protocol_error("Attribute codec requires exactly one value");
+    };
+    match (operation, value_argument(argument)) {
+        ("bits/encode-attr", Some(Value::CharArray(units))) => match bits::encode_attr(units) {
+            Ok(bytes) => success(Value::Bytes(bytes)),
+            Err(_) => java_error(
+                "java.lang.AssertionError",
+                "Assert failed: Attribute cannot be longer than 511 bytes\n(<= al c/+max-key-size+)",
+            ),
+        },
+        ("bits/decode-attr", Some(Value::Bytes(bytes))) => {
+            success(keyword(&bits::decode_attr(bytes)))
+        }
+        _ => protocol_error("Attribute encoding requires UTF-16; decoding requires bytes"),
+    }
+}
+
 fn variable_type(kind: &str) -> Option<VariableType> {
     Some(match kind {
         "string" => VariableType::String,
@@ -954,6 +974,8 @@ fn main() -> io::Result<()> {
                     keyword("bits/variable-header"),
                     keyword("bits/encode-variable"),
                     keyword("bits/decode-variable"),
+                    keyword("bits/encode-attr"),
+                    keyword("bits/decode-attr"),
                     keyword("bits/bigint-length"),
                     keyword("bits/encode-bigdec"),
                     keyword("bits/decode-bigdec"),
