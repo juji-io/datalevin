@@ -1,6 +1,7 @@
 (ns datalevin.query.source.value
   "Owned logical values and explicit custom-value validation/accounting hooks."
-  (:import [java.math BigDecimal BigInteger]
+  (:import [clojure.lang Ratio RT Sorted]
+           [java.math BigDecimal BigInteger]
            [java.util Date UUID]))
 
 (def scalar-types
@@ -23,6 +24,9 @@
 
 (defn plain-map? [x] (and (map? x) (not (record? x))))
 
+(defn- custom-comparator? [x]
+  (and (sorted? x) (not (identical? RT/DEFAULT_COMPARATOR (.comparator ^Sorted x)))))
+
 (defn owned-copy
   "Detach mutable leaves in supported values, including metadata. Custom values
   follow their immutable opt-in contract and are retained as supplied. The
@@ -30,12 +34,14 @@
   [x]
   (if (satisfies? IQuerySourceValue x)
     x
-    (let [copy (cond
+    (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
+          copy (cond
                  (bytes? x) (aclone ^bytes x)
                  (= Date (class x)) (Date. (.getTime ^Date x))
                  (vector? x) (mapv owned-copy x)
-                 (plain-map? x) (into {} (map (fn [[k v]] [(owned-copy k) (owned-copy v)])) x)
-                 (set? x) (into #{} (map owned-copy) x)
+                 (plain-map? x) (into (if (sorted? x) (empty x) {})
+                                      (map (fn [[k v]] [(owned-copy k) (owned-copy v)])) x)
+                 (set? x) (into (if (sorted? x) (empty x) #{}) (map owned-copy) x)
                  (list? x) (apply list (map owned-copy x))
                  :else x)]
       (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
@@ -68,8 +74,9 @@
   [x]
   (cond
     (or (nil? x) (boolean? x) (string? x) (keyword? x) (symbol? x)
-        (uuid? x) (integer? x) (decimal? x)) true
+        (uuid? x) (integer? x) (decimal? x) (char? x) (ratio? x)) true
     (or (double? x) (float? x)) (Double/isFinite (double x))
+    (custom-comparator? x) false
     (plain-map? x) (every? (fn [[k v]] (and (portable? k) (portable? v))) x)
     (or (vector? x) (set? x) (list? x)) (every? portable? x)
     :else false))
@@ -90,6 +97,7 @@
       n)
     (nil? x) 8
     (or (boolean? x) (instance? Long x) (instance? Integer x)
+        (instance? Byte x) (instance? Short x) (char? x)
         (instance? Double x) (instance? Float x)) 32
     (string? x) (+' 64 (*' 2 (count x)))
     (or (keyword? x) (symbol? x))
@@ -101,6 +109,9 @@
     (instance? BigInteger x) (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8))
     (instance? clojure.lang.BigInt x) (+' 32 (value-charge (biginteger x)))
     (instance? BigDecimal x) (+' 64 (value-charge (.unscaledValue ^BigDecimal x)))
+    (ratio? x) (+' 64 (value-charge (.numerator ^Ratio x))
+                   (value-charge (.denominator ^Ratio x)))
+    (custom-comparator? x) (fail! :query-source/unsupported :values)
     (plain-map? x) (+' 96 (*' 64 (count x))
                        (reduce +' 0 (map (fn [[k v]] (+' (value-charge k)
                                                         (value-charge v))) x))

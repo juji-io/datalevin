@@ -4,7 +4,8 @@
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.fake :as fake]
-            [datalevin.query.source.harness :as harness]))
+            [datalevin.query.source.harness :as harness]
+            [datalevin.query.source.value :as value]))
 
 (def tuple-info
   {:spi-versions #{1} :source-instance-id :fixture :compute-context-id :local
@@ -193,7 +194,7 @@
     (is (= :close-session (last @(:events fake))))))
 
 (deftest owned-metadata-survives-advance-and-close
-  (doseq [x [[1] {:a 1} #{1} '(1) 'value]]
+  (doseq [x [[1] {:a 1} #{1} '(1) 'value (sorted-map :a 1) (sorted-set 1 2)]]
     (let [bytes (byte-array [1 2])
           date (java.util.Date. 1000)
           x (with-meta x {:bytes bytes :nested (with-meta 'leaf {:date date})})
@@ -208,6 +209,7 @@
           stamp #(-> % meta :nested meta :date)]
       (is (= (repeat 5 x) values))
       (doseq [v values]
+        (is (= (class x) (class v)))
         (is (= [1 2] (vec (:bytes (meta v)))))
         (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
       (aset-byte ^bytes (:bytes (meta (first values))) 0 (byte 8))
@@ -216,6 +218,19 @@
         (is (= [1 2] (vec (:bytes (meta v)))))
         (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
       (is (= :close-session (last @(:events s)))))))
+
+(deftest custom-comparators-require-the-custom-value-contract
+  (doseq [x [(sorted-map-by #(compare %2 %1) :a 1 :b 2)
+             (sorted-set-by #(compare %2 %1) 1 2)]]
+    (is (not (value/portable? x)))
+    (is (= :query-source/unsupported (category #(value/value-charge x))))
+    (is (= :query-source/unsupported (category #(value/owned-copy x))))
+    (let [info (assoc tuple-info :pattern-contract
+                      {:kind :tuple :columns [{:type :data :nullable? false}]})
+          s (fake/source info [[x]])]
+      (is (= :query-source/invalid
+             (category #(harness/run! s [{:id 0 :kind :pattern :terms [[:const x]]}]))))
+      (is (empty? @(:events s))))))
 
 (deftest acquisition-and-planning-failures-clean-up-only-acquired-resources
   (doseq [[phase category expected]

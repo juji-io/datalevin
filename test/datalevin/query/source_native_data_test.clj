@@ -45,19 +45,25 @@
     (bits/get-bytes buffer)))
 
 (deftest portable-data-layouts-and-conservative-charges
-  (doseq [x [true false (int 42) 0 42 -42 42N (biginteger 42) 1.00M
+  (doseq [x [true false (byte 42) (short 42) (int 42) 0 42 -42 42N (biginteger 42) 1.00M
+             \λ 1/2 -7/3 9223372036854775808/3
              (float 1.5) 2.5 "λ😀" :test/key 'test/symbol (Date. 12) (UUID/randomUUID)
              [] {} #{} '() [1 nil :key ["nested"]]
              (with-meta [1 2] {:source ["local"]})
              (with-meta 'value {:source :test})
              {:key [1 2] [nil :composite] #{"a" "b"} :list '(nil true "value")}
              (vec (repeat 400 nil)) (apply list (range 400))
-             (zipmap (range 400) (repeat nil)) (set (range 400))]
+             (zipmap (range 400) (repeat nil)) (set (range 400))
+             (sorted-map) (sorted-set) (sorted-map :a 1/2 :b [\x (short 2)])
+             (with-meta (sorted-set 1/2 2/3) {:source :sorted})
+             (into (sorted-map) (map (fn [i] [i [\λ 1/2]])) (range 400))
+             (into (sorted-set) (range 400))]
           freeze [bits/serialize #(nippy/freeze % {:compressor nil})]]
     (let [bytes (freeze (datom/datom 1 :test/value x))
           {:keys [decode retained-bytes]} (prepare bytes)
           decoded (decode)]
       (is (= x decoded))
+      (is (= (class x) (class decoded)))
       (is (= (meta x) (meta decoded)))
       (is (>= (long retained-bytes) (long (value/value-charge decoded)))))
     (let [indexable (bits/indexable 1 2 x :db.type/data 1)]
@@ -84,7 +90,7 @@
       (is (= :query-source/invalid (category #(decode (Arrays/copyOf bytes length))))))
     (is (= :query-source/invalid
            (category #(decode (Arrays/copyOf bytes (inc (alength bytes))))))))
-  (doseq [tag [21 23 30 20] ; vector, set, map, list with 32-bit counts
+  (doseq [tag [21 23 30 20 28 31 29] ; includes current/legacy sorted collections
           length [-1 Integer/MAX_VALUE]]
     (let [buffer (prefix (ByteBuffer/allocate 100) :test/value)]
       (.put buffer (byte tag))
@@ -109,12 +115,56 @@
   (reset! decoded-custom-values 0)
   (doseq [x [(UnexpectedData.) {:nested (UnexpectedData.)} (byte-array [1 2])
              {:nested [(byte-array [1 2])]} (with-meta [1] {:hidden (UnexpectedData.)})
-             (sorted-map :a 1) (sorted-set 1 2) \x (short 1) 1/2]]
+             (sorted-map :a (UnexpectedData.))
+             clojure.lang.PersistentQueue/EMPTY]]
     (is (= :query-source/unsupported
            (category #(decode (bits/serialize (datom/datom 1 :test/value x)))))))
   (is (zero? @decoded-custom-values))
   (is (= :query-source/invalid
          (category #(decode (bits/serialize (datom/datom 1 :test/value nil)))))))
+
+(defn malformed-sorted-data
+  "Well-sized sorted-map payload whose keys cannot be compared."
+  ^bytes []
+  (let [buffer (ByteBuffer/allocate 100)]
+    (.put buffer (byte 31))
+    (.putInt buffer 2)
+    (doseq [x [:key 1 "incomparable" 2]] (nippy/freeze-to-bb! buffer x))
+    (.flip buffer)
+    (bits/get-bytes buffer)))
+
+(deftest malformed-portable-data-is-invalid
+  (let [prepared (native-value/prepare-data (ByteBuffer/wrap (malformed-sorted-data)) (fn []))]
+    ;; The layout is bounded, but construction must report a structural error.
+    (is (= :query-source/invalid (category (:decode prepared)))))
+  (doseq [x [\λ (byte 2) (short 3) 2/3 (sorted-map :a 1 :b 2) (sorted-set 1 2)]
+          :let [bytes (bits/serialize x)]
+          length (range (alength bytes))]
+    (is (= :query-source/invalid
+           (category #(native-value/prepare-data
+                        (ByteBuffer/wrap (Arrays/copyOf bytes (int length))) (fn []))))))
+  (doseq [[numerator-length denominator-length denominator]
+          [[0 1 1] [-1 1 1] [Integer/MAX_VALUE 1 1] [1 0 1]
+           [1 -1 1] [1 Integer/MAX_VALUE 1] [1 1 0]]]
+    (let [buffer (doto (ByteBuffer/allocate 11)
+                   (.put (byte 70)) (.putInt numerator-length) (.put (byte 1))
+                   (.putInt denominator-length) (.put (byte denominator)) (.flip))]
+      (is (= :query-source/invalid
+             (category #(native-value/prepare-data buffer (fn [])))))))
+  ;; The old map tag counts individual key/value slots, so odd counts reject.
+  (let [buffer (doto (ByteBuffer/allocate 8) (.put (byte 29)) (.putInt 3)
+                 (.put (byte 0)) (.put (byte 0)) (.put (byte 0)) (.flip))]
+    (is (= :query-source/invalid
+           (category #(native-value/prepare-data buffer (fn [])))))))
+
+(deftest legacy-sorted-map-slot-count
+  (let [bytes (bits/serialize (sorted-map :a 1 :b 2))
+        buffer (ByteBuffer/wrap bytes)]
+    (.put buffer 0 (byte 29))
+    (.putInt buffer 1 4)
+    (let [decoded ((:decode (native-value/prepare-data buffer (fn []))))]
+      (is (sorted? decoded))
+      (is (= (sorted-map :a 1 :b 2) decoded)))))
 
 (deftest caches-count-expanded-occurrences-and-cannot-hide-depth
   (let [small (prepare (cached-dag :test/value 6))

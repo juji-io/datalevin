@@ -59,6 +59,9 @@
         (case kind
           (:true :false) [:boolean 0]
           :boolean_ [:boolean 1]
+          :byte [:byte 1]
+          :short [:short 2]
+          :char [:char 2]
           :integer [:integer 4]
           :long-0 [:long 0]
           (:long-pos-sm :long-neg-sm :long-sm_) [:long 1]
@@ -92,6 +95,25 @@
 
 (declare value!)
 
+(defn- ratio-body! [^ByteBuffer buffer check!]
+  (skip! buffer 1)
+  (let [numerator-size (length! buffer 4)
+        _ (when-not (pos? numerator-size) (fail! :query-source/invalid :native-value))
+        _ (skip! buffer numerator-size)
+        denominator-size (length! buffer 4)]
+    (when-not (pos? denominator-size) (fail! :query-source/invalid :native-value))
+    (need! buffer denominator-size)
+    ;; A zero denominator is not a valid number. Inspect without constructing
+    ;; either BigInteger, and keep long runs of leading zeroes interruptible.
+    (loop [i 0, nonzero? false]
+      (if (= i denominator-size)
+        (when-not nonzero? (fail! :query-source/invalid :native-value))
+        (do
+          (when (zero? (bit-and i 1023)) (check!))
+          (let [b (.get buffer)]
+            (recur (inc i) (or nonzero? (not (zero? b))))))))
+    {:type :ratio :charge (+ 512 (* 8 (+ numerator-size denominator-size))) :height 0}))
+
 (defn- collection-layout [kind ^ByteBuffer buffer]
   (case kind
     :vec-0 [:vector 0] :vec-2 [:vector 2] :vec-3 [:vector 3]
@@ -101,12 +123,16 @@
     :set-0 [:set 0]
     :set-sm* [:set (+ 128 (length! buffer 1))]
     :set-sm_ [:set (length! buffer 1)]
-    :set-md [:set (length! buffer 2)] :set-lg [:set (length! buffer 4)]
+    :set-md [:set (length! buffer 2)]
+    (:set-lg :sorted-set-lg) [:set (length! buffer 4)]
     :map-0 [:map 0]
     (:map-sm* :pam-sm*_) [:map (* 2 (+ 128 (length! buffer 1)))]
     :map-sm_ [:map (* 2 (length! buffer 1))]
     :map-md [:map (* 2 (length! buffer 2))]
-    :map-lg [:map (* 2 (length! buffer 4))]
+    (:map-lg :sorted-map-lg) [:map (* 2 (length! buffer 4))]
+    :sorted-map_ (let [n (length! buffer 4)]
+                   (when (odd? n) (fail! :query-source/invalid :native-value))
+                   [:map n])
     :list-0 [:list 0] :list-sm [:list (length! buffer 1)]
     :list-md [:list (length! buffer 2)] :list-lg [:list (length! buffer 4)]
     nil))
@@ -119,6 +145,9 @@
       (do (when-not nullable? (fail! :query-source/invalid :native-value))
           (skip! buffer 1)
           {:type :nil :charge 512 :height 0})
+
+      (and (= expected :data) (= kind :ratio))
+      (ratio-body! buffer (:check! context))
 
       (and (metadata-capable? expected) (= kind :meta))
       (do
@@ -229,6 +258,12 @@
 (defn- layout-charge? [type]
   (or (= type :data) (= :native-homogeneous-tuple (:kind type))))
 
+(defn- thaw-preflighted! [^ByteBuffer buffer]
+  ;; Layout validation excludes custom readers. Valid lengths can still encode
+  ;; invalid values, such as incomparable sorted keys or an empty BigInteger.
+  (try (nippy/thaw-from-bb! buffer)
+       (catch RuntimeException _ (fail! :query-source/invalid :native-value))))
+
 (defn prepare-giant
   "Validate a raw Nippy datom without constructing its values. Returns a decoder
   and an additional retained-byte charge, to reserve through consumer handoff.
@@ -251,9 +286,9 @@
         :decode (fn []
                   (.position buffer start)
                   (impl/with-thaw-cache
-                    (when-not (= attribute (nippy/thaw-from-bb! buffer))
+                    (when-not (= attribute (thaw-preflighted! buffer))
                       (fail! :query-source/invalid :native-value))
-                    (nippy/thaw-from-bb! buffer)))}))))
+                    (thaw-preflighted! buffer)))}))))
 
 (defn giant-value
   "Decode a pre-reserved scalar or fixed tuple without metadata. Values needing
@@ -347,7 +382,7 @@
     {:retained-bytes (:charge layout)
      :decode (fn []
                (.position buffer start)
-               (impl/with-thaw-cache (nippy/thaw-from-bb! buffer)))}))
+               (impl/with-thaw-cache (thaw-preflighted! buffer)))}))
 
 (defn prepare-inline
   "Validate an inline AVG value, returning a decoder and additional charge.
