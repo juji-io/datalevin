@@ -2,6 +2,7 @@
   "A synchronous, bounded Nippy process bridge. No reference engine calls."
   (:require
    [datalevin.bits :refer [->Indexable ->Retrieved ->CustomReference]]
+   [datalevin.sparselist :refer [ISparseIntArrayList ->SparseIntArrayList]]
    [datalevin.util :refer [raise]]
    [datalevin.buffer :as buffer]
    [taoensso.nippy :as nippy]
@@ -12,9 +13,12 @@
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
    [java.math BigDecimal BigInteger]
    [datalevin.bits Indexable]
+   [datalevin.sparselist SparseIntArrayList]
+   [datalevin.utl GrowingIntArray]
    [java.nio ByteBuffer ByteOrder]
    [java.util Date UUID]
    [org.roaringbitmap RoaringBitmap]
+   [org.roaringbitmap.buffer ImmutableRoaringBitmap]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
     ThreadFactory TimeUnit TimeoutException]))
 
@@ -235,6 +239,28 @@
     (when-not little? (.position buffer (+ (.position buffer) (.position target))))
     nil))
 
+(defn- put-sparse! [peer session ^ByteBuffer buffer value]
+  (when-not (instance? SparseIntArrayList value)
+    (if (satisfies? ISparseIntArrayList value)
+      (adapter/unsupported! :adapter :bits/put-buffer "Custom sparse-list serializers are not implemented")
+      (throw (IllegalArgumentException.
+               (str "No implementation of method: :serialize of protocol: #'datalevin.sparselist/ISparseIntArrayList found for class: "
+                    (if (nil? value) "nil" (.getName ^Class (class value))))))))
+  (let [^SparseIntArrayList value value]
+    (put-ints! peer session buffer (.toArray ^GrowingIntArray (.-items value)) false)
+    (let [indices (.-indices value)]
+      (put-bitmap! peer session buffer
+                   (if (instance? ImmutableRoaringBitmap indices)
+                     (.toRoaringBitmap ^ImmutableRoaringBitmap indices)
+                     indices)))))
+
+(defn- put-term! [peer session ^ByteBuffer buffer value]
+  (let [[id weight sparse] value]
+    (put-integer! peer session buffer id :int)
+    ;; This field is raw IEEE data: preserve signed zero and NaN payloads.
+    (put-integer! peer session buffer (Float/floatToRawIntBits (float weight)) :int)
+    (put-sparse! peer session buffer sparse)))
+
 (defn- read-ints! [peer session ^ByteBuffer buffer sorted?]
   (let [little? (= ByteOrder/LITTLE_ENDIAN (.order buffer))
         {:keys [size compressed?]}
@@ -443,6 +469,42 @@
     (replay-reads! view reads)
     (result-value session :bits/read-buffer result)))
 
+(defn- read-sparse! [peer session ^ByteBuffer buffer read-only?]
+  (let [items (doto (GrowingIntArray.) (.addAll ^ints (read-ints! peer session buffer false)))
+        bitmap (try (read-bitmap! peer session buffer)
+                    (catch Exception error
+                      (if (and read-only?
+                               (or (instance? java.nio.BufferUnderflowException error)
+                                   (instance? java.io.IOException error)
+                                   (instance? IllegalArgumentException error)
+                                   (instance? IndexOutOfBoundsException error)))
+                        (adapter/unsupported! :adapter :bits/read-buffer
+                                              "Malformed lazy query bitmap behavior is not implemented")
+                        (throw error))))
+        indices (if read-only?
+                  (let [direct (doto (ByteBuffer/allocateDirect (.serializedSizeInBytes ^RoaringBitmap bitmap))
+                                 (.order (.order buffer)))]
+                    ;; Rust emits the owned bitmap bytes. The immutable JVM
+                    ;; wrapper exposes sparse-list lookups over that result.
+                    (put-bitmap! peer session direct bitmap)
+                    (.flip direct)
+                    ;; Immutable readers follow stored offsets; mutable readers
+                    ;; ignore them. Do not normalize noncanonical query input.
+                    (when-not (and (<= (.remaining direct) (.remaining buffer))
+                                   (java.util.Arrays/equals
+                                     (bits/get-bytes (.duplicate direct))
+                                     (bits/get-bytes (.duplicate buffer) (.remaining direct))))
+                      (adapter/unsupported! :adapter :bits/read-buffer
+                                            "Noncanonical lazy query bitmap behavior is not implemented"))
+                    (ImmutableRoaringBitmap. direct))
+                  bitmap)]
+    (->SparseIntArrayList indices items)))
+
+(defn- read-term! [peer session ^ByteBuffer buffer read-only?]
+  [(read-integer! peer session buffer :int)
+   (Float/intBitsToFloat (int (read-integer! peer session buffer :int)))
+   (read-sparse! peer session buffer read-only?)])
+
 (defn- raw-index-type [value-type]
   (case value-type
     :db.type/string :string :db.type/keyword :keyword :db.type/symbol :symbol
@@ -586,6 +648,7 @@
           :attr (put-attr! peer session buffer value)
           :ints (put-ints! peer session buffer value false)
           :bitmap (put-bitmap! peer session buffer value)
+          :term-info (put-term! peer session buffer value)
           :doc-info (let [[id count positions] value]
                       (put-integer! peer session buffer id :int)
                       (put-integer! peer session buffer count :short)
@@ -608,9 +671,6 @@
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
                  :else (raise "Raw value must be bytes or ByteBuffer, got "
                                (type value) {:input value}))
-          :term-info
-          (adapter/unsupported! :adapter operation
-                                (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
             (put-tuple! peer session buffer value value-type)
             (do (declared-type! value-type)
@@ -623,6 +683,8 @@
           :attr (invoke-peer! peer session :bits/decode-attr [(bits/get-bytes buffer)])
           :ints (read-ints! peer session buffer false)
           :bitmap (read-bitmap! peer session buffer)
+          :term-info (read-term! peer session buffer false)
+          :query-term-info (read-term! peer session buffer true)
           :doc-info [(read-integer! peer session buffer :int)
                      (read-integer! peer session buffer :short)
                      (read-ints! peer session buffer false)]
@@ -638,9 +700,6 @@
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
-          (:term-info :query-term-info)
-          (adapter/unsupported! :adapter operation
-                                (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
             (read-tuple! peer session buffer value-type)
             (do (declared-type! value-type)

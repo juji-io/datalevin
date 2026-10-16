@@ -333,3 +333,41 @@
         (is (= :query-source/invalid
                (category #(contract/batch! [] {:control c :max-rows 10 :max-bytes 1000} bad)))))
       (finally (source/-close-session! session) (control/close! c)))))
+
+(deftest batch-accounting-validates-each-custom-value-once
+  (let [calls (atom 0)
+        type {:kind :custom :name :test/charged :version 1 :fingerprint "v1"}
+        x (reify value/IQuerySourceValue
+            (-logical-type [_] type)
+            (-retained-bytes [_] (swap! calls inc) 64))]
+    (doseq [[t row] [[:data [x]] [type [x]]
+                    [{:kind :tuple :elements [:long :data]} [[1 x]]]]]
+      (let [columns [{:type t :nullable? false}]
+            rows [row]
+            expected (+' 64 (value/value-charge columns) (value/value-charge rows))]
+        (reset! calls 0)
+        (is (= expected (source/batch-charge-bytes columns rows)))
+        (is (= 1 @calls))))))
+
+(deftest incremental-batch-charges-include-metadata-and-overflow
+  (let [huge (reify value/IQuerySourceValue
+               (-logical-type [_] {:kind :custom :name :test/huge :version 1 :fingerprint "v1"})
+               (-retained-bytes [_] Long/MAX_VALUE))]
+    (doseq [x [nil (java.util.Date. 1) (byte-array [1 2])
+               (with-meta 'item {:when (java.time.Instant/ofEpochSecond 1 123)})
+               (with-meta [1N 2/3 1.23M] {:hidden (sorted-map :a (sorted-set 1 2))})
+               {:values (list #{1 2} [huge huge])}]]
+      (let [columns [{:type :data :nullable? true}]
+            rows (with-meta [(with-meta [x] {:row :metadata})] {:batch :metadata})
+            observed (volatile! 0)
+            bytes (value/batch-charge-bytes columns rows #(vswap! observed +' %))]
+        (is (= (+' 64 (value/value-charge columns) (value/value-charge rows)) bytes))
+        (is (= bytes @observed)))))
+  (is (zero? (source/batch-charge-bytes [] []))))
+
+(deftest batch-rows-accept-all-persistent-vector-representations
+  (let [columns [{:type :long :nullable? false} {:type :data :nullable? false}]
+        expected (source/batch-charge-bytes columns [[1 :ok]])]
+    (doseq [row [[1 :ok] (subvec [:prefix 1 :ok :suffix] 1 3) (first {1 :ok})]]
+      (is (vector? row))
+      (is (= expected (source/batch-charge-bytes columns [row]))))))

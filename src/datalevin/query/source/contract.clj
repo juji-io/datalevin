@@ -270,20 +270,32 @@
                 (select-keys info [:source-instance-id :compute-context-id])) :session))
   info)
 
+(defn- batch-limit! [category actual maximum]
+  (when-not (v/at-most? actual (long maximum))
+    (fail! :query-source/limit :batch
+           {:category category :maximum maximum :attempted actual})))
+
 (defn batch! [columns request batch]
+  (control/check-active! (:control request))
   (fields! batch #{:columns :rows :row-count :byte-count :exhausted?} #{:reservation} :batch)
   (ensure! (and (= columns (:columns batch))
                 (pos-int? (:max-rows request)) (pos-int? (:max-bytes request))
                 (nonnegative? (:row-count batch)) (nonnegative? (:byte-count batch))
-                (boolean? (:exhausted? batch))) :batch)
-  (let [rows (:rows batch)
-        bytes (v/batch-charge-bytes columns rows)]
-    (ensure! (and (= (:row-count batch) (count rows)) (= (:byte-count batch) bytes)
+                (boolean? (:exhausted? batch)) (vector? (:rows batch))) :batch)
+  (let [rows (:rows batch)]
+    (ensure! (and (= (:row-count batch) (count rows))
                   (or (seq rows) (:exhausted? batch))) :batch)
-    (doseq [[category actual maximum] [[:batch-rows (count rows) (:max-rows request)]
-                                      [:batch-bytes bytes (:max-bytes request)]]]
-      (when-not (v/at-most? actual (long maximum))
-        (fail! :query-source/limit :batch {:category category :maximum maximum :attempted actual})))
-    (when (or (seq rows) (:reservation batch))
-      (control/accept! (:control request) (:reservation batch) bytes)))
+    ;; Reject the envelope before inspecting any provider values. Recompute
+    ;; the charge under the cap as well: a provider can understate byte-count.
+    (batch-limit! :batch-rows (count rows) (:max-rows request))
+    (batch-limit! :batch-bytes (:byte-count batch) (:max-bytes request))
+    (let [charged (volatile! 0)
+          bytes (v/batch-charge-bytes columns rows
+                  (fn [increment]
+                    (control/check-active! (:control request))
+                    (batch-limit! :batch-bytes (vswap! charged +' increment)
+                                  (:max-bytes request))))]
+      (ensure! (= (:byte-count batch) bytes) :batch)
+      (when (or (seq rows) (:reservation batch))
+        (control/accept! (:control request) (:reservation batch) bytes))))
   batch)

@@ -2,6 +2,8 @@
 
 ## WIP
 
+### Fixed
+- [Datalog] A re-index bug [#353](https://github.com/datalevin/datalevin/issues/353).
 ### Added
 - [Analytics] infrastructure to work with external data source over virtual
   relation.
