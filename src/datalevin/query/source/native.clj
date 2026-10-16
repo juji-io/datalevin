@@ -49,7 +49,7 @@
     (let [t (if (= t :db.type/ref) :long (keyword (name t)))]
       (when (and (value/scalar-types t) (not (#{:data :bytes} t))) t))))
 
-(defn- attribute-type [schema attribute]
+(defn- attribute-type [{:keys [kv schema]} attribute]
   (let [{:db/keys [valueType tupleTypes tupleType]} (schema attribute)]
     (or (logical-scalar valueType)
         (when (or (nil? valueType) (= valueType :db.type/data)
@@ -64,6 +64,13 @@
         (when (and (= valueType :db.type/tuple) (<= 2 (count tupleTypes) 255))
           (let [elements (mapv logical-scalar tupleTypes)]
             (when (every? some? elements) {:kind :tuple :elements elements})))
+        (when (custom/custom-type? valueType)
+          ;; Resolve metadata in the pinned view, without realizing the type's
+          ;; delayed order/codec functions. Only portable Nippy payloads have a
+          ;; bounded decoder; arbitrary user deserializers cannot be preflighted.
+          (when (= :nippy (get-in (custom/descriptor kv valueType)
+                                  [:custom/type :definition :payload]))
+            {:kind :native-custom-data}))
         (fail! :query-source/unsupported :native-type))))
 
 (defn- matches-native-type? [type x]
@@ -76,6 +83,7 @@
     :native-homogeneous-tuple
     (and (vector? x) (<= 1 (count x) 255)
          (every? #(value/matches-type? (:element type) %) x))
+    :native-custom-data (value/matches-type? :data x)
     (value/matches-type? type x)))
 
 (defn validate-types! [runtime snapshots entries external-types input-data]
@@ -83,13 +91,13 @@
           pattern patterns]
     (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
       (fn [{:keys [control]}]
-        (let [schema (:schema (get snapshots (.-store ^DB native)))
+        (let [snapshot (get snapshots (.-store ^DB native))
               attribute (second (second (:terms pattern)))
               ;; An explicit wildcard requires only the index entry's
               ;; existence, not a supported logical value or decoder.
               t (when-not (= :ignore (first (nth (:terms pattern) 2)))
-                  (attribute-type schema attribute))
-              logical (if (= :native-homogeneous-tuple (:kind t)) :data t)]
+                  (attribute-type snapshot attribute))
+              logical (if (#{:native-homogeneous-tuple :native-custom-data} (:kind t)) :data t)]
           (doseq [[term type logical-type]
                   (map vector (:terms pattern) [:long :keyword t] [:long :keyword logical])]
             (when (= :var (first term))
@@ -172,23 +180,31 @@
   A supplied entity ID restricts the cursor before any payload reads or decoding."
   ([control snapshot attribute emit]
    (scan! control snapshot attribute nil emit))
-  ([control {:keys [kv schema] :as snapshot} attribute entity-id emit]
-   (let [type (attribute-type schema attribute)
+  ([control {:keys [kv] :as snapshot} attribute entity-id emit]
+   (let [type (attribute-type snapshot attribute)
          check! #(source/check-active! control)]
      (scan-attribute! control snapshot attribute entity-id
        (fn [rtx ^ByteBuffer raw eid]
-         (let [giant (bits/avg->giant-id raw)]
-           (if (= c/normal giant)
-             (visit-value control raw (.remaining raw) attribute type
-                          (when (= type :data) #(native-value/inline-data-buffer raw))
-                          (if (= type :data)
-                            #(native-value/prepare-data % check!)
-                            #(native-value/prepare-inline % type check!)) emit eid)
-             (let [giants (i/get-dbi kv c/giants false)]
-               (lmdb/put-read-key giants rtx giant :id)
-               (if-let [buffer (lmdb/get-kv giants rtx)]
-                 (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                              #(index/giant-datom-buffer buffer)
-                              #(native-value/prepare-giant % type eid attribute check!)
-                              emit eid)
-                 (fail! :query-source/invalid :native-value))))))))))
+         (if (= :native-custom-data (:kind type))
+           (let [id (native-value/custom-reference-id raw)
+                 payloads (i/get-dbi kv c/custom-values false)]
+             (lmdb/put-read-key payloads rtx id :id)
+             (if-let [^ByteBuffer buffer (lmdb/get-kv payloads rtx)]
+               (visit-value control buffer (.remaining buffer) attribute :data
+                            (fn [] buffer) #(native-value/prepare-data % check!) emit eid)
+               (fail! :query-source/invalid :native-value)))
+           (let [giant (bits/avg->giant-id raw)]
+             (if (= c/normal giant)
+               (visit-value control raw (.remaining raw) attribute type
+                            (when (= type :data) #(native-value/inline-data-buffer raw))
+                            (if (= type :data)
+                              #(native-value/prepare-data % check!)
+                              #(native-value/prepare-inline % type check!)) emit eid)
+               (let [giants (i/get-dbi kv c/giants false)]
+                 (lmdb/put-read-key giants rtx giant :id)
+                 (if-let [buffer (lmdb/get-kv giants rtx)]
+                   (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
+                                #(index/giant-datom-buffer buffer)
+                                #(native-value/prepare-giant % type eid attribute check!)
+                                emit eid)
+                   (fail! :query-source/invalid :native-value)))))))))))

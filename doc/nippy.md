@@ -139,7 +139,8 @@ clojure -Sdeps '{:deps {com.taoensso/nippy {:mvn/version "3.7.0-beta1"}
 Rust tests check their decoded meaning against independent Rust values and
 round-trip the entire corpus. Generation changes upstream exception stack
 traces, so the exact fixture bytes are versioned rather than regenerated
-during every Cargo run. See `fuzz/README.md` for bounded fuzzing.
+during every Cargo run. See the [fuzzing instructions](../src/rust/fuzz/README.md)
+for bounded fuzzing.
 
 Optimized paths also have coverage for all 33 integer packing widths (including
 exact JVM bytes), typed-array bit patterns and allocation limits, keyword cache

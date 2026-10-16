@@ -364,6 +364,7 @@ pub enum VariableType {
     Keyword,
     Symbol,
     BigInteger,
+    BigDecimal,
 }
 
 impl VariableType {
@@ -374,8 +375,109 @@ impl VariableType {
             Self::Keyword => 0xfb,
             Self::Symbol => 0xfc,
             Self::BigInteger => 0xf1,
+            Self::BigDecimal => 0xf2,
         }
     }
+}
+
+/// Fixed storage sizes exposed by bits/type-size. Internal fixed-width fields
+/// such as :short and :int-int intentionally retain the original nil result.
+pub fn type_size(kind: &str) -> Option<usize> {
+    Some(match kind {
+        "int" => 4,
+        "long" | "double" | "instant" => 9,
+        "id" => 8,
+        "float" => 5,
+        "byte" => 1,
+        "boolean" => 2,
+        "uuid" => 17,
+        _ => return None,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecimalError {
+    Scalar(ScalarError),
+    Integer(BigIntegerError),
+    WrongLength,
+    InvalidNumber,
+}
+
+fn decimal_approximation(unscaled: &[u8], scale: i32) -> Result<f64, DecimalError> {
+    let unscaled = canonical_integer(unscaled).map_err(DecimalError::Integer)?;
+    let negative = unscaled[0] >= 128;
+    let mut magnitude = unscaled.to_vec();
+    if negative {
+        let mut carry = 1u16;
+        for byte in magnitude.iter_mut().rev() {
+            let value = u16::from(!*byte) + carry;
+            *byte = value as u8;
+            carry = value >> 8;
+        }
+    }
+    // Decimal limbs avoid building powers of ten at extreme scales. Rust's
+    // decimal parser rounds to binary64, including underflow and infinity.
+    let mut limbs = vec![0u32];
+    for byte in magnitude {
+        let mut carry = u64::from(byte);
+        for limb in &mut limbs {
+            let value = u64::from(*limb) * 256 + carry;
+            *limb = (value % 1_000_000_000) as u32;
+            carry = value / 1_000_000_000;
+        }
+        if carry != 0 {
+            limbs.push(carry as u32);
+        }
+    }
+    let mut decimal = if negative {
+        String::from("-")
+    } else {
+        String::new()
+    };
+    let mut parts = limbs.into_iter().rev();
+    decimal.push_str(&parts.next().unwrap().to_string());
+    for part in parts {
+        decimal.push_str(&format!("{part:09}"));
+    }
+    decimal.push_str(&format!("e{}", -i64::from(scale)));
+    decimal.parse().map_err(|_| DecimalError::InvalidNumber)
+}
+
+/// Produce ordered field writes, validating each field when it is reached.
+/// Consumers stop on their first write/codec error, retaining earlier writes.
+pub fn decimal_fields(
+    unscaled: &[u8],
+    scale: i32,
+    little_endian: bool,
+) -> impl Iterator<Item = Result<Vec<u8>, DecimalError>> + '_ {
+    std::iter::once_with(move || {
+        let approximate = decimal_approximation(unscaled, scale)?;
+        ScalarType::Double
+            .encode(ScalarValue::Double(approximate), little_endian)
+            .map_err(DecimalError::Scalar)
+    })
+    .chain(std::iter::once_with(move || {
+        encode_bigint(unscaled).map_err(DecimalError::Integer)
+    }))
+    .chain(std::iter::once_with(|| Ok(vec![0])))
+    .chain(std::iter::once_with(move || {
+        Ok(IntegerWidth::Int.encode(i64::from(scale), little_endian))
+    }))
+}
+
+/// Decode the unscaled value and scale. The double approximation and separator
+/// are consumed without validation, matching the existing storage reader.
+pub fn decode_decimal(bytes: &[u8], little_endian: bool) -> Result<(Vec<u8>, i32), DecimalError> {
+    let prefix = *bytes.get(8).ok_or(DecimalError::WrongLength)?;
+    let length = bigint_length(prefix);
+    if bytes.len() != length + 14 {
+        return Err(DecimalError::WrongLength);
+    }
+    let unscaled = decode_bigint(&bytes[8..9 + length]).map_err(DecimalError::Integer)?;
+    let scale = IntegerWidth::Int
+        .decode(&bytes[10 + length..], little_endian)
+        .ok_or(DecimalError::WrongLength)? as i32;
+    Ok((unscaled, scale))
 }
 
 /// Match String.getBytes(UTF_8): unpaired UTF-16 surrogates become '?'.

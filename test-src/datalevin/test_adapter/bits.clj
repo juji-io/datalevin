@@ -57,6 +57,14 @@
   ([buffer value-type]
    (adapter/call! :bits/read-buffer [buffer value-type])))
 
+(defn buffer-reader
+  "Capture a storage type; dispatch to the active backend when the reader is called."
+  [value-type]
+  (fn [buffer] (read-buffer buffer value-type)))
+
+(defn type-size [value-type]
+  (adapter/call! :bits/type-size [value-type]))
+
 (defn acquire-serialized-bf
   "Acquire a JVM heap buffer containing the selected codec's bytes, ready to read.
   Return it with buffer/return-array-buffer after synchronous consumption."

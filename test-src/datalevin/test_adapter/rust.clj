@@ -9,7 +9,7 @@
   (:import
    [java.io DataInputStream DataOutputStream]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
-   [java.math BigInteger]
+   [java.math BigDecimal BigInteger]
    [java.nio ByteBuffer ByteOrder]
    [java.util Date UUID]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
@@ -257,6 +257,38 @@
                 (bits/get-bytes buffer))]
     (invoke-peer! peer session :bits/decode-variable [bytes value-type])))
 
+(defn- put-decimal! [peer session ^ByteBuffer buffer value]
+  (.put buffer ^bytes (invoke-peer! peer session :bits/variable-header [:bigdec]))
+  (let [^BigDecimal decimal value
+        fields (invoke-peer! peer session :bits/encode-bigdec
+                             [(.toByteArray (.unscaledValue decimal))
+                              (.scale decimal) (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    ;; Rust supplies field writes and any terminal codec error. Apply them in
+    ;; order so buffer overflow/read-only errors precede later validation errors.
+    (doseq [field fields]
+      (.put buffer ^bytes (result-value session :bits/put-buffer field)))
+    buffer))
+
+(defn- read-decimal! [peer session ^ByteBuffer buffer]
+  (bits/get-bytes buffer 1)
+  (let [approximate (bits/get-bytes buffer 8)
+        prefix (bits/get-bytes buffer 1)
+        length (int (invoke-peer! peer session :bits/bigint-length [prefix]))
+        unscaled (byte-array (inc length))]
+    (aset-byte unscaled 0 (aget prefix 0))
+    (.get buffer unscaled 1 length)
+    ;; An empty integer fails before the separator/scale reads in the source API.
+    (invoke-peer! peer session :bits/decode-variable [unscaled :bigint])
+    (let [separator (bits/get-bytes buffer 1)
+          scale (bits/get-bytes buffer 4)
+          bytes (byte-array (+ length 14))]
+      (System/arraycopy approximate 0 bytes 0 8)
+      (System/arraycopy unscaled 0 bytes 8 (alength unscaled))
+      (System/arraycopy separator 0 bytes (+ length 9) 1)
+      (System/arraycopy scale 0 bytes (+ length 10) 4)
+      (invoke-peer! peer session :bits/decode-bigdec
+                    [bytes (= ByteOrder/LITTLE_ENDIAN (.order buffer))]))))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
@@ -281,6 +313,7 @@
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
           (:data nil) (serialize-buffer! peer session buffer value)
+          :bigdec (put-decimal! peer session buffer value)
           (:string :bytes :keyword :symbol :bigint)
           (put-variable! peer session buffer value value-type)
           (:long :float :double :boolean :instant :instant-pre-06 :uuid)
@@ -301,6 +334,7 @@
       (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
           (:data nil) (deserialize-buffer! peer session buffer)
+          :bigdec (read-decimal! peer session buffer)
           (:string :bytes :keyword :symbol :bigint)
           (read-variable! peer session buffer value-type)
           (:long :float :double :boolean :instant :instant-pre-06 :uuid)

@@ -3,6 +3,8 @@
             [datalevin.bits :as bits]
             [datalevin.buffer :as buffer]
             [datalevin.constants :as c]
+            [datalevin.custom-datalog :as custom]
+            [datalevin.custom-value :as custom-value]
             [datalevin.datom :as datom]
             [datalevin.index :as index]
             [datalevin.query.source.native-value :as native-value]
@@ -16,6 +18,35 @@
 
 (defn- decode [bytes type]
   (native-value/giant-value (ByteBuffer/wrap bytes) type 1 :test/value))
+
+(deftest custom-references-validate-without-moving-borrowed-buffers
+  (doseq [order [(byte-array 0) (byte-array [0 -1 0 1]) (byte-array 1000)]
+          id [1 (dec Long/MAX_VALUE)]]
+    (let [ref (custom-value/reference
+                (custom-value/reference-prefix order custom/reference-budget) id)
+          bytes (bits/indexable-bytes (custom/indexable 1 2 ref))
+          buffer (doto (ByteBuffer/allocateDirect (+ 8 (alength bytes)))
+                   (.position 8) (.put bytes) (.flip) (.position 8))]
+      (is (= id (native-value/custom-reference-id buffer)))
+      (is (= 8 (.position buffer)))
+      (doseq [length (range (alength bytes))]
+        (is (= :query-source/invalid
+               (category #(native-value/custom-reference-id
+                            (ByteBuffer/wrap (Arrays/copyOf bytes (int length))))))))))
+  (let [ref (custom-value/reference (custom-value/reference-prefix (byte-array [0 1])) 1)
+        bytes (bits/indexable-bytes (custom/indexable 1 2 ref))
+        n (alength bytes)]
+    (doseq [[position replacement] [[4 c/type-string] [6 2] [7 0]
+                                   [(- n 12) 1] [(- n 11) -1]
+                                   [(- n 2) 1] [(dec n) c/true-value]]]
+      (let [bad (aclone bytes)]
+        (aset-byte bad position (byte replacement))
+        (is (= :query-source/invalid
+               (category #(native-value/custom-reference-id (ByteBuffer/wrap bad)))))))
+    (doseq [id [0 -1 Long/MAX_VALUE]]
+      (let [bad (ByteBuffer/wrap (aclone bytes))]
+        (.putLong bad (- n 10) (long id))
+        (is (= :query-source/invalid (category #(native-value/custom-reference-id bad))))))))
 
 (deftest scalar-datom-layouts
   (doseq [[type values]

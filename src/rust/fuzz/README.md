@@ -1,7 +1,7 @@
 # Nippy codec fuzzing
 
-The Rust targets exercise headerless Nippy and its existing compressed NPY
-headers. Successful reads must re-encode to a stable representation, and
+The targets in this directory exercise headerless Nippy and its existing
+compressed NPY headers. Successful reads must re-encode to a stable representation, and
 allocating and caller-owned encoders must agree. Structured errors must point
 within the input. Input size, depth, collection lengths, expanded nodes, cache
 copies, and decompression are bounded.
@@ -13,7 +13,7 @@ rustup toolchain install nightly
 cargo install cargo-fuzz
 ```
 
-Run a bounded campaign:
+Run a bounded campaign from the repository root:
 
 ```sh
 script/nippy-fuzz smoke 1000

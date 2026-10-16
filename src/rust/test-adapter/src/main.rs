@@ -2,7 +2,8 @@
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
 use datalevin_codec::bits::{
-    self, BigIntegerError, IntegerWidth, ScalarError, ScalarType, ScalarValue, VariableType,
+    self, BigIntegerError, DecimalError, IntegerWidth, ScalarError, ScalarType, ScalarValue,
+    VariableType,
 };
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
@@ -178,6 +179,21 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/encode-bigdec" | "bits/decode-bigdec" => decimal_operation(operation, arguments),
+        "bits/type-size" => {
+            let [argument] = arguments.as_slice() else {
+                return protocol_error("Type size requires exactly one type");
+            };
+            let Some(value) = value_argument(argument) else {
+                return protocol_error("Type size requires a value argument descriptor");
+            };
+            success(match value {
+                Value::Keyword(kind) => bits::type_size(kind)
+                    .map(|size| Value::int(size as i64))
+                    .unwrap_or(Value::Null),
+                _ => Value::Null,
+            })
+        }
         "bits/variable-header"
         | "bits/encode-variable"
         | "bits/decode-variable"
@@ -256,6 +272,7 @@ fn variable_type(kind: &str) -> Option<VariableType> {
         "keyword" => VariableType::Keyword,
         "symbol" => VariableType::Symbol,
         "bigint" => VariableType::BigInteger,
+        "bigdec" => VariableType::BigDecimal,
         _ => return None,
     })
 }
@@ -328,6 +345,9 @@ fn variable_operation(operation: &str, arguments: &[Value]) -> Value {
                 Ok(bytes) => Value::BigInteger(bytes),
                 Err(error) => return bigint_error(error),
             },
+            VariableType::BigDecimal => {
+                return protocol_error("BigDecimal requires its composite field codec");
+            }
             VariableType::Keyword | VariableType::Symbol => {
                 let Some(name) = bits::decode_named(bytes) else {
                     return java_error(
@@ -342,6 +362,63 @@ fn variable_operation(operation: &str, arguments: &[Value]) -> Value {
                 }
             }
         })
+    }
+}
+
+fn decimal_error(error: DecimalError) -> Value {
+    match error {
+        DecimalError::Integer(error) => bigint_error(error),
+        DecimalError::Scalar(ScalarError::NaN(_)) => java_error(
+            "java.lang.AssertionError",
+            "Assert failed: Cannot index NaN\n(not (Double/isNaN x))",
+        ),
+        _ => protocol_error("Invalid BigDecimal payload"),
+    }
+}
+
+fn decimal_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/encode-bigdec" {
+        let [unscaled, scale, order] = arguments else {
+            return protocol_error(
+                "BigDecimal encoding requires unscaled bytes, scale and byte order",
+            );
+        };
+        let (
+            Some(Value::Bytes(unscaled)),
+            Some(Value::Integer(scale)),
+            Some(Value::Bool(little_endian)),
+        ) = (
+            value_argument(unscaled),
+            value_argument(scale),
+            value_argument(order),
+        )
+        else {
+            return protocol_error("Invalid BigDecimal encoding arguments");
+        };
+        let mut writes = Vec::new();
+        for field in bits::decimal_fields(unscaled, *scale, *little_endian) {
+            match field {
+                Ok(bytes) => writes.push(success(Value::Bytes(bytes))),
+                Err(error) => {
+                    writes.push(decimal_error(error));
+                    break;
+                }
+            }
+        }
+        success(Value::Vector(writes))
+    } else {
+        let [bytes, order] = arguments else {
+            return protocol_error("BigDecimal decoding requires payload bytes and byte order");
+        };
+        let (Some(Value::Bytes(bytes)), Some(Value::Bool(little_endian))) =
+            (value_argument(bytes), value_argument(order))
+        else {
+            return protocol_error("Invalid BigDecimal decoding arguments");
+        };
+        match bits::decode_decimal(bytes, *little_endian) {
+            Ok((unscaled, scale)) => success(Value::BigDecimal { unscaled, scale }),
+            Err(error) => decimal_error(error),
+        }
     }
 }
 
@@ -501,6 +578,9 @@ fn main() -> io::Result<()> {
                     keyword("bits/encode-variable"),
                     keyword("bits/decode-variable"),
                     keyword("bits/bigint-length"),
+                    keyword("bits/encode-bigdec"),
+                    keyword("bits/decode-bigdec"),
+                    keyword("bits/type-size"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

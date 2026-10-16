@@ -41,6 +41,33 @@
   (when-not (<= 0 size (.remaining buffer))
     (fail! :query-source/invalid :native-value)))
 
+(defn custom-reference-id
+  "Validate an AVG custom reference without copying its order key or moving
+  the borrowed buffer. Stored payload IDs exclude the two range sentinels."
+  ^long [^ByteBuffer buffer]
+  (let [start (.position buffer)
+        end (.limit buffer)
+        id-offset (- end 10)]
+    (when-not (and (<= 17 (.remaining buffer) c/+max-key-size+)
+                   (= c/type-custom (.get buffer (+ start 4)))
+                   (= c/separator (.get buffer (- end 2)))
+                   (= c/false-value (.get buffer (dec end))))
+      (fail! :query-source/invalid :native-value))
+    (loop [offset (+ start 5)]
+      (when (>= offset id-offset) (fail! :query-source/invalid :native-value))
+      (if (zero? (.get buffer offset))
+        (do
+          (when (>= (inc offset) id-offset) (fail! :query-source/invalid :native-value))
+          (case (int (.get buffer (inc offset)))
+            -1 (recur (+ offset 2))
+            (0 1) (when-not (= (+ offset 2) id-offset)
+                    (fail! :query-source/invalid :native-value))
+            (fail! :query-source/invalid :native-value)))
+        (recur (inc offset))))
+    (let [id (.getLong buffer id-offset)]
+      (when-not (< 0 id Long/MAX_VALUE) (fail! :query-source/invalid :native-value))
+      id)))
+
 (defn- skip! [^ByteBuffer buffer ^long size]
   (need! buffer size)
   (.position buffer (int (+ (.position buffer) size))))

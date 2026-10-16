@@ -1,6 +1,7 @@
 (ns datalevin.query.source-execution-test
   (:require [clojure.test :refer [deftest is]]
             [datalevin.core :as d]
+            [datalevin.interpret :as inter]
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.fake :as fake]
@@ -404,3 +405,24 @@
     (is (= 5 @comparisons))
     (is (every? zero? (vals (control/usage @ctl))))
     (is (= :close-session (last (remove #{:cancel-session} @(:events inner)))))))
+
+(deftest native-nippy-custom-data-joins-under-quota
+  (let [dir (u/tmp-dir (str "source-custom-smoke-" (random-uuid)))
+        conn (d/create-conn dir {} {:wal? false :background-sampling? false})
+        small {:rank 1 :tags #{:a :b}}
+        large {:rank 2 :body (.repeat "large" 30000)}
+        info (assoc-in tuple-info [:pattern-contract :columns 1 :type] :data)
+        rows [[1 small] [2 large]]
+        s (fake/source info rows)
+        q '{:find [?e ?value] :in [$ $s ?e]
+            :where [[?e :item/custom ?value] [$s ?e ?value]]}]
+    (try
+      (d/register-type conn :app/ranked {:index {:type :long :order-fn (inter/inter-fn [v] (:rank v))}})
+      (d/update-schema conn {:item/custom {:db/valueType :app/ranked}})
+      (d/transact! conn [{:db/id 1 :item/custom small} {:db/id 2 :item/custom large}])
+      (is (= #{[1 small]} (d/q q @conn rows 1) (d/q q @conn s 1)))
+      (is (= #{[2 large]} (d/q q @conn rows 2) (d/q q @conn s 2)))
+      (let [bounded (assoc q :query-source {:limits {:retained-bytes 65536}})]
+        (is (= :query-source/limit (category #(d/q bounded @conn s 2))))
+        (is (= #{[1 small]} (d/q bounded @conn s 1))))
+      (finally (d/close conn) (u/delete-files dir)))))
