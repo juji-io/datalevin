@@ -377,13 +377,10 @@ impl<W: Write> Encoder<W> {
             Value::Symbol(v) => self.named(v, 56, 86),
             Value::Bytes(v) => self.bytes(v),
             Value::Vector(v) => {
-                if v.len() == 2 {
-                    self.tag(113)?;
-                } else if v.len() == 3 {
-                    self.tag(114)?;
-                } else {
-                    self.header(v.len(), [17, 97, 69, 21], true)?;
-                }
+                // The pinned JVM writer uses count headers for every vector.
+                // Legacy vec-2/vec-3 tags remain readable, but emitting them
+                // changes sortable generic-data index bytes and giant bounds.
+                self.header(v.len(), [17, 97, 69, 21], true)?;
                 self.values(v, d)
             }
             Value::Set(v) => {

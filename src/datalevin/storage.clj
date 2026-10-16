@@ -119,6 +119,12 @@
 (def idoc-index indexing/idoc-index)
 (def vpred scans/vpred)
 
+(defn- value-equal?
+  [expected actual]
+  (if (bytes? expected)
+    (and (bytes? actual) (Arrays/equals ^bytes expected ^bytes actual))
+    (= expected actual)))
+
 ;; Retain interned helpers used by sibling tests.
 (def ^:private existing-store? options/existing-store?)
 (def ^:private load-opts options/load-opts)
@@ -689,8 +695,9 @@
             ds (mapv #(retrieved->datom lmdb attrs %)
                      (list-range lmdb c/eav [:closed lk hk] :id [:closed lv hv] :avg))]
         (if (and (some? (:v datom))
-                 (cd/custom-type? (:db/valueType (schema (:a datom)))))
-          (filterv #(= (:v datom) (:v %)) ds)
+                 (or (b/giant? lv)
+                     (cd/custom-type? (:db/valueType (schema (:a datom))))))
+          (filterv #(value-equal? (:v datom) (:v %)) ds)
           ds))))
 
   (populated? [_ index low-datom high-datom]
@@ -2457,10 +2464,7 @@
                          (some
                            (fn [[_ ^Retrieved r]]
                              (let [value (retrieved->v (.-lmdb store) r)]
-                               (when (if (bytes? v)
-                                       (and (bytes? value)
-                                            (Arrays/equals ^bytes v ^bytes value))
-                                       (= v value))
+                               (when (value-equal? v value)
                                  (.-g r))))
                            (list-range
                              (.-lmdb store) c/eav [:closed e e] :id

@@ -65,6 +65,28 @@
 (defn type-size [value-type]
   (adapter/call! :bits/type-size [value-type]))
 
+(defn indexable [entity attribute value value-type max-giant]
+  (adapter/call! :bits/indexable [entity attribute value value-type max-giant]))
+
+(defn giant? [value]
+  (adapter/call! :bits/giant? [value]))
+
+(defn indexable-bytes
+  (^bytes [value] (adapter/call! :bits/indexable-bytes [value]))
+  (^bytes [value buffer] (adapter/call! :bits/indexable-bytes [value buffer])))
+
+(defn avg->aid [buffer]
+  (adapter/call! :bits/avg->aid [buffer]))
+
+(defn avg->giant-id [buffer]
+  (adapter/call! :bits/avg->giant-id [buffer]))
+
+(defn avg->inline-value [buffer]
+  (adapter/call! :bits/avg->inline-value [buffer]))
+
+(defn avg->r [buffer]
+  (adapter/call! :bits/avg->r [buffer]))
+
 (defn acquire-serialized-bf
   "Acquire a JVM heap buffer containing the selected codec's bytes, ready to read.
   Return it with buffer/return-array-buffer after synchronous consumption."

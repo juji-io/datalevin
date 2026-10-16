@@ -114,9 +114,9 @@
     (check! (row variable))))
 
 (defn with-entity-ids
-  "Visit distinct entity IDs from an owned input relation after native type
-  validation. Input rows remain intact for joins, including their duplicates
-  and other columns. The temporary set borrows already charged Long values."
+  "Visit distinct native entity IDs from a retained relation. Rows remain
+  intact for joins, including their duplicates and other columns. Borrow
+  already charged Long values; other values cannot match native entity keys."
   [control rows variable f]
   (let [token (source/reserve! control
                 {:retained-bytes (value/add-charge 512
@@ -125,7 +125,8 @@
     (try
       (doseq [row rows]
         (source/check-active! control)
-        (.add ids (row variable)))
+        (let [id (row variable)]
+          (when (instance? Long id) (.add ids id))))
       (source/check-active! control)
       (f ids)
       (finally

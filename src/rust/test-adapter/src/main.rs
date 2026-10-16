@@ -2,8 +2,9 @@
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
 use datalevin_codec::bits::{
-    self, BigIntegerError, DecimalError, IntegerWidth, ScalarError, ScalarType, ScalarValue,
-    TupleElement, TupleError, TupleRead, VariableType,
+    self, AvgMode, AvgResult, AvgValue, BigIntegerError, DecimalError, IndexError, IndexInput,
+    IntegerWidth, ScalarError, ScalarType, ScalarValue, TupleElement, TupleError, TupleRead,
+    VariableType,
 };
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
@@ -179,6 +180,9 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/indexable" | "bits/encode-avg" | "bits/decode-avg" | "bits/giant?" => {
+            index_operation(operation, arguments)
+        }
         "bits/tuple-header" | "bits/encode-tuple" | "bits/decode-tuple" => {
             tuple_operation(operation, arguments)
         }
@@ -339,22 +343,7 @@ fn tuple_operation(operation: &str, arguments: &[Value]) -> Value {
         }
         let (reads, result) = bits::decode_tuple(bytes, *position as usize, *homogeneous, *little);
         return success(map(vec![
-            (
-                "reads",
-                Value::Vector(
-                    reads
-                        .into_iter()
-                        .map(|read| match read {
-                            TupleRead::Bytes(size) => {
-                                Value::Vector(vec![keyword("bytes"), Value::Long(size)])
-                            }
-                            TupleRead::Position(position) => {
-                                Value::Vector(vec![keyword("position"), Value::Long(position)])
-                            }
-                        })
-                        .collect(),
-                ),
-            ),
+            ("reads", read_operations(reads)),
             (
                 "result",
                 match result {
@@ -433,6 +422,224 @@ fn tuple_operation(operation: &str, arguments: &[Value]) -> Value {
             })
             .collect(),
     ))
+}
+
+fn read_operations(reads: Vec<TupleRead>) -> Value {
+    Value::Vector(
+        reads
+            .into_iter()
+            .map(|read| {
+                Value::Vector(match read {
+                    TupleRead::Bytes(size) => vec![keyword("bytes"), Value::Long(size)],
+                    TupleRead::Position(position) => {
+                        vec![keyword("position"), Value::Long(position)]
+                    }
+                    TupleRead::Absolute(position, width) => vec![
+                        keyword("absolute"),
+                        Value::Long(position),
+                        Value::Long(width as i64),
+                    ],
+                    TupleRead::Mark => vec![keyword("mark")],
+                    TupleRead::Reset => vec![keyword("reset")],
+                    TupleRead::Limit(limit) => vec![keyword("limit"), Value::Long(limit)],
+                })
+            })
+            .collect(),
+    )
+}
+
+fn tuple_element(value: &Value) -> Option<TupleElement> {
+    if let Some(Value::Long(index)) = field(value, "error") {
+        if *index < 0 {
+            return None;
+        }
+        Some(TupleElement::HostError {
+            index: *index as usize,
+            lookup: field(value, "lookup?") == Some(&Value::Bool(true)),
+        })
+    } else {
+        field(value, "value").cloned().map(TupleElement::Value)
+    }
+}
+
+fn index_error(operation: &str, error: IndexError) -> Value {
+    match error {
+        IndexError::Tuple(error) => tuple_error(error),
+        IndexError::Nippy(error) => codec_error(operation, error),
+        IndexError::Unsupported => unsupported(
+            operation,
+            "Custom or unknown tuple index types are not implemented",
+        ),
+    }
+}
+
+fn avg_value(value: AvgValue, little: bool) -> Result<Value, Value> {
+    let (kind, value) = match value {
+        AvgValue::Value(value) => ("value", value),
+        AvgValue::Custom(bytes) => ("custom", Value::Bytes(bytes)),
+        AvgValue::Data(bytes) => {
+            if little {
+                return Err(unsupported(
+                    "bits/decode-avg",
+                    "Little-endian generic index data decoding is not implemented",
+                ));
+            }
+            let value =
+                deserialize(&bytes).map_err(|error| codec_error("bits/decode-avg", error))?;
+            ("value", value)
+        }
+    };
+    Ok(map(vec![("kind", keyword(kind)), ("value", value)]))
+}
+
+fn index_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/giant?" {
+        let [argument] = arguments else {
+            return protocol_error("Giant check requires one ID");
+        };
+        let Some(Value::Long(id)) = value_argument(argument) else {
+            return protocol_error("Giant ID must be a long");
+        };
+        return success(Value::Bool(bits::giant(*id)));
+    }
+    if operation == "bits/indexable" {
+        let [value_type, input] = arguments else {
+            return protocol_error("Index construction requires type and value");
+        };
+        let (Some(value_type), Some(input)) = (value_argument(value_type), value_argument(input))
+        else {
+            return protocol_error("Invalid index input descriptors");
+        };
+        let input = if let Some(Value::Vector(elements)) = field(input, "elements") {
+            let Some(Value::Long(count)) = field(input, "count") else {
+                return protocol_error("Tuple index requires a count");
+            };
+            if *count < 0 {
+                return protocol_error("Tuple count cannot be negative");
+            }
+            let Some(elements) = elements.iter().map(tuple_element).collect() else {
+                return protocol_error("Invalid tuple index components");
+            };
+            IndexInput::Tuple {
+                elements,
+                count: *count as usize,
+            }
+        } else if let Some(value) = field(input, "value") {
+            IndexInput::Value(value.clone())
+        } else {
+            return protocol_error("Missing index value");
+        };
+        return match bits::indexable(value_type, &input) {
+            Ok(index) => success(map(vec![
+                ("header", Value::Long(i64::from(index.header as i8))),
+                (
+                    "bytes",
+                    index.bytes.map(Value::Bytes).unwrap_or(Value::Null),
+                ),
+                ("cut?", Value::Bool(index.cut)),
+            ])),
+            Err(IndexError::Tuple(error)) => success(map(vec![("failure", tuple_error(error))])),
+            Err(error) => index_error(operation, error),
+        };
+    }
+    if operation == "bits/encode-avg" {
+        let [attribute, header, bytes, input, giant, order] = arguments else {
+            return protocol_error(
+                "AVG encoding requires attribute, header, bytes, value, giant ID and byte order",
+            );
+        };
+        let (
+            Some(Value::Integer(attribute)),
+            Some(Value::Long(header)),
+            Some(bytes),
+            Some(input),
+            Some(Value::Long(giant)),
+            Some(Value::Bool(little)),
+        ) = (
+            value_argument(attribute),
+            value_argument(header),
+            value_argument(bytes),
+            value_argument(input),
+            value_argument(giant),
+            value_argument(order),
+        )
+        else {
+            return protocol_error("Invalid AVG encoding arguments");
+        };
+        let bytes = match bytes {
+            Value::Null => None,
+            Value::Bytes(bytes) => Some(bytes.as_slice()),
+            _ => return protocol_error("AVG payload must be bytes or nil"),
+        };
+        let Some(value) = tuple_element(input) else {
+            return protocol_error("Invalid AVG component descriptor");
+        };
+        return success(Value::Vector(
+            bits::encode_avg(*attribute, *header, bytes, &value, *giant, *little)
+                .into_iter()
+                .map(|field| match field {
+                    Ok(bytes) => success(Value::Bytes(bytes)),
+                    Err(error) => tuple_error(error),
+                })
+                .collect(),
+        ));
+    }
+    let [bytes, position, mode, order] = arguments else {
+        return protocol_error("AVG decoding requires bytes, position, operation and byte order");
+    };
+    let (
+        Some(Value::Bytes(bytes)),
+        Some(Value::Long(position)),
+        Some(Value::Keyword(mode)),
+        Some(Value::Bool(little)),
+    ) = (
+        value_argument(bytes),
+        value_argument(position),
+        value_argument(mode),
+        value_argument(order),
+    )
+    else {
+        return protocol_error("Invalid AVG decoding arguments");
+    };
+    if *position < 0 || *position as u64 > bytes.len() as u64 {
+        return protocol_error("Invalid AVG buffer position");
+    }
+    let mode = match mode.as_ref() {
+        "avg" => AvgMode::Avg,
+        "r" => AvgMode::Retrieved,
+        "aid" => AvgMode::Attribute,
+        "giant-id" => AvgMode::Giant,
+        "inline" => AvgMode::Inline,
+        _ => return protocol_error("Unknown AVG reader"),
+    };
+    let (reads, result) = bits::decode_avg(bytes, *position as usize, mode, *little);
+    let result = result
+        .map_err(|error| index_error(operation, error))
+        .and_then(|result| match result {
+            AvgResult::Value(value) => avg_value(value, *little),
+            AvgResult::Retrieved {
+                attribute,
+                value,
+                giant,
+            } => avg_value(value, *little).map(|value| {
+                map(vec![
+                    ("retrieved?", Value::Bool(true)),
+                    ("a", attribute.map(Value::Integer).unwrap_or(Value::Null)),
+                    ("v", value),
+                    ("g", Value::Long(giant)),
+                ])
+            }),
+        });
+    success(map(vec![
+        ("reads", read_operations(reads)),
+        (
+            "result",
+            match result {
+                Ok(value) => success(value),
+                Err(error) => error,
+            },
+        ),
+    ]))
 }
 
 fn variable_type(kind: &str) -> Option<VariableType> {
@@ -754,6 +961,10 @@ fn main() -> io::Result<()> {
                     keyword("bits/tuple-header"),
                     keyword("bits/encode-tuple"),
                     keyword("bits/decode-tuple"),
+                    keyword("bits/indexable"),
+                    keyword("bits/encode-avg"),
+                    keyword("bits/decode-avg"),
+                    keyword("bits/giant?"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

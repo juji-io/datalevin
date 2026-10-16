@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.test-adapter.rust
   "A synchronous, bounded Nippy process bridge. No reference engine calls."
   (:require
+   [datalevin.bits :refer [->Indexable ->Retrieved ->CustomReference]]
    [datalevin.util :refer [raise]]
    [datalevin.buffer :as buffer]
    [taoensso.nippy :as nippy]
@@ -10,6 +11,7 @@
    [java.io DataInputStream DataOutputStream]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
    [java.math BigDecimal BigInteger]
+   [datalevin.bits Indexable]
    [java.nio ByteBuffer ByteOrder]
    [java.util Date UUID]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
@@ -348,6 +350,19 @@
                  {:too-large (nth values (:too-large field))})
         :else (.put buffer ^bytes (result-value session :bits/put-buffer field))))))
 
+(defn- replay-reads! [^ByteBuffer buffer reads]
+  (doseq [[operation amount width] reads]
+    (case operation
+      :bytes (bits/get-bytes buffer amount)
+      :position (.position buffer (int amount))
+      :limit (.limit buffer (int amount))
+      :mark (.mark buffer)
+      :reset (.reset buffer)
+      :absolute (case (int width)
+                  1 (.get buffer (int amount))
+                  4 (.getInt buffer (int amount))
+                  8 (.getLong buffer (int amount))))))
+
 (defn- read-tuple! [peer session ^ByteBuffer buffer types]
   (let [bytes (bits/get-bytes (doto (.duplicate buffer) (.position 0)))
         {:keys [reads result]} (invoke-peer! peer session :bits/decode-tuple
@@ -356,11 +371,103 @@
                                               (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
     ;; Rust decides framing, field widths and cursor movement. Replay on the
     ;; caller's buffer so JVM bounds exceptions and mark invalidation stay exact.
-    (doseq [[operation amount] reads]
-      (case operation
-        :bytes (bits/get-bytes buffer amount)
-        :position (.position buffer (int amount))))
+    (replay-reads! buffer reads)
     (result-value session :bits/read-buffer result)))
+
+(defn- raw-index-type [value-type]
+  (case value-type
+    :db.type/string :string :db.type/keyword :keyword :db.type/symbol :symbol
+    :db.type/bigint :bigint :db.type/bigdec :bigdec :db.type/bytes :bytes
+    :db.type/long :long :db.type/ref :long :db.type/float :float :db.type/double :double
+    :db.type/boolean :boolean :db.type/instant :instant :db.type/uuid :uuid
+    value-type))
+
+(defn- index-input [errors value value-type]
+  (cond
+    (#{:db.value/sysMin :db.value/sysMax} value) {:value value}
+    (vector? value-type)
+    (let [types (mapv raw-index-type value-type)
+          homogeneous? (= 1 (count types))
+          count (if homogeneous? (count value) (count types))]
+      {:elements (mapv #(tuple-component errors value % (nth types (if homogeneous? 0 %))
+                                         (not homogeneous?)) (range count))
+       :count (long count)})
+    :else
+    {:value (case value-type
+              :db.type/long (tuple-input value :long)
+              ;; Fixed values are cast only when written, after the AVG prefix.
+              (:db.type/ref :db.type/float :db.type/double :db.type/boolean
+                            :db.type/instant :db.type/uuid) nil
+              :db.type/bytes (when (some? value) (tuple-input value :bytes))
+              (:db.type/string :db.type/keyword :db.type/symbol :db.type/bigint :db.type/bigdec)
+              (tuple-input value (raw-index-type value-type))
+              (do (serialization-value! value) value))}))
+
+(defn- index-field-bytes! [session operation field errors values types]
+  (cond
+    (:empty field) (raise "Cannot store an empty homogeneous tuple"
+                          {:error :data/validation :value values :tuple-type (first types)})
+    (contains? field :host-error) (throw (nth @errors (:host-error field)))
+    (contains? field :too-large)
+    (raise "The maximal tuple element size is\n                              255 bytes"
+             {:too-large (nth values (:too-large field))})
+    :else (result-value session operation field)))
+
+(defn- indexable! [peer session entity attribute value value-type max-giant]
+  (when (map? value-type)
+    (adapter/unsupported! :adapter :bits/indexable "Custom index callbacks need a selected-backend adapter"))
+  (let [errors (atom [])
+        {:keys [header bytes cut? failure]} (invoke-peer! peer session :bits/indexable
+                                                         [value-type (index-input errors value value-type)])]
+    (when failure
+      (index-field-bytes! session :bits/indexable failure errors value
+                          (when (vector? value-type) (mapv raw-index-type value-type))))
+    ;; Inline byte values retain the input array alias; giant prefixes own a copy.
+    (->Indexable entity attribute value header
+                 (if (and (= value-type :db.type/bytes) (not cut?) (not (keyword? value))) value bytes)
+                 (if cut? max-giant 0))))
+
+(defn- put-avg! [peer session ^ByteBuffer buffer ^Indexable value]
+  (let [attribute (int (.-a value))
+        header (.-f value)
+        bytes (.-b value)
+        errors (atom [])
+        component (if bytes {:value nil}
+                    (try
+                      {:value (tuple-input (.-v value)
+                                           (case (short header)
+                                             (-64 -63 -8) :long -62 :int -11 :float -10 :double
+                                             -9 :instant -7 :uuid -3 :boolean))}
+                      (catch Exception error (swap! errors conj error) {:error 0})))
+        fields (invoke-peer! peer session :bits/encode-avg
+                             [attribute header bytes component (.-g value)
+                              (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    (doseq [field fields]
+      (.put buffer ^bytes (index-field-bytes! session :bits/put-buffer field errors nil nil)))
+    buffer))
+
+(defn- indexable-bytes! [peer session value ^ByteBuffer buffer]
+  (.clear buffer)
+  (put-avg! peer session buffer value)
+  ;; Retain the original heap-array/slice behavior, including direct-buffer errors.
+  (java.util.Arrays/copyOfRange (.array buffer) 0 (.position buffer)))
+
+(defn- avg-value [{:keys [kind value]}]
+  (case kind :value value :custom (->CustomReference value)))
+
+(defn- read-avg! [peer session ^ByteBuffer buffer mode]
+  (let [limit (.limit buffer)
+        bytes (bits/get-bytes (doto (.duplicate buffer) (.position 0)))
+        {:keys [reads result]} (invoke-peer! peer session :bits/decode-avg
+                                             [bytes (long (.position buffer)) mode
+                                              (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
+    (try
+      (replay-reads! buffer reads)
+      (let [value (result-value session :bits/read-buffer result)]
+        (if (:retrieved? value)
+          (->Retrieved nil (:a value) (avg-value (:v value)) (:g value))
+          (avg-value value)))
+      (finally (.limit buffer limit)))))
 
 (defrecord RustBackend [peer session info]
   adapter/Backend
@@ -375,6 +482,19 @@
       :bits/measure-size
       (measure-size peer session (first arguments))
 
+      :bits/indexable (apply indexable! peer session arguments)
+      :bits/giant? (invoke-peer! peer session :bits/giant? [(.-g ^Indexable (first arguments))])
+      :bits/indexable-bytes
+      (if (= 2 (count arguments))
+        (indexable-bytes! peer session (first arguments) (second arguments))
+        (let [buffer (buffer/get-array-buffer)]
+          (try (indexable-bytes! peer session (first arguments) buffer)
+               (finally (buffer/return-array-buffer buffer)))))
+      :bits/avg->aid (read-avg! peer session (first arguments) :aid)
+      :bits/avg->giant-id (read-avg! peer session (first arguments) :giant-id)
+      :bits/avg->inline-value (read-avg! peer session (first arguments) :inline)
+      :bits/avg->r (read-avg! peer session (first arguments) :r)
+
       :bits/serialize-bf
       (let [[buffer value] arguments]
         (serialize-buffer! peer session buffer value))
@@ -385,6 +505,7 @@
       :bits/put-buffer
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
+          :avg (put-avg! peer session buffer value)
           (:data nil) (serialize-buffer! peer session buffer value)
           :bigdec (put-decimal! peer session buffer value)
           (:string :bytes :keyword :symbol :bigint)
@@ -408,6 +529,7 @@
       :bits/read-buffer
       (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
+          :avg (read-avg! peer session buffer :avg)
           (:data nil) (deserialize-buffer! peer session buffer)
           :bigdec (read-decimal! peer session buffer)
           (:string :bytes :keyword :symbol :bigint)

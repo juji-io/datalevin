@@ -99,6 +99,7 @@
   (mapv (fn [pattern]
           (let [terms (:terms pattern)
                 [entity-tag entity] (first terms)
+                [value-tag term-value] (nth terms 2)
                 entity-id (case entity-tag
                             :const entity
                             :var (get bindings entity)
@@ -110,10 +111,22 @@
                 keys-only? (= :ignore (first (nth terms 2)))
                 terms (if keys-only? (pop terms) terms)
                 read! (if keys-only? native/scan-keys! native/scan!)]
-            (fn [emit]
+            {:entity-variable (when (and (= :var entity-tag)
+                                         (not (contains? bindings entity))
+                                         (nil? relation)
+                                         (not= :const value-tag)
+                                         (not (and (= :var value-tag)
+                                                   (contains? bindings term-value)))) entity)
+             :variables (into #{} (keep #(when (= :var (first %)) (second %))) terms)
+             :read
+             (fn [tables emit]
               (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
                 (fn [runtime]
                   (let [control (:control runtime)
+                        rows (or (:rows relation)
+                                 (when (and (= :var entity-tag)
+                                            (not (contains? bindings entity)))
+                                   (some #(when (contains? (first %) entity) %) tables)))
                         scan (fn [entity-id]
                                (source/check-active! control)
                                (swap! (:explain runtime) update :native-scans inc)
@@ -122,9 +135,30 @@
                                       (fn [row]
                                         (when-let [binding (match-row bindings terms row)]
                                           (emit binding)))))]
-                    (if relation
-                      (input/with-entity-ids control (:rows relation) entity #(visit-rows % scan))
-                      (scan entity-id)))))))) patterns))
+                    (if rows
+                      (input/with-entity-ids control rows entity #(visit-rows % scan))
+                      (scan entity-id))))))})) patterns))
+
+(defn- readers [runtime snapshots {:keys [entries fragments bindings input-data]}]
+  (let [native (vec (mapcat #(native-reader runtime snapshots bindings input-data %)
+                           (filter :native entries)))
+        source-variables (into #{} (mapcat #(map :variable (:columns (:alternative %)))) fragments)
+        [early deferred]
+        (loop [pending native, available source-variables, deferred []]
+          (if-let [reader (some #(when (contains? available (:entity-variable %)) %) pending)]
+            (recur (filterv #(not (identical? reader %)) pending)
+                   (into available (:variables reader)) (conj deferred reader))
+            [pending deferred]))
+        sources (mapv (fn [fragment]
+                        (let [read (source-reader runtime fragment)]
+                          (fn [_ emit] (read emit)))) fragments)]
+    ;; Explicit entity inputs and constant/scalar value constraints keep their
+    ;; early native reads, including empty-pattern short circuits. Otherwise,
+    ;; build an external relation that binds the entity before native values.
+    ;; Native readers borrow IDs from retained tables without replacing their
+    ;; original rows, so correlation and duplicate semantics remain intact.
+    (into (into (mapv (fn [{:keys [read]}] (fn [_ emit] (read [] emit))) early) sources)
+          (map :read deferred))))
 
 (defn- result-shape [parsed rows]
   (let [rows (if-let [return (:qreturn-map parsed)]
@@ -190,17 +224,16 @@
                  (swap! (:explain runtime) assoc :result-rows (count @output))
                  result))}))
 
-(defn- execute! [runtime {:keys [entries fragments bindings input-data predicates] :as prepared} snapshots]
-  (let [readers (into (vec (mapcat #(native-reader runtime snapshots bindings input-data %) (filter :native entries)))
-                      (map #(source-reader runtime %) fragments))
-        readers (if (seq readers) readers [(fn [emit] (emit bindings))])
+(defn- execute! [runtime {:keys [bindings input-data predicates] :as prepared} snapshots]
+  (let [readers (readers runtime snapshots prepared)
+        readers (if (seq readers) readers [(fn [_ emit] (emit bindings))])
         input-tables (mapv :rows (:relations input-data))
         ;; An empty required relation proves the conjunction empty. Reduce
         ;; incrementally so later native scans and source cursors never open.
         tables (when (every? seq input-tables)
                  (reduce (fn [tables read]
                            (let [rows (volatile! [])]
-                             (read (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
+                             (read tables (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
                              (if (seq @rows) (conj tables @rows) (reduced nil))))
                          input-tables (butlast readers)))
         {:keys [accept finish stopped?]} (collect-result runtime prepared)
@@ -216,7 +249,7 @@
                                        (finally (source/release! token)))))))
                     (when (predicates? predicates row) (accept row)))))]
       (when (and tables (not (stopped?)))
-        ((last readers) (fn [row]
+        ((last readers) tables (fn [row]
                           (when-let [row (merge-row bindings row)]
                             (when-not @steps
                               (vreset! steps (if (seq tables)

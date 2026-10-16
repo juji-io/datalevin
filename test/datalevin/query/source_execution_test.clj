@@ -430,7 +430,10 @@
         (is (= #{[1 small]} (d/q bounded @conn s 1)))
         (is (= #{[1 small]}
                (d/q (assoc bounded :in '[$ $s [?e ...]]) @conn
-                    (fake/source info [[1 small]]) [1 1]))))
+                    (fake/source info [[1 small]]) [1 1])))
+        (is (= #{[1 small]}
+               (d/q (assoc bounded :in '[$ $s]) @conn
+                    (fake/source info [[1 small]])))))
       (finally (d/close conn) (u/delete-files dir)))))
 
 (deftest decimal-aggregate-alignment-reserves-before-arithmetic

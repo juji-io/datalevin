@@ -861,18 +861,24 @@ pub fn encode_tuple(
 pub enum TupleRead {
     Bytes(i64),
     Position(i64),
+    Absolute(i64, usize),
+    Mark,
+    Reset,
+    Limit(i64),
 }
 
 struct TupleCursor<'a> {
     bytes: &'a [u8],
     position: usize,
+    limit: usize,
+    mark: Option<usize>,
     reads: Vec<TupleRead>,
 }
 
 impl<'a> TupleCursor<'a> {
     fn read(&mut self, size: i64) -> Result<&'a [u8], TupleError> {
         self.reads.push(TupleRead::Bytes(size));
-        if size < 0 || size as u64 > (self.bytes.len() - self.position) as u64 {
+        if size < 0 || size as u64 > (self.limit - self.position) as u64 {
             return Err(TupleError::Buffer);
         }
         let start = self.position;
@@ -881,16 +887,50 @@ impl<'a> TupleCursor<'a> {
     }
     fn seek(&mut self, position: i64) -> Result<(), TupleError> {
         self.reads.push(TupleRead::Position(position));
-        if position < 0 || position as u64 > self.bytes.len() as u64 {
+        if position < 0 || position as u64 > self.limit as u64 {
             return Err(TupleError::Buffer);
         }
         self.position = position as usize;
+        if self.mark.is_some_and(|mark| mark > self.position) {
+            self.mark = None;
+        }
+        Ok(())
+    }
+    fn at(&mut self, position: i64, width: usize) -> Result<&'a [u8], TupleError> {
+        self.reads.push(TupleRead::Absolute(position, width));
+        if position < 0 || position as u64 + width as u64 > self.limit as u64 {
+            return Err(TupleError::Buffer);
+        }
+        Ok(&self.bytes[position as usize..position as usize + width])
+    }
+    fn mark(&mut self) {
+        self.reads.push(TupleRead::Mark);
+        self.mark = Some(self.position);
+    }
+    fn reset(&mut self) -> Result<(), TupleError> {
+        self.reads.push(TupleRead::Reset);
+        self.position = self.mark.ok_or(TupleError::Buffer)?;
+        Ok(())
+    }
+    fn set_limit(&mut self, limit: i64) -> Result<(), TupleError> {
+        self.reads.push(TupleRead::Limit(limit));
+        if limit < 0 || limit as u64 > self.bytes.len() as u64 {
+            return Err(TupleError::Buffer);
+        }
+        self.limit = limit as usize;
+        self.position = self.position.min(self.limit);
+        if self.mark.is_some_and(|mark| mark > self.limit) {
+            self.mark = None;
+        }
         Ok(())
     }
     fn byte(&mut self) -> Result<u8, TupleError> {
         Ok(self.read(1)?[0])
     }
     fn value(&mut self, header: u8, post: i64, little: bool) -> Result<Value, TupleError> {
+        if matches!(header, 0xf3 | 0xf4) {
+            return self.tuple_body(header == 0xf3, little, post);
+        }
         let kind = header_type(header)?;
         if kind == "int" {
             let integer = IntegerWidth::Int.decode(self.read(4)?, little).unwrap() as i32;
@@ -946,7 +986,7 @@ impl<'a> TupleCursor<'a> {
                 Ok(Value::BigDecimal { unscaled, scale })
             };
         }
-        let size = self.bytes.len() as i64 - self.position as i64 - post;
+        let size = self.limit as i64 - self.position as i64 - post;
         let bytes = self.read(size)?;
         Ok(match kind {
             "bytes" => Value::Bytes(bytes.to_vec()),
@@ -964,6 +1004,14 @@ impl<'a> TupleCursor<'a> {
     }
     fn tuple(&mut self, homogeneous: bool, little: bool) -> Result<Value, TupleError> {
         self.byte()?; // The public reader consumes but does not validate this tag.
+        self.tuple_body(homogeneous, little, 0)
+    }
+    fn tuple_body(
+        &mut self,
+        homogeneous: bool,
+        little: bool,
+        outer_post: i64,
+    ) -> Result<Value, TupleError> {
         let header = if homogeneous { self.byte()? } else { 0 };
         let count = usize::from(self.byte()?);
         let mut values = Vec::new();
@@ -973,7 +1021,7 @@ impl<'a> TupleCursor<'a> {
             }
         } else {
             let start = self.position;
-            self.seek(self.bytes.len() as i64 - count as i64)?;
+            self.seek(self.limit as i64 - count as i64 - outer_post)?;
             let mut sizes = Vec::new();
             for _ in 0..count {
                 sizes.push(i64::from(self.byte()?));
@@ -982,7 +1030,7 @@ impl<'a> TupleCursor<'a> {
             let mut posts = vec![0i64; count];
             let mut suffix = 0;
             for index in (0..count).rev() {
-                posts[index] = suffix + count as i64 + if homogeneous { 2 } else { 1 };
+                posts[index] = suffix + count as i64 + outer_post + if homogeneous { 2 } else { 1 };
                 suffix += sizes[index] + i64::from(homogeneous);
             }
             self.seek(start as i64)?;
@@ -1032,12 +1080,332 @@ pub fn decode_tuple(
     let mut cursor = TupleCursor {
         bytes,
         position,
+        limit: bytes.len(),
+        mark: None,
         reads: Vec::new(),
     };
     let result = if position <= bytes.len() {
         cursor.tuple(homogeneous, little)
     } else {
         Err(TupleError::WrongValue)
+    };
+    (cursor.reads, result)
+}
+
+#[derive(Debug)]
+pub enum IndexError {
+    Tuple(TupleError),
+    Nippy(crate::nippy::Error),
+    Unsupported,
+}
+
+impl From<TupleError> for IndexError {
+    fn from(value: TupleError) -> Self {
+        Self::Tuple(value)
+    }
+}
+
+pub enum IndexInput {
+    Value(Value),
+    Tuple {
+        elements: Vec<TupleElement>,
+        count: usize,
+    },
+}
+
+pub struct Indexable {
+    pub header: u8,
+    pub bytes: Option<Vec<u8>>,
+    pub cut: bool,
+}
+
+fn raw_index_type(kind: &str) -> &str {
+    match kind {
+        "db.type/ref" => "long",
+        "db.type/string" => "string",
+        "db.type/keyword" => "keyword",
+        "db.type/symbol" => "symbol",
+        "db.type/long" => "long",
+        "db.type/float" => "float",
+        "db.type/double" => "double",
+        "db.type/boolean" => "boolean",
+        "db.type/instant" => "instant",
+        "db.type/uuid" => "uuid",
+        "db.type/bytes" => "bytes",
+        "db.type/bigint" => "bigint",
+        "db.type/bigdec" => "bigdec",
+        _ => kind,
+    }
+}
+
+/// Construct the encoded portion of an indexable. Fixed values remain deferred
+/// until the AVG writer; variable payloads are encoded and truncated here.
+pub fn indexable(value_type: &Value, input: &IndexInput) -> Result<Indexable, IndexError> {
+    let kind = match value_type {
+        Value::Keyword(kind) => kind.as_ref(),
+        Value::Map(_) => return Err(IndexError::Unsupported),
+        _ => "",
+    };
+    let tuple_types = if let Value::Vector(types) = value_type {
+        let types: Option<Vec<&str>> = types
+            .iter()
+            .map(|value| match value {
+                Value::Keyword(kind) => Some(raw_index_type(kind)),
+                _ => None,
+            })
+            .collect();
+        let types = types.ok_or(IndexError::Unsupported)?;
+        if tuple_header(&types).is_none() {
+            return Err(IndexError::Unsupported);
+        }
+        Some(types)
+    } else {
+        None
+    };
+    let value = match input {
+        IndexInput::Value(value) => value,
+        _ => &Value::Null,
+    };
+    let fixed = matches!(
+        kind,
+        "db.type/long"
+            | "db.type/ref"
+            | "db.type/float"
+            | "db.type/double"
+            | "db.type/boolean"
+            | "db.type/instant"
+            | "db.type/uuid"
+    );
+    let variable = matches!(
+        kind,
+        "db.type/string"
+            | "db.type/bytes"
+            | "db.type/keyword"
+            | "db.type/symbol"
+            | "db.type/bigint"
+            | "db.type/bigdec"
+    );
+    let header = if let Some(types) = &tuple_types {
+        tuple_header(types).unwrap()
+    } else if kind == "db.type/ref" {
+        0xf8
+    } else if fixed || variable {
+        component_header(raw_index_type(kind), &TupleElement::Value(value.clone()))?
+    } else {
+        0
+    };
+    let mut bytes = if fixed || (kind == "db.type/bytes" && matches!(value, Value::Null)) {
+        None
+    } else if let Some(maximum) = tuple_extreme(value) {
+        Some(if kind == "db.type/bytes" {
+            if maximum {
+                vec![255; 498]
+            } else {
+                vec![0; 497]
+            }
+        } else if maximum {
+            vec![255; 497]
+        } else {
+            vec![0]
+        })
+    } else if let Some(types) = tuple_types {
+        let IndexInput::Tuple { elements, count } = input else {
+            return Err(TupleError::WrongValue.into());
+        };
+        let mut bytes = Vec::new();
+        for field in encode_tuple(&types, elements, *count, false) {
+            bytes.extend(field?);
+        }
+        Some(bytes)
+    } else if variable {
+        Some(
+            component_writes(
+                raw_index_type(kind),
+                header,
+                &TupleElement::Value(value.clone()),
+                false,
+            )?
+            .concat(),
+        )
+    } else {
+        Some(crate::nippy::fast_freeze(value).map_err(IndexError::Nippy)?)
+    };
+    let cut = bytes.as_ref().is_some_and(|bytes| bytes.len() > 497);
+    if cut {
+        bytes.as_mut().unwrap().truncate(496);
+    }
+    Ok(Indexable { header, bytes, cut })
+}
+
+pub fn giant(giant_id: i64) -> bool {
+    giant_id != 0
+}
+
+/// Ordered AVG writes: attribute, optional tag, value, separator/giant ID, flag.
+pub fn encode_avg(
+    attribute: i32,
+    header: i64,
+    bytes: Option<&[u8]>,
+    value: &TupleElement,
+    giant_id: i64,
+    little: bool,
+) -> Vec<TupleWrite> {
+    let mut fields = vec![Ok(IntegerWidth::Int.encode(i64::from(attribute), little))];
+    if header != 0 {
+        fields.push(Ok(vec![header as u8]));
+    }
+    if let Some(bytes) = bytes {
+        fields.push(Ok(bytes.to_vec()));
+    } else {
+        let payload = match value {
+            TupleElement::HostError { index, .. } => Err(TupleError::Host(*index)),
+            _ => header_type(header as u8).and_then(|kind| {
+                if tuple_fixed(kind) {
+                    component_writes(kind, header as u8, value, little)
+                } else {
+                    Err(TupleError::Header(header as u8))
+                }
+            }),
+        };
+        match payload {
+            Ok(writes) => fields.extend(writes.into_iter().map(Ok)),
+            Err(error) => {
+                fields.push(Err(error));
+                return fields;
+            }
+        }
+    }
+    if giant(giant_id) {
+        fields.push(Ok(vec![255]));
+        fields.push(Ok(IntegerWidth::Long.encode(giant_id, little)));
+        fields.push(Ok(vec![2]));
+    } else {
+        fields.push(Ok(vec![0]));
+        fields.push(Ok(vec![1]));
+    }
+    fields
+}
+
+pub enum AvgMode {
+    Avg,
+    Retrieved,
+    Attribute,
+    Giant,
+    Inline,
+}
+pub enum AvgValue {
+    Value(Value),
+    Data(Vec<u8>),
+    Custom(Vec<u8>),
+}
+pub enum AvgResult {
+    Retrieved {
+        attribute: Option<i32>,
+        value: AvgValue,
+        giant: i64,
+    },
+    Value(AvgValue),
+}
+
+impl TupleCursor<'_> {
+    fn avg_value(&mut self, little: bool) -> Result<AvgValue, IndexError> {
+        self.mark();
+        let header = self.byte()?;
+        if header == 0xf0 {
+            let mut bytes = vec![header];
+            bytes.extend(self.read(self.limit as i64 - self.position as i64 - 2)?);
+            return Ok(AvgValue::Custom(bytes));
+        }
+        if header_type(header).is_ok() || matches!(header, 0xf3 | 0xf4) {
+            return self
+                .value(header, 2, little)
+                .map(AvgValue::Value)
+                .map_err(IndexError::Tuple);
+        }
+        self.reset()?;
+        let limit = self.limit;
+        let result = (|| {
+            self.set_limit(limit as i64 - 2)?;
+            let bytes = self.read((self.limit - self.position) as i64)?.to_vec();
+            self.seek(self.limit as i64)?;
+            Ok(AvgValue::Data(bytes))
+        })();
+        self.set_limit(limit as i64)?;
+        result
+    }
+    fn avg(&mut self, mode: AvgMode, little: bool) -> Result<AvgResult, IndexError> {
+        match mode {
+            AvgMode::Attribute => {
+                return Ok(AvgResult::Value(AvgValue::Value(Value::Long(
+                    IntegerWidth::Int.decode(self.at(0, 4)?, little).unwrap(),
+                ))));
+            }
+            AvgMode::Giant => {
+                let giant = if self.at(self.limit as i64 - 1, 1)?[0] == 2 {
+                    IntegerWidth::Long
+                        .decode(self.at(self.limit as i64 - 9, 8)?, little)
+                        .unwrap()
+                } else {
+                    0
+                };
+                return Ok(AvgResult::Value(AvgValue::Value(Value::Long(giant))));
+            }
+            AvgMode::Inline => {
+                self.seek(4)?;
+                return self.avg_value(little).map(AvgResult::Value);
+            }
+            _ => {}
+        }
+        let include_attribute = match mode {
+            AvgMode::Avg => true,
+            AvgMode::Retrieved => {
+                let custom = self.at(4, 1)?[0] == 0xf0;
+                if custom {
+                    self.seek(0)?;
+                }
+                custom
+            }
+            _ => unreachable!(),
+        };
+        let attribute = if include_attribute {
+            Some(IntegerWidth::Int.decode(self.read(4)?, little).unwrap() as i32)
+        } else {
+            None
+        };
+        self.seek(self.limit as i64 - 1)?;
+        let (value, giant) = if self.byte()? == 2 {
+            self.seek(self.limit as i64 - 9)?;
+            let giant = IntegerWidth::Long.decode(self.read(8)?, little).unwrap();
+            (AvgValue::Value(Value::Null), giant)
+        } else {
+            self.seek(4)?;
+            (self.avg_value(little)?, 0)
+        };
+        Ok(AvgResult::Retrieved {
+            attribute,
+            value,
+            giant,
+        })
+    }
+}
+
+pub fn decode_avg(
+    bytes: &[u8],
+    position: usize,
+    mode: AvgMode,
+    little: bool,
+) -> (Vec<TupleRead>, Result<AvgResult, IndexError>) {
+    let mut cursor = TupleCursor {
+        bytes,
+        position,
+        limit: bytes.len(),
+        mark: None,
+        reads: Vec::new(),
+    };
+    let result = if position <= bytes.len() {
+        cursor.avg(mode, little)
+    } else {
+        Err(TupleError::WrongValue.into())
     };
     (cursor.reads, result)
 }
