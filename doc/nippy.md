@@ -57,8 +57,15 @@ Existing custom IDs are verified against
 | `:dtlv/gia` | 1423 | Integer array; JavaFastPFOR BinaryPacking + VariableByte |
 | `:dtlv/sial` | -2438 | Integer values followed by bitmap indices |
 | `:spillable-vec` | -3600 | Counted values |
-| `:spillable-map` | 28032 | Map payload |
-| `:spillable-set` | -25293 | Set payload, also used by UniqueVectorSet |
+| `:spillable-map` | 28032 | Vector of entries; legacy map payloads remain readable |
+| `:spillable-set` | -25293 | Vector of members; legacy set payloads remain readable; also used by UniqueVectorSet |
+
+Sequential spill payloads preserve Java-distinct keys such as `1.0M` and
+`1.00M` without passing through Clojure map/set deduplication. The custom tags
+and readers are unchanged; existing JVM spill readers accept these vectors.
+The [spill key fixtures](../resources/datalevin/nippy/spill-key-equality.tsv)
+cover buffer and DataOutput writers, and the Rust codec retains either payload
+form without imposing equality rules.
 
 Roaring's library owns its container format. Integer compression follows the
 existing JavaFastPFOR `IntCompressor` default. Neither gets a new codec layout.

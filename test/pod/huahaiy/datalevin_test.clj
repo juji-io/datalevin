@@ -153,7 +153,7 @@
         q      '[:find ?age .
                  :in $ ?today
                  :where
-                 [?e :person/name ?name]
+                 [?e :person/name "George P. Cosmatos"]
                  [?e :person/born ?dob]
                  [(age ?dob ?today) ?age]] ]
     (pd/transact! conn data)

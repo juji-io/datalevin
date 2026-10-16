@@ -80,6 +80,16 @@
         (is (= #{[1 1.0M]} (d/q q s input)))
         (is (= (d/q q rows input) (d/q q s input)))))))
 
+(deftest decimal-projection-and-aggregation-match-eager-results
+  (let [rows [[1 1.0M] [2 1.00M] [3 1.0M]]
+        s (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] :bigdec) rows)]
+    (doseq [input [rows s]]
+      (is (= ["1.0" "1.00"]
+             (sort (map str (d/q '[:find [?v ...] :in $s :where [$s _ ?v]] input)))))
+      (is (= [2 2.00M 1.0]
+             (d/q '[:find [(count ?v) (sum ?v) (avg ?v)]
+                    :in $s :where [$s _ ?v]] input))))))
+
 (deftest unsupported-shapes-reject-before-acquisition
   (doseq [query ['[:find ?id :in $s :where [$s ?id _] (not [$s ?id "a"])]
                  '[:find ?x :in $s :where [$s ?id _] [(inc ?id) ?x]]

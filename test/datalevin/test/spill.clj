@@ -36,6 +36,16 @@
   (let [s (sp/new-spillable-set (range 20) {:initial-capacity 32})]
     (is (= (set (range 20)) s))))
 
+(deftest spillable-set-sequence-preserves-decimal-scale
+  (doseq [threshold [-1 Long/MAX_VALUE]]
+    (let [^SpillableSet s (sp/new-spillable-set [1.0M 1.00M 1.0M]
+                                              {:spill-threshold threshold})]
+      (try
+        (is (= 2 (count s) (count (seq s))))
+        (is (= ["1.0" "1.00"] (sort (map str s))))
+        (is (not (contains? s 1M)))
+        (finally (.empty s))))))
+
 (deftest unique-vector-set-roundtrip
   (let [tuples (doto (FastList.)
                  (.add (object-array [0 31]))
@@ -168,7 +178,8 @@
       (finally (.empty m) (.empty s)))))
 
 (deftest spill-map-preserves-entries-across-pressure-changes
-  (with-redefs [sp/memory-pressure (volatile! 0)]
+  (let [old-pressure @sp/memory-pressure]
+    (vreset! sp/memory-pressure 0)
     (let [^SpillableMap m (sp/new-spillable-map)
           a (native-value "one" :a 1)
           b (native-value "one" :b 2)]
@@ -186,7 +197,9 @@
         (is (zero? (count m)))
         (.put m :reused nil)
         (is (= {:reused nil} (into {} m)))
-        (finally (.empty m))))))
+        (finally
+          (.empty m)
+          (vreset! sp/memory-pressure old-pressure))))))
 
 (deftest live-spill-does-not-prevent-application-executor-shutdown
   (let [db (l/open-kv (u/tmp-dir (str "spill-lifetime-" (System/nanoTime)))

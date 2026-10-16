@@ -2,6 +2,7 @@
   "A synchronous, bounded Nippy process bridge. No reference engine calls."
   (:require
    [datalevin.util :refer [raise]]
+   [datalevin.buffer :as buffer]
    [taoensso.nippy :as nippy]
    [datalevin.test-adapter :as adapter]
    [datalevin.test-adapter.bits :as bits])
@@ -117,14 +118,49 @@
                                  (read-frame (:input peer))))]
     (result-value session operation response)))
 
-(defn- serialize-buffer! [peer session ^ByteBuffer buffer value]
+(defn- serialization-value! [value]
+  ;; Datalevin excludes Class values before calling its codec. This is the JVM
+  ;; binding's value policy; it does not invoke the reference serializer.
+  (when (instance? Class value)
+    (raise "Unfreezable type: java.lang.Class" {})))
+
+(defn- serialize-value! ^bytes [peer session value]
+  (serialization-value! value)
+  (invoke-peer! peer session :bits/serialize [value]))
+
+(defn- big-endian-buffer! [^ByteBuffer buffer]
   (when-not (= ByteOrder/BIG_ENDIAN (.order buffer))
     (throw (IllegalArgumentException.
              (str "ByteBuffer must use BIG_ENDIAN order for DataInput/DataOutput semantics (have "
-                  (.order buffer) ")."))))
+                  (.order buffer) ").")))))
+
+(defn- serialize-buffer! [peer session ^ByteBuffer buffer value]
+  (serialization-value! value)
+  (big-endian-buffer! buffer)
   ;; ByteBuffer.put checks capacity/read-only status before changing position.
   ;; Rust performs serialization; the host only copies its output to JVM memory.
   (.put buffer ^bytes (invoke-peer! peer session :bits/serialize [value])))
+
+(defn- acquire-serialized-buffer! ^ByteBuffer [peer session value]
+  (let [bytes (serialize-value! peer session value)
+        owned (buffer/get-array-buffer (alength bytes))]
+    (try
+      (big-endian-buffer! owned)
+      (.put owned bytes)
+      (.flip owned)
+      (catch Throwable error
+        (buffer/return-array-buffer owned)
+        (throw error)))))
+
+(defn- measure-size [peer session value]
+  ;; Preserve the original allocation estimate, including its fixed-width
+  ;; integer/byte-array cases. Other values are measured using real Rust output.
+  (cond
+    (bytes? value) (inc (alength ^bytes value))
+    (instance? ByteBuffer value) (.remaining ^ByteBuffer value)
+    (int? value) 8
+    (instance? Byte value) 1
+    :else (alength (serialize-value! peer session value))))
 
 (defn- deserialize-buffer! [peer session ^ByteBuffer buffer]
   (let [limit (.limit buffer)]
@@ -141,6 +177,15 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :bits/serialize
+      (serialize-value! peer session (first arguments))
+
+      :bits/acquire-serialized-bf
+      (acquire-serialized-buffer! peer session (first arguments))
+
+      :bits/measure-size
+      (measure-size peer session (first arguments))
+
       :bits/serialize-bf
       (let [[buffer value] arguments]
         (serialize-buffer! peer session buffer value))

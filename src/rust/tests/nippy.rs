@@ -44,6 +44,39 @@ fn checked_in_jvm_corpora_and_independent_values() {
 }
 
 #[test]
+fn sequential_spill_payloads_preserve_decimal_keys() {
+    let a = Value::BigDecimal {
+        unscaled: vec![10],
+        scale: 1,
+    };
+    let b = Value::BigDecimal {
+        unscaled: vec![100],
+        scale: 2,
+    };
+    let map = Value::SpillableMap(Box::new(Value::Vector(vec![
+        Value::MapEntry(Box::new((a.clone(), Value::Keyword("a".into())))),
+        Value::MapEntry(Box::new((b.clone(), Value::Keyword("b".into())))),
+    ])));
+    let set = Value::SpillableSet(Box::new(Value::Vector(vec![
+        Value::Vector(vec![a]),
+        Value::Vector(vec![b]),
+    ])));
+    let mut count = 0;
+    for line in include_str!("../../../resources/datalevin/nippy/spill-key-equality.tsv")
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
+        let (id, hex) = line.split_once('\t').unwrap();
+        let expected = if id.starts_with("map-") { &map } else { &set };
+        let value = read(&support::unhex(hex).unwrap()).unwrap();
+        assert_eq!(&value, expected, "JVM spill payload: {id}");
+        assert_eq!(read(&fast_freeze(&value).unwrap()).unwrap(), value);
+        count += 1;
+    }
+    assert_eq!(count, 4);
+}
+
+#[test]
 fn direct_caller_owned_buffers_and_rollback() {
     for (_, value) in support::fixtures() {
         let bytes = fast_freeze(&value).unwrap();

@@ -20,10 +20,9 @@
    [taoensso.nippy :as nippy]
    [taoensso.nippy.impl :as nippy-impl]
    [taoensso.nippy.io :as nio]
-   [taoensso.nippy.schema :as nschema]
-   [clojure.set :as set])
+   [taoensso.nippy.schema :as nschema])
   (:import
-   [java.util Iterator List UUID NoSuchElementException Map Set Collection AbstractSet HashMap]
+   [java.util Iterator List UUID NoSuchElementException Map Set Collection AbstractSet HashMap Objects]
    [java.io DataInput DataOutput]
    [java.nio ByteBuffer]
    [java.lang.ref Cleaner Cleaner$Cleanable]
@@ -416,11 +415,11 @@
     vs))
 
 (defn- map-bucket [db bindings k]
-  (or (spill-value db bindings (hash k) :int) []))
+  (or (spill-value db bindings (Objects/hashCode k) :int) []))
 
 (defn- bucket-index [bucket k]
   (first (keep-indexed (fn [idx [stored-key]]
-                         (when (Util/equiv k stored-key) idx))
+                         (when (Objects/equals k stored-key) idx))
                        bucket)))
 
 (defn- disk-map-entry [db bindings k]
@@ -435,7 +434,7 @@
         idx    (bucket-index bucket k)
         entry  (when (some? idx) (nth bucket idx))]
     (spill-tx db bindings
-              [(l/kv-tx :put c/tmp-dbi (hash k)
+              [(l/kv-tx :put c/tmp-dbi (Objects/hashCode k)
                         (if entry
                           (assoc bucket idx [(first entry) v])
                           (conj bucket [k v]))
@@ -451,8 +450,8 @@
               rest  (into (subvec bucket 0 idx) (subvec bucket (inc ^long idx)))]
           (spill-tx db bindings
                     [(if (seq rest)
-                       (l/kv-tx :put c/tmp-dbi (hash k) rest :int)
-                       (l/kv-tx :del c/tmp-dbi (hash k) :int))])
+                       (l/kv-tx :put c/tmp-dbi (Objects/hashCode k) rest :int)
+                       (l/kv-tx :del c/tmp-dbi (Objects/hashCode k) :int))])
           (vswap! disk-total u/long-dec)
           (second entry))))))
 
@@ -528,9 +527,18 @@
 
   MapEquivalence
 
-  (keySet [_]
-    (set/union (set (.keySet memory))
-               (set (map first (disk-map-entries @disk native-bindings)))))
+  (keySet [this]
+    ;; A Clojure set would collapse Java-distinct keys such as 1.0M/1.00M.
+    ;; Expose the same keys and membership as the backing map in both portions.
+    (let [owner this]
+      (proxy [AbstractSet] []
+        (size [] (count owner))
+        (contains [k] (.containsKey owner k))
+        (iterator []
+          (let [iter (.iterator owner)]
+            (reify Iterator
+              (hasNext [_] (.hasNext iter))
+              (next [_] (key (.next iter)))))))))
 
   (equiv [this other]
     (cond
@@ -545,8 +553,7 @@
       :else false))
 
   (seq ^ISeq [this]
-    (when (< 0 (count this))
-      (map #(MapEntry. % (.get this %)) (.keySet this))))
+    (iterator-seq (.iterator this)))
 
   Map
 
@@ -637,16 +644,24 @@
      (doseq [[k v] m] (.put smap k v))
      smap)))
 
+(defn- write-entry-vector!
+  "Stream a vector payload without passing Java-distinct keys through a
+  Clojure map or set. Existing spill readers accept these sequential payloads."
+  [^DataOutput out entries]
+  (.writeByte out nschema/id-vec-lg)
+  (.writeInt out (count entries))
+  (doseq [entry entries] (nippy/freeze-to-out! out entry)))
+
 (nippy/extend-freeze
   SpillableMap :spillable-map
   [^SpillableMap x ^DataOutput out]
-  (nippy/freeze-to-out! out (into {} x)))
+  (write-entry-vector! out x))
 
 (extend-type SpillableMap
   nio/IWriteTypedNoMeta
   (write-typed [x out dout_]
     (write-custom-header! out map-type-id)
-    (nio/write-map out dout_ x false)))
+    (nio/write-vec out dout_ x)))
 
 (nippy/extend-thaw
   :spillable-map
@@ -686,7 +701,7 @@
 
       :else false))
 
-  (seq ^ISeq [_] (seq (.keySet impl)))
+  (seq ^ISeq [this] (iterator-seq (.iterator this)))
 
   (get [_ o] (when (.valAt impl o) o))
 
@@ -750,13 +765,13 @@
 (nippy/extend-freeze
   SpillableSet :spillable-set
   [^SpillableSet x ^DataOutput out]
-  (nippy/freeze-to-out! out (into #{} x)))
+  (write-entry-vector! out x))
 
 (extend-type SpillableSet
   nio/IWriteTypedNoMeta
   (write-typed [x out dout_]
     (write-custom-header! out set-type-id)
-    (nio/write-set out dout_ x)))
+    (nio/write-vec out dout_ x)))
 
 (nippy/extend-thaw
   :spillable-set
@@ -766,10 +781,10 @@
 (nippy/extend-freeze
   UniqueVectorSet :spillable-set
   [^UniqueVectorSet x ^DataOutput out]
-  (nippy/freeze-to-out! out (into #{} x)))
+  (write-entry-vector! out x))
 
 (extend-type UniqueVectorSet
   nio/IWriteTypedNoMeta
   (write-typed [x out dout_]
     (write-custom-header! out set-type-id)
-    (nio/write-set out dout_ x)))
+    (nio/write-vec out dout_ x)))

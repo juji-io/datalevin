@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.test-adapter.bits
   "Selected-backend serialization for the original Clojure codec tests."
   (:require
+   [datalevin.buffer :as buffer]
    [datalevin.test-adapter :as adapter])
   (:import
    [java.nio ByteBuffer]))
@@ -35,3 +36,22 @@
   ([buffer] (read-buffer buffer :data))
   ([buffer value-type]
    (adapter/call! :bits/read-buffer [buffer value-type])))
+
+(defn acquire-serialized-bf
+  "Acquire a JVM heap buffer containing the selected codec's bytes, ready to read.
+  Return it with buffer/return-array-buffer after synchronous consumption."
+  ^ByteBuffer [value]
+  (adapter/call! :bits/acquire-serialized-bf [value]))
+
+(defmacro with-serialized-bf
+  "Consume a serialized buffer within body and return it even when body throws.
+  Neither the buffer nor a lazy reader of it may escape this scope."
+  [[sym value] & body]
+  `(let [~(with-meta sym (assoc (meta sym) :tag 'java.nio.ByteBuffer))
+         (acquire-serialized-bf ~value)]
+     (try
+       ~@body
+       (finally (buffer/return-array-buffer ~sym)))))
+
+(defn measure-size [value]
+  (adapter/call! :bits/measure-size [value]))

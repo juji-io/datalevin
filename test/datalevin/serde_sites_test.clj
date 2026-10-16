@@ -2,6 +2,7 @@
   (:require
    [clojure.test :refer [deftest is]]
    [datalevin.bits :as b]
+   [datalevin.test-adapter.bits :as codec]
    [datalevin.buffer :as bf]
    [datalevin.client-op :as cop]
    [datalevin.constants :as c]
@@ -28,23 +29,36 @@
   (.clear bf/array-buffers)
   (try
     (let [value {:schema (vec (repeat 1000 {:db/valueType :db.type/string}))}
-          expected (b/serialize value)]
-      (b/with-serialized-bf [outer value]
-        (is (= (seq expected) (seq (b/get-bytes (.duplicate outer)))))
-        (b/with-serialized-bf [inner {:nested true}]
+          expected (codec/serialize value)]
+      (codec/with-serialized-bf [outer value]
+        (is (= (seq expected) (seq (codec/get-bytes (.duplicate outer)))))
+        (codec/with-serialized-bf [inner {:nested true}]
           (is (not (identical? outer inner)))
-          (is (= {:nested true} (b/deserialize-bf inner))))
-        (is (= value (b/deserialize-bf outer))))
-      (is (= (alength expected) (b/measure-size value)))
+          (is (= {:nested true} (codec/deserialize-bf inner))))
+        (is (= value (codec/deserialize-bf outer))))
+      (is (= (alength expected) (codec/measure-size value)))
       (is (thrown-with-msg? Exception #"consumer failed"
-                           (b/with-serialized-bf [buffer value]
+                           (codec/with-serialized-bf [buffer value]
                              (is (pos? (.remaining buffer)))
                              (throw (ex-info "consumer failed" {})))))
-      (is (thrown? Exception (b/acquire-serialized-bf String)))
-      (b/with-serialized-bf [buffer value]
-        (is (= value (b/deserialize-bf buffer)))))
-    (is (pos? (.size bf/array-buffers)))
+      (is (thrown? Exception (codec/acquire-serialized-bf String)))
+      (codec/with-serialized-bf [buffer value]
+        (is (= value (codec/deserialize-bf buffer)))))
     (finally (.clear bf/array-buffers))))
+
+(deftest pooled-serialization-returns-buffers-after-failures
+  ;; Pool bookkeeping is a Clojure helper check, separate from the shared
+  ;; serialization/lifetime behavior above.
+  (doseq [failure [:consumer :serializer]]
+    (.clear bf/array-buffers)
+    (try
+      (case failure
+        :consumer (is (thrown-with-msg? Exception #"consumer failed"
+                                       (b/with-serialized-bf [_buffer {:pooled true}]
+                                         (throw (ex-info "consumer failed" {})))))
+        :serializer (is (thrown? Exception (b/acquire-serialized-bf String))))
+      (is (pos? (.size bf/array-buffers)))
+      (finally (.clear bf/array-buffers)))))
 
 (defn- byte-array-hash [value]
   (let [md (MessageDigest/getInstance "SHA-256")

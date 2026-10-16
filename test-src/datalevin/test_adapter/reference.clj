@@ -14,6 +14,8 @@
       :bits/deserialize-bf (apply bits/deserialize-bf arguments)
       :bits/put-buffer (apply bits/put-buffer arguments)
       :bits/read-buffer (apply bits/read-buffer arguments)
+      :bits/acquire-serialized-bf (apply bits/acquire-serialized-bf arguments)
+      :bits/measure-size (apply bits/measure-size arguments)
       :empty-db (apply d/empty-db arguments)
       :db-with (apply d/db-with arguments)
       :q (apply d/q arguments)
