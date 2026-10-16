@@ -142,14 +142,14 @@ Here are some examples of passing the env flags:
 (require '[datalevin.constants :as c])
 
 ;; Pass :nosync to my-kvdb KV store
-(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/default-env-flags :nosync))))})
+(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/default-env-flags :nosync)}))
 
 ;; Turn off :nosync
 (d/set-env-flags kv-db [:nosync] false)
 
 ;; Set :temp? true for a KV store automaticaly adds :nosync,
 ;; this DB will also be deleted on graceful JVM exit.
-(d/open-kv "/tmp/tmp-kvdb" {:temp? true))})
+(d/open-kv "/tmp/tmp-kvdb" {:temp? true})
 
 ;; Pass :writemap + :mapasync to testdb Datalog store
 (d/get-conn "/tmp/testdb" {}

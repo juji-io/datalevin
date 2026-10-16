@@ -1239,7 +1239,7 @@ PostgreSQL and SQLite, due to better query plans produced in Datalevin.
 
 ### LDBC SNB Benchmark
 
-[LDBC SNB](../LDBC-SNB-bench) is an industry standard benchmark for graph
+[LDBC SNB](../benchmarks/LDBC-SNB-bench) is an industry standard benchmark for graph
 databases [3], where Datalevin compares favorably with neo4j. For Short
 Interactive queries, Datalevin is orders of magnitude faster, while often faster
 in Complex Interactive queries, with a couple of exceptions.
@@ -1250,7 +1250,7 @@ This [Datalog benchmark](../benchmarks/math-bench) [10] tests Datalog rules
 evaluation performance. We compared with Datascript and Datomic, where Datalevin
 is much faster. For recursive rules in particular, Datalevin is several orders
 of magnitude faster, due to start of the art Datalog [rule engine
-implementation](rule.md).
+implementation](rules.md).
 
 ## Remark
 
