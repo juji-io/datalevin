@@ -14,15 +14,17 @@
   (when-let [f (get faults phase)] (f)))
 
 (defn- match-row [bindings terms row]
-  (reduce (fn [bindings [term value]]
-            (when bindings
+  (reduce (fn [bound [term value]]
+            (when bound
               (case (first term)
-                :ignore bindings
-                :const (when (= (second term) value) bindings)
+                :ignore bound
+                :const (when (= (second term) value) bound)
                 :var (let [variable (second term)]
-                       (if (contains? bindings variable)
-                         (when (= (get bindings variable) value) bindings)
-                         (assoc bindings variable value))))))
+                       (if (contains? bound variable)
+                         (when (if (contains? bindings variable)
+                                 (Objects/equals (get bound variable) value)
+                                 (= (get bound variable) value)) bound)
+                         (assoc bound variable value))))))
           bindings (map vector terms row)))
 
 (defn evaluate

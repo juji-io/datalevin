@@ -16,15 +16,17 @@
            [java.util Objects HashSet]))
 
 (defn- match-row [bindings terms row]
-  (reduce (fn [bindings [term x]]
-            (when bindings
+  (reduce (fn [bound [term x]]
+            (when bound
               (case (first term)
-                :ignore bindings
-                :const (when (= (second term) x) bindings)
+                :ignore bound
+                :const (when (= (second term) x) bound)
                 :var (let [sym (second term)]
-                       (if (contains? bindings sym)
-                         (when (= (bindings sym) x) bindings)
-                         (assoc bindings sym x)))))) bindings (map vector terms row)))
+                       (if (contains? bound sym)
+                         (when (if (contains? bindings sym)
+                                 (Objects/equals (bound sym) x)
+                                 (= (bound sym) x)) bound)
+                         (assoc bound sym x)))))) bindings (map vector terms row)))
 
 (defn- merge-row [left right]
   ;; Match the existing hash join's Java key equality. Predicates and projection
@@ -163,14 +165,19 @@
                  (swap! (:explain runtime) assoc :result-rows (count @output))
                  result))}))
 
-(defn- execute! [runtime {:keys [entries fragments bindings predicates] :as prepared} snapshots]
+(defn- execute! [runtime {:keys [entries fragments bindings input-data predicates] :as prepared} snapshots]
   (let [readers (into (vec (mapcat #(native-reader runtime snapshots bindings %) (filter :native entries)))
                       (map #(source-reader runtime %) fragments))
         readers (if (seq readers) readers [(fn [emit] (emit bindings))])
-        tables (mapv (fn [read]
-                       (let [rows (volatile! [])]
-                         (read (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
-                         @rows)) (butlast readers))
+        input-tables (mapv :rows (:relations input-data))
+        tables (if (every? seq input-tables)
+                 (into input-tables
+                       (map (fn [read]
+                              (let [rows (volatile! [])]
+                                (read (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
+                                @rows)))
+                       (butlast readers))
+                 input-tables)
         {:keys [accept finish stopped?]} (collect-result runtime prepared)]
     (letfn [(join! [row remaining]
               (source/check-active! (:control runtime))
@@ -212,7 +219,8 @@
           (let [prepared (plan/prepare! runtime parsed inputs options)]
             (native/with-views (keep :native (:entries prepared))
               (fn [snapshots]
-                (native/validate-types! snapshots (:entries prepared) (:types prepared) (:bindings prepared))
+                (native/validate-types! (:control runtime) snapshots (:entries prepared)
+                                        (:types prepared) (:input-data prepared))
                 (let [prepared (plan/acquire-and-plan! runtime prepared)
                       result (when (or (nil? explain-options) (:run? explain-options))
                                (execute! runtime prepared snapshots))]

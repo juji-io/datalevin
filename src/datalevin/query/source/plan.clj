@@ -6,11 +6,12 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.inputs :as input]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.util :as u])
-  (:import [datalevin.parser BindScalar Variable SrcVar DefaultSrc Constant
+  (:import [datalevin.parser Variable DefaultSrc Constant
             Placeholder Pattern Predicate FindRel]
            [java.util IdentityHashMap]))
 
@@ -36,22 +37,6 @@
         (fail! :query-source/unsupported :clauses))
       (fail! :query-source/unsupported :clauses))
     :else (fail! :query-source/unsupported :clauses)))
-
-(defn- inputs! [parsed inputs]
-  (when-not (= (count (:qin parsed)) (count inputs)) (fail! :query-source/invalid :inputs))
-  (reduce (fn [result [binding input]]
-            (when-not (instance? BindScalar binding) (fail! :query-source/unsupported :inputs))
-            (let [v (:variable binding)]
-              (cond
-                (instance? SrcVar v)
-                (if (or (satisfies? source/IQuerySource input) (db/db? input))
-                  (assoc-in result [:sources (:symbol v)] input)
-                  (fail! :query-source/unsupported :inputs))
-                (instance? Variable v)
-                (do (value/value-charge input)
-                    (assoc-in result [:bindings (:symbol v)] input))
-                :else (fail! :query-source/unsupported :inputs))))
-          {:sources {} :bindings {}} (map vector (:qin parsed) inputs)))
 
 (defn- window [x bindings default]
   (let [x (if (symbol? x) (get bindings x ::missing) x)]
@@ -85,8 +70,8 @@
                 (#{:snapshot :statement :best-effort} (get options :consistency :snapshot))
                 (value/portable? (get options :authorization {:principal-id :application})))
     (fail! :query-source/invalid :context))
-  (let [{:keys [sources bindings]} (inputs! parsed inputs)
-        clauses (mapv clause (range) (:qwhere parsed))
+  (let [clauses (mapv clause (range) (:qwhere parsed))
+        {:keys [sources bindings] :as input-data} (input/prepare! runtime parsed inputs)
         patterns (filterv #(= :pattern (:kind %)) clauses)
         predicates (filterv #(= :predicate (:kind %)) clauses)
         descriptors (IdentityHashMap.)
@@ -105,9 +90,8 @@
                                 {:symbol sym :source input :descriptor descriptor})
                               (do (native/validate! input) {:symbol sym :native input}))))) sources)
         types (atom {})]
-    (rt/charge! runtime bindings)
     (rt/charge! runtime clauses)
-    (let [available (into (set (keys bindings)) (mapcat contract/variables) patterns)
+    (let [available (into (input/variables input-data) (mapcat contract/variables) patterns)
           projected (into (set (dp/find-vars (:qfind parsed))) (map :symbol) (:qwith parsed))]
       (when-not (and (set/subset? projected available)
                     (every? #(set/subset? (contract/variables %) available) predicates))
@@ -144,12 +128,13 @@
                               (when (and (contains? @types sym) (not= t (@types sym)))
                                 (fail! :query-source/unsupported :types))
                               (swap! types assoc sym t)
-                              (when (contains? bindings sym)
-                                (let [x (bindings sym)]
+                              (input/check-values! (:control runtime) input-data sym
+                                (fn [x]
                                   (when-not (if (nil? x) (:nullable? column) (value/matches-type? t x))
                                     (fail! :query-source/invalid :types)))))))))))
                 (assoc entry :clauses clauses :patterns local))) entries)]
-      {:entries entries :bindings bindings :predicates predicates :types @types
+      {:entries entries :bindings bindings :input-data input-data
+       :predicates predicates :types @types
        :limit (window (:qlimit parsed) bindings nil)
        :offset (window (:qoffset parsed) bindings 0)
        :parsed parsed :options options})))

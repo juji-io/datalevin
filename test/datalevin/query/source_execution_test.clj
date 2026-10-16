@@ -33,6 +33,33 @@
     (is (= 2 (count (filter #{:plan} @(:events s)))))
     (is (= [:close-cursor :close-session] (take-last 2 @(:events s))))))
 
+(deftest flat-input-bindings-match-eager-relations
+  (let [rows [[1 "a"] [2 "b"] [3 nil]]
+        s (fake/source tuple-info rows)]
+    (doseq [[query args]
+            [['[:find ?id ?name :in $s [?id ...] :where [$s ?id ?name]] [[1 3 3]]]
+             ['[:find ?id :in $s [?id ?name] :where [$s ?id ?name]] [[2 "b"]]]
+             ['[:find ?id ?name :in $s [[?id ?name]] :where [$s ?id ?name]]
+              [[[1 "a"] [3 nil]]]]
+             ['[:find ?id ?label :in $s [[?id ?label]] :where [$s ?id _]]
+              [[[1 "first"] [1 "second"]]]]]]
+      (is (= (apply d/q query rows args) (apply d/q query s args))))
+    (reset! (:events s) [])
+    (is (= #{} (d/q '[:find ?id :in $s [?id ...] :where [$s ?id _]] s [])))
+    (is (not-any? #{:open-cursor :fetch} @(:events s)))))
+
+(deftest malformed-input-rows-reject-before-source-acquisition
+  (doseq [[binding input category]
+          [['[?id ?name] [1] :query-source/invalid]
+           ['[[?id ?name]] [[1 "a"] [2]] :query-source/invalid]
+           ['[?id ...] [1 "wrong-type"] :query-source/invalid]
+           ['[?id ...] "not-a-collection" :query-source/invalid]
+           ['[[?id ...] ...] [[1 2]] :query-source/unsupported]]]
+    (let [s (fake/source tuple-info [[1 "a"]])
+          query {:find ['?id] :in ['$s binding] :where [['$s '?id '_]]}]
+      (is (= category (:error (error-data #(d/q query s input)))))
+      (is (not-any? #{:open-session :plan :open-cursor} @(:events s))))))
+
 (deftest fused-fake-matches-native-key-and-predicate-semantics
   (let [info (assoc-in tuple-info [:pattern-contract :columns 1] {:type :bigdec :nullable? false})
         rows [[1 1.0M] [2 1.00M] [3 2M]]
@@ -43,6 +70,15 @@
         s (fake/source tuple-info rows)
         query '[:find ?id :in $s :where [$s ?id ?name] [(> ?name "a")]]]
     (is (= (d/q query rows) (d/q query s)))))
+
+(deftest scalar-and-tuple-inputs-preserve-decimal-key-equality
+  (let [rows [[1 1.0M] [2 1.00M]]
+        info (assoc-in tuple-info [:pattern-contract :columns 1 :type] :bigdec)
+        s (fake/source info rows)]
+    (doseq [[binding input] [['?value 1.0M] ['[?value] [1.0M]]]]
+      (let [q {:find '[?id ?value] :in ['$s binding] :where '[[$s ?id ?value]]}]
+        (is (= #{[1 1.0M]} (d/q q s input)))
+        (is (= (d/q q rows input) (d/q q s input)))))))
 
 (deftest unsupported-shapes-reject-before-acquisition
   (doseq [query ['[:find ?id :in $s :where [$s ?id _] (not [$s ?id "a"])]

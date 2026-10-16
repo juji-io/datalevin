@@ -11,6 +11,7 @@
             [datalevin.storage :as storage]
             [datalevin.storage.schema :as schema]
             [datalevin.query.source :as source]
+            [datalevin.query.source.inputs :as input]
             [datalevin.query.source.native-compression :as compression]
             [datalevin.query.source.native-value :as native-value]
             [datalevin.query.source.value :as value :refer [fail!]]
@@ -76,7 +77,7 @@
          (every? #(value/matches-type? (:element type) %) x))
     (value/matches-type? type x)))
 
-(defn validate-types! [snapshots entries external-types bindings]
+(defn validate-types! [control snapshots entries external-types input-data]
   (doseq [{:keys [native patterns]} entries :when native
           pattern patterns
           :let [schema (:schema (get snapshots (.-store ^DB native)))
@@ -89,11 +90,13 @@
         (when-let [external (external-types (second term))]
           (when-not (= external logical-type)
             (fail! :query-source/unsupported :types))))
-      (when (or (= :const (first term))
-                (and (= :var (first term)) (contains? bindings (second term))))
-        (when-not (matches-native-type? type (if (= :const (first term)) (second term)
-                                                (bindings (second term))))
-          (fail! :query-source/unsupported :native-type))))))
+      (let [check! (fn [x]
+                     (when-not (matches-native-type? type x)
+                       (fail! :query-source/unsupported :native-type)))]
+        (case (first term)
+          :const (check! (second term))
+          :var (input/check-values! control input-data (second term) check!)
+          nil)))))
 
 (defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type payload prepare emit eid]
   ;; Reserve buffers and bounded preflight state first. Generic collections and
