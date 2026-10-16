@@ -82,7 +82,10 @@
           pattern patterns
           :let [schema (:schema (get snapshots (.-store ^DB native)))
                 attribute (second (second (:terms pattern)))
-                t (attribute-type schema attribute)
+                ;; An explicit wildcard requires only the index entry's
+                ;; existence, not a supported logical value or decoder.
+                t (when-not (= :ignore (first (nth (:terms pattern) 2)))
+                    (attribute-type schema attribute))
                 logical (if (= :native-homogeneous-tuple (:kind t)) :data t)]]
     (doseq [[term type logical-type]
             (map vector (:terms pattern) [:long :keyword t] [:long :keyword logical])]
@@ -126,36 +129,54 @@
           (visit buffer)))
       (finally (source/release! token)))))
 
+(defn- scan-attribute!
+  [control {:keys [kv attrs]} attribute visit]
+  (scan/scan kv c/eav
+    (with-open [^AutoCloseable iterator
+                (.iterator ^Iterable (lmdb/iterate-list dbi rtx cur [:all] :id [:all] :avg))]
+      (loop []
+        (source/check-active! control)
+        (when (.hasNext ^Iterator iterator)
+          (let [entry (.next ^Iterator iterator)
+                eid (bits/read-buffer (lmdb/k entry) :id)
+                ^ByteBuffer raw (lmdb/v entry)
+                result (when (= attribute (attrs (bits/avg->aid raw)))
+                         (visit rtx raw eid))]
+            (when-not (reduced? result)
+              (recur))))))
+    (throw e)))
+
+(defn scan-keys!
+  "Visit owned [entity attribute] pairs for an explicit value wildcard. Each
+  matching index entry contributes one pair, including cardinality-many facts.
+  Reserve the temporary row before scanning; never read or decode its payload."
+  [control snapshot attribute emit]
+  (let [token (source/reserve! control
+                {:retained-bytes (value/add-charge 512 (value/value-charge attribute))})]
+    (try
+      (scan-attribute! control snapshot attribute
+                      (fn [_ _ eid] (emit [eid attribute])))
+      (finally (source/release! token)))))
+
 (defn scan!
   "Visit owned datoms from one pinned EAV scan without a full-result collector."
-  [control {:keys [kv attrs schema]} attribute emit]
+  [control {:keys [kv schema] :as snapshot} attribute emit]
   (let [type (attribute-type schema attribute)
         check! #(source/check-active! control)]
-    (scan/scan kv c/eav
-      (with-open [^AutoCloseable iterator
-                  (.iterator ^Iterable (lmdb/iterate-list dbi rtx cur [:all] :id [:all] :avg))]
-        (loop []
-          (source/check-active! control)
-          (when (.hasNext ^Iterator iterator)
-            (let [entry (.next ^Iterator iterator)
-                  eid (bits/read-buffer (lmdb/k entry) :id)
-                  ^ByteBuffer raw (lmdb/v entry)
-                  result (when (= attribute (attrs (bits/avg->aid raw)))
-                           (let [giant (bits/avg->giant-id raw)]
-                             (if (= c/normal giant)
-                               (visit-value control raw (.remaining raw) attribute type
-                                            (when (= type :data) #(native-value/inline-data-buffer raw))
-                                            (if (= type :data)
-                                              #(native-value/prepare-data % check!)
-                                              #(native-value/prepare-inline % type check!)) emit eid)
-                               (let [giants (i/get-dbi kv c/giants false)]
-                                 (lmdb/put-read-key giants rtx giant :id)
-                                 (if-let [buffer (lmdb/get-kv giants rtx)]
-                                   (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                                                #(index/giant-datom-buffer buffer)
-                                                #(native-value/prepare-giant % type eid attribute check!)
-                                                emit eid)
-                                   (fail! :query-source/invalid :native-value))))))]
-              (when-not (reduced? result)
-                (recur))))))
-      (throw e))))
+    (scan-attribute! control snapshot attribute
+      (fn [rtx ^ByteBuffer raw eid]
+        (let [giant (bits/avg->giant-id raw)]
+          (if (= c/normal giant)
+            (visit-value control raw (.remaining raw) attribute type
+                         (when (= type :data) #(native-value/inline-data-buffer raw))
+                         (if (= type :data)
+                           #(native-value/prepare-data % check!)
+                           #(native-value/prepare-inline % type check!)) emit eid)
+            (let [giants (i/get-dbi kv c/giants false)]
+              (lmdb/put-read-key giants rtx giant :id)
+              (if-let [buffer (lmdb/get-kv giants rtx)]
+                (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
+                             #(index/giant-datom-buffer buffer)
+                             #(native-value/prepare-giant % type eid attribute check!)
+                             emit eid)
+                (fail! :query-source/invalid :native-value)))))))))

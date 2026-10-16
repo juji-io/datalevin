@@ -95,15 +95,19 @@
 
 (defn- native-reader [runtime snapshots bindings {:keys [native patterns symbol]}]
   (mapv (fn [pattern]
-          (fn [emit]
-            (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
-              (fn [runtime]
-                (swap! (:explain runtime) update :native-scans inc)
-                (native/scan! (:control runtime) (get snapshots (.-store ^DB native))
-                              (second (second (:terms pattern)))
-                              (fn [row]
-                                (when-let [binding (match-row bindings (:terms pattern) row)]
-                                  (emit binding)))))))) patterns))
+          (let [terms (:terms pattern)
+                keys-only? (= :ignore (first (nth terms 2)))
+                terms (if keys-only? (pop terms) terms)
+                read! (if keys-only? native/scan-keys! native/scan!)]
+            (fn [emit]
+              (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
+                (fn [runtime]
+                  (swap! (:explain runtime) update :native-scans inc)
+                  (read! (:control runtime) (get snapshots (.-store ^DB native))
+                         (second (second terms))
+                         (fn [row]
+                           (when-let [binding (match-row bindings terms row)]
+                             (emit binding))))))))) patterns))
 
 (defn- result-shape [parsed rows]
   (let [rows (if-let [return (:qreturn-map parsed)]

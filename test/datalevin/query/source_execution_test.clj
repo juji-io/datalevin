@@ -115,6 +115,25 @@
       (is (= (d/q query @conn rows) (d/q query @conn s)))
       (finally (d/close conn) (u/delete-files dir)))))
 
+(deftest native-value-wildcards-do-not-decode-byte-payloads
+  (let [dir (u/tmp-dir (str "source-byte-existence-" (random-uuid)))
+        conn (d/get-conn dir {:item/blob {:db/valueType :db.type/bytes}})
+        rows [[1 "one"] [2 "two"] [3 "absent"]]
+        s (fake/source tuple-info rows)
+        query '{:find [?label] :in [$ $s]
+                :where [[?e :item/blob _] [$s ?e ?label]]
+                :query-source {:limits {:retained-bytes 32768}}}]
+    (try
+      (d/transact! conn [{:db/id 1 :item/blob (byte-array 131072)}
+                         {:db/id 2 :item/blob (byte-array [1 2])}])
+      (is (= #{["one"] ["two"]} (d/q query @conn s)))
+      (is (= (d/q (dissoc query :query-source) @conn rows) (d/q query @conn s)))
+      (reset! (:events s) [])
+      (is (= :query-source/unsupported
+             (category #(d/q (assoc query :where '[[?e :item/blob ?blob] [$s ?e ?label]]) @conn s))))
+      (is (empty? @(:events s)))
+      (finally (d/close conn) (u/delete-files dir)))))
+
 (deftest bound-native-decimal-joins-match-source-key-equality
   (let [dir (u/tmp-dir (str "source-decimal-join-" (random-uuid)))
         conn (d/get-conn dir {:item/amount {:db/valueType :db.type/bigdec}})
