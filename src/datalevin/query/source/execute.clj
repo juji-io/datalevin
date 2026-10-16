@@ -161,7 +161,9 @@
                  (reduce (fn [_ row]
                            (source/check-active! (:control runtime))
                            (window! (vec row))) nil
-                         (aggregate/aggregate elements {} (map #(subvec % 0 (count find-vars)) seen))))
+                         (aggregate/aggregate elements {}
+                           (map #(subvec % 0 (count find-vars)) seen)
+                           #(source/check-active! (:control runtime)))))
                (let [result (result-shape parsed @output)]
                  (swap! (:explain runtime) assoc :result-rows (count @output))
                  result))}))

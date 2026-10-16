@@ -180,20 +180,20 @@
                 (let [attr-value (:value attr)
                       input-bound?
                       (and (or e-bound? v-bound?)
-                           (not (and e-bound? v-bound?)))
-                      unresolved-ref?
-                      (or (and e-bound?
-                               (relation-has-unresolved-ref?
-                                 context source attr-value true e-sym))
-                          (and v-bound?
-                               (relation-has-unresolved-ref?
-                                 context source attr-value false v-sym)))]
+                           (not (and e-bound? v-bound?)))]
                   (when (and (db/-searchable? source)
                              input-bound?
                              (or e-bound?
                                  (not (get-in (db/-schema source)
                                               [attr-value :db/noindex])))
-                             (not unresolved-ref?))
+                             ;; Collection sources have no native ref schema.
+                             ;; Check eligibility before inspecting bindings.
+                             (not (or (and e-bound?
+                                           (relation-has-unresolved-ref?
+                                             context source attr-value true e-sym))
+                                      (and v-bound?
+                                           (relation-has-unresolved-ref?
+                                             context source attr-value false v-sym)))))
                     {:clause-idx   clause-idx
                      :source       source
                      :source-sym   source-sym

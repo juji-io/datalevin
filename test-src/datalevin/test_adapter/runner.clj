@@ -166,6 +166,7 @@
    (into {} (for [file (distinct
                         (concat ["project.clj"
                                  "checkouts/datalevin/test-src/datalevin/test_adapter.clj"
+                                 "checkouts/datalevin/test-src/datalevin/test_adapter/bits.clj"
                                  "checkouts/datalevin/test-src/datalevin/test_adapter/reference.clj"
                                  "checkouts/datalevin/test-src/datalevin/test_adapter/rust.clj"
                                  "checkouts/datalevin/test-src/datalevin/test_adapter/runner.clj"

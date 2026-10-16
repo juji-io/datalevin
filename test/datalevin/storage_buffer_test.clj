@@ -2,6 +2,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [datalevin.bits :as b]
+   [datalevin.test-adapter.bits :as codec]
    [datalevin.constants :as c]
    [datalevin.core :as d]
    [datalevin.datom :as datom]
@@ -75,7 +76,7 @@
 
 (deftest storage-buffer-legacy-and-ownership
   (doseq [direct? [false true]
-          freeze [b/serialize nippy/freeze]]
+          freeze [codec/serialize nippy/freeze]]
     (let [value {:text (apply str (repeat 2000 "legacy"))
                  :bytes (byte-array [1 2 3])}
           payload ^bytes (freeze value)
@@ -83,8 +84,8 @@
                (.putInt 1234) (.put payload) (.flip) (.position 4))
           ;; Read-only slices exercise heap array offsets and direct buffers.
           slice (.asReadOnlyBuffer (.slice bf))
-          restored (b/read-buffer slice :data)
-          raw (b/read-buffer bf :raw)]
+          restored (codec/read-buffer slice :data)
+          raw (codec/read-buffer bf :raw)]
       (is (= (.limit slice) (.position slice)))
       (.clear bf)
       (while (.hasRemaining bf) (.put bf (byte 0)))
@@ -93,8 +94,8 @@
       (is (= (seq payload) (seq raw)))))
   (testing "the full stored payload is consumed even if it has trailing bytes"
     (let [bf (doto (ByteBuffer/allocate 32)
-               (b/put-buffer :value) (.putInt 1234) (.flip))]
-      (is (= :value (b/read-buffer bf)))
+               (codec/put-buffer :value) (.putInt 1234) (.flip))]
+      (is (= :value (codec/read-buffer bf)))
       (is (not (.hasRemaining bf))))))
 
 (deftest storage-buffer-excludes-index-trailers

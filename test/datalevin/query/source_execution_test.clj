@@ -105,6 +105,19 @@
       (is (= (d/q query @conn rows) (d/q query @conn s)))
       (finally (d/close conn) (u/delete-files dir)))))
 
+(deftest bound-native-decimal-joins-match-source-key-equality
+  (let [dir (u/tmp-dir (str "source-decimal-join-" (random-uuid)))
+        conn (d/get-conn dir {:item/amount {:db/valueType :db.type/bigdec}})
+        rows [[1 1.0M] [1 1.00M] [2 2M]]
+        s (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] :bigdec) rows)
+        query '[:find ?tag :in $ $s [[?id ?amount ?tag]]
+                :where [?id :item/amount ?amount] [$s ?id ?amount]]
+        input [[1 1.0M :exact] [1 1.00M :wrong-scale] [2 2M :other]]]
+    (try
+      (d/transact! conn [{:db/id 1 :item/amount 1.0M} {:db/id 2 :item/amount 2M}])
+      (is (= #{[:exact] [:other]} (d/q query @conn rows input) (d/q query @conn s input)))
+      (finally (d/close conn) (u/delete-files dir)))))
+
 (deftest semantic-limit-and-overflow
   (let [s (fake/source tuple-info [[1 "a"] [2 "b"]])]
     (is (= 1 (d/q '{:find [?id .] :in [$s] :where [[$s ?id _]]
@@ -260,3 +273,29 @@
            (category #(d/q '{:find [?id] :in [$s] :where [[$s ?id _]] :timeout 200} provider))))
     (is (= [:close-cursor :close-session]
            (take-last 2 (remove #{:cancel-session} @(:events blocked)))))))
+
+(deftest aggregate-reduction-observes-cancellation-between-values
+  (let [ctl (atom nil) comparisons (atom 0)
+        type {:kind :custom :name :test/cancellable-order :version 1 :fingerprint "order:v1"}
+        rows (mapv (fn [id]
+                     [id (reify value/IQuerySourceValue
+                           (-logical-type [_] type)
+                           (-retained-bytes [_] 1024)
+                           Comparable
+                           (compareTo [_ _]
+                             (when (= 5 (swap! comparisons inc))
+                               (control/cancel! @ctl {:error :query-source/cancelled :phase :execution}))
+                             0))]) (range 100))
+        inner (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] type) rows)
+        provider (reify source/IQuerySource
+                   (-source-info [_] (source/-source-info inner))
+                   (-open-session [_ request]
+                     (reset! ctl (:control request))
+                     (source/-open-session inner request))
+                   (-plan-source [_ session request]
+                     (source/-plan-source inner session request)))]
+    (is (= :query-source/cancelled
+           (category #(d/q '[:find (min ?value) . :in $s :where [$s _ ?value]] provider))))
+    (is (= 5 @comparisons))
+    (is (every? zero? (vals (control/usage @ctl))))
+    (is (= :close-session (last (remove #{:cancel-session} @(:events inner)))))))

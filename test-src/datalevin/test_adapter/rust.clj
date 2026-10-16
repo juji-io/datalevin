@@ -3,10 +3,12 @@
   (:require
    [datalevin.util :refer [raise]]
    [taoensso.nippy :as nippy]
-   [datalevin.test-adapter :as adapter])
+   [datalevin.test-adapter :as adapter]
+   [datalevin.test-adapter.bits :as bits])
   (:import
    [java.io DataInputStream DataOutputStream]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
+   [java.nio ByteBuffer ByteOrder]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
     ThreadFactory TimeUnit TimeoutException]))
 
@@ -23,7 +25,12 @@
       (nippy/fast-thaw bytes))))
 
 (defn- write-frame! [^DataOutputStream output value]
-  (let [bytes (nippy/fast-freeze value)
+  (let [bytes (try
+                (nippy/fast-freeze value)
+                (catch Exception error
+                  (adapter/unsupported! :adapter (:op value)
+                                        (str "Rust adapter cannot encode the request: "
+                                             (ex-message error)))))
         size (alength bytes)]
     (when (> size max-frame-bytes)
       (adapter/unsupported! :adapter (:op value)
@@ -55,8 +62,13 @@
           (throw (ex-info "Rust adapter request timed out"
                           {:timeout-ms timeout-ms} error)))
         (catch ExecutionException error
-          (stop-peer! peer)
-          (throw (ex-info "Rust adapter transport failed" {} (.getCause error))))))))
+          (let [cause (.getCause error)]
+            (if (adapter/unsupported-data cause)
+              ;; Request encoding/size checks fail before writing any bytes.
+              (throw cause)
+              (do
+                (stop-peer! peer)
+                (throw (ex-info "Rust adapter transport failed" {} cause))))))))))
 
 (defn- argument [session operation value]
   (if (instance? DbHandle value)
@@ -97,15 +109,66 @@
                                      (str "Exception class is not mapped: " class)))))
     (raise "Invalid Rust adapter response status" {:response response})))
 
+(defn- invoke-peer! [peer session operation arguments]
+  (let [request {:op operation
+                 :args (mapv #(argument session operation %) arguments)}
+        response (exchange! peer
+                            #(do (write-frame! (:output peer) request)
+                                 (read-frame (:input peer))))]
+    (result-value session operation response)))
+
+(defn- serialize-buffer! [peer session ^ByteBuffer buffer value]
+  (when-not (= ByteOrder/BIG_ENDIAN (.order buffer))
+    (throw (IllegalArgumentException.
+             (str "ByteBuffer must use BIG_ENDIAN order for DataInput/DataOutput semantics (have "
+                  (.order buffer) ")."))))
+  ;; ByteBuffer.put checks capacity/read-only status before changing position.
+  ;; Rust performs serialization; the host only copies its output to JVM memory.
+  (.put buffer ^bytes (invoke-peer! peer session :bits/serialize [value])))
+
+(defn- deserialize-buffer! [peer session ^ByteBuffer buffer]
+  (let [limit (.limit buffer)]
+    (try
+      (when-not (= ByteOrder/BIG_ENDIAN (.order buffer))
+        (adapter/unsupported! :adapter :bits/deserialize-bf
+                              "Little-endian buffer decode errors are not mapped yet"))
+      (invoke-peer! peer session :bits/deserialize [(bits/get-bytes buffer)])
+      ;; Matches the storage API even on codec errors and support gaps. Returned
+      ;; values own their bytes; no borrowed buffer crosses the process boundary.
+      (finally (.position buffer limit)))))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
-    (let [request {:op operation
-                   :args (mapv #(argument session operation %) arguments)}
-          response (exchange! peer
-                              #(do (write-frame! (:output peer) request)
-                                   (read-frame (:input peer))))]
-      (result-value session operation response)))
+    (case operation
+      :bits/serialize-bf
+      (let [[buffer value] arguments]
+        (serialize-buffer! peer session buffer value))
+
+      :bits/deserialize-bf
+      (deserialize-buffer! peer session (first arguments))
+
+      :bits/put-buffer
+      (let [[^ByteBuffer buffer value value-type] arguments]
+        (case value-type
+          (:data nil) (serialize-buffer! peer session buffer value)
+          :raw (cond
+                 (bytes? value) (.put buffer ^bytes value)
+                 (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
+                 :else (raise "Raw value must be bytes or ByteBuffer, got "
+                               (type value) {:input value}))
+          (adapter/unsupported! :adapter operation
+                                (str "Rust buffer codec is not implemented for " value-type))))
+
+      :bits/read-buffer
+      (let [[buffer value-type] arguments]
+        (case value-type
+          (:data nil) (deserialize-buffer! peer session buffer)
+          :raw (bits/get-bytes buffer)
+          (adapter/unsupported! :adapter operation
+                                (str "Rust buffer codec is not implemented for " value-type))))
+
+      (invoke-peer! peer session operation arguments)))
   (stop! [_] (stop-peer! peer))
   (backend-info [_] info))
 

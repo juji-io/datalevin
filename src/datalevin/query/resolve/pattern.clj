@@ -9,11 +9,11 @@
 ;;
 (ns ^:no-doc datalevin.query.resolve.pattern
   "Indexed and collection pattern lookup, bounded probes, and presence filtering."
-  (:refer-clojure :exclude [update assoc])
+  (:refer-clojure :exclude [assoc])
   (:require
    [datalevin.constants :as c]
    [datalevin.db :as db]
-   [datalevin.inline :refer [update assoc]]
+   [datalevin.inline :refer [assoc]]
    [datalevin.query-util :as qu]
    [datalevin.query.predicate :as qpred]
    [datalevin.query.resolve.context :refer [rel-with-attr]]
@@ -21,7 +21,7 @@
    [datalevin.util :as u]
    [datalevin.validate :as vld])
   (:import
-   [java.util HashSet List]
+   [java.util HashMap HashSet List]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (defn substitute-constant [context pattern-el]
@@ -243,10 +243,13 @@
 
 (defn- pairs-by-resolved
   [pairs]
-  (reduce (fn [m [original resolved]]
-            (update m resolved (fnil conj []) original))
-          {}
-          pairs))
+  ;; These buckets replace a hash join, so use its Java key equality. A
+  ;; Clojure map conflates decimal scales and other distinct numeric keys.
+  ;; Build once, then publish read-only to the domain-filtered scan workers.
+  (let [buckets (HashMap.)]
+    (doseq [[original resolved] pairs]
+      (.put buckets resolved (conj (or (.get buckets resolved) []) original)))
+    buckets))
 
 (defn- bounded-side-fanout
   ^long [db patterns]

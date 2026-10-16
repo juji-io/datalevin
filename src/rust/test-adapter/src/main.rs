@@ -1,7 +1,9 @@
-//! Test-driver transport, not a database implementation. Database calls remain
-//! explicitly unsupported until a Rust engine is connected to `dispatch`.
+//! Test-driver transport and adapters for the existing Rust codec. Database
+//! calls remain explicitly unsupported until a Rust engine is connected.
 
-use datalevin_codec::nippy::{Value, fast_freeze, fast_thaw};
+use datalevin_codec::nippy::{
+    Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
+};
 use std::io::{self, Read, Write};
 
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
@@ -46,39 +48,109 @@ fn protocol_error(message: &str) -> Value {
     ])
 }
 
+fn success(value: Value) -> Value {
+    map(vec![
+        ("status", keyword("ok")),
+        (
+            "result",
+            map(vec![("kind", keyword("value")), ("value", value)]),
+        ),
+    ])
+}
+
+fn unsupported(operation: &str, message: &str) -> Value {
+    map(vec![
+        ("status", keyword("unsupported")),
+        ("operation", keyword(operation)),
+        ("message", text(message)),
+    ])
+}
+
+fn codec_error(operation: &str, error: Error) -> Value {
+    // Missing type/header support is a gap even if the test catches an error.
+    if matches!(
+        error.kind,
+        ErrorKind::UnsupportedType(_) | ErrorKind::UnsupportedHeader(_)
+    ) {
+        return unsupported(operation, &error.to_string());
+    }
+    map(vec![
+        ("status", keyword("error")),
+        (
+            "error",
+            map(vec![
+                ("class", text("clojure.lang.ExceptionInfo")),
+                ("message", text(&error.to_string())),
+                (
+                    "data",
+                    map(vec![
+                        ("error", keyword("codec/decode")),
+                        ("offset", Value::int(error.offset as i64)),
+                    ]),
+                ),
+            ]),
+        ),
+    ])
+}
+
+fn deserialize(bytes: &[u8]) -> Result<Value, Error> {
+    let limits = Limits {
+        max_bytes: MAX_FRAME_BYTES,
+        ..Limits::default()
+    };
+    // bits/deserialize reads one headerless value, then falls back to Nippy's
+    // legacy NPY envelope. Do not require EOF: the Clojure API accepts a value
+    // followed by unused bytes (unlike the codec's stricter fast_thaw API).
+    match Decoder::new(bytes, limits).and_then(|mut decoder| decoder.read_value()) {
+        Ok(value) => Ok(value),
+        Err(_) if bytes.starts_with(b"NPY") => thaw_with_limits(bytes, limits),
+        Err(error) => Err(error),
+    }
+}
+
 fn dispatch(request: &Value) -> Value {
     let Some(Value::Keyword(operation)) = field(request, "op") else {
-        return protocol_error("Request requires an unqualified keyword :op");
+        return protocol_error("Request requires a keyword :op");
     };
     let Some(Value::Vector(arguments)) = field(request, "args") else {
         return protocol_error("Request requires a vector of argument descriptors");
     };
-    // Echo tests the lossless transport only. It is not a database capability.
-    if operation.as_ref() == "echo" {
-        if let [argument] = arguments.as_slice()
-            && field(argument, "kind") == Some(&keyword("value"))
-            && let Some(value) = field(argument, "value")
-        {
-            return map(vec![
-                ("status", keyword("ok")),
-                (
-                    "result",
-                    map(vec![("kind", keyword("value")), ("value", value.clone())]),
-                ),
-            ]);
+    match operation.as_ref() {
+        "echo" | "bits/serialize" | "bits/deserialize" => {
+            let [argument] = arguments.as_slice() else {
+                return protocol_error(if operation.as_ref() == "echo" {
+                    "Echo requires exactly one value argument"
+                } else {
+                    "Codec operation requires exactly one value argument"
+                });
+            };
+            let Some(value) = field(argument, "value")
+                .filter(|_| field(argument, "kind") == Some(&keyword("value")))
+            else {
+                return protocol_error("Operation requires a value argument descriptor");
+            };
+            match operation.as_ref() {
+                // Echo is transport coverage, not a codec/database capability.
+                "echo" => success(value.clone()),
+                "bits/serialize" => match fast_freeze(value) {
+                    Ok(bytes) => success(Value::Bytes(bytes)),
+                    Err(error) => codec_error(operation, error),
+                },
+                "bits/deserialize" => match value {
+                    Value::Bytes(bytes) => match deserialize(bytes) {
+                        Ok(value) => success(value),
+                        Err(error) => codec_error(operation, error),
+                    },
+                    _ => protocol_error("bits/deserialize requires a byte array"),
+                },
+                _ => unreachable!(),
+            }
         }
-        return protocol_error("Echo requires exactly one value argument");
-    }
-    map(vec![
-        ("status", keyword("unsupported")),
-        ("operation", keyword(operation)),
-        (
-            "message",
-            text(&format!(
-                "Rust database operation is not implemented: {operation}"
-            )),
+        _ => unsupported(
+            operation,
+            &format!("Rust database operation is not implemented: {operation}"),
         ),
-    ])
+    }
 }
 
 fn read_frame(input: &mut impl Read) -> io::Result<Option<Value>> {
@@ -132,7 +204,14 @@ fn main() -> io::Result<()> {
                     .map(text)
                     .unwrap_or(Value::Null),
             ),
-            ("capabilities", Value::Set(vec![keyword("echo")])),
+            (
+                "capabilities",
+                Value::Set(vec![
+                    keyword("echo"),
+                    keyword("bits/serialize"),
+                    keyword("bits/deserialize"),
+                ]),
+            ),
             ("database-implemented?", Value::Bool(false)),
         ]),
     )?;
@@ -145,7 +224,80 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datalevin_codec::nippy::{Compression, freeze};
     use std::io::Cursor;
+
+    fn invoke(operation: &str, argument: Value) -> Value {
+        dispatch(&map(vec![
+            ("op", keyword(operation)),
+            (
+                "args",
+                Value::Vector(vec![map(vec![
+                    ("kind", keyword("value")),
+                    ("value", argument),
+                ])]),
+            ),
+        ]))
+    }
+
+    #[test]
+    fn serialization_returns_real_codec_bytes() {
+        let value = Value::Vector(vec![Value::Bool(false), Value::int(42)]);
+        let response = invoke("bits/serialize", value.clone());
+        let Some(Value::Bytes(bytes)) = field(field(&response, "result").unwrap(), "value") else {
+            panic!("serialize did not return bytes: {response:?}");
+        };
+        assert_eq!(fast_thaw(bytes).unwrap(), value);
+    }
+
+    #[test]
+    fn deserialization_reads_current_legacy_and_compressed_payloads() {
+        let value = Value::Vector(vec![Value::Bool(false), Value::int(42)]);
+        let mut bare = fast_freeze(&value).unwrap();
+        bare.extend(fast_freeze(&keyword("unused")).unwrap());
+        assert_eq!(
+            field(
+                field(&invoke("bits/deserialize", Value::Bytes(bare)), "result").unwrap(),
+                "value"
+            ),
+            Some(&value)
+        );
+        for compression in [
+            Compression::None,
+            Compression::Lz4,
+            Compression::Snappy,
+            Compression::Zstd,
+            Compression::Lzma2,
+        ] {
+            let response = invoke(
+                "bits/deserialize",
+                Value::Bytes(freeze(&value, compression).unwrap()),
+            );
+            assert_eq!(
+                field(field(&response, "result").unwrap(), "value"),
+                Some(&value)
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
+        for value in [Value::Null, Value::Bytes(vec![])] {
+            assert_eq!(
+                field(&invoke("bits/deserialize", value), "status"),
+                Some(&keyword("error"))
+            );
+        }
+        let response = invoke(
+            "bits/deserialize",
+            Value::Bytes(vec![b'N', b'P', b'Y', 255, 3]),
+        );
+        assert_eq!(field(&response, "status"), Some(&keyword("unsupported")));
+        assert_eq!(
+            field(&response, "operation"),
+            Some(&keyword("bits/deserialize"))
+        );
+    }
 
     #[test]
     fn frames_preserve_query_forms_and_result_shapes() {

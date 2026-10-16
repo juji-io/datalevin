@@ -401,11 +401,21 @@
                [element (compile-aggregate element context)]))
         (dp/collect dp/aggregate? find-elements)))
 
+(defn- checked-map
+  "Keep checks between individual operations, including over chunked inputs."
+  [f check! coll]
+  (lazy-seq
+    (when-let [items (seq coll)]
+      (check!)
+      (cons (f (first items)) (checked-map f check! (rest items))))))
+
 (defn- compute-aggregate
   "Compute an aggregate over tuples at the given tuple index."
   [element aggregate-plans tuples tuple-idx]
-  (let [[f args] (aggregate-plans element)
-        vals (map #(nth % tuple-idx) tuples)]
+  (let [[f args check!] (aggregate-plans element)
+        project #(nth % tuple-idx)
+        vals (if check! (checked-map project check! tuples)
+                 (map project tuples))]
     (apply f (conj args vals))))
 
 (defn- eval-find-expr
@@ -519,12 +529,23 @@
         (.values groups)))))
 
 (defn aggregate
-  [find-elements context resultset]
-  (let [^ints group-idxs (int-array (u/idxs-of groupable-elem? find-elements))
-        var->idx         (build-var->idx find-elements)
-        aggregate-plans  (compile-aggregates find-elements context)]
-    (map #(-aggregate find-elements context % var->idx aggregate-plans)
-         (group-tuples resultset group-idxs))))
+  "Group and reduce results using native aggregate semantics. An optional
+  invocation check runs during grouping, between groups, and while each
+  aggregate projects its input values. Separate aggregates check independently
+  even when they traverse the same group."
+  ([find-elements context resultset]
+   (aggregate find-elements context resultset nil))
+  ([find-elements context resultset check!]
+   (let [^ints group-idxs (int-array (u/idxs-of groupable-elem? find-elements))
+         var->idx         (build-var->idx find-elements)
+         aggregate-plans  (compile-aggregates find-elements context)
+         aggregate-plans  (if check! (update-vals aggregate-plans #(conj % check!))
+                             aggregate-plans)
+         resultset        (if check! (checked-map identity check! resultset) resultset)
+         groups           (group-tuples resultset group-idxs)
+         reduce-group     #(-aggregate find-elements context % var->idx aggregate-plans)]
+     (if check! (checked-map reduce-group check! groups)
+         (map reduce-group groups)))))
 
 (defn- find-aggregate-idx
   "Find the index of an aggregate in find-elements by matching structure."
