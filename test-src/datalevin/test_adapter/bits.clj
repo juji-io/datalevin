@@ -44,6 +44,14 @@
   ([buffer value value-type]
    (adapter/call! :bits/put-buffer [buffer value value-type])))
 
+(defn put-bf
+  "Clear, write through the selected backend, and flip. Nil leaves the buffer alone."
+  [^ByteBuffer buffer value value-type]
+  (when-some [value value]
+    (.clear buffer)
+    (put-buffer buffer value value-type)
+    (.flip buffer)))
+
 (defn read-buffer
   ([buffer] (read-buffer buffer :data))
   ([buffer value-type]

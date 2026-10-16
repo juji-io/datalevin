@@ -165,3 +165,46 @@ pub fn decode_bigint(encoded: &[u8]) -> Result<Vec<u8>, BigIntegerError> {
     let bytes = encoded.get(1..).ok_or(BigIntegerError::EmptyEncoding)?;
     Ok(canonical_integer(bytes)?.to_vec())
 }
+
+/// Signed primitive storage fields, without an index type header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegerWidth {
+    Byte = 1,
+    Short = 2,
+    Int = 4,
+    Long = 8,
+}
+
+impl IntegerWidth {
+    /// Encode the low bits. Language bindings apply their numeric cast policy
+    /// before calling this codec, including checked int/short conversions.
+    pub fn encode(self, value: i64, little_endian: bool) -> Vec<u8> {
+        let width = self as usize;
+        if little_endian {
+            value.to_le_bytes()[..width].to_vec()
+        } else {
+            value.to_be_bytes()[8 - width..].to_vec()
+        }
+    }
+
+    /// Decode exactly one primitive field with sign extension.
+    pub fn decode(self, bytes: &[u8], little_endian: bool) -> Option<i64> {
+        let width = self as usize;
+        if bytes.len() != width {
+            return None;
+        }
+        let sign_byte = if little_endian {
+            bytes[width - 1]
+        } else {
+            bytes[0]
+        };
+        let mut extended = [if sign_byte < 128 { 0 } else { 255 }; 8];
+        if little_endian {
+            extended[..width].copy_from_slice(bytes);
+            Some(i64::from_le_bytes(extended))
+        } else {
+            extended[8 - width..].copy_from_slice(bytes);
+            Some(i64::from_be_bytes(extended))
+        }
+    }
+}

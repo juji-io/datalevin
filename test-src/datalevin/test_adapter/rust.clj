@@ -175,6 +175,24 @@
       ;; values own their bytes; no borrowed buffer crosses the process boundary.
       (finally (.position buffer limit)))))
 
+(defn- put-integer! [peer session ^ByteBuffer buffer value value-type]
+  ;; Match the binding's casts before touching memory. The selected Rust codec
+  ;; produces the bytes; the JVM only enforces its buffer bounds and mutability.
+  (let [integer (case value-type
+                  :byte (unchecked-byte value)
+                  :short (short value)
+                  :int (int value)
+                  :id (long value))]
+    (.put buffer ^bytes (invoke-peer! peer session :bits/encode-integer
+                                     [integer value-type (= ByteOrder/LITTLE_ENDIAN
+                                                            (.order buffer))]))))
+
+(defn- read-integer! [peer session ^ByteBuffer buffer value-type]
+  (let [width (case value-type :byte 1 :short 2 :int 4 :id 8)
+        bytes (bits/get-bytes buffer width)]
+    (invoke-peer! peer session :bits/decode-integer
+                  [bytes value-type (= ByteOrder/LITTLE_ENDIAN (.order buffer))])))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
@@ -199,6 +217,10 @@
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
           (:data nil) (serialize-buffer! peer session buffer value)
+          (:byte :short :int :id) (put-integer! peer session buffer value value-type)
+          :int-int (let [[first-value second-value] value]
+                     (put-integer! peer session buffer first-value :int)
+                     (put-integer! peer session buffer second-value :int))
           :raw (cond
                  (bytes? value) (.put buffer ^bytes value)
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
@@ -208,9 +230,12 @@
                                 (str "Rust buffer codec is not implemented for " value-type))))
 
       :bits/read-buffer
-      (let [[buffer value-type] arguments]
+      (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
           (:data nil) (deserialize-buffer! peer session buffer)
+          (:byte :short :int :id) (read-integer! peer session buffer value-type)
+          :int-int [(read-integer! peer session buffer :int)
+                    (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
           (adapter/unsupported! :adapter operation
                                 (str "Rust buffer codec is not implemented for " value-type))))

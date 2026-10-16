@@ -159,9 +159,9 @@
                                        (value/multiply-charge 3 (value/value-charge row)))})
                    (.add seen row)
                    (when-not aggregate? (window! (mapv row (range (count find-vars))))))))
-     :stopped? #(or @stopped (= 0 limit))
+     :stopped? #(deref stopped)
      :finish (fn []
-               (when (and aggregate? (not= 0 limit))
+               (when aggregate?
                  (reduce (fn [_ row]
                            (source/check-active! (:control runtime))
                            (window! (vec row))) nil
@@ -177,14 +177,14 @@
                       (map #(source-reader runtime %) fragments))
         readers (if (seq readers) readers [(fn [emit] (emit bindings))])
         input-tables (mapv :rows (:relations input-data))
-        tables (if (every? seq input-tables)
-                 (into input-tables
-                       (map (fn [read]
-                              (let [rows (volatile! [])]
-                                (read (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
-                                @rows)))
-                       (butlast readers))
-                 input-tables)
+        ;; An empty required relation proves the conjunction empty. Reduce
+        ;; incrementally so later native scans and source cursors never open.
+        tables (when (every? seq input-tables)
+                 (reduce (fn [tables read]
+                           (let [rows (volatile! [])]
+                             (read (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
+                             (if (seq @rows) (conj tables @rows) (reduced nil))))
+                         input-tables (butlast readers)))
         {:keys [accept finish stopped?]} (collect-result runtime prepared)
         steps (volatile! nil)]
     (letfn [(join! [row remaining]
@@ -197,7 +197,7 @@
                                   (try (join! joined (next remaining))
                                        (finally (source/release! token)))))))
                     (when (predicates? predicates row) (accept row)))))]
-      (when (and (every? seq tables) (not (stopped?)))
+      (when (and tables (not (stopped?)))
         ((last readers) (fn [row]
                           (when-let [row (merge-row bindings row)]
                             (when-not @steps

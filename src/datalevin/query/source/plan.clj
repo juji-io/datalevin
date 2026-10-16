@@ -12,7 +12,7 @@
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.util :as u])
   (:import [datalevin.parser Variable DefaultSrc Constant
-            Placeholder Pattern Predicate FindRel]
+            Placeholder Pattern Predicate FindRel BindScalar]
            [java.util IdentityHashMap]))
 
 (defn source-inputs? [inputs] (boolean (some #(satisfies? source/IQuerySource %) inputs)))
@@ -38,11 +38,13 @@
       (fail! :query-source/unsupported :clauses))
     :else (fail! :query-source/unsupported :clauses)))
 
-(defn- window [x bindings default]
-  (let [x (if (symbol? x) (get bindings x ::missing) x)]
-    (cond (nil? x) default
-          (and (integer? x) (<= 0 x Long/MAX_VALUE)) x
-          (= -1 x) default
+(defn- window [x bindings scalar-inputs minimum default]
+  (let [dynamic? (symbol? x)
+        _ (when (and dynamic? (not (contains? scalar-inputs x)))
+            (fail! :query-source/invalid :window))
+        x (if dynamic? (get bindings x ::missing) x)]
+    (cond (and (not dynamic?) (or (nil? x) (= -1 x))) default
+          (and (integer? x) (<= minimum x Long/MAX_VALUE)) x
           :else (fail! :query-source/invalid :window))))
 
 (defn- find! [parsed]
@@ -72,6 +74,9 @@
     (fail! :query-source/invalid :context))
   (let [clauses (mapv clause (range) (:qwhere parsed))
         {:keys [sources bindings] :as input-data} (input/prepare! runtime parsed inputs)
+        scalar-inputs (into #{} (keep #(when (and (instance? BindScalar %)
+                                                 (instance? Variable (:variable %)))
+                                        (:symbol (:variable %)))) (:qin parsed))
         patterns (filterv #(= :pattern (:kind %)) clauses)
         predicates (filterv #(= :predicate (:kind %)) clauses)
         descriptors (IdentityHashMap.)
@@ -135,8 +140,8 @@
                 (assoc entry :clauses clauses :patterns local))) entries)]
       {:entries entries :bindings bindings :input-data input-data
        :predicates predicates :types @types
-       :limit (window (:qlimit parsed) bindings nil)
-       :offset (window (:qoffset parsed) bindings 0)
+       :limit (window (:qlimit parsed) bindings scalar-inputs 1 nil)
+       :offset (window (:qoffset parsed) bindings scalar-inputs 0 0)
        :parsed parsed :options options})))
 
 (defn- select-cover [request response allow-once?]

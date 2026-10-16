@@ -65,6 +65,30 @@
     (is (= #{} (d/q '[:find ?id :in $s [?id ...] :where [$s ?id _]] s [])))
     (is (not-any? #{:open-cursor :fetch} @(:events s)))))
 
+(deftest known-empty-results-skip-unneeded-source-reads
+  (let [a (fake/source (assoc tuple-info :source-instance-id :a) [])
+        b (fake/source (assoc tuple-info :source-instance-id :b) [[1 "b"]]
+                        {:open-cursor #(throw (Exception. "unneeded cursor"))})
+        c (fake/source (assoc tuple-info :source-instance-id :c) [[1 "c"]])
+        q '{:find [?id] :in [$a $b $c]
+            :where [[$a ?id _] [$b ?id _] [$c ?id _]]}]
+    (is (= #{} (d/q q a b c)))
+    (is (= 1 (count (filter #{:open-cursor} @(:events a)))))
+    (doseq [s [a b c]]
+      (is (= :close-session (last @(:events s)))))
+    (is (not-any? #{:open-cursor :fetch} @(:events c)))))
+
+(deftest dynamic-windows-require-native-scalar-domains
+  (doseq [[option binding input] [[:limit '?window 0] [:limit '?window -1]
+                                 [:limit '?window nil] [:offset '?window -1]
+                                 [:offset '?window nil] [:limit '[?window] [1]]]]
+    (let [s (fake/source tuple-info [[1 "a"]])
+          q (assoc {:find '[?id] :in ['$s binding] :where '[[$s ?id _]]} option '?window)
+          error (error-data #(d/q q s input))]
+      (is (= :query-source/invalid (:error error)))
+      (is (= :window (:phase error)))
+      (is (empty? @(:events s))))))
+
 (deftest malformed-input-rows-reject-before-source-acquisition
   (doseq [[binding input category]
           [['[?id ?name] [1] :query-source/invalid]

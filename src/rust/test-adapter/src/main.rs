@@ -1,7 +1,7 @@
 //! Test-driver transport and adapters for the existing Rust codec. Database
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
-use datalevin_codec::bits::{self, BigIntegerError};
+use datalevin_codec::bits::{self, BigIntegerError, IntegerWidth};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
 };
@@ -121,6 +121,53 @@ fn deserialize(bytes: &[u8]) -> Result<Value, Error> {
     }
 }
 
+fn value_argument(argument: &Value) -> Option<&Value> {
+    field(argument, "value").filter(|_| field(argument, "kind") == Some(&keyword("value")))
+}
+
+fn integer_operation(operation: &str, arguments: &[Value]) -> Value {
+    let [value, kind, order] = arguments else {
+        return protocol_error("Integer codec requires value, type and byte-order arguments");
+    };
+    let (Some(value), Some(Value::Keyword(kind)), Some(Value::Bool(little_endian))) = (
+        value_argument(value),
+        value_argument(kind),
+        value_argument(order),
+    ) else {
+        return protocol_error("Invalid integer codec argument descriptors");
+    };
+    let width = match kind.as_ref() {
+        "byte" => IntegerWidth::Byte,
+        "short" => IntegerWidth::Short,
+        "int" => IntegerWidth::Int,
+        "id" => IntegerWidth::Long,
+        _ => return unsupported(operation, "Integer storage type is not implemented"),
+    };
+    if operation == "bits/encode-integer" {
+        let integer = match value {
+            Value::Byte(value) => i64::from(*value),
+            Value::Short(value) => i64::from(*value),
+            Value::Integer(value) => i64::from(*value),
+            Value::Long(value) => *value,
+            _ => return protocol_error("Integer encoding requires a primitive integer"),
+        };
+        success(Value::Bytes(width.encode(integer, *little_endian)))
+    } else {
+        let Value::Bytes(bytes) = value else {
+            return protocol_error("Integer decoding requires a byte array");
+        };
+        let Some(integer) = width.decode(bytes, *little_endian) else {
+            return protocol_error("Integer decoding requires exactly one field's bytes");
+        };
+        success(match width {
+            IntegerWidth::Byte => Value::Byte(integer as i8),
+            IntegerWidth::Short => Value::Short(integer as i16),
+            IntegerWidth::Int => Value::Integer(integer as i32),
+            IntegerWidth::Long => Value::Long(integer),
+        })
+    }
+}
+
 fn dispatch(request: &Value) -> Value {
     let Some(Value::Keyword(operation)) = field(request, "op") else {
         return protocol_error("Request requires a keyword :op");
@@ -129,6 +176,7 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/encode-integer" | "bits/decode-integer" => integer_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -253,6 +301,8 @@ fn main() -> io::Result<()> {
                     keyword("bits/decode-base64"),
                     keyword("bits/encode-bigint"),
                     keyword("bits/decode-bigint"),
+                    keyword("bits/encode-integer"),
+                    keyword("bits/decode-integer"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),
