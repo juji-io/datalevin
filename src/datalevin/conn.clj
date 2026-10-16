@@ -172,7 +172,11 @@
           (do
             (swap! shared-local-stores dissoc dir-key)
             :close)
-          (if (identical? shared-store store)
+          ;; Explicit transactions can publish a transferred Store wrapper.
+          ;; Its original shared KV still owns this connection's reference.
+          (if (or (identical? shared-store store)
+                  (identical? (.-lmdb ^Store shared-store)
+                              (.-lmdb ^Store store)))
             (if (> ^long refs 1)
               (do
                 (swap! shared-local-stores update-in [dir-key :refs] dec)

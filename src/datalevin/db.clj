@@ -14,6 +14,7 @@
    [clojure.walk]
    [clojure.data]
    [clojure.set]
+   [datalevin.bits :as b]
    [datalevin.client-op :as cop]
    [datalevin.constants :as c :refer [e0 emax v0 vmax]]
    [datalevin.datom :as d :refer [datom datom?]]
@@ -345,14 +346,29 @@
     {:eids #{} :attrs #{} :values #{} :values-by-attr {}}
     tx-data))
 
+(defn- value-equal?
+  [expected actual]
+  (if (bytes? expected)
+    (and (bytes? actual) (Arrays/equals ^bytes expected ^bytes actual))
+    (= expected actual)))
+
+(defn- full-index-value-match?
+  [db ^Datom low]
+  (let [schema (-schema db)]
+    (or (cd/custom-type? (:db/valueType (schema (.-a low))))
+        (b/giant? (idx/datom->indexable schema low false)))))
+
 (defn- tx-affects-pattern?
   [{:keys [eids attrs values values-by-attr]} e a v]
   (and (or (nil? e) (contains? eids e))
        (or (nil? a) (contains? attrs a))
        (or (nil? v)
-           (if (nil? a)
-             (contains? values v)
-             (contains? (get values-by-attr a #{}) v)))))
+           (let [vs (if (nil? a) values (get values-by-attr a #{}))]
+             ;; Stored datoms decode fresh arrays, so identity-based set
+             ;; membership cannot invalidate a cached byte-value lookup.
+             (if (bytes? v)
+               (boolean (some #(value-equal? v %) vs))
+               (contains? vs v))))))
 
 (defn- unresolved-entid?
   [x]
@@ -1034,24 +1050,27 @@
     [db index c1 c2 c3]
     (wrap-cache
       store [:datoms index c1 c2 c3]
-      (let [a  (case index :eav c2 :ave c1)
-            v  (case index :eav c3 :ave c2)
+      (let [v  (case index :eav c3 :ave c2)
+            low (components->pattern db index c1 c2 c3 e0 v0)
             ds (slice store index
-                      (components->pattern db index c1 c2 c3 e0 v0)
+                      low
                       (components->pattern db index c1 c2 c3 emax vmax))]
-        (if (and (some? v) (cd/custom-type? (:db/valueType ((schema store) a))))
-          (filterv #(= v (:v %)) ds)
+        ;; Giant physical keys retain only a prefix and an allocated ID.
+        ;; Match the complete resolved value, including byte-array contents.
+        (if (and (some? v) (full-index-value-match? db low))
+          (filterv #(value-equal? (:v low) (:v %)) ds)
           ds))))
   (-datoms
     [db index c1 c2 c3 n]
     (wrap-cache
       store [:datoms index c1 c2 c3 n]
-      (if (cd/custom-type? (:db/valueType ((schema store) (case index :eav c2 :ave c1))))
-        (take n (-datoms db index c1 c2 c3))
-        (slice store index
-               (components->pattern db index c1 c2 c3 e0 v0)
-               (components->pattern db index c1 c2 c3 emax vmax)
-               n))))
+      (let [v (case index :eav c3 :ave c2)
+            low (components->pattern db index c1 c2 c3 e0 v0)]
+        (if (and (some? v) (full-index-value-match? db low))
+          (take n (-datoms db index c1 c2 c3))
+          (slice store index low
+                 (components->pattern db index c1 c2 c3 emax vmax)
+                 n)))))
 
   (-e-datoms
     [db e]

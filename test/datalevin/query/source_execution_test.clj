@@ -9,7 +9,8 @@
             [datalevin.query.source-test :refer [tuple-info category error-data]]
             [datalevin.util :as u])
   (:import [datalevin.query.source.control Control]
-           [java.util.concurrent CountDownLatch ScheduledFuture TimeUnit]))
+           [java.util.concurrent CountDownLatch ScheduledFuture TimeUnit]
+           [java.math BigDecimal BigInteger]))
 
 (def pairs-query '[:find ?id ?name :in $s :where [$s ?id ?name]])
 
@@ -431,3 +432,13 @@
                (d/q (assoc bounded :in '[$ $s [?e ...]]) @conn
                     (fake/source info [[1 small]]) [1 1]))))
       (finally (d/close conn) (u/delete-files dir)))))
+
+(deftest decimal-aggregate-alignment-reserves-before-arithmetic
+  (let [info (assoc-in tuple-info [:pattern-contract :columns 1 :type] :bigdec)
+        rows [[1 (BigDecimal. BigInteger/ONE 100000)] [2 1M]]
+        s (fake/source info rows)
+        q '{:find [(avg ?v) .] :in [$s] :where [[$s ?id ?v]] :with [?id]}]
+    (let [error (error-data #(d/q (assoc q :query-source {:limits {:retained-bytes 32768}}) s))]
+      (is (= :query-source/limit (:error error)))
+      (is (= :retained-bytes (:category error))))
+    (is (= 0.5 (d/q q rows) (d/q q s)))))

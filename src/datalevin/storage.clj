@@ -89,7 +89,7 @@
    [datalevin.validate :as vld]
    [datalevin.vector :as v])
   (:import
-   [java.util List Collection HashMap HashSet IdentityHashMap UUID]
+   [java.util List Collection HashMap HashSet IdentityHashMap UUID Arrays]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap ScheduledFuture]
    [java.util.concurrent.locks ReentrantReadWriteLock]
    [java.nio ByteBuffer]
@@ -2350,6 +2350,10 @@
         (when props (.put attr-infos attr info))
         info)))
 
+(defn- giant-datom-key
+  [e a v]
+  (if (bytes? v) [e a ::bytes (ByteBuffer/wrap ^bytes v)] [e a v]))
+
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs work
    ^HashMap giants ^HashMap attr-infos embedding-plan
@@ -2366,66 +2370,69 @@
         max-gt     (max-gt store)
         i          (b/indexable nil aid v vt max-gt)
         giant?     (b/giant? i)]
-    (.add txs (lmdb/datom-kv-tx
-                e
-                (b/indexable-bytes i avg-bf)
-                true
-                (boolean
-                  (and *enforce-blind-unique-inserts?*
-                       (:db/unique props)))
-                (:db/noindex props)))
-    (when giant?
-      (.advance-max-gt store)
-      (let [gd [e attr v]
-            {:keys [value vtype]} (encode-giant-datom (apply d/datom gd))]
-        (.put giants gd max-gt)
-        (.add txs (lmdb/kv-tx :put c/giants max-gt value
-                              :id vtype (when-not (:db/noindex props)
-                                          [:append])))))
-    (when (identical? vt :db.type/vec)
-      (let [ref     (if giant? [:g max-gt e aid] [e aid v])
-            op      (if giant? [:g [e aid max-gt v]] [:a [e aid v]])
-            domains (conjv (props :db.vec/domains) (v/attr-domain attr))]
-        (doseq [domain domains]
-          (if (async-vector-domain? store domain)
-            (add-index-work! work vi-jobs-slot {:type :vector
-                                              :domain domain
-                                              :op :add
-                                              :ref ref
-                                              :value v})
-            (add-index-work! work vi-ds-slot [[domain] op])))))
-    (when embedding?
-      (let [doc-ref     (if giant? [:g max-gt e aid] [e aid v])
-            domain-vecs (some-> ^IdentityHashMap embedding-plan (.get d))]
-        (doseq [domain (embedding-attr-domains attr props)]
-          (if (async-embedding-domain? store domain)
-            (add-index-work! work em-jobs-slot {:type :embedding
-                                              :domain domain
-                                              :op :add
-                                              :ref doc-ref
-                                              :value v})
-            (when-let [vec-data (some-> ^HashMap domain-vecs (.get domain))]
-              (add-index-work! work em-ds-slot
-                               [domain [:a [doc-ref vec-data]]]))))))
-    (when (identical? vt :db.type/idoc)
-      (let [domain (or (props :db/domain) (u/keyword->string attr))
-            op     (if giant?
-                     [:g [e aid max-gt v]]
-                     [:a [e aid v]])
-            patch  (some-> (meta d) :idoc/patch)
-            op     (if patch (with-meta op {:idoc/patch patch}) op)]
-        (collect-idoc store work domain op)))
-    (when fulltext?
-      (let [text (str v)
-            ref  (if giant? [:g max-gt e aid] [e aid text])]
-        (collect-fulltext store
-                          work
-                          attr
-                          props
-                          text
-                          ref
-                          :add
-                          (if giant? [:g [e aid max-gt text]] [:a ref]))))))
+    ;; Reports can retain repeated adds after a retraction. Reuse their
+    ;; logical identity instead of allocating another physical giant key.
+    (when-not (and giant? (.containsKey giants (giant-datom-key e attr v)))
+      (.add txs (lmdb/datom-kv-tx
+                  e
+                  (b/indexable-bytes i avg-bf)
+                  true
+                  (boolean
+                    (and *enforce-blind-unique-inserts?*
+                         (:db/unique props)))
+                  (:db/noindex props)))
+      (when giant?
+        (.advance-max-gt store)
+        (let [gd [e attr v]
+              {:keys [value vtype]} (encode-giant-datom (apply d/datom gd))]
+          (.put giants (giant-datom-key e attr v) max-gt)
+          (.add txs (lmdb/kv-tx :put c/giants max-gt value
+                                :id vtype (when-not (:db/noindex props)
+                                            [:append])))))
+      (when (identical? vt :db.type/vec)
+        (let [ref     (if giant? [:g max-gt e aid] [e aid v])
+              op      (if giant? [:g [e aid max-gt v]] [:a [e aid v]])
+              domains (conjv (props :db.vec/domains) (v/attr-domain attr))]
+          (doseq [domain domains]
+            (if (async-vector-domain? store domain)
+              (add-index-work! work vi-jobs-slot {:type :vector
+                                                :domain domain
+                                                :op :add
+                                                :ref ref
+                                                :value v})
+              (add-index-work! work vi-ds-slot [[domain] op])))))
+      (when embedding?
+        (let [doc-ref     (if giant? [:g max-gt e aid] [e aid v])
+              domain-vecs (some-> ^IdentityHashMap embedding-plan (.get d))]
+          (doseq [domain (embedding-attr-domains attr props)]
+            (if (async-embedding-domain? store domain)
+              (add-index-work! work em-jobs-slot {:type :embedding
+                                                :domain domain
+                                                :op :add
+                                                :ref doc-ref
+                                                :value v})
+              (when-let [vec-data (some-> ^HashMap domain-vecs (.get domain))]
+                (add-index-work! work em-ds-slot
+                                 [domain [:a [doc-ref vec-data]]]))))))
+      (when (identical? vt :db.type/idoc)
+        (let [domain (or (props :db/domain) (u/keyword->string attr))
+              op     (if giant?
+                       [:g [e aid max-gt v]]
+                       [:a [e aid v]])
+              patch  (some-> (meta d) :idoc/patch)
+              op     (if patch (with-meta op {:idoc/patch patch}) op)]
+          (collect-idoc store work domain op)))
+      (when fulltext?
+        (let [text (str v)
+              ref  (if giant? [:g max-gt e aid] [e aid text])]
+          (collect-fulltext store
+                            work
+                            attr
+                            props
+                            text
+                            ref
+                            :add
+                            (if giant? [:g [e aid max-gt text]] [:a ref])))))))
 
 (defn- delete-datom
   [^Store store ^Datom d ^FastList txs work
@@ -2441,20 +2448,25 @@
         fulltext?  (aget ai 4)
         i          ^Indexable (b/indexable nil aid v vt c/g0)
         giant?     (b/giant? i)
-        d-eav      (when giant? [e attr v])
+        d-eav      (when giant? (giant-datom-key e attr v))
         gt-cur     (when giant? (.get giants d-eav))
         gt         (when giant?
                      (or gt-cur
-                         (let [[_ ^Retrieved r]
-                               (nth
-                                (list-range
-                                 (.-lmdb store) c/eav [:closed e e] :id
-                                 [:closed
-                                  i
-                                  (Indexable. nil aid v (.-f i) (.-b i) c/gmax)]
-                                 :avg)
-                                0)]
-                           (.-g r))))]
+                         ;; A truncated prefix can name several different
+                         ;; values on the same entity. Resolve the full value.
+                         (some
+                           (fn [[_ ^Retrieved r]]
+                             (let [value (retrieved->v (.-lmdb store) r)]
+                               (when (if (bytes? v)
+                                       (and (bytes? value)
+                                            (Arrays/equals ^bytes v ^bytes value))
+                                       (= v value))
+                                 (.-g r))))
+                           (list-range
+                             (.-lmdb store) c/eav [:closed e e] :id
+                             [:closed i (Indexable. nil aid v (.-f i) (.-b i) c/gmax)]
+                             :avg))
+                         (raise "Cannot retract missing giant value" {:e e :a attr})))]
     (when fulltext?
       (let [text (str v)
             ref  (if gt [:g gt e aid] [e aid text])]

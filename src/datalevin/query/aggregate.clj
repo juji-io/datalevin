@@ -532,13 +532,21 @@
   "Group and reduce results using native aggregate semantics. An optional
   invocation check runs during grouping, between groups, and while each
   aggregate projects its input values. Separate aggregates check independently
-  even when they traverse the same group."
+  even when they traverse the same group. An optional wrapper receives each
+  aggregate expression and its resolved function to provide bounded execution."
   ([find-elements context resultset]
    (aggregate find-elements context resultset nil))
   ([find-elements context resultset check!]
+   (aggregate find-elements context resultset check! nil))
+  ([find-elements context resultset check! wrap-aggregate]
    (let [^ints group-idxs (int-array (u/idxs-of groupable-elem? find-elements))
          var->idx         (build-var->idx find-elements)
          aggregate-plans  (compile-aggregates find-elements context)
+         aggregate-plans  (if wrap-aggregate
+                            (into {} (map (fn [[element [f args]]]
+                                            [element [(wrap-aggregate element f) args]]))
+                                  aggregate-plans)
+                            aggregate-plans)
          aggregate-plans  (if check! (update-vals aggregate-plans #(conj % check!))
                              aggregate-plans)
          resultset        (if check! (checked-map identity check! resultset) resultset)

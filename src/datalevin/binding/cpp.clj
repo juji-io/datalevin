@@ -1105,8 +1105,9 @@
       (stat this)))
 
   (entries [this dbi-name]
+    (.check-ready this)
     (let [^DBI dbi (.get-dbi this dbi-name)
-          ^Rtx rtx (.get-rtx this)
+          ^Rtx rtx (if writing? @write-txn (.get-rtx this))
           ^Dbi db  (.-db dbi)
           ^Txn txn (.-txn rtx)]
       (try
@@ -1121,7 +1122,7 @@
         (catch Exception e
           (scan/record-native-read-failure! this e)
           (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)))))
+        (finally (when-not writing? (.return-rtx this rtx))))))
 
   (open-transact-kv [this]
     (.check-ready this)

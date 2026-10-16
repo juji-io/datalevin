@@ -4,6 +4,7 @@
             [datalevin.parser :as dp]
             [datalevin.query.aggregate :as aggregate]
             [datalevin.query.source :as source]
+            [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.inputs :as input]
             [datalevin.query.source.join :as join]
@@ -183,7 +184,8 @@
                            (window! (vec row))) nil
                          (aggregate/aggregate elements {}
                            (map #(subvec % 0 (count find-vars)) seen)
-                           #(source/check-active! (:control runtime)))))
+                           #(source/check-active! (:control runtime))
+                           #(arithmetic/wrap-aggregate runtime %1 %2))))
                (let [result (result-shape parsed @output)]
                  (swap! (:explain runtime) assoc :result-rows (count @output))
                  result))}))
