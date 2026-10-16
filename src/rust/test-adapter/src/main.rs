@@ -1,7 +1,9 @@
 //! Test-driver transport and adapters for the existing Rust codec. Database
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
-use datalevin_codec::bits::{self, BigIntegerError, IntegerWidth};
+use datalevin_codec::bits::{
+    self, BigIntegerError, IntegerWidth, ScalarError, ScalarType, ScalarValue,
+};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
 };
@@ -176,6 +178,9 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "bits/scalar-header" | "bits/encode-scalar" | "bits/decode-scalar" => {
+            scalar_operation(operation, arguments)
+        }
         "bits/encode-integer" | "bits/decode-integer" => integer_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
@@ -237,6 +242,92 @@ fn dispatch(request: &Value) -> Value {
             operation,
             &format!("Rust operation is not implemented: {operation}"),
         ),
+    }
+}
+
+fn scalar_operation(operation: &str, arguments: &[Value]) -> Value {
+    let [value, kind, option] = arguments else {
+        return protocol_error("Scalar codec requires value, type and option arguments");
+    };
+    let (Some(value), Some(Value::Keyword(kind)), Some(Value::Bool(option))) = (
+        value_argument(value),
+        value_argument(kind),
+        value_argument(option),
+    ) else {
+        return protocol_error("Invalid scalar codec argument descriptors");
+    };
+    let scalar = match kind.as_ref() {
+        "long" => ScalarType::Long,
+        "float" => ScalarType::Float,
+        "double" => ScalarType::Double,
+        "boolean" => ScalarType::Boolean,
+        "instant" => ScalarType::Instant,
+        "instant-pre-06" => ScalarType::LegacyInstant,
+        "uuid" => ScalarType::Uuid,
+        _ => return unsupported(operation, "Scalar storage type is not implemented"),
+    };
+    if operation == "bits/scalar-header" {
+        return success(Value::Bytes(vec![scalar.header(*option)]));
+    }
+    let result = if operation == "bits/encode-scalar" {
+        let value = match value {
+            Value::Long(value) => ScalarValue::Integer(*value),
+            Value::Float(bits) => ScalarValue::Float(f32::from_bits(*bits)),
+            Value::Double(bits) => ScalarValue::Double(f64::from_bits(*bits)),
+            Value::Bool(value) => ScalarValue::Boolean(*value),
+            Value::Uuid(bytes) => ScalarValue::Uuid(*bytes),
+            _ => return protocol_error("Invalid scalar payload value"),
+        };
+        scalar.encode(value, *option).map(Value::Bytes)
+    } else {
+        let Value::Bytes(bytes) = value else {
+            return protocol_error("Scalar decoding requires a byte array");
+        };
+        scalar.decode(bytes, *option).map(|value| match value {
+            ScalarValue::Integer(value) => {
+                if scalar == ScalarType::Long {
+                    Value::Long(value)
+                } else {
+                    Value::Date(value)
+                }
+            }
+            ScalarValue::Float(value) => Value::Float(value.to_bits()),
+            ScalarValue::Double(value) => Value::Double(value.to_bits()),
+            ScalarValue::Boolean(value) => Value::Bool(value),
+            ScalarValue::Uuid(bytes) => Value::Uuid(bytes),
+        })
+    };
+    match result {
+        Ok(value) => success(value),
+        Err(ScalarError::NaN(scalar)) => java_error(
+            "java.lang.AssertionError",
+            &format!(
+                "Assert failed: Cannot index NaN\n(not ({}/isNaN x))",
+                if scalar == ScalarType::Float {
+                    "Float"
+                } else {
+                    "Double"
+                }
+            ),
+        ),
+        Err(ScalarError::InvalidBoolean) => map(vec![
+            ("status", keyword("error")),
+            (
+                "error",
+                map(vec![
+                    ("class", text("clojure.lang.ExceptionInfo")),
+                    (
+                        "message",
+                        text("Illegal value, expecting a Datalevin boolean value"),
+                    ),
+                    ("data", map(vec![])),
+                ]),
+            ),
+        ]),
+        Err(ScalarError::WrongValue) => protocol_error("Incorrect value for scalar storage type"),
+        Err(ScalarError::WrongLength) => {
+            protocol_error("Scalar decoding requires exactly one payload")
+        }
     }
 }
 
@@ -303,6 +394,9 @@ fn main() -> io::Result<()> {
                     keyword("bits/decode-bigint"),
                     keyword("bits/encode-integer"),
                     keyword("bits/decode-integer"),
+                    keyword("bits/scalar-header"),
+                    keyword("bits/encode-scalar"),
+                    keyword("bits/decode-scalar"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

@@ -121,6 +121,17 @@
         (is (= #{[1 1.0M]} (d/q q s input)))
         (is (= (d/q q rows input) (d/q q s input)))))))
 
+(deftest query-constants-are-owned-before-source-acquisition
+  (let [instant (java.util.Date. 1000)
+        rows [[1 (java.util.Date. 1000)] [2 (java.util.Date. 2000)]]
+        s (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] :instant)
+                       rows {:acquisition #(.setTime instant 2000)})
+        q {:find '[?id] :in '[$s] :where [['$s '?id instant]]}]
+    (is (= #{[1]} (d/q q s)))
+    ;; A later invocation captures the caller's current constant afresh.
+    (is (= #{[2]} (d/q q s)))
+    (is (= :close-session (last @(:events s))))))
+
 (deftest decimal-projection-and-aggregation-match-eager-results
   (let [rows [[1 1.0M] [2 1.00M] [3 1.0M]]
         s (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] :bigdec) rows)]

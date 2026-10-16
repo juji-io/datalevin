@@ -10,6 +10,7 @@
    [java.io DataInputStream DataOutputStream]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
    [java.nio ByteBuffer ByteOrder]
+   [java.util Date UUID]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
     ThreadFactory TimeUnit TimeoutException]))
 
@@ -193,6 +194,43 @@
     (invoke-peer! peer session :bits/decode-integer
                   [bytes value-type (= ByteOrder/LITTLE_ENDIAN (.order buffer))])))
 
+(defn- put-scalar! [peer session ^ByteBuffer buffer value value-type]
+  (let [negative? (when (= value-type :long)
+                    (if (keyword? value)
+                      (case value
+                        :db.value/sysMin true
+                        :db.value/sysMax false
+                        (raise "Expecting long, got keyword" value {}))
+                      (neg? (long value))))]
+    (.put buffer ^bytes (invoke-peer! peer session :bits/scalar-header
+                                     [nil value-type (boolean negative?)]))
+    ;; Header writes precede payload casts/validation, as in the original API.
+    (let [payload (case value-type
+                    :long (long value)
+                    :float (float value)
+                    :double (double value)
+                    :boolean (boolean value)
+                    :instant (if (inst? value) (long (inst-ms value))
+                                 (raise "Expect an inst? value" {:value value}))
+                    :instant-pre-06 (.getTime ^Date value)
+                    :uuid (do (.getMostSignificantBits ^UUID value) value))
+          bytes ^bytes (invoke-peer! peer session :bits/encode-scalar
+                                      [payload value-type (= ByteOrder/LITTLE_ENDIAN
+                                                             (.order buffer))])]
+      (if (= value-type :uuid)
+        (do (.put buffer bytes 0 8) (.put buffer bytes 8 8))
+        (.put buffer bytes)))))
+
+(defn- read-scalar! [peer session ^ByteBuffer buffer value-type]
+  (bits/get-bytes buffer 1)
+  (let [width (case value-type :boolean 1 :float 4 :uuid 16 8)
+        bytes (byte-array width)]
+    (if (= value-type :uuid)
+      (do (.get buffer bytes 0 8) (.get buffer bytes 8 8))
+      (.get buffer bytes))
+    (invoke-peer! peer session :bits/decode-scalar
+                  [bytes value-type (= ByteOrder/LITTLE_ENDIAN (.order buffer))])))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
@@ -217,6 +255,8 @@
       (let [[^ByteBuffer buffer value value-type] arguments]
         (case value-type
           (:data nil) (serialize-buffer! peer session buffer value)
+          (:long :float :double :boolean :instant :instant-pre-06 :uuid)
+          (put-scalar! peer session buffer value value-type)
           (:byte :short :int :id) (put-integer! peer session buffer value value-type)
           :int-int (let [[first-value second-value] value]
                      (put-integer! peer session buffer first-value :int)
@@ -233,6 +273,8 @@
       (let [[^ByteBuffer buffer value-type] arguments]
         (case value-type
           (:data nil) (deserialize-buffer! peer session buffer)
+          (:long :float :double :boolean :instant :instant-pre-06 :uuid)
+          (read-scalar! peer session buffer value-type)
           (:byte :short :int :id) (read-integer! peer session buffer value-type)
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]

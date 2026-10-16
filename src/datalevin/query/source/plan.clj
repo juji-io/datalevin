@@ -38,6 +38,16 @@
       (fail! :query-source/unsupported :clauses))
     :else (fail! :query-source/unsupported :clauses)))
 
+(defn- own-clauses! [runtime clauses]
+  (doseq [clause clauses
+          term (or (:terms clause) (:args clause))
+          :when (= :const (first term))]
+    (value/execution-value! (second term)))
+  ;; Capture caller-owned constants before any provider callback can observe
+  ;; the query. Reserve first, including mutable leaves in value metadata.
+  (rt/charge! runtime clauses)
+  (value/owned-copy clauses))
+
 (defn- window [x bindings scalar-inputs minimum default]
   (let [dynamic? (symbol? x)
         _ (when (and dynamic? (not (contains? scalar-inputs x)))
@@ -72,7 +82,7 @@
                 (#{:snapshot :statement :best-effort} (get options :consistency :snapshot))
                 (value/portable? (get options :authorization {:principal-id :application})))
     (fail! :query-source/invalid :context))
-  (let [clauses (mapv clause (range) (:qwhere parsed))
+  (let [clauses (own-clauses! runtime (mapv clause (range) (:qwhere parsed)))
         {:keys [sources bindings] :as input-data} (input/prepare! runtime parsed inputs)
         scalar-inputs (into #{} (keep #(when (and (instance? BindScalar %)
                                                  (instance? Variable (:variable %)))
@@ -95,15 +105,12 @@
                                 {:symbol sym :source input :descriptor descriptor})
                               (do (native/validate! input) {:symbol sym :native input}))))) sources)
         types (atom {})]
-    (rt/charge! runtime clauses)
     (let [available (into (input/variables input-data) (mapcat contract/variables) patterns)
           projected (into (set (dp/find-vars (:qfind parsed))) (map :symbol) (:qwith parsed))]
       (when-not (and (set/subset? projected available)
                     (every? #(set/subset? (contract/variables %) available) predicates))
         (fail! :query-source/invalid :clauses)))
     (run! value/execution-value! (vals bindings))
-    (doseq [clause clauses term (or (:terms clause) (:args clause)) :when (= :const (first term))]
-      (value/execution-value! (second term)))
     (doseq [{:keys [source-symbol terms]} patterns]
       (when-not (contains? sources source-symbol) (fail! :query-source/invalid :inputs))
       (when (db/db? (sources source-symbol))

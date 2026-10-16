@@ -208,3 +208,142 @@ impl IntegerWidth {
         }
     }
 }
+
+/// Fixed-size scalar fields used by the typed buffer API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarType {
+    Long,
+    Float,
+    Double,
+    Boolean,
+    Instant,
+    LegacyInstant,
+    Uuid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScalarValue {
+    Integer(i64),
+    Float(f32),
+    Double(f64),
+    Boolean(bool),
+    Uuid([u8; 16]),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarError {
+    NaN(ScalarType),
+    InvalidBoolean,
+    WrongValue,
+    WrongLength,
+}
+
+impl ScalarType {
+    pub fn header(self, negative: bool) -> u8 {
+        match self {
+            Self::Long => {
+                if negative {
+                    0xc0
+                } else {
+                    0xc1
+                }
+            }
+            Self::Float => 0xf5,
+            Self::Double => 0xf6,
+            Self::Boolean => 0xfd,
+            Self::Instant | Self::LegacyInstant => 0xf7,
+            Self::Uuid => 0xf9,
+        }
+    }
+
+    /// Encode only the payload. Buffer bindings write the header first and
+    /// copy UUID words separately to retain the original partial-write behavior.
+    pub fn encode(self, value: ScalarValue, little_endian: bool) -> Result<Vec<u8>, ScalarError> {
+        let (width, integer) = match (self, value) {
+            (Self::Long | Self::LegacyInstant, ScalarValue::Integer(value)) => {
+                (IntegerWidth::Long, value)
+            }
+            (Self::Instant, ScalarValue::Integer(value)) => (IntegerWidth::Long, value ^ i64::MIN),
+            (Self::Float, ScalarValue::Float(value)) => {
+                if value.is_nan() {
+                    return Err(ScalarError::NaN(self));
+                }
+                let bits = if value == 0.0 { 0 } else { value.to_bits() };
+                let sortable = if value < 0.0 { !bits } else { bits ^ (1 << 31) };
+                (IntegerWidth::Int, i64::from(sortable))
+            }
+            (Self::Double, ScalarValue::Double(value)) => {
+                if value.is_nan() {
+                    return Err(ScalarError::NaN(self));
+                }
+                let bits = if value == 0.0 { 0 } else { value.to_bits() };
+                let sortable = if value < 0.0 { !bits } else { bits ^ (1 << 63) };
+                (IntegerWidth::Long, sortable as i64)
+            }
+            (Self::Boolean, ScalarValue::Boolean(value)) => {
+                return Ok(vec![if value { 2 } else { 1 }]);
+            }
+            (Self::Uuid, ScalarValue::Uuid(mut bytes)) => {
+                if little_endian {
+                    bytes[..8].reverse();
+                    bytes[8..].reverse();
+                }
+                return Ok(bytes.to_vec());
+            }
+            _ => return Err(ScalarError::WrongValue),
+        };
+        Ok(width.encode(integer, little_endian))
+    }
+
+    /// Decode a payload after the binding has consumed its type header. The
+    /// existing API does not validate that header, nor reject decoded NaNs.
+    pub fn decode(self, bytes: &[u8], little_endian: bool) -> Result<ScalarValue, ScalarError> {
+        match self {
+            Self::Boolean => match bytes {
+                [1] => Ok(ScalarValue::Boolean(false)),
+                [2] => Ok(ScalarValue::Boolean(true)),
+                [_] => Err(ScalarError::InvalidBoolean),
+                _ => Err(ScalarError::WrongLength),
+            },
+            Self::Uuid => {
+                let mut bytes: [u8; 16] = bytes.try_into().map_err(|_| ScalarError::WrongLength)?;
+                if little_endian {
+                    bytes[..8].reverse();
+                    bytes[8..].reverse();
+                }
+                Ok(ScalarValue::Uuid(bytes))
+            }
+            _ => {
+                let width = if self == Self::Float {
+                    IntegerWidth::Int
+                } else {
+                    IntegerWidth::Long
+                };
+                let integer = width
+                    .decode(bytes, little_endian)
+                    .ok_or(ScalarError::WrongLength)?;
+                Ok(match self {
+                    Self::Long | Self::LegacyInstant => ScalarValue::Integer(integer),
+                    Self::Instant => ScalarValue::Integer(integer ^ i64::MIN),
+                    Self::Float => {
+                        let bits = integer as u32;
+                        ScalarValue::Float(f32::from_bits(if bits >> 31 == 1 {
+                            bits ^ (1 << 31)
+                        } else {
+                            !bits
+                        }))
+                    }
+                    Self::Double => {
+                        let bits = integer as u64;
+                        ScalarValue::Double(f64::from_bits(if bits >> 63 == 1 {
+                            bits ^ (1 << 63)
+                        } else {
+                            !bits
+                        }))
+                    }
+                    _ => unreachable!(),
+                })
+            }
+        }
+    }
+}
