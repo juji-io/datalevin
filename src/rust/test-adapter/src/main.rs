@@ -213,6 +213,8 @@ fn dispatch(request: &Value) -> Value {
         "bits/encode-ints" | "bits/ints-header" | "bits/decode-ints" => {
             ints_operation(operation, arguments)
         }
+        "bits/bitmap" | "bits/bitmap-add" | "bits/bitmap-del" | "bits/encode-bitmap"
+        | "bits/decode-bitmap" => bitmap_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -646,6 +648,99 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
     ]))
 }
 
+fn bitmap_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "bits/bitmap" {
+        let [argument] = arguments else {
+            return protocol_error("Bitmap construction requires one integer array");
+        };
+        let Some(Value::IntArray(values)) = value_argument(argument) else {
+            return protocol_error("Bitmap construction requires an integer array");
+        };
+        return success(Value::Bitmap(bits::bitmap(values)));
+    }
+    if operation == "bits/decode-bitmap" {
+        let [argument] = arguments else {
+            return protocol_error("Bitmap decoding requires one byte array");
+        };
+        let Some(Value::Bytes(bytes)) = value_argument(argument) else {
+            return protocol_error("Bitmap decoding requires a byte array");
+        };
+        let (reads, result) = bits::decode_bitmap(bytes, Limits::default().max_collection_len);
+        let result = match result {
+            Ok(value) => success(value),
+            Err(bits::BitmapError::Buffer) => protocol_error("Bitmap buffer operation failed"),
+            Err(bits::BitmapError::Cookie(cookie)) => java_error(
+                "java.io.IOException",
+                &format!(
+                    "org.roaringbitmap.InvalidRoaringFormat: I failed to find one of the right cookies. {cookie}"
+                ),
+            ),
+            Err(bits::BitmapError::Count(count)) => {
+                if count < 0 {
+                    java_error("java.lang.NegativeArraySizeException", &count.to_string())
+                } else {
+                    java_error(
+                        "java.io.IOException",
+                        "org.roaringbitmap.InvalidRoaringFormat: Size too large",
+                    )
+                }
+            }
+            Err(bits::BitmapError::Limit) => unsupported(
+                operation,
+                "Bitmap cardinality exceeds the adapter transport limit",
+            ),
+            Err(bits::BitmapError::Invalid) => unsupported(
+                operation,
+                "Malformed Roaring container values are not mapped yet",
+            ),
+        };
+        return success(map(vec![
+            ("reads", read_operations(reads)),
+            ("result", result),
+        ]));
+    }
+    let Some(Some(Value::Bitmap(bitmap))) = arguments.first().map(value_argument) else {
+        return protocol_error("Bitmap operation requires a bitmap value");
+    };
+    if operation == "bits/encode-bitmap" {
+        if arguments.len() != 1 {
+            return protocol_error("Bitmap encoding requires exactly one bitmap");
+        }
+        if bitmap.serialized_size() > (MAX_FRAME_BYTES - 1024) / 4 {
+            return unsupported(operation, "Bitmap writes exceed the adapter frame limit");
+        }
+        let writes = bits::encode_bitmap(bitmap);
+        let chunks =
+            |chunks: Vec<Vec<u8>>| Value::Vector(chunks.into_iter().map(Value::Bytes).collect());
+        return success(map(vec![
+            ("header", chunks(writes.header)),
+            (
+                "containers",
+                Value::Vector(writes.containers.into_iter().map(chunks).collect()),
+            ),
+        ]));
+    }
+    let [_, member] = arguments else {
+        return protocol_error("Bitmap mutation requires a bitmap and integer");
+    };
+    let Some(Value::Integer(member)) = value_argument(member) else {
+        return protocol_error("Bitmap mutation requires an integer");
+    };
+    let mut bitmap = bitmap.clone();
+    if operation == "bits/bitmap-add" {
+        bitmap.insert(*member as u32);
+    } else {
+        bitmap.remove(*member as u32);
+    }
+    if bitmap.len() as usize > Limits::default().max_collection_len {
+        return unsupported(
+            operation,
+            "Bitmap cardinality exceeds the adapter transport limit",
+        );
+    }
+    success(Value::Bitmap(bitmap))
+}
+
 fn ints_operation(operation: &str, arguments: &[Value]) -> Value {
     if operation == "bits/ints-header" {
         let [bytes, order] = arguments else {
@@ -1074,6 +1169,11 @@ fn main() -> io::Result<()> {
                     keyword("bits/encode-ints"),
                     keyword("bits/ints-header"),
                     keyword("bits/decode-ints"),
+                    keyword("bits/bitmap"),
+                    keyword("bits/bitmap-add"),
+                    keyword("bits/bitmap-del"),
+                    keyword("bits/encode-bitmap"),
+                    keyword("bits/decode-bitmap"),
                     keyword("bits/bigint-length"),
                     keyword("bits/encode-bigdec"),
                     keyword("bits/decode-bigdec"),

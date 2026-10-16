@@ -24,6 +24,16 @@
 (defn decode-bigint [^bytes bytes]
   (adapter/call! :bits/decode-bigint [bytes]))
 
+(defn bitmap
+  ([] (adapter/call! :bits/bitmap []))
+  ([values] (adapter/call! :bits/bitmap [values])))
+
+(defn bitmap-add [bitmap member]
+  (adapter/call! :bits/bitmap-add [bitmap member]))
+
+(defn bitmap-del [bitmap member]
+  (adapter/call! :bits/bitmap-del [bitmap member]))
+
 (defn serialize-bf [buffer value]
   (adapter/call! :bits/serialize-bf [buffer value]))
 

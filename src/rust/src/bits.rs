@@ -591,6 +591,166 @@ pub fn decode_ints(
     crate::nippy::integers::decompress_storage(&words, sorted).map_err(IntArrayError::Compressed)
 }
 
+pub fn bitmap(values: &[i32]) -> roaring::RoaringBitmap {
+    let mut bitmap: roaring::RoaringBitmap = values.iter().map(|&value| value as u32).collect();
+    bitmap.optimize();
+    bitmap
+}
+
+pub struct BitmapWrites {
+    pub header: Vec<Vec<u8>>,
+    pub containers: Vec<Vec<Vec<u8>>>,
+}
+
+fn bitmap_field(bytes: &[u8], position: &mut usize, width: usize) -> Vec<u8> {
+    let field = bytes[*position..*position + width].to_vec();
+    *position += width;
+    field
+}
+
+/// Portable Roaring bytes, split at the JVM writer's atomic buffer operations.
+/// Container views commit their positions only after the whole container.
+pub fn encode_bitmap(bitmap: &roaring::RoaringBitmap) -> BitmapWrites {
+    let mut bytes = Vec::with_capacity(bitmap.serialized_size());
+    bitmap
+        .serialize_into(&mut bytes)
+        .expect("writing into a vector");
+    let cookie = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+    let runs = cookie & 0xffff == 12347;
+    let count = if runs {
+        (cookie >> 16) as usize + 1
+    } else {
+        u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize
+    };
+    let flags = if runs {
+        &bytes[4..4 + count.div_ceil(8)]
+    } else {
+        &[]
+    };
+    let mut position = 0;
+    let mut header = vec![bitmap_field(&bytes, &mut position, 4)];
+    if runs {
+        for _ in flags {
+            header.push(bitmap_field(&bytes, &mut position, 1));
+        }
+    } else {
+        header.push(bitmap_field(&bytes, &mut position, 4));
+    }
+    let mut cardinalities = Vec::with_capacity(count);
+    for _ in 0..count {
+        header.push(bitmap_field(&bytes, &mut position, 2));
+        let cardinal = bitmap_field(&bytes, &mut position, 2);
+        cardinalities
+            .push(usize::from(u16::from_le_bytes(cardinal.as_slice().try_into().unwrap())) + 1);
+        header.push(cardinal);
+    }
+    if !runs || count >= 4 {
+        for _ in 0..count {
+            header.push(bitmap_field(&bytes, &mut position, 4));
+        }
+    }
+    let containers = cardinalities
+        .into_iter()
+        .enumerate()
+        .map(|(index, cardinal)| {
+            if runs && flags[index / 8] & (1 << (index % 8)) != 0 {
+                let prefix = bitmap_field(&bytes, &mut position, 2);
+                let count = usize::from(u16::from_le_bytes(prefix.as_slice().try_into().unwrap()));
+                vec![prefix, bitmap_field(&bytes, &mut position, count * 4)]
+            } else {
+                vec![bitmap_field(
+                    &bytes,
+                    &mut position,
+                    if cardinal > 4096 { 8192 } else { cardinal * 2 },
+                )]
+            }
+        })
+        .collect();
+    BitmapWrites { header, containers }
+}
+
+#[derive(Debug)]
+pub enum BitmapError {
+    Buffer,
+    Cookie(i32),
+    Count(i32),
+    Limit,
+    Invalid,
+}
+
+impl From<TupleError> for BitmapError {
+    fn from(_: TupleError) -> Self {
+        Self::Buffer
+    }
+}
+
+/// The JVM reader uses a private little-endian slice and ignores offsets.
+/// Return read/seek operations for bounds errors without advancing its owner.
+pub fn decode_bitmap(
+    bytes: &[u8],
+    max_members: usize,
+) -> (Vec<TupleRead>, Result<Value, BitmapError>) {
+    let mut cursor = TupleCursor {
+        bytes,
+        position: 0,
+        limit: bytes.len(),
+        mark: None,
+        reads: Vec::new(),
+    };
+    let result = (|| {
+        let cookie = u32::from_le_bytes(cursor.read(4)?.try_into().unwrap());
+        let runs = cookie & 0xffff == 12347;
+        if !runs && cookie != 12346 {
+            return Err(BitmapError::Cookie(cookie as i32));
+        }
+        let count = if runs {
+            (cookie >> 16) as i32 + 1
+        } else {
+            i32::from_le_bytes(cursor.read(4)?.try_into().unwrap())
+        };
+        if !(0..=65536).contains(&count) {
+            return Err(BitmapError::Count(count));
+        }
+        let count = count as usize;
+        let flags = if runs {
+            cursor.read(count.div_ceil(8) as i64)?.to_vec()
+        } else {
+            Vec::new()
+        };
+        let mut cardinalities = Vec::with_capacity(count);
+        let mut members = 0;
+        for _ in 0..count {
+            cursor.read(2)?;
+            let cardinal = usize::from(u16::from_le_bytes(cursor.read(2)?.try_into().unwrap())) + 1;
+            cardinalities.push(cardinal);
+            members += cardinal;
+        }
+        if !runs || count >= 4 {
+            cursor.seek((cursor.position + count * 4) as i64)?;
+        }
+        for (index, cardinal) in cardinalities.into_iter().enumerate() {
+            let size = if runs && flags[index / 8] & (1 << (index % 8)) != 0 {
+                usize::from(u16::from_le_bytes(cursor.read(2)?.try_into().unwrap())) * 4
+            } else if cardinal > 4096 {
+                8192
+            } else {
+                cardinal * 2
+            };
+            cursor.read(size as i64)?;
+        }
+        if members > max_members {
+            return Err(BitmapError::Limit);
+        }
+        let bitmap = roaring::RoaringBitmap::deserialize_from(&bytes[..cursor.position])
+            .map_err(|_| BitmapError::Invalid)?;
+        if bitmap.len() as usize != members {
+            return Err(BitmapError::Invalid);
+        }
+        Ok(Value::Bitmap(bitmap))
+    })();
+    (cursor.reads, result)
+}
+
 /// Match Java's replacement decoder. In particular, a three-byte surrogate
 /// encoding is one malformed unit, unlike Rust's standard UTF-8 lossy decoder.
 pub fn decode_utf8(bytes: &[u8]) -> String {

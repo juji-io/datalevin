@@ -14,6 +14,7 @@
    [datalevin.bits Indexable]
    [java.nio ByteBuffer ByteOrder]
    [java.util Date UUID]
+   [org.roaringbitmap RoaringBitmap]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
     ThreadFactory TimeUnit TimeoutException]))
 
@@ -113,6 +114,7 @@
                "java.lang.AssertionError" (AssertionError. ^Object message)
                "java.lang.ArrayIndexOutOfBoundsException" (ArrayIndexOutOfBoundsException. message)
                "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
+               "java.io.IOException" (java.io.IOException. message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))
@@ -204,6 +206,34 @@
         words (invoke-peer! peer session :bits/encode-ints
                             [value sorted? (= ByteOrder/LITTLE_ENDIAN (.order buffer))])]
     (doseq [^bytes word words] (.put buffer word))))
+
+(defn- bitmap-member [member]
+  ;; The primitive bitmap API requires Number, rather than Character coercion.
+  (when (some? member) (.longValue ^Number member))
+  (int member))
+
+(defn- mutate-bitmap! [peer session operation ^RoaringBitmap bitmap member]
+  (let [member (bitmap-member member)]
+    (.getLongCardinality bitmap)
+    (let [^RoaringBitmap result (invoke-peer! peer session operation [bitmap member])]
+      ;; Rust decides the new contents. Copy that owned value into the existing
+      ;; JVM wrapper so callers retain the original bitmap's identity.
+      (.clear bitmap)
+      (.or bitmap result)
+      bitmap)))
+
+(defn- put-bitmap! [peer session ^ByteBuffer buffer ^RoaringBitmap bitmap]
+  (.getLongCardinality bitmap)
+  (let [{:keys [header containers]} (invoke-peer! peer session :bits/encode-bitmap [bitmap])
+        little? (= ByteOrder/LITTLE_ENDIAN (.order buffer))
+        target (if little? buffer (.slice buffer))]
+    (doseq [^bytes field header] (.put target field))
+    (doseq [fields containers]
+      (let [view (.slice target)]
+        (doseq [^bytes field fields] (.put view field))
+        (.position target (+ (.position target) (.position view)))))
+    (when-not little? (.position buffer (+ (.position buffer) (.position target))))
+    nil))
 
 (defn- read-ints! [peer session ^ByteBuffer buffer sorted?]
   (let [little? (= ByteOrder/LITTLE_ENDIAN (.order buffer))
@@ -406,6 +436,13 @@
     (replay-reads! buffer reads)
     (result-value session :bits/read-buffer result)))
 
+(defn- read-bitmap! [peer session ^ByteBuffer buffer]
+  (let [view (.slice buffer)
+        {:keys [reads result]} (invoke-peer! peer session :bits/decode-bitmap
+                                             [(bits/get-bytes (.duplicate view))])]
+    (replay-reads! view reads)
+    (result-value session :bits/read-buffer result)))
+
 (defn- raw-index-type [value-type]
   (case value-type
     :db.type/string :string :db.type/keyword :keyword :db.type/symbol :symbol
@@ -508,6 +545,14 @@
       :bits/serialize
       (serialize-value! peer session (first arguments))
 
+      :bits/bitmap
+      (let [values (first arguments)
+            _ (count values)]
+        (invoke-peer! peer session operation [(int-array (map bitmap-member values))]))
+
+      (:bits/bitmap-add :bits/bitmap-del)
+      (apply mutate-bitmap! peer session operation arguments)
+
       :bits/acquire-serialized-bf
       (acquire-serialized-buffer! peer session (first arguments))
 
@@ -540,6 +585,7 @@
           :avg (put-avg! peer session buffer value)
           :attr (put-attr! peer session buffer value)
           :ints (put-ints! peer session buffer value false)
+          :bitmap (put-bitmap! peer session buffer value)
           :doc-info (let [[id count positions] value]
                       (put-integer! peer session buffer id :int)
                       (put-integer! peer session buffer count :short)
@@ -562,7 +608,7 @@
                  (instance? ByteBuffer value) (.put buffer (.duplicate ^ByteBuffer value))
                  :else (raise "Raw value must be bytes or ByteBuffer, got "
                                (type value) {:input value}))
-          (:bitmap :term-info)
+          :term-info
           (adapter/unsupported! :adapter operation
                                 (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)
@@ -576,6 +622,7 @@
           :avg (read-avg! peer session buffer :avg)
           :attr (invoke-peer! peer session :bits/decode-attr [(bits/get-bytes buffer)])
           :ints (read-ints! peer session buffer false)
+          :bitmap (read-bitmap! peer session buffer)
           :doc-info [(read-integer! peer session buffer :int)
                      (read-integer! peer session buffer :short)
                      (read-ints! peer session buffer false)]
@@ -591,7 +638,7 @@
           :int-int [(read-integer! peer session buffer :int)
                     (read-integer! peer session buffer :int)]
           :raw (bits/get-bytes buffer)
-          (:bitmap :term-info :query-term-info)
+          (:term-info :query-term-info)
           (adapter/unsupported! :adapter operation
                                 (str "Rust buffer codec is not implemented for " value-type))
           (if (vector? value-type)

@@ -19,6 +19,17 @@
   (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn category [f] (:error (error-data f)))
 
+(deftest immutable-time-values-use-the-data-contract
+  (doseq [x [(java.time.Instant/ofEpochSecond 1 123456789)
+             (java.time.Duration/ofSeconds -1 123456789)
+             (java.time.Period/of 1 -2 3)]]
+    (is (value/matches-type? :data x))
+    (is (identical? x (value/owned-copy x)))
+    (is (not (value/matches-type? :instant x)))
+    ;; Descriptor/session metadata still uses the immutable EDN subset.
+    (is (false? (value/portable? x))))
+  (is (value/matches-type? :instant (java.util.Date. 1))))
+
 (deftest portable-envelopes-include-clojure-metadata
   (doseq [x ['id [] {} #{} '() (sorted-map) (sorted-set)]
           mutable [(java.util.Date.) (byte-array [1]) (atom :value) (Object.)]]

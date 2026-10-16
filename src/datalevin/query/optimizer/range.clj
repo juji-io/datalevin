@@ -233,9 +233,10 @@
 (defn exact-inequality-range?
   "Whether AVE ordering exactly implements Datalog inequality ordering for a
   value type. BigDecimal values retain a residual predicate because their
-  index encoding starts with an inexact double approximation."
+  index encoding starts with an inexact double approximation. Generic data
+  uses serialization order, which need not match logical value comparison."
   [value-type]
-  (not (identical? :db.type/bigdec value-type)))
+  (not (contains? #{nil :data :db.type/data :db.type/bigdec} value-type)))
 
 (defn- inexact-inequality-range-attr?
   [helpers source attr]

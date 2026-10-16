@@ -2,6 +2,7 @@
   "Owned logical values and explicit custom-value validation/accounting hooks."
   (:import [clojure.lang Ratio RT Sorted]
            [java.math BigDecimal BigInteger]
+           [java.time Duration Instant Period]
            [java.util Date UUID]))
 
 (def scalar-types
@@ -108,6 +109,7 @@
         (if-let [m (meta x)] (value-charge m) 0))
     (instance? UUID x) 48
     (= Date (class x)) 64
+    (or (instance? Instant x) (instance? Duration x) (instance? Period x)) 64
     (bytes? x) (+' 32 (alength ^bytes x))
     (instance? BigInteger x) (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8))
     (instance? clojure.lang.BigInt x) (+' 32 (value-charge (biginteger x)))

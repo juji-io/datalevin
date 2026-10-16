@@ -10,6 +10,7 @@
             [taoensso.nippy.schema :as schema])
   (:import [java.io DataInput DataOutput]
            [java.nio ByteBuffer]
+           [java.time Duration Instant Period]
            [java.util Arrays Date UUID]))
 
 (defn- prepare [bytes]
@@ -48,6 +49,9 @@
   (doseq [x [true false (byte 42) (short 42) (int 42) 0 42 -42 42N (biginteger 42) 1.00M
              \λ 1/2 -7/3 9223372036854775808/3
              (float 1.5) 2.5 "λ😀" :test/key 'test/symbol (Date. 12) (UUID/randomUUID)
+             Instant/MIN Instant/MAX (Instant/ofEpochSecond -1 123456789)
+             (Duration/ofSeconds Long/MIN_VALUE) (Duration/ofSeconds Long/MAX_VALUE 999999999)
+             (Period/of Integer/MIN_VALUE Integer/MAX_VALUE -12)
              [] {} #{} '() [1 nil :key ["nested"]]
              (with-meta [1 2] {:source ["local"]})
              (with-meta 'value {:source :test})
@@ -83,6 +87,39 @@
     (is (= 0 (.position raw)))
     (is (= x ((:decode prepared))))
     (is (= 0 (.position raw)))))
+
+(defn- time-payload ^bytes [tag ^long seconds ^long nanos]
+  (.array (doto (ByteBuffer/allocate 13)
+            (.put (byte tag)) (.putLong seconds) (.putInt (int nanos)))))
+
+(deftest temporal-layouts-check-lengths-types-and-constructor-errors
+  (doseq [tag [schema/id-time-instant schema/id-time-duration schema/id-time-period]]
+    (let [bytes (time-payload tag 0 0)]
+      (dotimes [length (alength bytes)]
+        (is (= :query-source/invalid
+               (category #(native-value/prepare-data
+                            (ByteBuffer/wrap (Arrays/copyOf bytes length)) (fn []))))))
+      (is (= :query-source/invalid
+             (category #(native-value/prepare-data
+                          (ByteBuffer/wrap (Arrays/copyOf bytes (inc (alength bytes)))) (fn [])))))))
+  (doseq [[tag seconds nanos]
+          [[schema/id-time-instant Long/MAX_VALUE 0]
+           [schema/id-time-instant Long/MIN_VALUE 0]
+           [schema/id-time-duration Long/MAX_VALUE Integer/MAX_VALUE]
+           [schema/id-time-duration Long/MIN_VALUE Integer/MIN_VALUE]]]
+    (let [{:keys [decode]} (native-value/prepare-data
+                            (ByteBuffer/wrap (time-payload tag seconds nanos)) (fn []))]
+      (is (= :query-source/invalid (category decode)))))
+  ;; Nippy normalizes nanosecond adjustments. Preserve its decoding semantics.
+  (doseq [tag [schema/id-time-instant schema/id-time-duration]
+          nanos [-1 1000000000 Integer/MAX_VALUE]]
+    (let [bytes (time-payload tag 0 nanos)
+          {:keys [decode]} (native-value/prepare-data (ByteBuffer/wrap bytes) (fn []))]
+      (is (= (nippy/thaw-from-bb! (ByteBuffer/wrap bytes)) (decode)))))
+  (is (= :query-source/invalid
+         (category #(native-value/prepare-giant
+                      (ByteBuffer/wrap (bits/serialize (datom/datom 1 :test/value Instant/EPOCH)))
+                      :instant 1 :test/value)))))
 
 (deftest counts-truncation-and-depth-are-checked-before-decoding
   (let [bytes (bits/serialize (datom/datom 1 :test/value {:nested [1 nil "value"]}))]

@@ -94,7 +94,6 @@
              "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
   :javac-options ["--release" "21"]
   :jar-exclusions [#"datalevin/tx_state([$_.]|$)"
-                       #"datalevin/idoc_fulltext_fuzz"
                        #"datalevin/tx_state/(kv|view)([/$_.]|$)"
                        #"datalevin/tx_state/[A-Z][^/]*\.class$"
                        #"datalevin/tx_group/(Receipt|Deferred)\.class$"
@@ -111,7 +110,6 @@
                    #"rust/test-adapter/target/"
                    #"client_quickstart_check\.clj"]
   :uberjar-exclusions [#"datalevin/tx_state([$_.]|$)"
-                       #"datalevin/idoc_fulltext_fuzz"
                        #"datalevin/tx_state/(kv|view)([/$_.]|$)"
                        #"datalevin/tx_state/[A-Z][^/]*\.class$"
                        #"datalevin/tx_group/(Receipt|Deferred)\.class$"
