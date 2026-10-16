@@ -105,6 +105,8 @@
       (throw (case class
                "java.lang.IllegalArgumentException" (IllegalArgumentException. message)
                "java.lang.IllegalStateException" (IllegalStateException. message)
+               "java.lang.NumberFormatException" (NumberFormatException. message)
+               "java.lang.AssertionError" (AssertionError. ^Object message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))

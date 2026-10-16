@@ -33,6 +33,23 @@
     (is (= 2 (count (filter #{:plan} @(:events s)))))
     (is (= [:close-cursor :close-session] (take-last 2 @(:events s))))))
 
+(deftest eav-reference-joins-and-missing-values
+  (let [info (assoc tuple-info :pattern-contract
+                    {:kind :eav :attributes {:order/customer {:entity-type :long :value-type :long}
+                                             :customer/name {:entity-type :long :value-type :string}}})
+        rows [[1 :order/customer 10] [2 :order/customer 20] [3 :order/customer nil]
+              [10 :customer/name "Ada"] [20 :customer/name nil]]
+        s (fake/source info rows)
+        facts (filterv #(some? (nth % 2)) rows)]
+    (doseq [q ['[:find ?order ?name :in $s
+                 :where [$s ?order :order/customer ?customer] [$s ?customer :customer/name ?name]]
+               '[:find ?order :in $s :where [$s ?order :order/customer _]]
+               '[:find ?order :in $s :where [$s ?order :order/customer ?customer]]]]
+      (is (= (d/q q facts) (d/q q s))))
+    (is (= #{[1 "Ada"]}
+           (d/q '[:find ?order ?name :in $s
+                  :where [$s ?order :order/customer ?customer] [$s ?customer :customer/name ?name]] s)))))
+
 (deftest flat-input-bindings-match-eager-relations
   (let [rows [[1 "a"] [2 "b"] [3 nil]]
         s (fake/source tuple-info rows)]
@@ -129,8 +146,11 @@
       (is (= #{["one"] ["two"]} (d/q query @conn s)))
       (is (= (d/q (dissoc query :query-source) @conn rows) (d/q query @conn s)))
       (reset! (:events s) [])
-      (is (= :query-source/unsupported
-             (category #(d/q (assoc query :where '[[?e :item/blob ?blob] [$s ?e ?label]]) @conn s))))
+      (let [error (error-data #(d/q (assoc query :where '[[?e :item/blob ?blob] [$s ?e ?label]]) @conn s))]
+        (is (= :query-source/unsupported (:error error)))
+        (is (= :native-type (:phase error)))
+        (is (= '$ (:source-symbol error)))
+        (is (= [0] (:clause-ids error))))
       (is (empty? @(:events s)))
       (finally (d/close conn) (u/delete-files dir)))))
 

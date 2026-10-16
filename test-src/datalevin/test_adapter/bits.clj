@@ -12,6 +12,18 @@
 (defn deserialize [^bytes bytes]
   (adapter/call! :bits/deserialize [bytes]))
 
+(defn encode-base64 [^bytes bytes]
+  (adapter/call! :bits/encode-base64 [bytes]))
+
+(defn decode-base64 ^bytes [^String encoded]
+  (adapter/call! :bits/decode-base64 [encoded]))
+
+(defn encode-bigint ^bytes [value]
+  (adapter/call! :bits/encode-bigint [value]))
+
+(defn decode-bigint [^bytes bytes]
+  (adapter/call! :bits/decode-bigint [bytes]))
+
 (defn serialize-bf [buffer value]
   (adapter/call! :bits/serialize-bf [buffer value]))
 

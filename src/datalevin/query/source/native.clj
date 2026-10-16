@@ -14,6 +14,7 @@
             [datalevin.query.source.inputs :as input]
             [datalevin.query.source.native-compression :as compression]
             [datalevin.query.source.native-value :as native-value]
+            [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.util :as u])
   (:import [datalevin.db DB]
@@ -77,29 +78,31 @@
          (every? #(value/matches-type? (:element type) %) x))
     (value/matches-type? type x)))
 
-(defn validate-types! [control snapshots entries external-types input-data]
-  (doseq [{:keys [native patterns]} entries :when native
-          pattern patterns
-          :let [schema (:schema (get snapshots (.-store ^DB native)))
-                attribute (second (second (:terms pattern)))
-                ;; An explicit wildcard requires only the index entry's
-                ;; existence, not a supported logical value or decoder.
-                t (when-not (= :ignore (first (nth (:terms pattern) 2)))
-                    (attribute-type schema attribute))
-                logical (if (= :native-homogeneous-tuple (:kind t)) :data t)]]
-    (doseq [[term type logical-type]
-            (map vector (:terms pattern) [:long :keyword t] [:long :keyword logical])]
-      (when (= :var (first term))
-        (when-let [external (external-types (second term))]
-          (when-not (= external logical-type)
-            (fail! :query-source/unsupported :types))))
-      (let [check! (fn [x]
-                     (when-not (matches-native-type? type x)
-                       (fail! :query-source/unsupported :native-type)))]
-        (case (first term)
-          :const (check! (second term))
-          :var (input/check-values! control input-data (second term) check!)
-          nil)))))
+(defn validate-types! [runtime snapshots entries external-types input-data]
+  (doseq [{:keys [native patterns symbol]} entries :when native
+          pattern patterns]
+    (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
+      (fn [{:keys [control]}]
+        (let [schema (:schema (get snapshots (.-store ^DB native)))
+              attribute (second (second (:terms pattern)))
+              ;; An explicit wildcard requires only the index entry's
+              ;; existence, not a supported logical value or decoder.
+              t (when-not (= :ignore (first (nth (:terms pattern) 2)))
+                  (attribute-type schema attribute))
+              logical (if (= :native-homogeneous-tuple (:kind t)) :data t)]
+          (doseq [[term type logical-type]
+                  (map vector (:terms pattern) [:long :keyword t] [:long :keyword logical])]
+            (when (= :var (first term))
+              (when-let [external (external-types (second term))]
+                (when-not (= external logical-type)
+                  (fail! :query-source/unsupported :types))))
+            (let [check! (fn [x]
+                           (when-not (matches-native-type? type x)
+                             (fail! :query-source/unsupported :native-type)))]
+              (case (first term)
+                :const (check! (second term))
+                :var (input/check-values! control input-data (second term) check!)
+                nil))))))))
 
 (defn- visit-value [control ^ByteBuffer buffer expanded-size attribute type payload prepare emit eid]
   ;; Reserve buffers and bounded preflight state first. Generic collections and

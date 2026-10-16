@@ -1,6 +1,7 @@
 //! Test-driver transport and adapters for the existing Rust codec. Database
 //! calls remain explicitly unsupported until a Rust engine is connected.
 
+use datalevin_codec::bits::{self, BigIntegerError};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
 };
@@ -36,16 +37,28 @@ fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 fn protocol_error(message: &str) -> Value {
+    java_error("java.lang.IllegalArgumentException", message)
+}
+
+fn java_error(class: &str, message: &str) -> Value {
     map(vec![
         ("status", keyword("error")),
         (
             "error",
-            map(vec![
-                ("class", text("java.lang.IllegalArgumentException")),
-                ("message", text(message)),
-            ]),
+            map(vec![("class", text(class)), ("message", text(message))]),
         ),
     ])
+}
+
+fn bigint_error(error: BigIntegerError) -> Value {
+    java_error(
+        match error {
+            BigIntegerError::EmptyInteger => "java.lang.NumberFormatException",
+            BigIntegerError::EmptyEncoding => "java.lang.IllegalArgumentException",
+            BigIntegerError::OutOfRange => "java.lang.AssertionError",
+        },
+        &error.to_string(),
+    )
 }
 
 fn success(value: Value) -> Value {
@@ -116,7 +129,8 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
-        "echo" | "bits/serialize" | "bits/deserialize" => {
+        "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
+        | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
                 return protocol_error(if operation.as_ref() == "echo" {
                     "Echo requires exactly one value argument"
@@ -143,12 +157,37 @@ fn dispatch(request: &Value) -> Value {
                     },
                     _ => protocol_error("bits/deserialize requires a byte array"),
                 },
+                "bits/encode-base64" => match value {
+                    Value::Bytes(bytes) => success(Value::Text(bits::encode_base64(bytes))),
+                    _ => protocol_error("bits/encode-base64 requires a byte array"),
+                },
+                "bits/decode-base64" => match value {
+                    Value::Text(encoded) => match bits::decode_base64(encoded) {
+                        Ok(bytes) => success(Value::Bytes(bytes)),
+                        Err(error) => protocol_error(&error.to_string()),
+                    },
+                    _ => protocol_error("bits/decode-base64 requires a string"),
+                },
+                "bits/encode-bigint" => match value {
+                    Value::BigInteger(bytes) => match bits::encode_bigint(bytes) {
+                        Ok(bytes) => success(Value::Bytes(bytes)),
+                        Err(error) => bigint_error(error),
+                    },
+                    _ => protocol_error("bits/encode-bigint requires a BigInteger"),
+                },
+                "bits/decode-bigint" => match value {
+                    Value::Bytes(bytes) => match bits::decode_bigint(bytes) {
+                        Ok(bytes) => success(Value::BigInteger(bytes)),
+                        Err(error) => bigint_error(error),
+                    },
+                    _ => protocol_error("bits/decode-bigint requires a byte array"),
+                },
                 _ => unreachable!(),
             }
         }
         _ => unsupported(
             operation,
-            &format!("Rust database operation is not implemented: {operation}"),
+            &format!("Rust operation is not implemented: {operation}"),
         ),
     }
 }
@@ -210,6 +249,10 @@ fn main() -> io::Result<()> {
                     keyword("echo"),
                     keyword("bits/serialize"),
                     keyword("bits/deserialize"),
+                    keyword("bits/encode-base64"),
+                    keyword("bits/decode-base64"),
+                    keyword("bits/encode-bigint"),
+                    keyword("bits/decode-bigint"),
                 ]),
             ),
             ("database-implemented?", Value::Bool(false)),

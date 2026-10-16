@@ -10,6 +10,10 @@
     (case operation
       :bits/serialize (apply bits/serialize arguments)
       :bits/deserialize (apply bits/deserialize arguments)
+      :bits/encode-base64 (apply bits/encode-base64 arguments)
+      :bits/decode-base64 (apply bits/decode-base64 arguments)
+      :bits/encode-bigint (apply bits/encode-bigint arguments)
+      :bits/decode-bigint (apply bits/decode-bigint arguments)
       :bits/serialize-bf (apply bits/serialize-bf arguments)
       :bits/deserialize-bf (apply bits/deserialize-bf arguments)
       :bits/put-buffer (apply bits/put-buffer arguments)

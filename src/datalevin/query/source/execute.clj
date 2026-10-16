@@ -230,7 +230,7 @@
           (let [prepared (plan/prepare! runtime parsed inputs options)]
             (native/with-views (keep :native (:entries prepared))
               (fn [snapshots]
-                (native/validate-types! (:control runtime) snapshots (:entries prepared)
+                (native/validate-types! runtime snapshots (:entries prepared)
                                         (:types prepared) (:input-data prepared))
                 (let [prepared (plan/acquire-and-plan! runtime prepared)
                       result (when (or (nil? explain-options) (:run? explain-options))
