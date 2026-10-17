@@ -80,35 +80,53 @@
     (swap! (:cleanup runtime) conj cleanup)
     (fn [] (cleanup))))
 
-(defn- charge-value! [runtime x size!]
+(defn- charge-value! [runtime x size! overhead multiplier result?]
   (let [control (:control runtime)
-        maximum (:retained-bytes (control/limits control))
-        bytes (volatile! 256)
+        limits (control/limits control)
+        categories (if result? [:retained-bytes :result-bytes] [:retained-bytes])
+        bytes (volatile! overhead)
+        check-limit! (fn [usage category charge]
+                       (let [maximum (long (get limits category))
+                             attempted (value/add-charge (long (get usage category)) charge)]
+                         (when-not (value/at-most? attempted maximum)
+                           (value/fail! :query-source/limit :reserve
+                                        {:category category :maximum maximum
+                                         :attempted attempted}))))
+        check! (fn []
+                 (source/check-active! control)
+                 (let [usage (control/usage control)]
+                   (when result? (check-limit! usage :result-rows 1))
+                   (doseq [category categories] (check-limit! usage category @bytes))))
         observe! (fn [increment]
-                   (source/check-active! control)
-                   (let [total (value/add-charge (long @bytes) increment)
-                         attempted (value/add-charge
-                                     (long (:retained-bytes (control/usage control))) total)]
-                     (vreset! bytes total)
-                     (when-not (value/at-most? attempted (long maximum))
-                       (value/fail! :query-source/limit :reserve
-                                    {:category :retained-bytes :maximum maximum
-                                     :attempted attempted}))))]
+                   (vreset! bytes (value/add-charge (long @bytes)
+                                    (value/multiply-charge multiplier increment)))
+                   (check!))]
+    ;; Fixed overhead and row limits can reject without visiting any values.
+    (check!)
     (size! x observe!)
     ;; Preflight does not mutate the shared ledger. A provider or nested query
     ;; can reserve concurrently; the final atomic reservation checks it again.
-    (source/reserve! control {:retained-bytes @bytes})))
+    (source/reserve! control (cond-> {:retained-bytes @bytes}
+                              result? (assoc :result-rows 1 :result-bytes @bytes)))))
 
 (defn charge!
   "Check size/cancellation incrementally, then reserve retained values,
-  backing storage, and ledger/container overhead."
-  [runtime x]
-  (charge-value! runtime x value/value-charge))
+  backing storage, and ledger/container overhead. Explicit overhead/multiplier
+  account for row maps and blocking operators without an unbounded sizing walk."
+  ([runtime x] (charge! runtime x 256 1))
+  ([runtime x overhead multiplier]
+   (charge-value! runtime x value/value-charge overhead multiplier false)))
 
 (defn charge-copy!
   "Reserve before owned-copy, which detaches vector views from their parents."
   [runtime x]
-  (charge-value! runtime x value/copy-charge))
+  (charge-value! runtime x value/copy-charge 256 1 false))
+
+(defn charge-result!
+  "Check all output limits while sizing, then atomically reserve one result row
+  and its retained/result bytes. A quota overflow is never a semantic limit."
+  [runtime row]
+  (charge-value! runtime row value/value-charge 256 1 true))
 
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))

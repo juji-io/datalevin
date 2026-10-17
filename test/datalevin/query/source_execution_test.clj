@@ -262,9 +262,13 @@
                         :query-source {:limits {:batch-bytes 9223372036854775807
                                                 :retained-bytes 9223372036854775807}}} s))]
     ;; The batch and row scratch fit, but result deduplication charges three
-    ;; copies. Its exact charge exceeds a long and must reject before retaining.
-    (is (= :query-source/invalid (:error error)))
+    ;; copies. Report the exact overflow as a quota failure, before narrowing
+    ;; the charge to the ledger's long representation or retaining the result.
+    (is (= :query-source/limit (:error error)))
     (is (= :reserve (:phase error)))
+    (is (= :retained-bytes (:category error)))
+    (is (= Long/MAX_VALUE (:maximum error)))
+    (is (> (:attempted error) Long/MAX_VALUE))
     (is (= :close-session (last (remove #{:cancel-session} @(:events s)))))))
 
 (deftest redacted-explanations-and-failure

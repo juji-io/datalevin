@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is]]
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
-            [datalevin.query.source.runtime :as rt])
+            [datalevin.query.source.runtime :as rt]
+            [datalevin.query.source.value :as value])
   (:import [datalevin.query.source.runtime Cleanup]
            [java.util.concurrent.atomic AtomicReference]))
 
@@ -86,3 +87,63 @@
       (is (empty? @(:cleanup @captured)))
       (is (every? zero? (vals (control/usage (:control @captured)))))
       (is (not (.contains (pr-str error) "private"))))))
+
+(defn- measured [bytes on-size]
+  (reify value/IQuerySourceValue
+    (-logical-type [_] {:kind :custom :name :test/measured :version 1 :fingerprint "v1"})
+    (-retained-bytes [_] (on-size) bytes)))
+
+(deftest scaled-and-output-charges-preserve-ledger-amounts
+  (let [row [(with-meta [1 (byte-array [1 2 3])] {:source "fixture"})]
+        size (value/value-charge row)]
+    (rt/with-runtime {}
+      (fn [{:keys [control] :as runtime}]
+        (let [token (rt/charge! runtime row 512 3)]
+          (is (= (+ 512 (* 3 size)) (:retained-bytes (control/usage control))))
+          (is (zero? (:result-rows (control/usage control))))
+          (source/release! token))
+        (let [token (rt/charge-result! runtime row)
+              usage (control/usage control)]
+          (is (= 1 (:result-rows usage)))
+          (is (= (+ 256 size) (:retained-bytes usage) (:result-bytes usage)))
+          (source/release! token))
+        (is (every? zero? (vals (control/usage control))))))))
+
+(deftest output-quotas-reject-before-visiting-values
+  (doseq [category [:retained-bytes :result-bytes :result-rows]]
+    (let [visits (atom 0) captured (atom nil)
+          row [(measured 64 #(swap! visits inc))]
+          error (try
+                  (rt/with-runtime {:limits {category 1}}
+                    (fn [{:keys [control] :as runtime}]
+                      (reset! captured control)
+                      (source/reserve! control {category 1})
+                      (rt/charge-result! runtime row)))
+                  (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+      (is (= :query-source/limit (:error error)))
+      (is (= category (:category error)))
+      (is (= 1 (:maximum error)))
+      (is (> (:attempted error) 1))
+      (is (zero? @visits))
+      (is (every? zero? (vals (control/usage @captured)))))))
+
+(deftest scaled-and-result-byte-overflows-stop-before-later-values
+  (doseq [[size maximum result?]
+          [[4096 8192 false] [Long/MAX_VALUE Long/MAX_VALUE false] [4096 1024 true]]]
+    (let [visits (atom []) captured (atom nil)
+          row [(measured size #(swap! visits conj :head))
+               (measured 64 #(swap! visits conj :tail))]
+          category (if result? :result-bytes :retained-bytes)
+          error (try
+                  (rt/with-runtime {:limits {category maximum}}
+                    (fn [{:keys [control] :as runtime}]
+                      (reset! captured control)
+                      (if result? (rt/charge-result! runtime row)
+                          (rt/charge! runtime row 512 3))))
+                  (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+      (is (= :query-source/limit (:error error)))
+      (is (= category (:category error)))
+      (is (= maximum (:maximum error)))
+      (is (> (:attempted error) maximum))
+      (is (= [:head] @visits))
+      (is (every? zero? (vals (control/usage @captured)))))))

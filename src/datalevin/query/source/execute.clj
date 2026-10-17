@@ -84,10 +84,8 @@
                               (run! #(value/execution-value! % check!) row)
                               (when (:intermediate-counts? runtime)
                                 (swap! (:explain runtime) update :streamed-rows inc))
-                              (let [scratch (source/reserve! control
-                                              {:retained-bytes
-                                               (value/add-charge (+ 512 (* 256 (count columns)))
-                                                                 (value/value-charge row))})]
+                              (let [scratch (rt/charge! runtime row
+                                                       (+ 512 (* 256 (count columns))) 1)]
                                 (try (emit (zipmap (map :variable columns) row))
                                      (finally (source/release! scratch))))))
                     (finally (when-let [token (:reservation batch)] (source/release! token))))]
@@ -195,11 +193,9 @@
         consumed (volatile! 0)
         stopped (volatile! false)
         save! (fn [row]
-                (let [bytes (value/add-charge 256 (value/value-charge row))]
-                  ;; The result quota is an error boundary, never a LIMIT.
-                  (source/reserve! (:control runtime)
-                                   {:result-rows 1 :result-bytes bytes :retained-bytes bytes})
-                  (vswap! output conj row)))
+                ;; The result quota is an error boundary, never a LIMIT.
+                (rt/charge-result! runtime row)
+                (vswap! output conj row))
         window! (fn [row]
                   (let [n (long (vswap! consumed #(inc (long %))))]
                     (when (> n offset) (save! row))
@@ -213,10 +209,7 @@
                  (when-not (.contains seen row)
                    ;; Also covers the aggregate's temporary grouping lists and
                    ;; projected tuple containers. Input state is quota-bound.
-                   (source/reserve! (:control runtime)
-                                    {:retained-bytes
-                                     (value/add-charge 512
-                                       (value/multiply-charge 3 (value/value-charge row)))})
+                   (rt/charge! runtime row 512 3)
                    (.add seen row)
                    (when-not aggregate? (window! (mapv row (range (count find-vars))))))))
      :stopped? #(deref stopped)
