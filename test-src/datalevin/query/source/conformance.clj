@@ -12,7 +12,8 @@
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
-           [java.util Date Random]))
+           [java.util Date Random]
+           [java.util.concurrent CountDownLatch TimeUnit]))
 
 (defn- descriptor [contract]
   {:spi-versions #{1} :source-instance-id (random-uuid) :compute-context-id :conformance
@@ -194,9 +195,104 @@
             (compare! q [@conn (value/owned-copy rows)] [@conn (:source observed)] [observed]))))
       (finally (d/close conn) (u/delete-files dir)))))
 
+(defn- acquisition-boundary! [make-source replace-rows!]
+  ;; More than one lazy-sequence chunk: small source groups can accidentally
+  ;; acquire every view through lookahead even without an explicit boundary.
+  (let [n 40
+        symbols (mapv #(symbol (str "$s" %)) (range n))
+        q {:find '[?id ?v] :in symbols
+           :where (mapv #(vector % '?id '?v) symbols)}]
+    (testing "all views are pinned before the first planning callback"
+      (let [providers (mapv (fn [_] (make-source (tuple-descriptor :string) [[1 "old"]])) symbols)
+            acquired (atom 0)
+            at-plan (atom nil)
+            hook (fn [phase _]
+                   (case phase
+                     :acquisition (swap! acquired inc)
+                     :planning (when (compare-and-set! at-plan nil @acquired)
+                                 (doseq [provider providers]
+                                   (replace-rows! provider [[2 "new"]])))
+                     nil))
+            observed (mapv #(observe % hook) providers)]
+        (try
+          (is (= #{[1 "old"]} (apply d/q q (mapv :source observed))))
+          (is (= n @at-plan))
+          (is (= #{[2 "new"]} (apply d/q q (mapv :source observed))))
+          (finally (run! closed! observed)))))
+    (testing "a late acquisition failure prevents every planning callback"
+      (let [attempts (atom 0)
+            hook (fn [phase _]
+                   (when (and (= :acquisition phase) (= n (swap! attempts inc)))
+                     (throw (ex-info "secret acquisition failure" {:secret true}))))
+            observed (mapv (fn [_] (observe (make-source (tuple-descriptor :string) [[1 "old"]])
+                                           hook)) symbols)]
+        (try
+          (is (= :query-source/provider
+                 (:error (error-data #(apply d/q q (mapv :source observed))))))
+          (is (= n @attempts))
+          (is (not-any? #(#{:plan :open-cursor} (first %))
+                        (mapcat #(deref (:events %)) observed)))
+          (finally (run! closed! observed)))))))
+
+(defn- concurrent-views! [make-source replace-rows!]
+  (doseq [phase [:planning :fetch], cancel? [false true]]
+    (testing (str "independent invocations at " phase ", cancel first=" cancel?)
+      (let [provider (make-source (tuple-descriptor :string) [[1 "old"]])
+            q '[:find ?id ?v :in $a $b :where [$a ?id ?v] [$b ?id ?v]]
+            pending (mapv
+                      (fn [_]
+                        (let [entered (promise) release (CountDownLatch. 1)
+                              first? (atom true)]
+                          {:entered entered :release release
+                           :observed (observe provider
+                                       (fn [at request]
+                                         (when (and (= at phase) (compare-and-set! first? true false))
+                                           (deliver entered request)
+                                           (when-not (.await release 10 TimeUnit/SECONDS)
+                                             (throw (ex-info "conformance wait expired" {}))))))}))
+                      (range 2))
+            start (fn [{:keys [observed]}]
+                    (future
+                      (try {:result (d/q q (:source observed) (:source observed))}
+                           (catch clojure.lang.ExceptionInfo e {:error (ex-data e)}))))
+            [a b] pending
+            workers (atom [])]
+        (try
+          (let [first-query (start a)
+                _ (swap! workers conj first-query)
+                first-request (deref (:entered a) 5000 ::timeout)]
+            (is (map? first-request))
+            (when (map? first-request)
+              (replace-rows! provider [[2 "new"]])
+              (let [second-query (start b)
+                    _ (swap! workers conj second-query)
+                    second-request (deref (:entered b) 5000 ::timeout)]
+                (is (map? second-request))
+                (when (map? second-request)
+                  (is (not (identical? (:control first-request) (:control second-request))))
+                  (when cancel?
+                    (control/cancel! (:control first-request)
+                                     {:error :query-source/cancelled :phase :execution}))
+                  (.countDown ^CountDownLatch (:release a))
+                  (let [result (deref first-query 5000 ::timeout)]
+                    (if cancel?
+                      (is (= :query-source/cancelled (get-in result [:error :error])))
+                      (is (= {:result #{[1 "old"]}} result))))
+                  (closed! (:observed a))
+                  (is (not (realized? second-query)))
+                  (is (nil? (spi/check-active! (:control second-request))))
+                  (.countDown ^CountDownLatch (:release b))
+                  (is (= {:result #{[2 "new"]}} (deref second-query 5000 ::timeout)))
+                  (closed! (:observed b))))))
+          (finally
+            (doseq [{:keys [release]} pending] (.countDown ^CountDownLatch release))
+            (doseq [worker @workers] (future-cancel worker))))))))
+
 (defn lifecycle!
   "Exercise public SPI lifetime boundaries without inspecting adapter internals."
   [make-source replace-rows!]
+  (acquisition-boundary! make-source replace-rows!)
+  (concurrent-views! make-source replace-rows!)
   (let [info (tuple-descriptor :string)
         rows [[1 "old"] [2 "two"] [3 "three"]]
         source (make-source info rows)

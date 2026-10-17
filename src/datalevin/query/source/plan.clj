@@ -181,24 +181,29 @@
         common (assoc common :limits (control/limits (:control runtime)))
         groups (vals (group-by #(select-keys (:descriptor %) [:source-instance-id :compute-context-id])
                                (filter :descriptor entries)))
+        ;; Finish acquiring and validating every view before any planning
+        ;; callback. Lazy acquisition otherwise interleaves these phases once
+        ;; the number of source groups exceeds sequence lookahead.
         acquired
-        (mapcat
-          (fn [group]
-            (rt/with-context runtime
-              {:source-symbol (:symbol (first group))
-               :clause-ids (mapv :id (:clauses (first group)))}
-              (fn [runtime]
-                (let [request (assoc common :source-descriptors (vec (distinct (map :descriptor group))))
-                      session (rt/invoke runtime :acquisition #(source/-open-session (:source (first group)) request))]
-                  (when-not (satisfies? source/IQuerySourceSession session) (fail! :query-source/invalid :session))
-                  (let [close (rt/own! runtime #(source/-close-session! session))
-                        registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
-                    ;; Keep cancellation active while close waits for provider
-                    ;; work. The first owner also covers registration failure.
-                    (rt/own! runtime #(try (close)
-                                         (finally (source/unregister-cancel! registration)))))
-                  (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
-                  (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))) groups)
+        (into []
+          (mapcat
+            (fn [group]
+              (rt/with-context runtime
+                {:source-symbol (:symbol (first group))
+                 :clause-ids (mapv :id (:clauses (first group)))}
+                (fn [runtime]
+                  (let [request (assoc common :source-descriptors (vec (distinct (map :descriptor group))))
+                        session (rt/invoke runtime :acquisition #(source/-open-session (:source (first group)) request))]
+                    (when-not (satisfies? source/IQuerySourceSession session) (fail! :query-source/invalid :session))
+                    (let [close (rt/own! runtime #(source/-close-session! session))
+                          registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
+                      ;; Keep cancellation active while close waits for provider
+                      ;; work. The first owner also covers registration failure.
+                      (rt/own! runtime #(try (close)
+                                           (finally (source/unregister-cancel! registration)))))
+                    (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
+                    (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))))
+          groups)
         planned
         (mapv
           (fn [{:keys [source symbol descriptor clauses session request] :as entry}]
