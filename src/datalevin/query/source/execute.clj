@@ -16,25 +16,25 @@
             [datalevin.timeout :as timeout])
   (:import [datalevin.db DB]
            [datalevin.parser FindRel FindColl FindScalar FindTuple]
-           [java.util Objects HashSet]))
+           [datalevin.utl QueryKey QueryKey$KeySet]))
 
 (defn- match-row [bindings terms row]
   (reduce (fn [bound [term x]]
             (when bound
               (case (first term)
                 :ignore bound
-                :const (when (= (second term) x) bound)
+                :const (when (QueryKey/equiv (second term) x) bound)
                 :var (let [sym (second term)]
                        (if (contains? bound sym)
                          (when (if (contains? bindings sym)
-                                 (Objects/equals (bound sym) x)
-                                 (= (bound sym) x)) bound)
+                                 (QueryKey/equals (bound sym) x)
+                                 (QueryKey/equiv (bound sym) x)) bound)
                          (assoc bound sym x)))))) bindings (map vector terms row)))
 
 (defn- merge-row [left right]
   ;; Match the existing hash join's Java key equality. Predicates and projection
   ;; retain their existing Clojure semantics; neither uses provider collation.
-  (when (every? (fn [[k v]] (or (not (contains? left k)) (Objects/equals (get left k) v))) right)
+  (when (every? (fn [[k v]] (or (not (contains? left k)) (QueryKey/equals (get left k) v))) right)
     (merge left right)))
 
 (defn- predicates? [predicates row]
@@ -188,7 +188,7 @@
         vars (into find-vars (map :symbol) (:qwith parsed))
         elements (dp/find-elements (:qfind parsed))
         aggregate? (some dp/aggregate? elements)
-        seen (HashSet.)
+        seen (QueryKey$KeySet.)
         output (volatile! [])
         consumed (volatile! 0)
         stopped (volatile! false)

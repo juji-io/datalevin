@@ -4,7 +4,8 @@
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]
             [datalevin.relation :as relation])
-  (:import [java.util ArrayList HashMap]))
+  (:import [java.util ArrayList]
+           [datalevin.utl QueryKey$KeyMap]))
 
 (defn- fill-key! [^objects key variables row]
   (dotimes [i (alength key)]
@@ -26,7 +27,7 @@
                  (value/add-charge (+ 1024 (* 256 width))
                    (value/multiply-charge (count rows)
                      (+ 512 (* 8 width))))})
-        index (HashMap.)
+        index (QueryKey$KeyMap.)
         scratch (object-array width)
         lookup (relation/array-lookup)
         close (rt/own! runtime #(do (.clear index)

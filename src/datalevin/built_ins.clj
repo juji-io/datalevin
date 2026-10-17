@@ -30,6 +30,7 @@
    [datalevin.util :as u :refer [raise long-inc]]
    [datalevin.interface :as i :refer [search schema search-vec attrs]])
   (:import
+   [datalevin.utl QueryKey]
    [java.util List]
    [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM LRUCache]
@@ -865,21 +866,22 @@
   "function similar to Clojure `max`"
   largest)
 
-(def =
-  "Predicate similar to Clojure `=`"
-  clojure.core/=)
+(defn =
+  "Clojure equivalence with content equality for bytes, also inside collections."
+  ([_] true)
+  ([x y] (QueryKey/equiv x y))
+  ([x y & more]
+   (and (= x y) (or (clojure.core/nil? more) (apply = y more)))))
 
 (def ==
   "Predicate similar to Clojure `==`"
   clojure.core/==)
 
-(def not=
-  "Predicate similar to Clojure `not=`"
-  clojure.core/not=)
+(defn not=
+  "Negation of query equivalence, including byte content."
+  [& xs] (clojure.core/not (apply = xs)))
 
-(def !=
-  "Predicate similar to Clojure `not=`"
-  clojure.core/not=)
+(def != not=)
 
 (def +
   "Function similar to Clojure `+`"

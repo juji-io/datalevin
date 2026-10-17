@@ -103,6 +103,10 @@
           :time-duration [:time-duration 12]
           :time-period [:time-period 12]
           :uuid [:uuid 16]
+          :byte-array-0 [:bytes 0]
+          :byte-array-sm [:bytes (length! buffer 1)]
+          :byte-array-md [:bytes (length! buffer 2)]
+          :byte-array-lg [:bytes (length! buffer 4)]
           :str-0 [:string 0]
           :str-sm* [:string (+ 128 (length! buffer 1))]
           :str-sm_ [:string (length! buffer 1)]
@@ -333,7 +337,7 @@
   (case header
     (-64 -63 -8) :long
     -15 :bigint -14 :bigdec -11 :float -10 :double -9 :instant
-    -7 :uuid -6 :string -5 :keyword -4 :symbol -3 :boolean
+    -7 :uuid -6 :string -5 :keyword -4 :symbol -3 :boolean -2 :bytes
     (fail! :query-source/unsupported :native-value)))
 
 (defn- inline-tuple! [^ByteBuffer buffer elements]

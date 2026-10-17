@@ -21,7 +21,8 @@
    [datalevin.util :as u]
    [datalevin.validate :as vld])
   (:import
-   [java.util HashMap HashSet List]
+   [java.util Set List]
+   [datalevin.utl QueryKey QueryKey$KeyMap QueryKey$KeySet]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (defn substitute-constant [context pattern-el]
@@ -51,7 +52,7 @@
           n            (.size tuples)]
       (when (> n 1)
         (let [idx ((:attrs rel) var)
-              res (HashSet.)]
+              res (QueryKey$KeySet.)]
           (dotimes [i n]
             (.add res (aget ^objects (.get tuples i) idx)))
           res)))))
@@ -246,7 +247,7 @@
   ;; These buckets replace a hash join, so use its Java key equality. A
   ;; Clojure map conflates decimal scales and other distinct numeric keys.
   ;; Build once, then publish read-only to the domain-filtered scan workers.
-  (let [buckets (HashMap.)]
+  (let [buckets (QueryKey$KeyMap.)]
     (doseq [[original resolved] pairs]
       (.put buckets resolved (conj (or (.get buckets resolved) []) original)))
     buckets))
@@ -446,13 +447,13 @@
                                entity-values
                                (or unindexed?
                                    (multi-lookup-cheaper?
-                                     (long (.size ^HashSet entity-values))
+                                     (long (.size ^Set entity-values))
                                      @scan-count)))
         use-value-multi?  (and (not use-bounded-both?)
                                (not unindexed?)
                                value-values
                                (multi-lookup-cheaper?
-                                 (long (.size ^HashSet value-values))
+                                 (long (.size ^Set value-values))
                                  @scan-count))]
     (cond
       (db/pending-tx-cache? db)
@@ -546,7 +547,7 @@
       (if (< i n)
         (let [t (nth tuple i)
               p (nth pattern i)]
-          (if (or (= p '_) (qu/free-var? p) (= t p))
+          (if (or (= p '_) (qu/free-var? p) (QueryKey/equiv t p))
             (recur (unchecked-inc i))
             false))
         true))))

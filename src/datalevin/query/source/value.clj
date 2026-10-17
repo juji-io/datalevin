@@ -188,17 +188,13 @@
   (matches-type*? t x false))
 
 (defn execution-type!
-  "Reject array-identity equality until the engine has a portable byte key.
-  Owned byte batches remain valid SPI values for consumers outside d/q."
-  [t]
-  (when (= :bytes t) (fail! :query-source/unsupported :equality))
-  (when (= :tuple (:kind t)) (run! execution-type! (:elements t))))
+  "Execution uses the shared native query keys, including byte content."
+  [_t])
 
 (defn execution-value!
   ([x] (execution-value! x nil))
   ([x check!]
    (when check! (check!))
-   (when (bytes? x) (fail! :query-source/unsupported :equality))
    (cond
      (plain-map? x) (doseq [[k v] x] (execution-value! k check!) (execution-value! v check!))
      (or (vector? x) (set? x) (list? x)) (run! #(execution-value! % check!) x))))

@@ -4,7 +4,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.value :as value])
-  (:import [java.util Objects]))
+  (:import [datalevin.utl QueryKey]))
 
 (defn- open! [state]
   (when (:closed? @state)
@@ -18,12 +18,12 @@
             (when bound
               (case (first term)
                 :ignore bound
-                :const (when (= (second term) value) bound)
+                :const (when (QueryKey/equiv (second term) value) bound)
                 :var (let [variable (second term)]
                        (if (contains? bound variable)
                          (when (if (contains? bindings variable)
-                                 (Objects/equals (get bound variable) value)
-                                 (= (get bound variable) value)) bound)
+                                 (QueryKey/equals (get bound variable) value)
+                                 (QueryKey/equiv (get bound variable) value)) bound)
                          (assoc bound variable value))))))
           bindings (map vector terms row)))
 
@@ -40,15 +40,15 @@
                                      :when (and match
                                                 (every? (fn [[k v]]
                                                           (or (not (contains? binding k))
-                                                              (Objects/equals (get binding k) v))) match))]
+                                                              (QueryKey/equals (get binding k) v))) match))]
                                  (merge binding match)))) [bindings] patterns)]
     (filterv (fn [binding]
                (every? (fn [{:keys [operator args]}]
                          (let [[a b] (map #(if (= :const (first %)) (second %)
                                               (get binding (second %))) args)]
                            (case operator
-                             := (= a b)
-                             :not= (not= a b)
+                             := (QueryKey/equiv a b)
+                             :not= (not (QueryKey/equiv a b))
                              :< (neg? (long (datom/compare-with-type a b)))
                              :<= (not (pos? (long (datom/compare-with-type a b))))
                              :> (pos? (long (datom/compare-with-type a b)))

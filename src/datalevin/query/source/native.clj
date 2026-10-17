@@ -47,7 +47,7 @@
 (defn- logical-scalar [t]
   (when (and (keyword? t) (not (custom/custom-type? t)))
     (let [t (if (= t :db.type/ref) :long (keyword (name t)))]
-      (when (and (value/scalar-types t) (not (#{:data :bytes} t))) t))))
+      (when (and (value/scalar-types t) (not= :data t)) t))))
 
 (defn- attribute-type [{:keys [kv schema]} attribute]
   (let [{:db/keys [valueType tupleTypes tupleType]} (schema attribute)]

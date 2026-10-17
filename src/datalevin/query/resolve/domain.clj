@@ -169,7 +169,7 @@
                             (assoc consumer
                                    :entity-values consumer-values
                                    :entity-count
-                                   (.size ^HashSet consumer-values)))]
+                                   (.size ^java.util.Set consumer-values)))]
       (when domain
         (when-some [domain-count (singleton-domain-count domain)]
           (let [domain-count   (long domain-count)

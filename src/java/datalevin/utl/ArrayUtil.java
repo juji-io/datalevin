@@ -14,7 +14,7 @@ public final class ArrayUtil {
     }
 
     private static int addHash(int hash, Object value) {
-        int elementHash = value == null ? 0 : value.hashCode();
+        int elementHash = QueryKey.hash(value);
         return (hash ^ elementHash) * HASH_PRIME;
     }
 

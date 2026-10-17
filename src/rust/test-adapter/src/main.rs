@@ -125,66 +125,6 @@ fn deserialize(bytes: &[u8]) -> Result<Value, Error> {
     }
 }
 
-fn deserialize_buffer(operation: &str, bytes: &[u8], little: bool) -> Result<Value, Value> {
-    if !little {
-        return deserialize(bytes).map_err(|error| codec_error(operation, error));
-    }
-    // The JVM ByteBuffer reader rejects LITTLE_ENDIAN before reading a tag.
-    // Storage then retries only the legacy NPY envelope, independently of the
-    // caller's byte order. Headerless values must not succeed on this path.
-    let failure = |message: &str| {
-        map(vec![
-            ("status", keyword("error")),
-            (
-                "error",
-                map(vec![
-                    ("class", text("clojure.lang.ExceptionInfo")),
-                    ("message", text(&format!("Thaw failed. {message}"))),
-                    ("context", keyword("nippy/little-endian-thaw")),
-                ]),
-            ),
-        ])
-    };
-    if bytes.len() <= 4 || !bytes.starts_with(b"NPY") {
-        return Err(failure(
-            "Possible decryption/decompression error, unfrozen/damaged data, etc.",
-        ));
-    }
-    match bytes[3] {
-        0 | 1 | 8 | 11 | 20 => {}
-        2 | 3 | 9 | 12 | 14 | 15 | 16 | 17 | 21 | 22 => {
-            return Err(failure("Password required for decryption."));
-        }
-        4..=7 | 10 | 13 | 18 | 19 | 23 => {
-            return Err(unsupported(
-                operation,
-                "Custom legacy Nippy compressor/encryptor errors are not mapped",
-            ));
-        }
-        _ => {
-            return Err(failure(
-                "Unrecognized (but apparently well-formed) header. Data frozen with newer Nippy version?",
-            ));
-        }
-    }
-    let limits = Limits {
-        max_bytes: MAX_FRAME_BYTES,
-        ..Limits::default()
-    };
-    let result = if bytes[3] == 0 {
-        // Nippy's uncompressed envelope reads one value and ignores trailers.
-        Decoder::new(&bytes[4..], limits).and_then(|mut decoder| decoder.read_value())
-    } else {
-        thaw_with_limits(bytes, limits)
-    };
-    result.map_err(|error| {
-        unsupported(
-            operation,
-            &format!("Legacy Nippy payload failure causes are not mapped: {error}"),
-        )
-    })
-}
-
 fn value_argument(argument: &Value) -> Option<&Value> {
     field(argument, "value").filter(|_| field(argument, "kind") == Some(&keyword("value")))
 }
@@ -240,20 +180,6 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
-        "bits/deserialize-bf" => {
-            let [bytes, order] = arguments.as_slice() else {
-                return protocol_error("Buffer decoding requires bytes and byte order");
-            };
-            let (Some(Value::Bytes(bytes)), Some(Value::Bool(little))) =
-                (value_argument(bytes), value_argument(order))
-            else {
-                return protocol_error("Invalid buffer decoding arguments");
-            };
-            match deserialize_buffer(operation, bytes, *little) {
-                Ok(value) => success(value),
-                Err(error) => error,
-            }
-        }
         "bits/indexable" | "bits/encode-avg" | "bits/decode-avg" | "bits/giant?" => {
             index_operation(operation, arguments)
         }
@@ -568,7 +494,13 @@ fn avg_value(value: AvgValue, little: bool) -> Result<Value, Value> {
         AvgValue::Value(value) => ("value", value),
         AvgValue::Custom(bytes) => ("custom", Value::Bytes(bytes)),
         AvgValue::Data(bytes) => {
-            let value = deserialize_buffer("bits/decode-avg", &bytes, little)?;
+            if little {
+                return Err(protocol_error(
+                    "ByteBuffer must use BIG_ENDIAN order for DataInput/DataOutput semantics (have LITTLE_ENDIAN).",
+                ));
+            }
+            let value =
+                deserialize(&bytes).map_err(|error| codec_error("bits/decode-avg", error))?;
             ("value", value)
         }
     };
@@ -1445,7 +1377,6 @@ fn main() -> io::Result<()> {
                     keyword("echo"),
                     keyword("bits/serialize"),
                     keyword("bits/deserialize"),
-                    keyword("bits/deserialize-bf"),
                     keyword("bits/encode-base64"),
                     keyword("bits/decode-base64"),
                     keyword("bits/encode-bigint"),
@@ -1563,52 +1494,8 @@ mod tests {
     }
 
     #[test]
-    fn little_endian_buffer_reads_only_legacy_envelopes() {
-        let value = Value::Vector(vec![Value::Bool(false), Value::int(42)]);
-        let bare = fast_freeze(&value).unwrap();
-        assert_eq!(
-            deserialize_buffer("bits/deserialize-bf", &bare, false).unwrap(),
-            value
-        );
-        let error = deserialize_buffer("bits/deserialize-bf", &bare, true).unwrap_err();
-        assert_eq!(field(&error, "status"), Some(&keyword("error")));
-        assert_eq!(
-            field(field(&error, "error").unwrap(), "context"),
-            Some(&keyword("nippy/little-endian-thaw"))
-        );
-        for compression in [
-            Compression::None,
-            Compression::Lz4,
-            Compression::Snappy,
-            Compression::Zstd,
-            Compression::Lzma2,
-        ] {
-            assert_eq!(
-                deserialize_buffer(
-                    "bits/deserialize-bf",
-                    &freeze(&value, compression).unwrap(),
-                    true
-                )
-                .unwrap(),
-                value
-            );
-        }
-        let mut envelope = freeze(&value, Compression::None).unwrap();
-        envelope.extend(&bare);
-        assert_eq!(
-            deserialize_buffer("bits/deserialize-bf", &envelope, true).unwrap(),
-            value
-        );
-        // Preserve the codec's gap for a recognized envelope with an invalid
-        // body; a caught exception must not hide this missing error mapping.
-        let error = deserialize_buffer("bits/deserialize-bf", b"NPY\0\xff", true).unwrap_err();
-        assert_eq!(field(&error, "status"), Some(&keyword("unsupported")));
-    }
-
-    #[test]
     fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
         for operation in [
-            "bits/deserialize-bf",
             "bits/bitmap-and",
             "bits/bitmap-or",
             "bits/bitmaps-and",

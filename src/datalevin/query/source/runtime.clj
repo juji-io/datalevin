@@ -3,7 +3,7 @@
   (:require [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.value :as value])
-  (:import [java.util UUID]
+  (:import [datalevin.utl QueryKey QueryKey$Budget QueryKey$Workspace] [java.util UUID]
            [java.util.concurrent.atomic AtomicReference]))
 
 (def ^:dynamic *runtime* nil)
@@ -119,7 +119,14 @@
         primary (atom nil)]
     (binding [*runtime* runtime]
       (try
-        (let [result (f runtime)]
+        (let [previous (QueryKey/setBudget
+                         (reify QueryKey$Budget
+                           (check [_] (source/check-active! control))
+                           (reserve [_ bytes]
+                             (let [token (source/reserve! control {:retained-bytes bytes})]
+                               (reify QueryKey$Workspace
+                                 (close [_] (source/release! token)))))))
+              result (try (f runtime) (finally (QueryKey/setBudget previous)))]
           (source/check-active! control)
           result)
         (catch Throwable e

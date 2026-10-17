@@ -14,17 +14,22 @@
    [datalevin.util :as u :refer [raise]]
    [datalevin.timeout :as timeout])
   (:import
-   [datalevin.utl ArrayUtil]
-   [java.util List Arrays HashSet]
+   [datalevin.utl ArrayUtil QueryKey QueryKey$KeySet]
+   [java.util List]
    [java.io Writer]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
+(definterface ^:private IArrayKey
+  (^"[Ljava.lang.Object;" keyArray []))
+
 (deftype ArrayWrapper [^objects a ^int h]
+  IArrayKey
+  (keyArray [_] a)
   Object
   (hashCode [_] h)
   (equals [_ that]
-    (and (instance? ArrayWrapper that)
-         (Arrays/equals a ^objects (.-a ^ArrayWrapper that)))))
+    (and (instance? IArrayKey that)
+         (QueryKey/arrayEquals a (.keyArray ^IArrayKey that)))))
 
 (defn wrap-array [^objects a]
   (ArrayWrapper. a (ArrayUtil/hashObjectArray a)))
@@ -41,6 +46,8 @@
 
 (deftype ArrayLookup [^:unsynchronized-mutable ^objects a
                       ^:unsynchronized-mutable ^int h]
+  IArrayKey
+  (keyArray [_] a)
   IArrayLookup
   (reset-lookup [this a']
     (set! a a')
@@ -54,8 +61,8 @@
   Object
   (hashCode [_] h)
   (equals [_ that]
-    (and (instance? ArrayWrapper that)
-         (Arrays/equals a ^objects (.-a ^ArrayWrapper that)))))
+    (and (instance? IArrayKey that)
+         (QueryKey/arrayEquals a (.keyArray ^IArrayKey that)))))
 
 (defn array-lookup
   []
@@ -240,7 +247,7 @@
       rel
       (assoc rel :tuples
              (let [size (.size tuples)
-                   tset (HashSet. size)
+                   tset (QueryKey$KeySet. size)
                    new  (FastList.)]
                (dotimes [i size]
                  (let [t (.get tuples i)]
@@ -280,7 +287,7 @@
 
             (= 1 width)
             (let [idx  (aget idxs 0)
-                  seen (HashSet. (int size))]
+                  seen (QueryKey$KeySet. (int size))]
               (dotimes [i size]
                 (let [value (aget ^objects (.get tuples i) idx)]
                   (when (.add seen value)
@@ -288,7 +295,7 @@
               (relation! output-attrs output))
 
             :else
-            (let [seen    (HashSet. (int size))
+            (let [seen    (QueryKey$KeySet. (int size))
                   scratch (object-array width)
                   lookup  (array-lookup)]
               (dotimes [i size]
@@ -323,7 +330,7 @@
                la             (.size tuples-a)
                lb             (.size tuples-b)
                res            (FastList. (+ la lb))
-               seen           (HashSet. (int (+ la lb)))]
+               seen           (QueryKey$KeySet. (int (+ la lb)))]
            (dotimes [i la]
              (let [t (.get tuples-a i)]
                (when (.add seen (wrap-array t))
@@ -355,7 +362,7 @@
              la             (.size tuples-a)
              lb             (.size tuples-b)
              res            (FastList. (+ la lb))
-             seen           (HashSet. (int (+ la lb)))]
+             seen           (QueryKey$KeySet. (int (+ la lb)))]
          (dotimes [i la]
            (let [t (.get tuples-a i)]
              (when (.add seen (wrap-array t))
@@ -420,7 +427,7 @@
       r1
       (assoc r1 :tuples (let [l1         (.size t1)
                               l2         (.size t2)
-                              s2         (HashSet. l2)
+                              s2         (QueryKey$KeySet. l2)
                               lookup     (array-lookup)
                               new-tuples (FastList.)]
                           (dotimes [i l2]
@@ -436,7 +443,7 @@
 (defn difference-with-seen!
   "Returns tuples from r1 not already in seen-set. Mutates seen-set by adding
    new tuples. More efficient than difference for iterative algorithms."
-  [r1 ^HashSet seen-set]
+  [r1 ^java.util.Set seen-set]
   (let [^List t1 (:tuples r1)]
     (if (or (nil? t1) (.isEmpty t1))
       r1
@@ -459,7 +466,7 @@
 
 (defn add-to-seen!
   "Add all tuples from relation to seen-set. Returns the seen-set."
-  [rel ^HashSet seen-set]
+  [rel ^java.util.Set seen-set]
   (let [^List tuples (:tuples rel)]
     (when (and tuples (pos? (.size tuples)))
       (let [size (.size tuples)]

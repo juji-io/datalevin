@@ -26,7 +26,7 @@
    [clojure.lang IPersistentCollection PersistentVector]
    [java.util Comparator List PriorityQueue]
    [datalevin.parser FindColl FindRel]
-   [datalevin.utl UniqueVectorSet]))
+   [datalevin.utl UniqueVectorSet QueryKey]))
 
 (def ^:dynamic *deferred-result-explain* nil)
 
@@ -73,7 +73,11 @@
         materialization-bytes
         (when index-bytes
           (+ (long index-bytes) (* 32 (long size))))
-        direct? (and (<= size unique-vector-set-max-size)
+        ;; UniqueVectorSet uses Clojure hashes. Binary results require the
+        ;; shared content-key set, including membership after serialization.
+        binary? (some (fn [^objects tuple]
+                        (some #(QueryKey/containsBytes %) tuple)) tuples)
+        direct? (and (not binary?) (<= size unique-vector-set-max-size)
                      materialization-bytes
                      (>= headroom (* 2 (long materialization-bytes))))]
     (if direct?

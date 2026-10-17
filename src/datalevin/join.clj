@@ -15,7 +15,8 @@
    [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [ concatv raise]])
   (:import
-   [java.util BitSet Collection HashMap HashSet List Map$Entry]
+   [java.util BitSet Collection Map Set List Map$Entry]
+   [datalevin.utl QueryKey$KeyMap QueryKey$KeySet]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.roaringbitmap PeekableIntIterator RoaringBitmap]))
@@ -90,7 +91,7 @@
   (let [size         (if tuples (.size tuples) 0)
         capacity     (min Integer/MAX_VALUE
                           (inc (quot (* (long size) 4) 3)))
-        ^HashMap res (HashMap. (int capacity))]
+        ^Map res (QueryKey$KeyMap. (int capacity))]
     (when tuples
       (dotimes [i size]
         (let [x (.get tuples i)
@@ -169,7 +170,7 @@
           (let [acc                     (FastList.)
                 ^LongObjectHashMap lhash (when (== 1 (count common-attrs))
                                            (hash-long-tuples key-fn1 tuples1))
-                ^HashMap hash            (when-not lhash
+                ^Map hash            (when-not lhash
                                            (hash-tuples key-fn1 tuples1))]
             (dotimes [i (.size tuples2)]
               (let [^objects tuple2 (.get tuples2 i)
@@ -190,7 +191,7 @@
           (let [acc                     (FastList.)
                 ^LongObjectHashMap lhash (when (== 1 (count common-attrs))
                                            (hash-long-tuples key-fn2 tuples2))
-                ^HashMap hash            (when-not lhash
+                ^Map hash            (when-not lhash
                                            (hash-tuples key-fn2 tuples2))]
             (dotimes [i (.size tuples1)]
               (let [^objects tuple1 (.get tuples1 i)
@@ -225,7 +226,7 @@
       (if (< (.size tuples1) (.size tuples2))
         (let [^LongObjectHashMap lhash (when (== 1 (count common-attrs))
                                          (hash-long-tuples key-fn1 tuples1))
-              ^HashMap hash            (when-not lhash
+              ^Map hash            (when-not lhash
                                          (hash-tuples key-fn1 tuples1))]
           (dotimes [i (.size tuples2)]
             (let [^objects tuple2 (.get tuples2 i)
@@ -243,7 +244,7 @@
                                            tuple2 keep-idxs2)))))))))
         (let [^LongObjectHashMap lhash (when (== 1 (count common-attrs))
                                          (hash-long-tuples key-fn2 tuples2))
-              ^HashMap hash            (when-not lhash
+              ^Map hash            (when-not lhash
                                          (hash-tuples key-fn2 tuples2))]
           (dotimes [i (.size tuples1)]
             (let [^objects tuple1 (.get tuples1 i)
@@ -318,7 +319,7 @@
 (defn- sampled-key-reuse?
   [^List tuples key-fn]
   (let [n             (min (.size tuples) dense-composition-sample-size)
-        ^HashSet seen (HashSet. n)]
+        ^Set seen (QueryKey$KeySet. n)]
     (loop [i 0, repeated 0]
       (cond
         (>= repeated dense-composition-min-sample-repeats) true
@@ -346,9 +347,9 @@
    ordinal-values hash-key-fn join-counts unresolved-projection]
   (let [^List hash-tuples hash-tuples
         value-idx (long value-idx)
-        ^HashMap value-ordinals value-ordinals
+        ^Map value-ordinals value-ordinals
         ^FastList ordinal-values ordinal-values
-        ^HashMap join-counts join-counts
+        ^Map join-counts join-counts
         ^booleans unresolved-projection unresolved-projection]
     (dotimes [i (.size hash-tuples)]
       (let [^objects tuple (.get hash-tuples i)
@@ -375,9 +376,9 @@
    unresolved-projection]
   (let [^List scan-tuples scan-tuples
         anchor-idx (long anchor-idx)
-        ^HashMap join-counts join-counts
+        ^Map join-counts join-counts
         ^booleans unresolved-projection unresolved-projection
-        ^HashSet anchors (HashSet.)
+        ^Set anchors (QueryKey$KeySet.)
         candidate-pairs
         (long
           (loop [i 0, total 0]
@@ -403,9 +404,9 @@
   [hash-tuples hash-key-fn value-idx value-ordinals roaring? domain-size]
   (let [^List hash-tuples hash-tuples
         value-idx (long value-idx)
-        ^HashMap value-ordinals value-ordinals
+        ^Map value-ordinals value-ordinals
         domain-size (long domain-size)
-        ^HashMap adjacency (HashMap.)]
+        ^Map adjacency (QueryKey$KeyMap.)]
     ;; Each join key maps to the distinct projected values reachable on the
     ;; hash side.
     (dotimes [i (.size hash-tuples)]
@@ -425,10 +426,10 @@
    `[groups total-output]`, where `total-output` is a one-element long array."
   [scan-tuples adjacency scan-key-fn anchor-idx roaring? domain-size]
   (let [^List scan-tuples scan-tuples
-        ^HashMap adjacency adjacency
+        ^Map adjacency adjacency
         anchor-idx (long anchor-idx)
         domain-size (long domain-size)
-        ^HashMap groups (HashMap.)
+        ^Map groups (QueryKey$KeyMap.)
         ^longs total-output (long-array 1)]
     ;; Composition becomes an OR of complete value sets instead of one
     ;; hash-set insertion for every proof pair.
@@ -461,7 +462,7 @@
 (defn- emit-dense-composition
   "Emit the composed relation tuples."
   [groups total-output vars anchor-var value-var ordinal-values roaring?]
-  (let [^HashMap groups groups
+  (let [^Map groups groups
         ^longs total-output total-output
         ^List vars vars
         ^FastList ordinal-values ordinal-values
@@ -528,9 +529,9 @@
             (tuple-key-fns scan-attrs common-attrs)
             input-size     (long (+ (long (.size hash-tuples))
                                     (.size scan-tuples)))
-            ^HashMap value-ordinals (HashMap.)
+            ^Map value-ordinals (QueryKey$KeyMap.)
             ^FastList ordinal-values (FastList.)
-            ^HashMap join-counts (HashMap.)]
+            ^Map join-counts (QueryKey$KeyMap.)]
         ;; Avoid an exact costing pass when a bounded sample finds no evidence
         ;; that either side reuses join keys enough for dense composition. An
         ;; actual lookup-ref sample also keeps its zero-cost early fallback;
@@ -550,7 +551,7 @@
             hash-tuples value-idx lookup-value? value-ordinals
             ordinal-values hash-key-fn join-counts unresolved-projection)
           ;; Count the other output domain and exact number of proof pairs.
-          (let [[candidate-pairs ^HashSet anchors]
+          (let [[candidate-pairs ^Set anchors]
                 (count-dense-candidate-pairs
                   scan-tuples anchor-idx lookup-anchor? join-counts
                   scan-key-fn unresolved-projection)
@@ -628,7 +629,7 @@
                   ^LongObjectHashMap lhash
                   (when (== 1 (count common-attrs))
                     (hash-long-tuples hash-key-fn hash-input-tuples))
-                  ^HashMap hash   (when-not lhash
+                  ^Map hash   (when-not lhash
                                     (hash-tuples hash-key-fn hash-input-tuples))
                   value-vars      (filterv
                                     #(and (contains? hash-attrs %)
@@ -660,8 +661,8 @@
               (if composition?
                 (let [value-key     (projection-key-fn hash-attrs value-vars)
                       anchor-key    (projection-key-fn scan-attrs anchor-vars)
-                      value-domain  (HashSet.)
-                      groups        (HashMap.)]
+                      value-domain  (QueryKey$KeySet.)
+                      groups        (QueryKey$KeyMap.)]
                   (dotimes [i (.size hash-input-tuples)]
                     (.add value-domain
                           (value-key (.get hash-input-tuples i))))
@@ -669,15 +670,15 @@
                     (dotimes [i (.size scan-tuples)]
                       (let [^objects scan-tuple (.get scan-tuples i)
                             anchor               (anchor-key scan-tuple)
-                            ^HashSet known       (.get groups anchor)]
+                            ^Set known       (.get groups anchor)]
                         (when-not (and known (= (.size known) domain-size))
                           (let [join-key (scan-key-fn scan-tuple)]
                             (when-some [bucket (if lhash
                                                  (long-bucket lhash join-key)
                                                  (.get hash join-key))]
-                              (let [^HashSet known
+                              (let [^Set known
                                     (or known
-                                        (let [values (HashSet.)]
+                                        (let [values (QueryKey$KeySet.)]
                                           (.put groups anchor values)
                                           values))
                                     accept!
@@ -696,7 +697,7 @@
                                         (accept! (.get bucket j))
                                         (recur
                                           (unchecked-inc-int j))))))))))))))
-                (let [seen   (HashSet.)
+                (let [seen   (QueryKey$KeySet.)
                       lookup (r/array-lookup)]
                   (dotimes [i (.size scan-tuples)]
                     (let [^objects scan-tuple (.get scan-tuples i)
@@ -737,7 +738,7 @@
 
         attrs    (qu/intersect-keys attrs-a attrs-b)
         key-fn-b (tuple-key-fn attrs-b attrs)
-        hash     ^HashMap (hash-tuples key-fn-b tuples-b)
+        hash     ^Map (hash-tuples key-fn-b tuples-b)
         key-fn-a (second (tuple-key-fns attrs-a attrs))]
     (assoc a :tuples (let [res (FastList.)]
                        (dotimes [i (.size ^List tuples-a)]

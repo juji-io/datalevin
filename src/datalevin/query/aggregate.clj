@@ -18,7 +18,8 @@
   (:import
    [datalevin.parser Constant PlainSymbol SrcVar Variable]
    [datalevin.utl NumberOps]
-   [java.util HashMap HashSet List]
+   [java.util Map Set List]
+   [datalevin.utl QueryKey$KeyMap QueryKey$KeySet]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *keyed-group-reduction?*
@@ -51,7 +52,7 @@
   (NumberOps/add a b))
 
 (defn- sums-relation
-  [group-vars value-var ^HashMap sums]
+  [group-vars value-var ^Map sums]
   (let [vars   (conj group-vars value-var)
         attrs  (zipmap vars (range))
         tuples (FastList. (.size sums))]
@@ -64,7 +65,7 @@
     (r/relation! attrs tuples)))
 
 (defn- mapped-sums-relation
-  [group-vars value-var ^HashMap sums ^HashMap outer-groups]
+  [group-vars value-var ^Map sums ^Map outer-groups]
   (let [vars   (conj group-vars value-var)
         attrs  (zipmap vars (range))
         tuples (FastList. (.size sums))]
@@ -78,7 +79,7 @@
     (r/relation! attrs tuples)))
 
 (deftype DistinctSumSink [group-vars value-var
-                          ^HashMap sums ^HashMap identities]
+                          ^Map sums ^Map identities]
   IKeyedReductionSink
   (-accept-keyed! [_ group-key identity-key value]
     ;; Current Datalog aggregation first deduplicates the complete find/with
@@ -94,7 +95,7 @@
                 value))
         true)))
   (-fork-keyed [_]
-    (DistinctSumSink. group-vars value-var (HashMap.) (HashMap.)))
+    (DistinctSumSink. group-vars value-var (QueryKey$KeyMap.) (QueryKey$KeyMap.)))
   (-merge-keyed! [this other]
     (doseq [[key value] (.-identities ^DistinctSumSink other)]
       (-accept-keyed! this (nth key 0) (nth key 1) value))
@@ -110,7 +111,7 @@
   set-before-sum semantics. `identity-key` supplied to the sink must contain
   the aggregate input and every :with value."
   [group-vars value-var]
-  (DistinctSumSink. (vec group-vars) value-var (HashMap.) (HashMap.)))
+  (DistinctSumSink. (vec group-vars) value-var (QueryKey$KeyMap.) (QueryKey$KeyMap.)))
 
 (defn- tuple-values
   [^objects tuple ^ints idxs]
@@ -155,8 +156,8 @@
   (let [outer-attrs       (:attrs outer-rel)
         ^ints outer-key-i (int-array (map outer-attrs outer-key-vars))
         ^ints group-i     (int-array (map outer-attrs group-vars))
-        outer-groups      (HashMap.)
-        group-outers      (HashMap.)
+        outer-groups      (QueryKey$KeyMap.)
+        group-outers      (QueryKey$KeyMap.)
         injective?        (volatile! true)
         ^List outer-ts    (:tuples outer-rel)]
     (dotimes [i (.size outer-ts)]
@@ -164,11 +165,11 @@
             outer-key     (tuple-values tuple outer-key-i)
             group-key     (tuple-values tuple group-i)
             groups        (or (.get outer-groups outer-key)
-                              (let [groups (HashSet.)]
+                              (let [groups (QueryKey$KeySet.)]
                                 (.put outer-groups outer-key groups)
                                 groups))]
-        (when (.add ^HashSet groups group-key)
-          (when (< 1 (.size ^HashSet groups))
+        (when (.add ^Set groups group-key)
+          (when (< 1 (.size ^Set groups))
             (vreset! injective? false))
           (if (.containsKey group-outers group-key)
             (when (not= outer-key (.get group-outers group-key))
@@ -217,15 +218,15 @@
   (if value-constant? constant-value (aget tuple (int value-i))))
 
 (defn- sum-injective-producers
-  [producer-plans ^HashMap outer-groups group-vars value-var
+  [producer-plans ^Map outer-groups group-vars value-var
    input-count producer-disjoint?]
   (let [cross-producer? (< 1 (count producer-plans))
         need-seen?      (and cross-producer? (not producer-disjoint?))
-        ^HashSet seen   (when need-seen?
-                          (HashSet. (int (min (long Integer/MAX_VALUE)
+        ^Set seen   (when need-seen?
+                          (QueryKey$KeySet. (int (min (long Integer/MAX_VALUE)
                                               (long input-count)))))
         seen-lookup     (when need-seen? (r/array-lookup))
-        sums            (HashMap.)
+        sums            (QueryKey$KeyMap.)
         ^longs accepted (long-array 1)]
     (doseq [{:keys [rel distinct? outer-key-i physical-plan
                     physical-identity-direct? value-i value-constant?
@@ -234,9 +235,9 @@
       (let [^List tuples (:tuples rel)
             ^ints outer-key-i outer-key-i
             producer-seen? (and (not need-seen?) (not distinct?))
-            ^HashSet producer-seen
+            ^Set producer-seen
             (when producer-seen?
-              (HashSet. (int (min (long Integer/MAX_VALUE)
+              (QueryKey$KeySet. (int (min (long Integer/MAX_VALUE)
                                   (long (.size tuples))))))
             producer-lookup (when producer-seen? (r/array-lookup))
             identity-seen   (or seen producer-seen)
@@ -285,7 +286,7 @@
                        :else                 :cross-producer-seen-set)}))
 
 (defn- sum-noninjective-producers
-  [producer-plans ^HashMap outer-groups group-vars value-var]
+  [producer-plans ^Map outer-groups group-vars value-var]
   (let [sink (distinct-sum-sink group-vars value-var)]
     (doseq [{:keys [rel outer-key-i identity-plan value-i value-constant?
                     constant-value]} producer-plans]
@@ -505,7 +506,7 @@
         (list resultset))
 
       (= 1 n)
-      (let [^HashMap groups (HashMap.)
+      (let [^Map groups (QueryKey$KeyMap.)
             idx             (aget group-idxs 0)]
         (doseq [tuple resultset]
           (let [key (nth tuple idx)]
@@ -515,7 +516,7 @@
         (.values groups))
 
       :else
-      (let [^HashMap groups (HashMap.)
+      (let [^Map groups (QueryKey$KeyMap.)
             ^objects scratch (object-array n)
             lookup           (r/array-lookup)]
         (doseq [tuple resultset]

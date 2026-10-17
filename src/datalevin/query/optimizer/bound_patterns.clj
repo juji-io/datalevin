@@ -369,7 +369,7 @@
 
 (defn- capped-count-sum
   ^long [values count-value ^long cap]
-  (let [value-count (.size ^HashSet values)
+  (let [value-count (.size ^java.util.Set values)
         sample-size (long (min value-count
                                collection-input-plugin-threshold))
         sampled     (take sample-size values)
@@ -404,7 +404,7 @@
     (cond
       e-rel
       (let [entities (qu/relation-distinct-values e-rel e)
-            entity-count (.size ^HashSet entities)
+            entity-count (.size ^java.util.Set entities)
             value-var? (qu/binding-var? v)
             existence? (or (= v '_) (qu/placeholder? v))
             cardinality-many?

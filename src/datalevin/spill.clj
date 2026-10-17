@@ -22,14 +22,14 @@
    [taoensso.nippy.io :as nio]
    [taoensso.nippy.schema :as nschema])
   (:import
-   [java.util Iterator List UUID NoSuchElementException Map Set Collection AbstractSet HashMap Objects]
+   [datalevin.utl QueryKey QueryKey$KeyMap]
+   [java.util Iterator List UUID NoSuchElementException Map Set Collection AbstractSet HashMap]
    [java.io DataInput DataOutput]
    [java.nio ByteBuffer]
    [java.lang.ref Cleaner Cleaner$Cleanable]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.utl UniqueVectorSet]
    [clojure.lang ISeq IPersistentVector MapEntry Util Sequential
@@ -415,11 +415,11 @@
     vs))
 
 (defn- map-bucket [db bindings k]
-  (or (spill-value db bindings (Objects/hashCode k) :int) []))
+  (or (spill-value db bindings (QueryKey/hash k) :int) []))
 
 (defn- bucket-index [bucket k]
   (first (keep-indexed (fn [idx [stored-key]]
-                         (when (Objects/equals k stored-key) idx))
+                         (when (QueryKey/equals k stored-key) idx))
                        bucket)))
 
 (defn- disk-map-entry [db bindings k]
@@ -434,7 +434,7 @@
         idx    (bucket-index bucket k)
         entry  (when (some? idx) (nth bucket idx))]
     (spill-tx db bindings
-              [(l/kv-tx :put c/tmp-dbi (Objects/hashCode k)
+              [(l/kv-tx :put c/tmp-dbi (QueryKey/hash k)
                         (if entry
                           (assoc bucket idx [(first entry) v])
                           (conj bucket [k v]))
@@ -450,8 +450,8 @@
               rest  (into (subvec bucket 0 idx) (subvec bucket (inc ^long idx)))]
           (spill-tx db bindings
                     [(if (seq rest)
-                       (l/kv-tx :put c/tmp-dbi (Objects/hashCode k) rest :int)
-                       (l/kv-tx :del c/tmp-dbi (Objects/hashCode k) :int))])
+                       (l/kv-tx :put c/tmp-dbi (QueryKey/hash k) rest :int)
+                       (l/kv-tx :del c/tmp-dbi (QueryKey/hash k) :int))])
           (vswap! disk-total u/long-dec)
           (second entry))))))
 
@@ -464,7 +464,7 @@
 (deftype SpillableMap [^long spill-threshold
                        ^String spill-root
                        spill-dir
-                       ^UnifiedMap memory
+                       ^QueryKey$KeyMap memory
                        disk
                        cleanable
                        ^HashMap native-bindings
@@ -635,7 +635,7 @@
    (let [smap (SpillableMap. spill-threshold
                              spill-root
                              (volatile! nil)
-                             (UnifiedMap.)
+                             (QueryKey$KeyMap.)
                              (volatile! nil)
                              (volatile! nil)
                              (nv/spill-bindings)
@@ -749,11 +749,11 @@
                              spill-root
                              (volatile! nil)
                              (if (some? initial-capacity)
-                               (UnifiedMap.
+                               (QueryKey$KeyMap.
                                  (int
                                    (min (long Integer/MAX_VALUE)
                                         (max 0 (long initial-capacity)))))
-                               (UnifiedMap.))
+                               (QueryKey$KeyMap.))
                              (volatile! nil)
                              (volatile! nil)
                              (nv/spill-bindings)

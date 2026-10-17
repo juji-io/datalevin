@@ -16,6 +16,7 @@
    [datalevin.relation :as r]
    [datalevin.util :as u :refer [raise]])
   (:import
+   [datalevin.utl QueryKey]
    [java.util List]
    [datalevin.relation Relation]
    [org.eclipse.collections.impl.list.mutable FastList]))
@@ -146,7 +147,7 @@
         n                 (alength left-idxs)]
     (loop [i 0]
       (or (== i n)
-          (and (= (aget left-tuple (aget left-idxs i))
+          (and (QueryKey/equiv (aget left-tuple (aget left-idxs i))
                   (nth value (aget source-idxs i)))
                (recur (unchecked-inc-int i)))))))
 
@@ -200,7 +201,7 @@
         n                (alength left-idxs)]
     (loop [i 0]
       (or (== i n)
-          (and (= (aget left-tuple (aget left-idxs i))
+          (and (QueryKey/equiv (aget left-tuple (aget left-idxs i))
                   (aget right-tuple (aget right-idxs i)))
                (recur (unchecked-inc-int i)))))))
 
