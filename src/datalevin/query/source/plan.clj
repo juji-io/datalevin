@@ -39,14 +39,15 @@
     :else (fail! :query-source/unsupported :clauses)))
 
 (defn- own-clauses! [runtime clauses]
-  (doseq [clause clauses
-          term (or (:terms clause) (:args clause))
-          :when (= :const (first term))]
-    (value/execution-value! (second term)))
-  ;; Capture caller-owned constants before any provider callback can observe
-  ;; the query. Reserve first, including mutable leaves in value metadata.
+  ;; Bound the traversal before inspecting or copying caller-owned constants.
+  ;; Capture mutable leaves, including metadata, before any provider callback.
   (rt/charge! runtime clauses)
-  (value/owned-copy clauses))
+  (let [check! #(source/check-active! (:control runtime))]
+    (doseq [clause clauses
+            term (or (:terms clause) (:args clause))
+            :when (= :const (first term))]
+      (value/execution-value! (second term) check!))
+    (value/owned-copy clauses check!)))
 
 (defn- window [x bindings scalar-inputs minimum default]
   (let [dynamic? (symbol? x)
@@ -110,7 +111,6 @@
       (when-not (and (set/subset? projected available)
                     (every? #(set/subset? (contract/variables %) available) predicates))
         (fail! :query-source/invalid :clauses)))
-    (run! value/execution-value! (vals bindings))
     (doseq [{:keys [source-symbol terms]} patterns]
       (when-not (contains? sources source-symbol) (fail! :query-source/invalid :inputs))
       (when (db/db? (sources source-symbol))

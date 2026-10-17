@@ -60,9 +60,10 @@
                 (fail! :query-source/invalid :inputs))) {} columns)))
 
 (defn- own-row! [runtime row]
-  (run! value/execution-value! (vals row))
   (rt/charge! runtime row)
-  (value/owned-copy row))
+  (let [check! #(source/check-active! (:control runtime))]
+    (run! #(value/execution-value! % check!) (vals row))
+    (value/owned-copy row check!)))
 
 (defn prepare!
   "Capture inputs before provider acquisition. Relational inputs become local

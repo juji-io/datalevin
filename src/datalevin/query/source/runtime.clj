@@ -73,10 +73,26 @@
     close))
 
 (defn charge!
-  "Reserve before retaining a logical value and its ledger/container overhead."
+  "Check size/cancellation incrementally, then atomically reserve the value
+  and its ledger/container overhead before retaining it."
   [runtime x]
-  (source/reserve! (:control runtime)
-                   {:retained-bytes (value/add-charge 256 (value/value-charge x))}))
+  (let [control (:control runtime)
+        maximum (:retained-bytes (control/limits control))
+        bytes (volatile! 256)
+        observe! (fn [increment]
+                   (source/check-active! control)
+                   (let [total (value/add-charge (long @bytes) increment)
+                         attempted (value/add-charge
+                                     (long (:retained-bytes (control/usage control))) total)]
+                     (vreset! bytes total)
+                     (when-not (value/at-most? attempted (long maximum))
+                       (value/fail! :query-source/limit :reserve
+                                    {:category :retained-bytes :maximum maximum
+                                     :attempted attempted}))))]
+    (value/value-charge x observe!)
+    ;; Preflight does not mutate the shared ledger. A provider or nested query
+    ;; can reserve concurrently; the final atomic reservation checks it again.
+    (source/reserve! control {:retained-bytes @bytes})))
 
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))

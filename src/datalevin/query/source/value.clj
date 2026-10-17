@@ -31,23 +31,28 @@
 (defn owned-copy
   "Detach mutable leaves in supported values, including metadata. Custom values
   follow their immutable opt-in contract and are retained as supplied. The
-  caller must reserve the value's charge before copying retained query state."
-  [x]
-  (if (satisfies? IQuerySourceValue x)
-    x
-    (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
-          copy (cond
-                 (bytes? x) (aclone ^bytes x)
-                 (= Date (class x)) (Date. (.getTime ^Date x))
-                 (vector? x) (mapv owned-copy x)
-                 (plain-map? x) (into (if (sorted? x) (empty x) {})
-                                      (map (fn [[k v]] [(owned-copy k) (owned-copy v)])) x)
-                 (set? x) (into (if (sorted? x) (empty x) #{}) (map owned-copy) x)
-                 (list? x) (apply list (map owned-copy x))
-                 :else x)]
-      (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
-        (with-meta copy (owned-copy metadata))
-        copy))))
+  caller must reserve the value's charge before copying retained query state.
+  An internal check callback can stop copying on cancellation."
+  ([x] (owned-copy x nil))
+  ([x check!]
+   (when check! (check!))
+   (if (satisfies? IQuerySourceValue x)
+     x
+     (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
+           copy (cond
+                  (bytes? x) (aclone ^bytes x)
+                  (= Date (class x)) (Date. (.getTime ^Date x))
+                  (vector? x) (mapv #(owned-copy % check!) x)
+                  (plain-map? x) (into (if (sorted? x) (empty x) {})
+                                       (map (fn [[k v]] [(owned-copy k check!)
+                                                        (owned-copy v check!)])) x)
+                  (set? x) (into (if (sorted? x) (empty x) #{}) (map #(owned-copy % check!)) x)
+                  (list? x) (apply list (map #(owned-copy % check!) x))
+                  :else x)]
+       (when check! (check!))
+       (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
+         (with-meta copy (owned-copy metadata check!))
+         copy)))))
 
 (defn add-charge
   "Add fixed overhead with primitive dispatch for long charges and exact overflow."
@@ -175,11 +180,14 @@
   (when (= :bytes t) (fail! :query-source/unsupported :equality))
   (when (= :tuple (:kind t)) (run! execution-type! (:elements t))))
 
-(defn execution-value! [x]
-  (when (bytes? x) (fail! :query-source/unsupported :equality))
-  (cond
-    (plain-map? x) (doseq [[k v] x] (execution-value! k) (execution-value! v))
-    (or (vector? x) (set? x) (list? x)) (run! execution-value! x)))
+(defn execution-value!
+  ([x] (execution-value! x nil))
+  ([x check!]
+   (when check! (check!))
+   (when (bytes? x) (fail! :query-source/unsupported :equality))
+   (cond
+     (plain-map? x) (doseq [[k v] x] (execution-value! k check!) (execution-value! v check!))
+     (or (vector? x) (set? x) (list? x)) (run! #(execution-value! % check!) x))))
 
 (defn rows! [columns rows]
   (when-not (and (vector? rows)

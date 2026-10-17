@@ -217,6 +217,13 @@ fn dispatch(request: &Value) -> Value {
         | "bits/decode-bitmap" => bitmap_operation(operation, arguments),
         "bits/bitmap-and" | "bits/bitmap-or" | "bits/bitmaps-and" | "bits/bitmaps-or"
         | "bits/bitmap-empty?" => bitmap_set_operation(operation, arguments),
+        "bits/bitmap64"
+        | "bits/bitmap64-add"
+        | "bits/bitmap64-contains?"
+        | "bits/bitmap64-cardinality"
+        | "bits/bitmap64-min"
+        | "bits/bitmap64-max"
+        | "bits/bitmap64->longs" => bitmap64_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -648,6 +655,54 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
             },
         ),
     ]))
+}
+
+fn bitmap64_operation(operation: &str, arguments: &[Value]) -> Value {
+    let expected = if matches!(operation, "bits/bitmap64-add" | "bits/bitmap64-contains?") {
+        2
+    } else {
+        1
+    };
+    if arguments.len() != expected {
+        return protocol_error("64-bit bitmap operation has the wrong argument count");
+    }
+    let Some(Some(Value::LongArray(values))) = arguments.first().map(value_argument) else {
+        return protocol_error("64-bit bitmap operation requires a long array");
+    };
+    let mut bitmap = bits::bitmap64(values);
+    match operation {
+        "bits/bitmap64-add" | "bits/bitmap64-contains?" => {
+            let Some(Value::Long(member)) = value_argument(&arguments[1]) else {
+                return protocol_error("64-bit bitmap member must be a long");
+            };
+            if operation == "bits/bitmap64-contains?" {
+                return success(Value::Bool(bitmap.contains(*member as u64)));
+            }
+            bitmap.insert(*member as u64);
+        }
+        "bits/bitmap64-cardinality" => return success(Value::Long(bitmap.len() as i64)),
+        "bits/bitmap64-min" | "bits/bitmap64-max" => {
+            let member = if operation == "bits/bitmap64-min" {
+                bitmap.min()
+            } else {
+                bitmap.max()
+            };
+            return match member {
+                Some(member) => success(Value::Long(member as i64)),
+                None => java_error("java.util.NoSuchElementException", "Empty HighLowContainer"),
+            };
+        }
+        _ => {}
+    }
+    if bitmap.len() as usize > Limits::default().max_collection_len {
+        return unsupported(
+            operation,
+            "64-bit bitmap cardinality exceeds the adapter transport limit",
+        );
+    }
+    success(Value::LongArray(
+        bitmap.iter().map(|member| member as i64).collect(),
+    ))
 }
 
 fn bitmap_set_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1241,6 +1296,13 @@ fn main() -> io::Result<()> {
                     keyword("bits/bitmaps-and"),
                     keyword("bits/bitmaps-or"),
                     keyword("bits/bitmap-empty?"),
+                    keyword("bits/bitmap64"),
+                    keyword("bits/bitmap64-add"),
+                    keyword("bits/bitmap64-contains?"),
+                    keyword("bits/bitmap64-cardinality"),
+                    keyword("bits/bitmap64-min"),
+                    keyword("bits/bitmap64-max"),
+                    keyword("bits/bitmap64->longs"),
                     keyword("bits/encode-bitmap"),
                     keyword("bits/decode-bitmap"),
                     keyword("bits/bigint-length"),
@@ -1332,6 +1394,13 @@ mod tests {
             "bits/bitmaps-and",
             "bits/bitmaps-or",
             "bits/bitmap-empty?",
+            "bits/bitmap64",
+            "bits/bitmap64-add",
+            "bits/bitmap64-contains?",
+            "bits/bitmap64-cardinality",
+            "bits/bitmap64-min",
+            "bits/bitmap64-max",
+            "bits/bitmap64->longs",
         ] {
             assert_eq!(
                 field(&invoke(operation, Value::Null), "status"),

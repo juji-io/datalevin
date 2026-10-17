@@ -63,6 +63,7 @@
        :clause-ids (vec (sort (into (:covers alternative) (:prefilters alternative))))}
       (fn [runtime]
         (let [control (:control runtime)
+              check! #(source/check-active! control)
               cursor (rt/invoke runtime :open
                                 #(source/-open-cursor session
                                    (merge request {:plan (:plan alternative) :alternative-id (:id alternative)
@@ -80,7 +81,7 @@
                   (try
                     (visit-rows (:rows batch) (fn [row]
                               (source/check-active! control)
-                              (run! value/execution-value! row)
+                              (run! #(value/execution-value! % check!) row)
                               (when (:intermediate-counts? runtime)
                                 (swap! (:explain runtime) update :streamed-rows inc))
                               (let [scratch (source/reserve! control

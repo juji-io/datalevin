@@ -19,6 +19,7 @@
    [java.util Date UUID]
    [org.roaringbitmap RoaringBitmap]
    [org.roaringbitmap.buffer ImmutableRoaringBitmap]
+   [org.roaringbitmap.longlong Roaring64Bitmap]
    [java.util.concurrent Callable ExecutionException ExecutorService Executors
     ThreadFactory TimeUnit TimeoutException]))
 
@@ -118,6 +119,7 @@
                "java.lang.AssertionError" (AssertionError. ^Object message)
                "java.lang.ArrayIndexOutOfBoundsException" (ArrayIndexOutOfBoundsException. message)
                "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
+               "java.util.NoSuchElementException" (java.util.NoSuchElementException. message)
                "java.io.IOException" (java.io.IOException. message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
@@ -253,6 +255,18 @@
     (let [bitmaps (into-array RoaringBitmap bitmaps)]
       (doseq [^RoaringBitmap bitmap bitmaps] (.getLongCardinality bitmap))
       (invoke-peer! peer session operation [(vec bitmaps)]))))
+
+(defn- bitmap64-from-members ^Roaring64Bitmap [^longs members]
+  ;; Rust has decided the unsigned contents; this only fills the JVM wrapper.
+  (doto (Roaring64Bitmap.) (.add members)))
+
+(defn- bitmap64-operation! [peer session operation ^Roaring64Bitmap bitmap arguments]
+  (let [result (invoke-peer! peer session operation (into [(.toArray bitmap)] arguments))]
+    (if (= operation :bits/bitmap64-add)
+      (do (.clear bitmap)
+          (.add bitmap ^longs result)
+          bitmap)
+      result)))
 
 (defn- put-sparse! [peer session ^ByteBuffer buffer value]
   (when-not (instance? SparseIntArrayList value)
@@ -650,6 +664,14 @@
         (if (nil? bitmap) true
             (do (.getLongCardinality bitmap)
                 (invoke-peer! peer session operation [bitmap]))))
+
+      :bits/bitmap64
+      (bitmap64-from-members
+        (invoke-peer! peer session operation [(long-array (map long (first arguments)))]))
+
+      (:bits/bitmap64-add :bits/bitmap64-contains? :bits/bitmap64-cardinality
+       :bits/bitmap64-min :bits/bitmap64-max :bits/bitmap64->longs)
+      (bitmap64-operation! peer session operation (first arguments) (rest arguments))
 
       :bits/acquire-serialized-bf
       (acquire-serialized-buffer! peer session (first arguments))

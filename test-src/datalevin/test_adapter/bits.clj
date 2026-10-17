@@ -52,6 +52,28 @@
 (defn bitmap-empty? [bitmap]
   (adapter/call! :bits/bitmap-empty? [bitmap]))
 
+(defn bitmap64
+  ([] (adapter/call! :bits/bitmap64 []))
+  ([members] (adapter/call! :bits/bitmap64 [members])))
+
+(defn bitmap64-add [bitmap ^long member]
+  (adapter/call! :bits/bitmap64-add [bitmap member]))
+
+(defn bitmap64-contains? [bitmap ^long member]
+  (adapter/call! :bits/bitmap64-contains? [bitmap member]))
+
+(defn bitmap64-cardinality ^long [bitmap]
+  (adapter/call! :bits/bitmap64-cardinality [bitmap]))
+
+(defn bitmap64-min ^long [bitmap]
+  (adapter/call! :bits/bitmap64-min [bitmap]))
+
+(defn bitmap64-max ^long [bitmap]
+  (adapter/call! :bits/bitmap64-max [bitmap]))
+
+(defn bitmap64->longs ^longs [bitmap]
+  (adapter/call! :bits/bitmap64->longs [bitmap]))
+
 (defn serialize-bf [buffer value]
   (adapter/call! :bits/serialize-bf [buffer value]))
 

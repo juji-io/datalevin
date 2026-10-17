@@ -5,6 +5,7 @@
             [datalevin.query.source.control :as control]
             [datalevin.query.source.fake :as fake]
             [datalevin.query.source.harness :as harness]
+            [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]))
 
 (def tuple-info
@@ -18,6 +19,28 @@
 (defn error-data [f]
   (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn category [f] (:error (error-data f)))
+
+(deftest retained-value-preflight-preserves-charges-and-rejects-overflow
+  (let [ctl (control/create {:limits {:retained-bytes 32768}})
+        x (with-meta [{:date (java.util.Date. 1)} '(1 2)] {:bytes (byte-array 16)})]
+    (try
+      (let [token (rt/charge! {:control ctl} x)]
+        (is (= (+ 256 (value/value-charge x)) (:retained-bytes (control/usage ctl))))
+        (source/release! token)
+        (is (every? zero? (vals (control/usage ctl)))))
+      (finally (control/close! ctl))))
+  (let [ctl (control/create {:limits {:retained-bytes Long/MAX_VALUE}})
+        huge (reify value/IQuerySourceValue
+               (-logical-type [_] {:kind :custom :name :test/huge :version 1
+                                   :fingerprint "huge:v1" :parameters {}})
+               (-retained-bytes [_] Long/MAX_VALUE))]
+    (try
+      (let [error (error-data #(rt/charge! {:control ctl} huge))]
+        (is (= :query-source/limit (:error error)))
+        (is (= :retained-bytes (:category error)))
+        (is (> (:attempted error) Long/MAX_VALUE))
+        (is (every? zero? (vals (control/usage ctl)))))
+      (finally (control/close! ctl)))))
 
 (deftest immutable-time-values-use-the-data-contract
   (doseq [x [(java.time.Instant/ofEpochSecond 1 123456789)

@@ -597,6 +597,11 @@ pub fn bitmap(values: &[i32]) -> roaring::RoaringBitmap {
     bitmap
 }
 
+/// Treat JVM longs as unsigned 64-bit bitmap members, preserving their bit patterns.
+pub fn bitmap64(values: &[i64]) -> roaring::RoaringTreemap {
+    values.iter().map(|&value| value as u64).collect()
+}
+
 pub fn bitmap_and(
     left: &roaring::RoaringBitmap,
     right: &roaring::RoaringBitmap,
