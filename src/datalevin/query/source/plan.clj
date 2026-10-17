@@ -83,7 +83,8 @@
                 (#{:snapshot :statement :best-effort} (get options :consistency :snapshot))
                 (value/portable? (get options :authorization {:principal-id :application})))
     (fail! :query-source/invalid :context))
-  (let [clauses (own-clauses! runtime (mapv clause (range) (:qwhere parsed)))
+  (let [check! #(source/check-active! (:control runtime))
+        clauses (own-clauses! runtime (mapv clause (range) (:qwhere parsed)))
         {:keys [sources bindings] :as input-data} (input/prepare! runtime parsed inputs)
         scalar-inputs (into #{} (keep #(when (and (instance? BindScalar %)
                                                  (instance? Variable (:variable %)))
@@ -128,12 +129,12 @@
                 (when descriptor
                   (doseq [clause clauses]
                     (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id clause)]}
-                      (fn [_] (contract/clauses! descriptor [clause]))))
+                      (fn [_] (contract/clauses! descriptor [clause] check!))))
                   (doseq [pattern local]
                     (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
                       (fn [_]
                         (doseq [[term column] (map vector (:terms pattern)
-                                                  (contract/pattern-columns descriptor pattern))]
+                                                  (contract/pattern-columns descriptor pattern check!))]
                           (when (= :var (first term))
                             (let [sym (second term) t (:type column)]
                               (when (and (contains? @types sym) (not= t (@types sym)))
@@ -141,7 +142,7 @@
                               (swap! types assoc sym t)
                               (input/check-values! (:control runtime) input-data sym
                                 (fn [x]
-                                  (when-not (if (nil? x) (:nullable? column) (value/matches-type? t x))
+                                  (when-not (if (nil? x) (:nullable? column) (value/matches-type? t x check!))
                                     (fail! :query-source/invalid :types)))))))))))
                 (assoc entry :clauses clauses :patterns local))) entries)]
       {:entries entries :bindings bindings :input-data input-data
@@ -156,6 +157,7 @@
         alternatives (:alternatives response)
         attempts (volatile! 0)]
     (letfn [(search [remaining covered selected]
+              (source/check-active! (:control request))
               (when (> (long (vswap! attempts #(inc (long %)))) 4096)
                 (fail! :query-source/unsupported :planning))
               (if (empty? remaining) selected
@@ -167,11 +169,14 @@
                                                 (set/subset? remaining (:covers a))))
                                        (empty? (set/intersection covered (:covers a))))
                               (search (set/difference remaining (:covers a))
-                                      (set/union covered (:covers a)) (conj selected (:id a)))))
+                                      (set/union covered (:covers a)) (conj selected a))))
                           alternatives))))]
       (let [selected (search patterns #{} [])]
         (when (nil? selected) (fail! :query-source/unsupported :planning))
-        (contract/selection! request response selected)))))
+        ;; Alternatives were validated above; the search enforces complete,
+        ;; nonoverlapping coverage and replay constraints. Keep those validated
+        ;; alternatives directly instead of validating the whole response again.
+        selected))))
 
 (defn acquire-and-plan! [runtime {:keys [entries bindings options] :as prepared}]
   (let [common {:spi-version 1 :features #{} :query-id (:query-id runtime)

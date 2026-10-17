@@ -20,6 +20,28 @@
   (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn category [f] (:error (error-data f)))
 
+(deftest nested-type-validation-preserves-cancellation
+  (doseq [matches? [true false]
+          category [:query-source/cancelled :query/timeout]]
+    (let [ctl (control/create)
+          descriptor {:kind :custom :name :test/checked :version 1 :fingerprint "v1"}
+          visited (atom [])
+          head (reify value/IQuerySourceValue
+                 (-logical-type [_]
+                   (swap! visited conj :head)
+                   (control/cancel! ctl {:error category :phase :execution})
+                   (if matches? descriptor (assoc descriptor :fingerprint "v2")))
+                 (-retained-bytes [_] 64))
+          tail (reify value/IQuerySourceValue
+                 (-logical-type [_] (swap! visited conj :tail) descriptor)
+                 (-retained-bytes [_] 64))
+          type {:kind :tuple :elements [{:kind :tuple :elements [descriptor]} descriptor]}]
+      (try
+        (is (= category (:error (error-data #(value/matches-type? type [[head] tail]
+                                                                (fn [] (source/check-active! ctl)))))))
+        (is (= [:head] @visited))
+        (finally (control/close! ctl))))))
+
 (deftest retained-value-preflight-preserves-charges-and-rejects-overflow
   (let [ctl (control/create {:limits {:retained-bytes 32768}})
         x (with-meta [{:date (java.util.Date. 1)} '(1 2)] {:bytes (byte-array 16)})]

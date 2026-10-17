@@ -1,5 +1,6 @@
 (ns ^:no-doc datalevin.query.source.contract
-  "Pure structural checks shared by F0 fixtures and the embedded executor."
+  "Structural checks shared by F0 fixtures and the embedded executor.
+  Request validation observes the invocation control when one is supplied."
   (:require [clojure.set :as set]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.value :as v :refer [fail!]]))
@@ -86,83 +87,97 @@
        (fail! :query-source/unsupported :descriptor))
      {:spi-version version :features features})))
 
-(defn- term! [term]
+(defn- term! [term check!]
+  (when check! (check!))
   (ensure! (and (vector? term)
                 (case (first term)
                   :var (and (= 2 (count term)) (variable? (second term)))
                   :const (and (= 2 (count term))
-                              (try (v/value-charge (second term)) true
-                                   (catch clojure.lang.ExceptionInfo _ false)))
+                              (try (v/value-charge (second term) (when check! (fn [_] (check!)))) true
+                                   (catch clojure.lang.ExceptionInfo _
+                                     (when check! (check!))
+                                     false)))
                   :ignore (= 1 (count term))
                   false)) :clauses))
 
-(defn pattern-columns [descriptor clause]
-  (let [contract (:pattern-contract descriptor)
-        terms (:terms clause)]
-    (ensure! (vector? terms) :clauses)
-    (run! term! terms)
-    (case (:kind contract)
-      :tuple (do (ensure! (= (count terms) (count (:columns contract))) :clauses)
-                 (:columns contract))
-      :eav (do
-             (ensure! (= 3 (count terms)) :clauses)
-             (let [[tag attribute] (nth terms 1)
-                   types (get (:attributes contract) attribute)]
-               (when-not (and (= :const tag) types)
-                 (fail! :query-source/unsupported :clauses {:clause-id (:id clause)}))
-               [{:type (:entity-type types) :nullable? false}
-                {:type :keyword :nullable? false}
-                {:type (:value-type types) :nullable? false}])))))
+(defn pattern-columns
+  ([descriptor clause] (pattern-columns descriptor clause nil))
+  ([descriptor clause check!]
+   (let [contract (:pattern-contract descriptor)
+         terms (:terms clause)]
+     (ensure! (vector? terms) :clauses)
+     (run! #(term! % check!) terms)
+     (case (:kind contract)
+       :tuple (do (ensure! (= (count terms) (count (:columns contract))) :clauses)
+                  (:columns contract))
+       :eav (do
+              (ensure! (= 3 (count terms)) :clauses)
+              (let [[tag attribute] (nth terms 1)
+                    types (get (:attributes contract) attribute)]
+                (when-not (and (= :const tag) types)
+                  (fail! :query-source/unsupported :clauses {:clause-id (:id clause)}))
+                [{:type (:entity-type types) :nullable? false}
+                 {:type :keyword :nullable? false}
+                 {:type (:value-type types) :nullable? false}]))))))
 
-(defn clauses! [descriptor clauses]
-  (source-info! descriptor)
-  (ensure! (and (vector? clauses)
-                (every? #(identifier? (:id %)) clauses)
-                (= (count clauses) (count (set (map :id clauses))))) :clauses)
-  (doseq [clause clauses]
-    (case (:kind clause)
-      :pattern (do
-                 (fields! clause #{:id :kind :terms} #{} :clauses)
-                 (doseq [[term column] (map vector (:terms clause)
-                                           (pattern-columns descriptor clause))]
-                   (when (= :const (first term))
-                     (let [value (second term)]
-                       (ensure! (if (nil? value) (:nullable? column)
-                                    (v/matches-type? (:type column) value)) :clauses)))))
-      :predicate (do
-                   (fields! clause #{:id :kind :operator :semantics-version :args}
-                            #{} :clauses)
-                   (when-not (and (#{:= :not= :< :<= :> :>=} (:operator clause))
-                                  (= 1 (:semantics-version clause)))
-                     (fail! :query-source/unsupported :clauses {:clause-id (:id clause)}))
-                   (ensure! (and (vector? (:args clause)) (= 2 (count (:args clause)))) :clauses)
-                   (run! term! (:args clause))
-                   (ensure! (not-any? #(= [:ignore] %) (:args clause)) :clauses))
-      (fail! :query-source/unsupported :clauses {:clause-id (:id clause)})))
-  clauses)
+(defn clauses!
+  ([descriptor clauses] (clauses! descriptor clauses nil))
+  ([descriptor clauses check!]
+   (when check! (check!))
+   (source-info! descriptor)
+   (ensure! (and (vector? clauses)
+                 (every? #(identifier? (:id %)) clauses)
+                 (= (count clauses) (count (set (map :id clauses))))) :clauses)
+   (doseq [clause clauses]
+     (when check! (check!))
+     (case (:kind clause)
+       :pattern (do
+                  (fields! clause #{:id :kind :terms} #{} :clauses)
+                  (doseq [[term column] (map vector (:terms clause)
+                                            (pattern-columns descriptor clause check!))]
+                    (when (= :const (first term))
+                      (let [value (second term)]
+                        (ensure! (if (nil? value) (:nullable? column)
+                                     (v/matches-type? (:type column) value check!)) :clauses)))))
+       :predicate (do
+                    (fields! clause #{:id :kind :operator :semantics-version :args}
+                             #{} :clauses)
+                    (when-not (and (#{:= :not= :< :<= :> :>=} (:operator clause))
+                                   (= 1 (:semantics-version clause)))
+                      (fail! :query-source/unsupported :clauses {:clause-id (:id clause)}))
+                    (ensure! (and (vector? (:args clause)) (= 2 (count (:args clause)))) :clauses)
+                    (run! #(term! % check!) (:args clause))
+                    (ensure! (not-any? #(= [:ignore] %) (:args clause)) :clauses))
+       (fail! :query-source/unsupported :clauses {:clause-id (:id clause)})))
+   clauses))
 
 (defn variables [clause]
   (into #{} (keep #(when (= :var (first %)) (second %)))
         (or (:terms clause) (:args clause))))
 
+(defn- request-check [request]
+  (when-let [ctl (:control request)] #(control/check-active! ctl)))
+
 (defn planning-request! [request]
-  (clauses! (:source-descriptor request) (:clauses request))
-  (ensure! (and (symbol? (:source-symbol request))
-                (.startsWith (name (:source-symbol request)) "$")
-                (map? (:bindings request)) (every? variable? (keys (:bindings request)))
-                (set? (:required-vars request)) (every? variable? (:required-vars request))
-                (pos-int? (:max-alternatives request))
-                (= :exact (get-in request [:demand :quality]))
-                (= [] (get-in request [:demand :ordering]))
-                (nonnegative? (get-in request [:demand :offset]))
-                (or (nil? (get-in request [:demand :limit]))
-                    (nonnegative? (get-in request [:demand :limit]))))
-           :planning)
-  (doseq [value (vals (:bindings request))] (v/value-charge value))
-  (let [bound (into (set (keys (:bindings request)))
-                    (mapcat variables) (filter #(= :pattern (:kind %)) (:clauses request)))]
-    (ensure! (every? #(set/subset? (variables %) bound) (:clauses request)) :planning))
-  request)
+  (let [check! (request-check request)]
+    (clauses! (:source-descriptor request) (:clauses request) check!)
+    (ensure! (and (symbol? (:source-symbol request))
+                  (.startsWith (name (:source-symbol request)) "$")
+                  (map? (:bindings request)) (every? variable? (keys (:bindings request)))
+                  (set? (:required-vars request)) (every? variable? (:required-vars request))
+                  (pos-int? (:max-alternatives request))
+                  (= :exact (get-in request [:demand :quality]))
+                  (= [] (get-in request [:demand :ordering]))
+                  (nonnegative? (get-in request [:demand :offset]))
+                  (or (nil? (get-in request [:demand :limit]))
+                      (nonnegative? (get-in request [:demand :limit]))))
+             :planning)
+    (doseq [value (vals (:bindings request))]
+      (v/value-charge value (when check! (fn [_] (check!)))))
+    (let [bound (into (set (keys (:bindings request)))
+                      (mapcat variables) (filter #(= :pattern (:kind %)) (:clauses request)))]
+      (ensure! (every? #(set/subset? (variables %) bound) (:clauses request)) :planning))
+    request))
 
 (defn- variable-types [request]
   (reduce
@@ -179,7 +194,7 @@
                                      #(and % (get-in types [variable :nullable?] true)))))
                     types))
                 types (map vector (:terms clause)
-                           (pattern-columns (:source-descriptor request) clause)))
+                           (pattern-columns (:source-descriptor request) clause (request-check request))))
         types)) {} (:clauses request)))
 
 (defn alternatives! [request response]
@@ -196,6 +211,7 @@
     (ensure! (and (v/portable? (dissoc response :alternatives))
                   (v/portable? (meta alternatives))) :planning)
     (doseq [a alternatives]
+      (when-let [check! (request-check request)] (check!))
       (fields! a #{:id :plan :covers :prefilters :requires :columns :properties :estimate :explain}
                #{} :planning)
       (ensure! (v/portable? (dissoc a :plan)) :planning)

@@ -73,25 +73,27 @@
             {:kind :native-custom-data}))
         (fail! :query-source/unsupported :native-type))))
 
-(defn- matches-native-type? [type x]
+(defn- matches-native-type? [type x check!]
   ;; Native heterogeneous tuples retain absent component values as nil. The
   ;; external descriptor still enforces its own (non-nullable) element types.
   (case (:kind type)
     :tuple (and (vector? x) (= (count x) (count (:elements type)))
-                (every? true? (map #(or (nil? %2) (value/matches-type? %1 %2))
+                (every? true? (map #(or (nil? %2) (value/matches-type? %1 %2 check!))
                                   (:elements type) x)))
     :native-homogeneous-tuple
     (and (vector? x) (<= 1 (count x) 255)
-         (every? #(value/matches-type? (:element type) %) x))
-    :native-custom-data (value/matches-type? :data x)
-    (value/matches-type? type x)))
+         (every? #(value/matches-type? (:element type) % check!) x))
+    :native-custom-data (value/matches-type? :data x check!)
+    (value/matches-type? type x check!)))
 
 (defn validate-types! [runtime snapshots entries external-types input-data]
   (doseq [{:keys [native patterns symbol]} entries :when native
           pattern patterns]
     (rt/with-context runtime {:source-symbol symbol :clause-ids [(:id pattern)]}
       (fn [{:keys [control]}]
-        (let [snapshot (get snapshots (.-store ^DB native))
+        (source/check-active! control)
+        (let [active! #(source/check-active! control)
+              snapshot (get snapshots (.-store ^DB native))
               attribute (second (second (:terms pattern)))
               ;; An explicit wildcard requires only the index entry's
               ;; existence, not a supported logical value or decoder.
@@ -105,7 +107,7 @@
                 (when-not (= external logical-type)
                   (fail! :query-source/unsupported :types))))
             (let [check! (fn [x]
-                           (when-not (matches-native-type? type x)
+                           (when-not (matches-native-type? type x active!)
                              (fail! :query-source/unsupported :native-type)))]
               (case (first term)
                 :const (check! (second term))

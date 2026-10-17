@@ -160,11 +160,12 @@
   ([x] (value-charge* x nil false))
   ([x observe!] (value-charge* x observe! false)))
 
-(defn- matches-type*? [t x charged?]
+(defn- matches-type*? [t x charged? check!]
+  (when check! (check!))
   (if (map? t)
     (case (:kind t)
       :tuple (and (vector? x) (= (count x) (count (:elements t)))
-                  (every? true? (map #(matches-type*? %1 %2 charged?) (:elements t) x)))
+                  (every? true? (map #(matches-type*? %1 %2 charged? check!) (:elements t) x)))
       :custom (and (satisfies? IQuerySourceValue x) (= t (-logical-type x)))
       false)
     (case t
@@ -180,12 +181,22 @@
       :uuid (instance? UUID x)
       :instant (= Date (class x))
       :bytes (bytes? x)
-      :data (or charged? (try (copy-charge x) true
-                             (catch clojure.lang.ExceptionInfo _ false)))
+      :data (or charged?
+                (try (copy-charge x (when check! (fn [_] (check!)))) true
+                     (catch clojure.lang.ExceptionInfo _
+                       ;; Cancellation must not become a type mismatch.
+                       (when check! (check!))
+                       false)))
       false)))
 
-(defn matches-type? [t x]
-  (matches-type*? t x false))
+(defn matches-type?
+  "Check a logical type, optionally observing cancellation inside nested data
+  and tuple components. The callback also runs after custom type validation."
+  ([t x] (matches-type? t x nil))
+  ([t x check!]
+   (let [matches? (matches-type*? t x false check!)]
+     (when check! (check!))
+     matches?)))
 
 (defn execution-value!
   ([x] (execution-value! x nil))
@@ -203,7 +214,7 @@
     (fail! :query-source/invalid :batch))
   (doseq [row rows, [column x] (map vector columns row)]
     (copy-charge x)
-    (when-not (if (nil? x) (:nullable? column) (matches-type*? (:type column) x true))
+    (when-not (if (nil? x) (:nullable? column) (matches-type*? (:type column) x true nil))
       (fail! :query-source/invalid :batch)))
   rows)
 
@@ -229,6 +240,6 @@
                              column (nth columns i)]
                          ;; The value walk already validated nested :data.
                          (when-not (if (nil? x) (:nullable? column)
-                                       (matches-type*? (:type column) x true))
+                                       (matches-type*? (:type column) x true nil))
                            (fail! :query-source/invalid :batch))
                          (+' n bytes))) 0 (range (count row))))) 0 rows)))))
