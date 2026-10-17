@@ -93,6 +93,36 @@
     (-logical-type [_] {:kind :custom :name :test/measured :version 1 :fingerprint "v1"})
     (-retained-bytes [_] (on-size) bytes)))
 
+(deftest metadata-admission-rejects-custom-values-without-calling-hooks
+  (let [calls (atom 0)
+        custom (measured 64 #(swap! calls inc))]
+    (doseq [phase [:context :descriptor :session :planning]]
+      (let [error (try
+                    (rt/with-runtime {}
+                      #(rt/charge-metadata! % {:extension custom} phase))
+                    (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+        (is (= :query-source/invalid (:error error)))
+        (is (= phase (:phase error)))))
+    (is (zero? @calls))))
+
+(deftest metadata-validation-and-sizing-observe-nested-cancellation
+  (doseq [size? [false true]]
+    (let [ctl (control/create {})
+          visits (atom 0)
+          check! #(do (when (= 12 (swap! visits inc))
+                        (control/cancel! ctl {:error :query-source/cancelled :phase :execution}))
+                      (source/check-active! ctl))
+          metadata {:extension (with-meta (vec (range 1000)) {:nested (vec (range 1000))})}
+          error (try
+                  (if size?
+                    (value/metadata-charge metadata :planning (fn [_] (check!)))
+                    (value/portable? metadata check!))
+                  (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+      (try
+        (is (= :query-source/cancelled (:error error)))
+        (is (= 12 @visits))
+        (finally (control/close! ctl))))))
+
 (deftest scaled-and-output-charges-preserve-ledger-amounts
   (let [row [(with-meta [1 (byte-array [1 2 3])] {:source "fixture"})]
         size (value/value-charge row)]

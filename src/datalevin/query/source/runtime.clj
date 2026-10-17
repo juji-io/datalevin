@@ -117,6 +117,13 @@
   ([runtime x overhead multiplier]
    (charge-value! runtime x value/value-charge overhead multiplier false)))
 
+(defn charge-metadata!
+  "Validate and reserve an immutable envelope before structural validation.
+  The caller releases transient envelopes once it no longer retains them."
+  ([runtime x phase] (charge-metadata! runtime x phase 256))
+  ([runtime x phase overhead]
+   (charge-value! runtime x #(value/metadata-charge %1 phase %2) overhead 1 false)))
+
 (defn charge-copy!
   "Reserve before owned-copy, which detaches vector views from their parents."
   [runtime x]

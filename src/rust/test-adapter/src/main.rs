@@ -6,6 +6,7 @@ use datalevin_codec::bits::{
     IntegerWidth, ScalarError, ScalarType, ScalarValue, TupleElement, TupleError, TupleRead,
     VariableType,
 };
+use datalevin_codec::compress;
 use datalevin_codec::csv::{self, Record};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
@@ -181,6 +182,9 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "compression/zstd-dictionary" | "compression/encode-zstd" | "compression/decode-zstd" => {
+            compression_operation(operation, arguments)
+        }
         "csv/read-record" | "csv/write-cell" => csv_operation(operation, arguments),
         "bits/indexable" | "bits/encode-avg" | "bits/decode-avg" | "bits/giant?" => {
             index_operation(operation, arguments)
@@ -288,6 +292,61 @@ fn dispatch(request: &Value) -> Value {
             &format!("Rust operation is not implemented: {operation}"),
         ),
     }
+}
+
+fn compression_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "compression/zstd-dictionary" {
+        let [dictionary] = arguments else {
+            return protocol_error("Value compressor requires one dictionary");
+        };
+        let Some(Value::Bytes(dictionary)) = value_argument(dictionary) else {
+            return protocol_error("Value compression dictionary must be bytes");
+        };
+        return if compress::valid_dictionary(dictionary) {
+            success(Value::Null)
+        } else {
+            unsupported(operation, "Zstandard dictionary creation failed")
+        };
+    }
+    let [dictionary, input, output] = arguments else {
+        return protocol_error(
+            "Value compression requires dictionary, input and destination bytes",
+        );
+    };
+    let (Some(Value::Bytes(dictionary)), Some(Value::Bytes(input)), Some(Value::Bytes(output))) = (
+        value_argument(dictionary),
+        value_argument(input),
+        value_argument(output),
+    ) else {
+        return protocol_error("Invalid value compression arguments");
+    };
+    let mut output = output.clone();
+    let result = if operation == "compression/encode-zstd" {
+        compress::compress(dictionary, input, &mut output)
+    } else {
+        compress::decompress(dictionary, input, &mut output)
+    };
+    let result = match result {
+        Ok(size) => success(Value::Integer(size as i32)),
+        Err(error) => match error.code() {
+            Some(code) => map(vec![
+                ("status", keyword("error")),
+                (
+                    "error",
+                    map(vec![
+                        ("class", text("com.github.luben.zstd.ZstdException")),
+                        ("message", text(error.message())),
+                        ("code", Value::Long(code)),
+                    ]),
+                ),
+            ]),
+            None => unsupported(operation, error.message()),
+        },
+    };
+    success(map(vec![
+        ("bytes", Value::Bytes(output)),
+        ("result", result),
+    ]))
 }
 
 fn csv_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1463,6 +1522,9 @@ fn main() -> io::Result<()> {
             (
                 "capabilities",
                 Value::Set(vec![
+                    keyword("compression/zstd-dictionary"),
+                    keyword("compression/encode-zstd"),
+                    keyword("compression/decode-zstd"),
                     keyword("csv/read-record"),
                     keyword("csv/write-cell"),
                     keyword("echo"),
@@ -1587,6 +1649,9 @@ mod tests {
     #[test]
     fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
         for operation in [
+            "compression/zstd-dictionary",
+            "compression/encode-zstd",
+            "compression/decode-zstd",
             "bits/bitmap-and",
             "bits/bitmap-or",
             "bits/bitmaps-and",

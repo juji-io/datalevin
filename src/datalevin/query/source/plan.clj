@@ -80,9 +80,9 @@
   (when (> (count (:qwhere parsed)) 256) (fail! :query-source/unsupported :clauses))
   (when-not (and (or (nil? options) (value/plain-map? options))
                 (every? #{:limits :consistency :authorization} (keys options))
-                (#{:snapshot :statement :best-effort} (get options :consistency :snapshot))
-                (value/portable? (get options :authorization {:principal-id :application})))
+                (#{:snapshot :statement :best-effort} (get options :consistency :snapshot)))
     (fail! :query-source/invalid :context))
+  (rt/charge-metadata! runtime (get options :authorization {:principal-id :application}) :context)
   (let [check! #(source/check-active! (:control runtime))
         clauses (own-clauses! runtime (mapv clause (range) (:qwhere parsed)))
         {:keys [sources bindings] :as input-data} (input/prepare! runtime parsed inputs)
@@ -100,9 +100,9 @@
                             (if (satisfies? source/IQuerySource input)
                               (let [descriptor (or (.get descriptors input)
                                                    (let [d (rt/invoke runtime :descriptor #(source/-source-info input))]
-                                                     (contract/negotiate d)
+                                                     (rt/charge-metadata! runtime d :descriptor)
+                                                     (contract/negotiate d #{1} #{} check!)
                                                      (.put descriptors input d)
-                                                     (rt/charge! runtime d)
                                                      d))]
                                 {:symbol sym :source input :descriptor descriptor})
                               (do (native/validate! input) {:symbol sym :native input}))))) sources)
@@ -151,32 +151,49 @@
        :offset (window (:qoffset parsed) bindings scalar-inputs 0 0)
        :parsed parsed :options options})))
 
-(defn- select-cover [request response allow-once?]
-  (contract/alternatives! request response)
-  (let [patterns (into #{} (comp (filter #(= :pattern (:kind %))) (map :id)) (:clauses request))
-        alternatives (:alternatives response)
-        attempts (volatile! 0)]
-    (letfn [(search [remaining covered selected]
-              (source/check-active! (:control request))
-              (when (> (long (vswap! attempts #(inc (long %)))) 4096)
-                (fail! :query-source/unsupported :planning))
-              (if (empty? remaining) selected
-                  (let [id (first (sort remaining))]
-                    (some (fn [a]
-                            (when (and (contains? (:covers a) id)
-                                       (or (= :reopen (get-in a [:properties :replay]))
-                                           (and allow-once? (empty? selected)
-                                                (set/subset? remaining (:covers a))))
-                                       (empty? (set/intersection covered (:covers a))))
-                              (search (set/difference remaining (:covers a))
-                                      (set/union covered (:covers a)) (conj selected a))))
-                          alternatives))))]
-      (let [selected (search patterns #{} [])]
-        (when (nil? selected) (fail! :query-source/unsupported :planning))
-        ;; Alternatives were validated above; the search enforces complete,
-        ;; nonoverlapping coverage and replay constraints. Keep those validated
-        ;; alternatives directly instead of validating the whole response again.
-        selected))))
+(defn- select-cover [runtime request response allow-once?]
+  (let [charges (atom []) retained (IdentityHashMap.)
+        admit! (fn [alternative metadata overhead]
+                 ;; Validate and bound the ID before including it in errors.
+                 (when alternative
+                   (when-not (some? (:id alternative)) (fail! :query-source/invalid :planning))
+                   (source/release! (rt/charge-metadata! runtime (:id alternative) :planning)))
+                 (rt/with-context runtime (when alternative {:alternative-id (:id alternative)})
+                   (fn [runtime]
+                     (let [token (rt/charge-metadata! runtime metadata :planning overhead)]
+                       (swap! charges conj [alternative token])))))]
+    (try
+      (contract/alternatives! request response admit!)
+      (let [patterns (into #{} (comp (filter #(= :pattern (:kind %))) (map :id)) (:clauses request))
+            alternatives (:alternatives response)
+            attempts (volatile! 0)]
+        (letfn [(search [remaining covered selected]
+                  (source/check-active! (:control request))
+                  (when (> (long (vswap! attempts #(inc (long %)))) 4096)
+                    (fail! :query-source/unsupported :planning))
+                  (if (empty? remaining) selected
+                      (let [id (first (sort remaining))]
+                        (some (fn [a]
+                                (when (and (contains? (:covers a) id)
+                                           (or (= :reopen (get-in a [:properties :replay]))
+                                               (and allow-once? (empty? selected)
+                                                    (set/subset? remaining (:covers a))))
+                                           (empty? (set/intersection covered (:covers a))))
+                                  (search (set/difference remaining (:covers a))
+                                          (set/union covered (:covers a)) (conj selected a))))
+                              alternatives))))]
+          (let [selected (search patterns #{} [])]
+            (when (nil? selected) (fail! :query-source/unsupported :planning))
+            ;; Alternatives were validated above; the search enforces complete,
+            ;; nonoverlapping coverage and replay constraints. Keep those validated
+            ;; alternatives directly instead of validating the whole response again.
+            (doseq [a selected] (.put retained a true))
+            selected)))
+      (finally
+        ;; Keep one charge for each selected envelope. Release response headers,
+        ;; discarded alternatives, and conservative duplicate backing charges.
+        (doseq [[a token] @charges]
+          (when-not (and a (.remove retained a)) (source/release! token)))))))
 
 (defn acquire-and-plan! [runtime {:keys [entries bindings options] :as prepared}]
   (let [common {:spi-version 1 :features #{} :query-id (:query-id runtime)
@@ -206,7 +223,10 @@
                       ;; work. The first owner also covers registration failure.
                       (rt/own! runtime #(try (close)
                                            (finally (source/unregister-cancel! registration)))))
-                    (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
+                    (let [info (rt/invoke runtime :session #(source/-session-info session))
+                          token (rt/charge-metadata! runtime info :session)]
+                      (try (contract/session-info! request info)
+                           (finally (source/release! token))))
                     (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))))
           groups)
         planned
@@ -221,13 +241,7 @@
                                              :demand {:quality :exact :ordering [] :offset 0 :limit nil}})
                       _ (contract/planning-request! request)
                       response (rt/invoke runtime :planning #(source/-plan-source source session request))
-                      selected (select-cover request response (:allow-once? entry))]
-                  (doseq [alternative selected]
-                    (rt/with-context runtime {:alternative-id (:id alternative)}
-                      (fn [runtime]
-                        ;; Core retains the selected envelope; the provider
-                        ;; accounts for opaque handle state through its session.
-                        (rt/charge! runtime (dissoc alternative :plan)))))
+                      selected (select-cover runtime request response (:allow-once? entry))]
                   (swap! (:explain runtime) update :sources conj
                          {:source symbol :consistency (:consistency request)
                           :pattern-count (count (:patterns entry))

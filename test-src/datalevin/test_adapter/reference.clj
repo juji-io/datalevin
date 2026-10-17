@@ -1,6 +1,8 @@
 (ns ^:no-doc datalevin.test-adapter.reference
   (:require
    [datalevin.bits :as bits]
+   [datalevin.compress :as compress]
+   [datalevin.interface :as i]
    [datalevin.core :as d]
    [datalevin.csv :as csv]
    [datalevin.test-adapter :as adapter]))
@@ -9,6 +11,14 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :compression/val-compressor (apply compress/val-compressor arguments)
+      :compression/load-val-compressor (apply compress/load-val-compressor arguments)
+      :compression/zstd-compress
+      (let [[dictionary source destination] arguments]
+        (i/bf-compress (compress/val-compressor dictionary) source destination))
+      :compression/zstd-decompress
+      (let [[dictionary source destination] arguments]
+        (i/bf-uncompress (compress/val-compressor dictionary) source destination))
       :csv/read-csv (let [[input options] arguments] (apply csv/read-csv input options))
       :csv/write-csv (let [[writer data options] arguments] (apply csv/write-csv writer data options))
       :bits/serialize (apply bits/serialize arguments)

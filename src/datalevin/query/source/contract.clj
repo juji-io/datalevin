@@ -14,72 +14,79 @@
                              (qualified-keyword? %)) (keys m))) phase))
 
 (defn- nonempty-string? [x] (and (string? x) (pos? (count x))))
-(defn- identifier? [x] (and (some? x) (v/portable? x)))
+(defn- identifier? [x check!] (and (some? x) (v/portable? x check!)))
 (defn- variable? [x] (and (symbol? x) (.startsWith (name x) "?")))
 (defn- keyword-set? [x] (and (set? x) (every? keyword? x)))
 (defn- nonnegative? [x] (and (integer? x) (<= 0 x Long/MAX_VALUE)))
 
-(defn type! [t]
-  (ensure! (v/portable? t) :descriptor)
-  (if (keyword? t)
-    (ensure! (v/scalar-types t) :descriptor)
-    (case (:kind t)
-      :tuple (do (fields! t #{:kind :elements} #{} :descriptor)
-                 (ensure! (and (vector? (:elements t)) (seq (:elements t))) :descriptor)
-                 (run! type! (:elements t)))
-      :custom (do (fields! t #{:kind :name :version :fingerprint} #{:parameters} :descriptor)
-                  (ensure! (and (qualified-keyword? (:name t))
-                                (pos-int? (:version t))
-                                (nonempty-string? (:fingerprint t))
-                                (or (not (contains? t :parameters))
-                                    (and (v/plain-map? (:parameters t))
-                                         (v/portable? (:parameters t))))) :descriptor))
-      (fail! :query-source/invalid :descriptor)))
-  t)
+(defn type!
+  ([t] (type! t nil))
+  ([t check!]
+   (ensure! (v/portable? t check!) :descriptor)
+   (if (keyword? t)
+     (ensure! (v/scalar-types t) :descriptor)
+     (case (:kind t)
+       :tuple (do (fields! t #{:kind :elements} #{} :descriptor)
+                  (ensure! (and (vector? (:elements t)) (seq (:elements t))) :descriptor)
+                  (run! #(type! % check!) (:elements t)))
+       :custom (do (fields! t #{:kind :name :version :fingerprint} #{:parameters} :descriptor)
+                   (ensure! (and (qualified-keyword? (:name t))
+                                 (pos-int? (:version t))
+                                 (nonempty-string? (:fingerprint t))
+                                 (or (not (contains? t :parameters))
+                                     (and (v/plain-map? (:parameters t))
+                                          (v/portable? (:parameters t) check!)))) :descriptor))
+       (fail! :query-source/invalid :descriptor)))
+   t))
 
-(defn- column! [column variable-required?]
+(defn- column! [column variable-required? check!]
   (fields! column (cond-> #{:type :nullable?} variable-required? (conj :variable))
            #{} :descriptor)
-  (type! (:type column))
+  (type! (:type column) check!)
   (ensure! (and (boolean? (:nullable? column))
                 (or (not variable-required?) (variable? (:variable column)))) :descriptor))
 
-(defn pattern-contract! [contract]
-  (case (:kind contract)
-    :tuple (do (fields! contract #{:kind :columns} #{} :descriptor)
-               (ensure! (vector? (:columns contract)) :descriptor)
-               (doseq [column (:columns contract)] (column! column false)))
-    :eav (do (fields! contract #{:kind :attributes} #{} :descriptor)
-             (ensure! (and (v/plain-map? (:attributes contract))
-                           (seq (:attributes contract))) :descriptor)
-             (doseq [[attribute types] (:attributes contract)]
-               (ensure! (keyword? attribute) :descriptor)
-               (fields! types #{:entity-type :value-type} #{} :descriptor)
-               (type! (:entity-type types))
-               (type! (:value-type types))))
-    (fail! :query-source/invalid :descriptor))
-  contract)
+(defn pattern-contract!
+  ([contract] (pattern-contract! contract nil))
+  ([contract check!]
+   (case (:kind contract)
+     :tuple (do (fields! contract #{:kind :columns} #{} :descriptor)
+                (ensure! (vector? (:columns contract)) :descriptor)
+                (doseq [column (:columns contract)] (column! column false check!)))
+     :eav (do (fields! contract #{:kind :attributes} #{} :descriptor)
+              (ensure! (and (v/plain-map? (:attributes contract))
+                            (seq (:attributes contract))) :descriptor)
+              (doseq [[attribute types] (:attributes contract)]
+                (ensure! (keyword? attribute) :descriptor)
+                (fields! types #{:entity-type :value-type} #{} :descriptor)
+                (type! (:entity-type types) check!)
+                (type! (:value-type types) check!)))
+     (fail! :query-source/invalid :descriptor))
+   contract))
 
-(defn source-info! [info]
-  (fields! info #{:spi-versions :source-instance-id :compute-context-id
-                  :definition-id :definition-fingerprint :features
-                  :required-features :pattern-contract} #{} :descriptor)
-  (ensure! (and (set? (:spi-versions info)) (seq (:spi-versions info))
-                (every? pos-int? (:spi-versions info))
-                (every? identifier? (map info [:source-instance-id :compute-context-id
-                                               :definition-id]))
-                (nonempty-string? (:definition-fingerprint info))
-                (keyword-set? (:features info))
-                (keyword-set? (:required-features info))
-                (set/subset? (:required-features info) (:features info))
-                (v/portable? info)) :descriptor)
-  (pattern-contract! (:pattern-contract info))
-  info)
+(defn source-info!
+  ([info] (source-info! info nil))
+  ([info check!]
+   (fields! info #{:spi-versions :source-instance-id :compute-context-id
+                   :definition-id :definition-fingerprint :features
+                   :required-features :pattern-contract} #{} :descriptor)
+   (ensure! (and (set? (:spi-versions info)) (seq (:spi-versions info))
+                 (every? pos-int? (:spi-versions info))
+                 (every? #(identifier? % check!) (map info [:source-instance-id :compute-context-id
+                                                :definition-id]))
+                 (nonempty-string? (:definition-fingerprint info))
+                 (keyword-set? (:features info))
+                 (keyword-set? (:required-features info))
+                 (set/subset? (:required-features info) (:features info))
+                 (v/portable? info check!)) :descriptor)
+   (pattern-contract! (:pattern-contract info) check!)
+   info))
 
 (defn negotiate
   ([info] (negotiate info #{1} #{}))
-  ([info versions features]
-   (source-info! info)
+  ([info versions features] (negotiate info versions features nil))
+  ([info versions features check!]
+   (source-info! info check!)
    (let [version (last (sort (set/intersection versions (:spi-versions info))))
          features (set/intersection features (:features info))]
      (when-not version (fail! :query-source/version :descriptor))
@@ -124,9 +131,9 @@
   ([descriptor clauses] (clauses! descriptor clauses nil))
   ([descriptor clauses check!]
    (when check! (check!))
-   (source-info! descriptor)
+   (source-info! descriptor check!)
    (ensure! (and (vector? clauses)
-                 (every? #(identifier? (:id %)) clauses)
+                 (every? #(identifier? (:id %) check!) clauses)
                  (= (count clauses) (count (set (map :id clauses))))) :clauses)
    (doseq [clause clauses]
      (when check! (check!))
@@ -197,65 +204,79 @@
                            (pattern-columns (:source-descriptor request) clause (request-check request))))
         types)) {} (:clauses request)))
 
-(defn alternatives! [request response]
-  (planning-request! request)
-  (fields! response #{:alternatives} #{} :planning)
-  (let [alternatives (:alternatives response)
-        clauses (into {} (map (juxt :id identity)) (:clauses request))
-        ids (set (keys clauses))
-        types (variable-types request)]
-    (ensure! (and (vector? alternatives) (<= (count alternatives) (long (:max-alternatives request)))
-                  (= (count alternatives) (count (set (map :id alternatives))))) :planning)
-    ;; Only explicit plan handles are opaque. Validate extension fields and
-    ;; Clojure metadata as well as the required fields, without visiting handles.
-    (ensure! (and (v/portable? (dissoc response :alternatives))
-                  (v/portable? (meta alternatives))) :planning)
-    (doseq [a alternatives]
-      (when-let [check! (request-check request)] (check!))
-      (fields! a #{:id :plan :covers :prefilters :requires :columns :properties :estimate :explain}
-               #{} :planning)
-      (ensure! (v/portable? (dissoc a :plan)) :planning)
-      (ensure! (and (identifier? (:id a)) (some? (:plan a))
-                    (set? (:covers a)) (set? (:prefilters a))
-                    (set/subset? (:covers a) ids) (set/subset? (:prefilters a) ids)
-                    (empty? (set/intersection (:covers a) (:prefilters a)))
-                    (every? #(= :predicate (:kind (clauses %))) (:prefilters a))
-                    (vector? (:columns a))
-                    (= (count (:columns a)) (count (set (map :variable (:columns a)))))) :planning)
-      (when-not (= [] (:requires a)) (fail! :query-source/unsupported :planning))
-      (fields! (:properties a) #{:replay :ordering :blocking-state} #{} :planning)
-      (ensure! (#{:reopen :once} (get-in a [:properties :replay])) :planning)
-      (when-not (and (= [] (get-in a [:properties :ordering]))
-                     (= :none (get-in a [:properties :blocking-state])))
-        (fail! :query-source/unsupported :planning))
-      (let [covered-types (variable-types (update request :clauses
-                                                  #(filterv (fn [c] (contains? (:covers a) (:id c))) %)))]
-        (doseq [column (:columns a)]
-          (column! column true)
-          (ensure! (= (:type column) (:type (types (:variable column)))) :planning)
-          (when-let [covered (covered-types (:variable column))]
-            (ensure! (= (:nullable? column) (:nullable? covered)) :planning))))
-      (let [available (into (set (keys (:bindings request))) (map :variable) (:columns a))
-            covered-vars (reduce set/union #{} (map #(variables (clauses %)) (:covers a)))
-            residual-vars (reduce set/union #{}
-                                  (map variables (remove #(contains? (:covers a) (:id %))
-                                                         (:clauses request))))
-            needed (set/intersection covered-vars
-                                     (set/union (:required-vars request) residual-vars))]
-        (ensure! (set/subset? needed available) :planning))
-      (let [estimate (:estimate a)]
-        (fields! estimate #{:rows :row-bytes :startup-ms :per-row-ns :requests :confidence}
-                 #{} :planning)
-        (ensure! (#{:unknown :low :medium :high} (:confidence estimate)) :planning)
-        (doseq [k [:rows :row-bytes :startup-ms :per-row-ns :requests]]
-          (let [n (get estimate k)]
-            (ensure! (or (nil? n) (and (number? n) (Double/isFinite (double n))
-                                     (not (neg? (compare n 0)))))
-                     :planning)
-            (when (nil? n) (ensure! (= :unknown (:confidence estimate)) :planning)))))
-      (fields! (:explain a) #{:label} #{} :planning)
-      (ensure! (nonempty-string? (get-in a [:explain :label])) :planning))
-    response))
+(defn alternatives!
+  ([request response] (alternatives! request response nil))
+  ([request response accept-metadata!]
+   (planning-request! request)
+   (fields! response #{:alternatives} #{} :planning)
+   (let [check! (request-check request)
+         alternatives (:alternatives response)
+         clauses (into {} (map (juxt :id identity)) (:clauses request))
+         ids (set (keys clauses))
+         types (variable-types request)]
+     (ensure! (and (vector? alternatives)
+                   (<= (count alternatives) (long (:max-alternatives request)))) :planning)
+     ;; Admission precedes recursive validation, including discarded candidates
+     ;; and backing vectors. The callback accounts for envelopes, never handles.
+     (when accept-metadata!
+       (accept-metadata! nil (dissoc response :alternatives) 256)
+       (loop [items alternatives]
+         (accept-metadata! nil (meta items) (+ 320 (* 48 (long (count items)))))
+         (doseq [a items]
+           (ensure! (v/plain-map? a) :planning)
+           (accept-metadata! a (dissoc a :plan) 256))
+         (when-let [parent (v/vector-parent items)] (recur parent))))
+     (ensure! (= (count alternatives) (count (set (map :id alternatives)))) :planning)
+     ;; Only explicit plan handles are opaque. Validate extension fields and
+     ;; Clojure metadata as well as the required fields, without visiting handles.
+     (ensure! (and (v/portable? (dissoc response :alternatives) check!)
+                   (v/portable? (meta alternatives) check!)) :planning)
+     (doseq [a alternatives]
+       (when check! (check!))
+       (fields! a #{:id :plan :covers :prefilters :requires :columns :properties :estimate :explain}
+                #{} :planning)
+       (ensure! (v/portable? (dissoc a :plan) check!) :planning)
+       (ensure! (and (identifier? (:id a) check!) (some? (:plan a))
+                     (set? (:covers a)) (set? (:prefilters a))
+                     (set/subset? (:covers a) ids) (set/subset? (:prefilters a) ids)
+                     (empty? (set/intersection (:covers a) (:prefilters a)))
+                     (every? #(= :predicate (:kind (clauses %))) (:prefilters a))
+                     (vector? (:columns a))
+                     (= (count (:columns a)) (count (set (map :variable (:columns a)))))) :planning)
+       (when-not (= [] (:requires a)) (fail! :query-source/unsupported :planning))
+       (fields! (:properties a) #{:replay :ordering :blocking-state} #{} :planning)
+       (ensure! (#{:reopen :once} (get-in a [:properties :replay])) :planning)
+       (when-not (and (= [] (get-in a [:properties :ordering]))
+                      (= :none (get-in a [:properties :blocking-state])))
+         (fail! :query-source/unsupported :planning))
+       (let [covered-types (variable-types (update request :clauses
+                                                   #(filterv (fn [c] (contains? (:covers a) (:id c))) %)))]
+         (doseq [column (:columns a)]
+           (column! column true check!)
+           (ensure! (= (:type column) (:type (types (:variable column)))) :planning)
+           (when-let [covered (covered-types (:variable column))]
+             (ensure! (= (:nullable? column) (:nullable? covered)) :planning))))
+       (let [available (into (set (keys (:bindings request))) (map :variable) (:columns a))
+             covered-vars (reduce set/union #{} (map #(variables (clauses %)) (:covers a)))
+             residual-vars (reduce set/union #{}
+                                   (map variables (remove #(contains? (:covers a) (:id %))
+                                                          (:clauses request))))
+             needed (set/intersection covered-vars
+                                      (set/union (:required-vars request) residual-vars))]
+         (ensure! (set/subset? needed available) :planning))
+       (let [estimate (:estimate a)]
+         (fields! estimate #{:rows :row-bytes :startup-ms :per-row-ns :requests :confidence}
+                  #{} :planning)
+         (ensure! (#{:unknown :low :medium :high} (:confidence estimate)) :planning)
+         (doseq [k [:rows :row-bytes :startup-ms :per-row-ns :requests]]
+           (let [n (get estimate k)]
+             (ensure! (or (nil? n) (and (number? n) (Double/isFinite (double n))
+                                      (not (neg? (compare n 0)))))
+                      :planning)
+             (when (nil? n) (ensure! (= :unknown (:confidence estimate)) :planning)))))
+       (fields! (:explain a) #{:label} #{} :planning)
+       (ensure! (nonempty-string? (get-in a [:explain :label])) :planning))
+     response)))
 
 (defn selection! [request response selected-ids]
   (alternatives! request response)
@@ -273,18 +294,19 @@
     selected))
 
 (defn session-info! [request info]
-  (fields! info #{:spi-version :features :session-id :source-instance-id :compute-context-id
-                  :authorization-token :consistency :acquired-at-ms :data-version} #{} :session)
-  (ensure! (and (= (:spi-version request) (:spi-version info))
-                (= (:features request) (:features info))
-                (identifier? (:session-id info)) (identifier? (:authorization-token info))
-                (nonnegative? (:acquired-at-ms info)) (v/portable? info)) :session)
-  (when-not (= (:consistency request) (:consistency info))
-    (fail! :query-source/unsupported :session))
-  (doseq [descriptor (:source-descriptors request)]
-    (ensure! (= (select-keys descriptor [:source-instance-id :compute-context-id])
-                (select-keys info [:source-instance-id :compute-context-id])) :session))
-  info)
+  (let [check! (request-check request)]
+    (fields! info #{:spi-version :features :session-id :source-instance-id :compute-context-id
+                    :authorization-token :consistency :acquired-at-ms :data-version} #{} :session)
+    (ensure! (and (= (:spi-version request) (:spi-version info))
+                  (= (:features request) (:features info))
+                  (identifier? (:session-id info) check!) (identifier? (:authorization-token info) check!)
+                  (nonnegative? (:acquired-at-ms info)) (v/portable? info check!)) :session)
+    (when-not (= (:consistency request) (:consistency info))
+      (fail! :query-source/unsupported :session))
+    (doseq [descriptor (:source-descriptors request)]
+      (ensure! (= (select-keys descriptor [:source-instance-id :compute-context-id])
+                  (select-keys info [:source-instance-id :compute-context-id])) :session))
+    info))
 
 (defn- batch-limit! [category actual maximum]
   (when-not (v/at-most? actual (long maximum))

@@ -7,6 +7,7 @@
    [datalevin.buffer :as buffer]
    [taoensso.nippy :as nippy]
    [datalevin.test-adapter :as adapter]
+   [datalevin.test-adapter.compress :refer [->ZstdCompressor]]
    [datalevin.test-adapter.bits :as bits])
   (:import
    [java.io DataInputStream DataOutputStream IOException Reader StringReader
@@ -17,6 +18,8 @@
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.utl GrowingIntArray]
    [java.nio ByteBuffer ByteOrder]
+   [java.nio.file Files Paths]
+   [com.github.luben.zstd ZstdException]
    [java.util Date Iterator NoSuchElementException UUID]
    [org.roaringbitmap RoaringBitmap]
    [org.roaringbitmap.buffer ImmutableRoaringBitmap]
@@ -110,7 +113,7 @@
     (adapter/unsupported! :rust operation
                           (or (:message response) "Unsupported Rust operation"))
     :error
-    (let [{:keys [class message data]} (:error response)]
+    (let [{:keys [class message data code]} (:error response)]
       (when-not (and (string? class) (string? message))
         (raise "Invalid Rust adapter error descriptor" {:response response}))
       (throw (case class
@@ -122,6 +125,7 @@
                "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
                "java.util.NoSuchElementException" (java.util.NoSuchElementException. message)
                "java.io.IOException" (java.io.IOException. message)
+               "com.github.luben.zstd.ZstdException" (ZstdException. (long code) message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))
@@ -680,6 +684,32 @@
           (avg-value value)))
       (finally (.limit buffer limit)))))
 
+(defn- value-compressor! [peer session dictionary]
+  (let [owned (aclone ^bytes dictionary)]
+    (invoke-peer! peer session :compression/zstd-dictionary [owned])
+    (->ZstdCompressor owned)))
+
+(defn- zstd-buffer! [peer session operation dictionary ^ByteBuffer source ^ByteBuffer destination]
+  (when-not (.isDirect source)
+    (throw (IllegalArgumentException. "srcBuff must be a direct buffer")))
+  (when-not (.isDirect destination)
+    (throw (IllegalArgumentException. "dstBuff must be a direct buffer")))
+  (when (.isReadOnly destination)
+    (adapter/unsupported! :adapter operation "Value compression requires a writable destination buffer"))
+  (let [position (.position destination)
+        {:keys [bytes result]} (invoke-peer! peer session
+                                            (if (= operation :compression/zstd-compress)
+                                              :compression/encode-zstd :compression/decode-zstd)
+                                            [dictionary (bits/get-bytes (.duplicate source))
+                                             (bits/get-bytes (.duplicate destination))])]
+    ;; Zstandard can modify destination memory before reporting an error, while
+    ;; the public buffer positions advance only on success.
+    (.put (.duplicate destination) ^bytes bytes)
+    (let [size (result-value session operation result)]
+      (.position destination (+ position (int size)))
+      (.position source (.limit source))
+      size)))
+
 (defn- csv-rows [input options]
   (let [{:keys [separator quote] :or {separator \, quote \"}} options
         ^Reader reader (cond (string? input) (StringReader. ^String input)
@@ -753,6 +783,12 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :compression/val-compressor (value-compressor! peer session (first arguments))
+      :compression/load-val-compressor
+      (value-compressor! peer session
+                         (Files/readAllBytes (Paths/get ^String (first arguments) (make-array String 0))))
+      (:compression/zstd-compress :compression/zstd-decompress)
+      (apply zstd-buffer! peer session operation arguments)
       :csv/read-csv (apply csv-rows arguments)
       :csv/write-csv (apply write-csv! arguments)
       :bits/serialize
