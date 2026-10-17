@@ -3,7 +3,8 @@
   (:require [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.value :as value])
-  (:import [datalevin.utl QueryKey QueryKey$Budget QueryKey$Workspace] [java.util UUID]
+  (:import [datalevin.utl QueryKey QueryKey$Budget QueryKey$Workspace]
+           [java.util UUID]
            [java.util.concurrent.atomic AtomicReference]))
 
 (def ^:dynamic *runtime* nil)

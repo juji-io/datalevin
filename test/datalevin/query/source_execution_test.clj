@@ -184,11 +184,11 @@
       (is (= (d/q (dissoc query :query-source) @conn rows) (d/q query @conn s)))
       (reset! (:events s) [])
       (let [error (error-data #(d/q (assoc query :where '[[?e :item/blob ?blob] [$s ?e ?label]]) @conn s))]
-        (is (= :query-source/unsupported (:error error)))
-        (is (= :native-type (:phase error)))
+        (is (= :query-source/limit (:error error)))
+        (is (= :retained-bytes (:category error)))
         (is (= '$ (:source-symbol error)))
         (is (= [0] (:clause-ids error))))
-      (is (empty? @(:events s)))
+      (is (= 1 (count (filter #{:close-session} @(:events s)))))
       (finally (d/close conn) (u/delete-files dir)))))
 
 (deftest bound-native-entity-skips-unrelated-giant-values

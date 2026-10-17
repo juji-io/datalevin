@@ -17,7 +17,7 @@
    [datalevin.util :as u])
   (:import
    [java.nio.charset StandardCharsets]
-   [datalevin.utl LikeFSM]
+   [datalevin.utl LikeFSM QueryKey]
    [datalevin.parser Predicate SrcVar]))
 
 (defn- source-form?
@@ -361,7 +361,13 @@
                               (update m :pred add-pred
                                       (activate-var-pred helpers v pred))
                               (inequality->range m f args v))
-                            =           (equality->range m args)
+                            =
+                            (if (some #(QueryKey/containsBytes %) args)
+                              ;; Serialized data bounds are not logical equality
+                              ;; bounds. Keep content equality in the scan filter.
+                              (update m :pred add-pred
+                                      (activate-var-pred helpers v pred))
+                              (equality->range m args))
                             like        (optimize-like helpers m pred args v false)
                             not-like    (optimize-like helpers m pred args v true)
                             in          (in-convert-range m args false)

@@ -83,10 +83,12 @@
         (is (= :query-source/invalid
                (category #(native-value/prepare-inline
                             (ByteBuffer/wrap (Arrays/copyOf bytes n)) type)))))
-      (doseq [header [c/type-custom c/type-homo-tuple c/type-bytes]]
+      (doseq [[header expected] [[c/type-custom :query-source/unsupported]
+                                [c/type-homo-tuple :query-source/unsupported]
+                                [c/type-bytes :query-source/invalid]]]
         (let [bad (aclone bytes)]
           (aset-byte bad 5 (byte header))
-          (is (= :query-source/unsupported
+          (is (= expected
                  (category #(native-value/prepare-inline (ByteBuffer/wrap bad) type)))))))))
 
 (deftest inline-tuple-counts-and-component-lengths-are-unsigned
@@ -132,7 +134,7 @@
 
 (deftest unsupported-components-and-cancellation-never-reach-readers
   (reset! fixture/decoded-custom-values 0)
-  (doseq [x [[(fixture/->UnexpectedValue)] [[1]] [(byte-array [1])]
+  (doseq [x [[(fixture/->UnexpectedValue)] [[1]]
              (with-meta [1] {:hidden (fixture/->UnexpectedValue)})]]
     (is (= :query-source/unsupported
            (category #(prepare (bits/serialize (datom/datom 1 :test/value x)) :long)))))

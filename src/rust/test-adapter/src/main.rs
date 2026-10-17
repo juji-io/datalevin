@@ -6,6 +6,7 @@ use datalevin_codec::bits::{
     IntegerWidth, ScalarError, ScalarType, ScalarValue, TupleElement, TupleError, TupleRead,
     VariableType,
 };
+use datalevin_codec::csv::{self, Record};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
 };
@@ -180,6 +181,7 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "csv/read-record" | "csv/write-cell" => csv_operation(operation, arguments),
         "bits/indexable" | "bits/encode-avg" | "bits/decode-avg" | "bits/giant?" => {
             index_operation(operation, arguments)
         }
@@ -286,6 +288,93 @@ fn dispatch(request: &Value) -> Value {
             &format!("Rust operation is not implemented: {operation}"),
         ),
     }
+}
+
+fn csv_operation(operation: &str, arguments: &[Value]) -> Value {
+    if operation == "csv/read-record" {
+        let [input, offset, eof, separator, quote, skip_lf] = arguments else {
+            return protocol_error(
+                "CSV reading requires input, offset, EOF, separator, quote and line-feed state",
+            );
+        };
+        let (
+            Some(Value::CharArray(input)),
+            Some(Value::Long(offset)),
+            Some(Value::Bool(eof)),
+            Some(Value::Char(separator)),
+            Some(Value::Char(quote)),
+            Some(Value::Bool(skip_lf)),
+        ) = (
+            value_argument(input),
+            value_argument(offset),
+            value_argument(eof),
+            value_argument(separator),
+            value_argument(quote),
+            value_argument(skip_lf),
+        )
+        else {
+            return protocol_error("Invalid CSV reader arguments");
+        };
+        if *offset < 0 || *offset as u64 > input.len() as u64 {
+            return protocol_error("Invalid CSV input offset");
+        }
+        return success(
+            match csv::read_record(
+                &input[*offset as usize..],
+                *eof,
+                *separator,
+                *quote,
+                *skip_lf,
+            ) {
+                Record::NeedInput => map(vec![("kind", keyword("input"))]),
+                Record::End => map(vec![("kind", keyword("end"))]),
+                Record::Row {
+                    cells,
+                    consumed,
+                    skip_lf,
+                    finished,
+                } => map(vec![
+                    ("kind", keyword("row")),
+                    (
+                        "cells",
+                        Value::Vector(cells.into_iter().map(Value::CharArray).collect()),
+                    ),
+                    ("consumed", Value::Long(consumed as i64)),
+                    ("skip-lf?", Value::Bool(skip_lf)),
+                    ("finished?", Value::Bool(finished)),
+                ]),
+            },
+        );
+    }
+    let [input, separator, quote, quote_override] = arguments else {
+        return protocol_error(
+            "CSV writing requires a cell, separator, quote and quoting override",
+        );
+    };
+    let (
+        Some(Value::CharArray(input)),
+        Some(Value::Char(separator)),
+        Some(Value::Char(quote)),
+        Some(quote_override),
+    ) = (
+        value_argument(input),
+        value_argument(separator),
+        value_argument(quote),
+        value_argument(quote_override),
+    )
+    else {
+        return protocol_error("Invalid CSV writer arguments");
+    };
+    let quote_override = match quote_override {
+        Value::Null => None,
+        Value::Bool(value) => Some(*value),
+        _ => return protocol_error("CSV quoting override must be a boolean or nil"),
+    };
+    let (quoted, units) = csv::write_cell(input, *separator, *quote, quote_override);
+    success(map(vec![
+        ("quoted?", Value::Bool(quoted)),
+        ("units", Value::CharArray(units)),
+    ]))
 }
 
 fn tuple_error(error: TupleError) -> Value {
@@ -1374,6 +1463,8 @@ fn main() -> io::Result<()> {
             (
                 "capabilities",
                 Value::Set(vec![
+                    keyword("csv/read-record"),
+                    keyword("csv/write-cell"),
                     keyword("echo"),
                     keyword("bits/serialize"),
                     keyword("bits/deserialize"),

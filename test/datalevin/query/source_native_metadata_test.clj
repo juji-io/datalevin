@@ -76,7 +76,7 @@
                     [{:kind :tuple :elements [:long :symbol]}
                      [1 (with-meta 'value {:hidden (fixture/->UnexpectedData)})]]
                     [{:kind :native-homogeneous-tuple :element :long}
-                     (with-meta [1 2] {:hidden (byte-array [1 2])})]]]
+                     (with-meta [1 2] {:hidden (fixture/->UnexpectedData)})]]]
     (is (= :query-source/unsupported
            (category #(prepare (bits/serialize (datom/datom 1 :test/value x)) type)))))
   (is (zero? @fixture/decoded-custom-values)))
@@ -140,3 +140,14 @@
                           (when (= 3 (swap! checks inc))
                             (value/fail! :query-source/cancelled :execution)))))))
     (is (= 3 @checks))))
+
+(deftest byte-metadata-is-preflighted-and-preserved
+  (doseq [[type x] [[:symbol 'value]
+                    [{:kind :tuple :elements [:long :symbol]} [1 'value]]
+                    [{:kind :native-homogeneous-tuple :element :long} [1 2]]]]
+    (let [x (with-meta x {:bytes (byte-array [1 2 3])})
+          {:keys [decode retained-bytes]} (prepare (bits/serialize (datom/datom 1 :test/value x)) type)
+          decoded (decode)]
+      (is (= x decoded))
+      (is (Arrays/equals ^bytes (:bytes (meta x)) ^bytes (:bytes (meta decoded))))
+      (is (>= retained-bytes (value/value-charge decoded))))))

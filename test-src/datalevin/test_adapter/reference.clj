@@ -2,12 +2,15 @@
   (:require
    [datalevin.bits :as bits]
    [datalevin.core :as d]
+   [datalevin.csv :as csv]
    [datalevin.test-adapter :as adapter]))
 
 (defrecord ReferenceBackend []
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :csv/read-csv (let [[input options] arguments] (apply csv/read-csv input options))
+      :csv/write-csv (let [[writer data options] arguments] (apply csv/write-csv writer data options))
       :bits/serialize (apply bits/serialize arguments)
       :bits/deserialize (apply bits/deserialize arguments)
       :bits/encode-base64 (apply bits/encode-base64 arguments)

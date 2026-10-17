@@ -26,7 +26,8 @@
    [datalevin.scan :as scan :refer [visit-list*]]
    [datalevin.util :as u :refer [raise]])
   (:import
-   [java.util ArrayList Arrays List Comparator Collection HashMap]
+   [java.util ArrayList List Comparator Collection Map]
+   [datalevin.utl QueryKey]
    [java.util.concurrent Callable ForkJoinPool ForkJoinWorkerThread Future]
    [java.nio ByteBuffer]
    [java.lang AutoCloseable]
@@ -64,10 +65,36 @@
           v (b/read-buffer (lmdb/v kv) (index->vtype index))]
       (pred (retrieved->datom lmdb attrs [k v])))))
 
-(defn- giant-value-equal? [a b]
-  (if (bytes? a)
-    (and (bytes? b) (Arrays/equals ^bytes a ^bytes b))
-    (= a b)))
+(defn content-scan?
+  "Serialized generic keys cannot bound byte-content equality: map/set order
+  and host collection representations may differ between equal values."
+  [value-type value]
+  (and (= value-type :data) (QueryKey/containsBytes value)))
+
+(defn content-entities
+  "Match a generic byte-containing value within one attribute's AVE range.
+  The caller supplies predicate or join-key equality as appropriate."
+  [lmdb aid value equal?]
+  (i/list-range-keep
+    lmdb c/ave
+    (fn [retrieved eid]
+      (when (equal? value (retrieved->v lmdb retrieved)) eid))
+    [:closed (b/indexable nil aid c/v0 :data c/g0)
+     (b/indexable nil aid c/vmax :data c/gmax)]
+    :avg [:all] :id false))
+
+(defn content-present?
+  "Match within an entity/attribute EAV range, including unindexed values."
+  [lmdb aid eid value equal?]
+  (boolean
+    (i/list-range-some
+      lmdb c/eav
+      (fn [_ retrieved] (equal? value (retrieved->v lmdb retrieved)))
+      [:closed eid eid] :id
+      [:closed (b/indexable nil aid c/v0 :data c/g0)
+       (b/indexable nil aid c/vmax :data c/gmax)] :avg false)))
+
+(defn- giant-value-equal? [a b] (QueryKey/equiv a b))
 
 (defn scan-giant-av
   "Apply a list-range reader to complete-value matches across giant IDs.
@@ -150,10 +177,10 @@
   (ave-tuples-scan*
     lmdb aid vt val-ranges sample-indices
     (fn [kv]
-      (let [v (idx/avg-buffer->v lmdb (lmdb/k kv))]
+      (let [e (.getLong ^ByteBuffer (lmdb/v kv) 0)
+            v (idx/avg-buffer->v lmdb (lmdb/k kv))]
         (when (vpred v)
-          (.add out (object-array [(.getLong ^ByteBuffer (lmdb/v kv) 0)
-                                  v])))))))
+          (.add out (object-array [e v])))))))
 
 (defn ave-tuples-scan-no-v
   [lmdb ^Collection out aid vt val-ranges sample-indices]
@@ -167,9 +194,11 @@
   (ave-tuples-scan*
     lmdb aid vt val-ranges sample-indices
     (fn [kv]
-      (let [v (idx/avg-buffer->v lmdb (lmdb/k kv))]
+      ;; Reading a giant value or running a predicate can reuse cursor buffers.
+      (let [e (.getLong ^ByteBuffer (lmdb/v kv) 0)
+            v (idx/avg-buffer->v lmdb (lmdb/k kv))]
         (when (vpred v)
-          (.add out (object-array [(.getLong ^ByteBuffer (lmdb/v kv) 0)])))))))
+          (.add out (object-array [e])))))))
 
 (defn sort-tuples-by-eid
   [^List tuples ^long eid-idx]
@@ -216,16 +245,19 @@
       (raise "Fail to filter EAV attribute presence: " e
                {:eid-idx eid-idx :aid aid}))))
 
+(declare val-eq-scan-e-bound* val-eq-filter-e*)
+
 (defn ave-filter-bound-id-chunk
   [lmdb ^List in value-idx aid value-type bound-id]
   (let [out      (FastList. (.size in))
         dbi-name c/ave]
     (scan/scan lmdb dbi-name
-      (if (map? value-type)
+      (if (or (map? value-type)
+              (some #(content-scan? value-type (aget ^objects % value-idx)) in))
         (do
           (doseq [^objects tuple in]
-            (when (some #{bound-id} (cd/exact-entities lmdb aid value-type (aget tuple value-idx)))
-              (.add out (r/conj-tuple tuple (long bound-id)))))
+            (val-eq-scan-e-bound* lmdb rtx cur out tuple aid
+                                  (aget tuple value-idx) value-type bound-id))
           out)
         (cpp/filter-list-avg-bound-id!
           rtx cur in value-idx aid value-type bound-id out lmdb giant-av-match?))
@@ -237,12 +269,12 @@
   (let [out      (FastList. (.size in))
         dbi-name c/ave]
     (scan/scan lmdb dbi-name
-      (if (map? value-type)
+      (if (or (map? value-type)
+              (some #(content-scan? value-type (aget ^objects % value-idx)) in))
         (do
           (doseq [^objects tuple in]
-            (when (some #{(aget tuple entity-idx)}
-                        (cd/exact-entities lmdb aid value-type (aget tuple value-idx)))
-              (.add out tuple)))
+            (val-eq-filter-e* lmdb rtx cur out tuple aid
+                              (aget tuple value-idx) value-type (aget tuple entity-idx)))
           out)
         (cpp/filter-list-avg-tuple-id!
           rtx cur in value-idx entity-idx aid value-type out lmdb giant-av-match?))
@@ -344,7 +376,7 @@
                        (u/long-inc ai) vi)
                 (let [v (idx/avg-buffer->v lmdb vb)]
                   (if (and (or (nil? pred) (pred v))
-                           (or (nil? fidx) (= v (aget tuple (int fidx)))))
+                           (or (nil? fidx) (QueryKey/equiv v (aget tuple (int fidx)))))
                     (if skip
                       (recur (and (< (inc ai) na) (lmdb/has-next-val iter))
                              (u/long-inc ai) vi)
@@ -390,7 +422,7 @@
                        (u/long-inc ai) vi)
                 (let [v (idx/avg-buffer->v lmdb vb)]
                   (if (and (or (nil? pred) (pred v))
-                           (or (nil? fidx) (= v (aget tuple (int fidx)))))
+                           (or (nil? fidx) (QueryKey/equiv v (aget tuple (int fidx)))))
                     (if skip
                       (recur (and (< (inc ai) na) (lmdb/has-next-val iter))
                              (u/long-inc ai) vi)
@@ -440,7 +472,7 @@
                           fidx (aget fidxs aj)]
                       (when (and (or (nil? pred) (pred v))
                                  (or (nil? fidx)
-                                     (= v (aget tuple (int fidx)))))
+                                     (QueryKey/equiv v (aget tuple (int fidx)))))
                         (.add ^FastList (aget vs aj) v))))
                   (recur (lmdb/has-next-val iter) gi (int a) true))
                 (recur (lmdb/has-next-val iter) gi pa false)))
@@ -488,13 +520,20 @@
           (.addAll out (r/prod-tuples (r/single-tuples tuple) vst)))))))
 
 (defn val-eq-scan-e*
-  [lmdb iter ^Collection out tuple ^HashMap seen aid v vt]
+  [lmdb iter ^Collection out tuple ^Map seen aid v vt]
   (if-let [ts (.get seen v)]
     (when-not (identical? ts :no-result)
       (.addAll out (r/prod-tuples (r/single-tuples tuple) ts)))
     (let [ts (FastList.)]
-      (if (map? vt)
+      (cond
+        (content-scan? vt v)
+        (doseq [e (content-entities lmdb aid v #(QueryKey/equals %1 %2))]
+          (.add ts (object-array [e])))
+
+        (map? vt)
         (doseq [e (cd/exact-entities lmdb aid vt v)] (.add ts (object-array [e])))
+
+        :else
         (let [key (b/indexable nil aid v vt c/g0)]
           (if (b/giant? key)
             (doseq [e (scan-giant-av lmdb i/list-range-keep key)]
@@ -510,16 +549,20 @@
 
 (defn val-eq-scan-e-bound*
   [lmdb rtx cur ^Collection out tuple aid v vt bound]
-  (when (if (map? vt)
-          (some #{bound} (cd/exact-entities lmdb aid vt v))
-          (cpp/list-avg-id? rtx cur aid v vt bound lmdb giant-av-match?))
+  (when (cond
+          (content-scan? vt v)
+          (content-present? lmdb aid bound v #(QueryKey/equals %1 %2))
+          (map? vt) (some #{bound} (cd/exact-entities lmdb aid vt v))
+          :else (cpp/list-avg-id? rtx cur aid v vt bound lmdb giant-av-match?))
     (.add out (r/conj-tuple tuple (long bound)))))
 
 (defn val-eq-filter-e*
   [lmdb rtx cur ^Collection out tuple aid v vt old-e]
-  (when (if (map? vt)
-          (some #{old-e} (cd/exact-entities lmdb aid vt v))
-          (cpp/list-avg-id? rtx cur aid v vt old-e lmdb giant-av-match?))
+  (when (cond
+          (content-scan? vt v)
+          (content-present? lmdb aid old-e v #(QueryKey/equals %1 %2))
+          (map? vt) (some #{old-e} (cd/exact-entities lmdb aid vt v))
+          :else (cpp/list-avg-id? rtx cur aid v vt old-e lmdb giant-av-match?))
     (.add out tuple)))
 
 (defn single-attrs?
@@ -616,4 +659,4 @@
     (integer? v) (fn [x] (if (integer? x) (= (long v) (long x)) false))
     (keyword? v) (fn [x] (.equals ^Object v x))
     (nil? v)     (fn [x] (nil? x))
-    :else        (fn [x] (= v x))))
+    :else        (fn [x] (QueryKey/equiv v x))))

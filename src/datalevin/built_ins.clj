@@ -30,7 +30,7 @@
    [datalevin.util :as u :refer [raise long-inc]]
    [datalevin.interface :as i :refer [search schema search-vec attrs]])
   (:import
-   [datalevin.utl QueryKey]
+   [datalevin.utl QueryKey QueryKey$EquivSet]
    [java.util List]
    [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM LRUCache]
@@ -1300,13 +1300,20 @@
   [n coll]
   (aggregate-sample n coll))
 
+(defn- aggregate-distinct-values [coll]
+  (if (some #(QueryKey/containsBytes %) coll)
+    (let [seen (QueryKey$EquivSet.)]
+      (doseq [x coll] (.add seen x))
+      seen)
+    (clojure.core/distinct coll)))
+
 (defn- aggregate-count-distinct [coll]
-  (clojure.core/count (clojure.core/distinct coll)))
+  (clojure.core/count (aggregate-distinct-values coll)))
 
 (defn distinct
   "Aggregation function that returns the distinctive values of a collection."
   [coll]
-  (set coll))
+  (set (aggregate-distinct-values coll)))
 
 (defn count-distinct
   "Aggregation function that count the distinctive values of a collection."

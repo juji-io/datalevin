@@ -29,6 +29,7 @@
     :refer [ case-tree defrecord-updatable raise]]
    [datalevin.lmdb :as l]
    [datalevin.storage :as s]
+   [datalevin.storage.scan :as scans]
    [datalevin.prepare :as prepare]
    [datalevin.query-util :as qu]
    [datalevin.udf :as udf]
@@ -51,7 +52,7 @@
    [datalevin.datom Datom]
    [datalevin.interface IRemoteDB IRemotePrepared IStore]
    [datalevin.storage Store WriteGroup]
-   [datalevin.utl LRUCache]
+   [datalevin.utl LRUCache QueryKey]
    [java.nio ByteBuffer]
    [java.util Arrays Comparator]
    [clojure.lang LazilyPersistentVector]
@@ -811,6 +812,17 @@
                          (:eavt db))]
       (merge-tx-cache-datoms db :eav base cached))))
 
+(defn- content-search? [store attr value]
+  (when-let [props ((schema store) attr)]
+    (scans/content-scan? (idx/value-type props) value)))
+
+(defn- content-search-tuples [store entity attr value]
+  (if (some? entity)
+    (when (some #(QueryKey/equiv value (aget ^objects % 0))
+                (s/ea-tuples store entity attr))
+      (rel/single-tuples (object-array [entity attr value])))
+    (s/av-tuples store attr value)))
+
 (defrecord-updatable DB [^IStore store
                          ^long max-eid
                          ^long max-tx
@@ -963,19 +975,21 @@
       (when (nil? e) (vld/validate-indexed-attr (schema store) a))
       (wrap-cache
         store [:search-tuples e a v]
-        (case-tree
-          [e a (some? v)]
-          [(when (if (cd/custom-type? (:db/valueType ((schema store) a)))
-                   (seq (fetch store (d/datom e a v)))
-                   (populated? store :eav (d/datom e a v) (d/datom e a v)))
-             (rel/single-tuples (object-array [e a v]))) ; e a v
-           (s/ea-tuples store e a) ; e a _
-           (s/ev-tuples store e v)  ; e _ v
-           (s/e-tuples store e) ; e _ _
-           (s/av-tuples store a v) ; _ a v
-           (s/a-tuples store a) ; _ a _
-           (s/v-tuples store v) ; _ _ v
-           (s/all-tuples store)])))) ; _ _ _
+        (if (content-search? store a v)
+          (content-search-tuples store e a v)
+          (case-tree
+            [e a (some? v)]
+            [(when (if (cd/custom-type? (:db/valueType ((schema store) a)))
+                     (seq (fetch store (d/datom e a v)))
+                     (populated? store :eav (d/datom e a v) (d/datom e a v)))
+               (rel/single-tuples (object-array [e a v]))) ; e a v
+             (s/ea-tuples store e a) ; e a _
+             (s/ev-tuples store e v)  ; e _ v
+             (s/e-tuples store e) ; e _ _
+             (s/av-tuples store a v) ; _ a v
+             (s/a-tuples store a) ; _ a _
+             (s/v-tuples store v) ; _ _ v
+             (s/all-tuples store)]))))) ; _ _ _
 
   (-first
     [db pattern]
@@ -1013,20 +1027,22 @@
       (when (nil? e) (vld/validate-indexed-attr (schema store) a))
       (wrap-cache
         store [:count e a v cap]
-        (case-tree
-          [e a (some? v)]
-          [(if (cd/custom-type? (:db/valueType ((schema store) a)))
-             (count (fetch store (datom e a v)))
-             (size store :eav (datom e a v) (datom e a v))) ; e a v
-           (size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
-           (size-filter store :eav
-                        (fn [^Datom d] ((s/vpred v) (.-v d)))
-                        (datom e nil nil) (datom e nil nil))  ; e _ v
-           (e-size store e) ; e _ _
-           (av-size store a v) ; _ a v
-           (a-size store a) ; _ a _
-           (v-size store v) ; _ _ v, for ref only
-           (datom-count store :eav)])))) ; _ _ _
+        (if (content-search? store a v)
+          (count (content-search-tuples store e a v))
+          (case-tree
+            [e a (some? v)]
+            [(if (cd/custom-type? (:db/valueType ((schema store) a)))
+               (count (fetch store (datom e a v)))
+               (size store :eav (datom e a v) (datom e a v))) ; e a v
+             (size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+             (size-filter store :eav
+                          (fn [^Datom d] ((s/vpred v) (.-v d)))
+                          (datom e nil nil) (datom e nil nil))  ; e _ v
+             (e-size store e) ; e _ _
+             (av-size store a v) ; _ a v
+             (a-size store a) ; _ a _
+             (v-size store v) ; _ _ v, for ref only
+             (datom-count store :eav)]))))) ; _ _ _
 
   IIndexAccess
   (-populated?

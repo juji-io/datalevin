@@ -1,6 +1,7 @@
 (ns datalevin.query.source.execution-runner
   "Run the source contract and embedded execution checks."
   (:require [clojure.test :as test]
+            [datalevin.query-key-test]
             [datalevin.query.source-test]
             [datalevin.query.source-runtime-test]
             [datalevin.query.source-execution-test]
@@ -12,7 +13,8 @@
             [datalevin.query.source-native-metadata-test]))
 
 (defn -main [& _]
-  (let [{:keys [fail error]} (test/run-tests 'datalevin.query.source-test
+  (let [{:keys [fail error]} (test/run-tests 'datalevin.query-key-test
+                                           'datalevin.query.source-test
                                            'datalevin.query.source-runtime-test
                                            'datalevin.query.source-execution-test
                                            'datalevin.query.source-join-index-test

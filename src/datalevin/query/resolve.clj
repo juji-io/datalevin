@@ -47,7 +47,7 @@
    [datalevin.storage :as storage]
    [datalevin.util :as u :refer [raise concatv]])
   (:import
-   [java.util HashMap HashSet IdentityHashMap List]
+   [java.util HashMap HashSet IdentityHashMap List Set]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple RulesVar SrcVar]
    [datalevin.relation Relation]
    [org.eclipse.collections.impl.list.mutable FastList]))
@@ -662,7 +662,7 @@
         domain-values  (qu/relation-distinct-values domain-rel value)
         matched-rel    (r/relation!
                          {entity 0, value 1}
-                         (if (zero? (.size ^HashSet domain-values))
+                         (if (zero? (.size ^Set domain-values))
                            (FastList.)
                            (lookup-pattern-domain-filtered-entity
                              consumer-source consumer-pattern
@@ -681,7 +681,7 @@
                                 :rels-bound-cache (volatile! {})))]
     {:context      context
      :idxs         (vec (sort [(:idx domain) (:idx consumer)]))
-     :domain-size  (.size ^HashSet domain-values)
+     :domain-size  (.size ^Set domain-values)
      :matched-size (.size ^List (:tuples matched-rel))}))
 
 (defn resolve-singleton-domain-scan

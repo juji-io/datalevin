@@ -29,7 +29,8 @@
    [datalevin.timeout :as timeout]
    [datalevin.util :as u :refer [raise]])
   (:import
-   [java.util AbstractCollection ArrayList Collection Collections HashSet List]
+   [java.util AbstractCollection ArrayList Collection Collections List]
+   [datalevin.utl QueryKey$KeySet]
    [java.util.concurrent Callable CompletableFuture ConcurrentHashMap
     ExecutorService Executors ForkJoinPool ForkJoinWorkerThread Future TimeUnit]
    [datalevin.db DB]
@@ -904,7 +905,7 @@
 
 (defn- prefix-set-sink
   [^long width]
-  (let [^HashSet keys (HashSet.)
+  (let [^java.util.Set keys (QueryKey$KeySet.)
         ^objects scratch (when (< 1 width) (object-array width))
         lookup (when scratch (r/array-lookup))
         add-prefix!
@@ -1410,7 +1411,7 @@
 
 (defn- distinct-entity-input
   [^List source ^long index]
-  (let [seen   (HashSet.)
+  (let [seen   (QueryKey$KeySet.)
         tuples (FastList.)]
     (dotimes [i (.size source)]
       (let [entity (aget ^objects (.get source i) index)]

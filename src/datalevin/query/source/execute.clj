@@ -172,7 +172,11 @@
                (mapv #(zipmap (:symbols return) %) rows) rows)
         find (:qfind parsed)]
     (cond (instance? FindRel find)
-          (cond (:qreturn-map parsed) (set rows)
+          (cond (:qreturn-map parsed)
+                (if (some #(QueryKey/containsBytes %) rows)
+                  (spill/new-spillable-set rows {:spill-threshold Long/MAX_VALUE
+                                                :initial-capacity (count rows)})
+                  (set rows))
                 (or (seq (:qwith parsed)) (some dp/aggregate? (dp/find-elements find))) rows
                 :else (spill/new-spillable-set rows {:spill-threshold Long/MAX_VALUE
                                                      :initial-capacity (count rows)}))

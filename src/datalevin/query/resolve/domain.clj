@@ -20,7 +20,8 @@
     :refer [multi-lookup-safety-limit resolve-entity-pairs]]
    [datalevin.util :as u])
   (:import
-   [java.util HashSet List]))
+   [java.util List]
+   [datalevin.utl QueryKey QueryKey$KeySet]))
 
 (def ^:private ^:const ^long singleton-domain-min-consumer-size 64)
 
@@ -125,7 +126,7 @@
         (loop [i (long 1)]
           (cond
             (== i n) {:kind :singleton, :value value}
-            (= value (aget ^objects (.get tuples (int i)) idx))
+            (QueryKey/equiv value (aget ^objects (.get tuples (int i)) idx))
             (recur (u/long-inc i))
             :else {:kind :multiple}))))))
 
@@ -137,7 +138,7 @@
 (defn- singleton-domain-pair
   [left right]
   (when (and (identical? (:source left) (:source right))
-             (= (:value left) (:value right))
+             (QueryKey/equiv (:value left) (:value right))
              (not= (:entity left) (:entity right)))
     (let [left-shape  (relation-domain-shape (:entity-rel left)
                                               (:entity left))
@@ -160,7 +161,7 @@
                                          (:entity consumer)))
           domain-values
           (when domain
-            (doto (HashSet.) (.add (:value domain-shape))))
+            (doto (QueryKey$KeySet.) (.add (:value domain-shape))))
           domain          (when domain
                             (assoc domain
                                    :entity-values domain-values

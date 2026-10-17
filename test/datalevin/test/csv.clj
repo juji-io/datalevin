@@ -1,7 +1,7 @@
 (ns datalevin.test.csv
   (:require
    [clojure.test :refer [deftest is]]
-   [datalevin.csv :as csv])
+   [datalevin.test-adapter.csv :as csv])
   (:import
    [java.io StringReader]))
 

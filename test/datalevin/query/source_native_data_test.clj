@@ -150,8 +150,7 @@
 
 (deftest unsupported-data-never-invokes-readers
   (reset! decoded-custom-values 0)
-  (doseq [x [(UnexpectedData.) {:nested (UnexpectedData.)} (byte-array [1 2])
-             {:nested [(byte-array [1 2])]} (with-meta [1] {:hidden (UnexpectedData.)})
+  (doseq [x [(UnexpectedData.) {:nested (UnexpectedData.)} (with-meta [1] {:hidden (UnexpectedData.)})
              (sorted-map :a (UnexpectedData.))
              clojure.lang.PersistentQueue/EMPTY]]
     (is (= :query-source/unsupported

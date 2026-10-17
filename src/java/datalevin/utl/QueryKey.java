@@ -8,6 +8,8 @@ import org.eclipse.collections.impl.map.strategy.mutable.UnifiedMapWithHashingSt
 import org.eclipse.collections.impl.set.strategy.mutable.UnifiedSetWithHashingStrategy;
 
 import java.util.Arrays;
+import java.util.AbstractMap;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -47,10 +49,18 @@ public final class QueryKey {
         if (budget != null) budget.check();
     }
 
+    private static boolean collection(Object value) {
+        // User collection classes can define nominal equality, just like
+        // records. Only the standard portable Clojure containers are structural.
+        return !(value instanceof IRecord)
+                && (value instanceof List<?> || value instanceof Map<?, ?> || value instanceof Set<?>)
+                && value.getClass().getName().startsWith("clojure.lang.");
+    }
+
     public static boolean containsBytes(Object value) {
-        check();
         if (value instanceof byte[]) return true;
-        if (value instanceof IRecord) return false;
+        if (!collection(value)) return false;
+        check();
         if (value instanceof Map<?, ?> map) {
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 if (containsBytes(entry.getKey()) || containsBytes(entry.getValue())) return true;
@@ -64,6 +74,7 @@ public final class QueryKey {
     }
 
     public static int hash(Object value) {
+        if (!(value instanceof byte[]) && !collection(value)) return Objects.hashCode(value);
         check();
         if (value instanceof byte[] bytes) return Arrays.hashCode(bytes);
         if (value instanceof IRecord) return value.hashCode();
@@ -97,9 +108,13 @@ public final class QueryKey {
     }
 
     private static boolean equal(Object left, Object right, boolean equiv) {
-        check();
         if (left == right) return true;
         if (left == null || right == null) return false;
+        if (!(left instanceof byte[]) && !(right instanceof byte[])
+                && (!collection(left) || !collection(right))) {
+            return equiv ? Util.equiv(left, right) : Objects.equals(left, right);
+        }
+        check();
         if (left instanceof byte[] a) {
             return right instanceof byte[] b && Arrays.equals(a, b);
         }
@@ -129,6 +144,7 @@ public final class QueryKey {
     }
 
     private static int equivHash(Object value) {
+        if (!(value instanceof byte[]) && !collection(value)) return Util.hasheq(value);
         check();
         if (value instanceof byte[] bytes) return Arrays.hashCode(bytes);
         if (value instanceof IRecord) return Util.hasheq(value);
@@ -216,10 +232,37 @@ public final class QueryKey {
         @Override public boolean equals(Object left, Object right) { return QueryKey.equals(left, right); }
     };
 
-    public static final class KeyMap extends UnifiedMapWithHashingStrategy<Object, Object> {
+    private static final HashingStrategy<Object> EQUIV_STRATEGY = new HashingStrategy<>() {
         private static final long serialVersionUID = 1L;
-        public KeyMap() { super(STRATEGY); }
-        public KeyMap(int capacity) { super(STRATEGY, capacity); }
+        @Override public int computeHashCode(Object value) { return equivHash(value); }
+        @Override public boolean equals(Object left, Object right) { return equiv(left, right); }
+    };
+
+    public static final class EquivSet extends UnifiedSetWithHashingStrategy<Object> {
+        private static final long serialVersionUID = 1L;
+        public EquivSet() { super(EQUIV_STRATEGY); }
+    }
+
+    /** Expose Java Map iteration to Clojure, not Eclipse's Iterable of values. */
+    public static final class KeyMap extends AbstractMap<Object, Object>
+            implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        private final UnifiedMapWithHashingStrategy<Object, Object> entries;
+
+        public KeyMap() { entries = new UnifiedMapWithHashingStrategy<>(STRATEGY); }
+        public KeyMap(int capacity) {
+            entries = new UnifiedMapWithHashingStrategy<>(STRATEGY, capacity);
+        }
+
+        @Override public int size() { return entries.size(); }
+        @Override public boolean containsKey(Object key) { return entries.containsKey(key); }
+        @Override public Object get(Object key) { return entries.get(key); }
+        @Override public Object put(Object key, Object value) { return entries.put(key, value); }
+        @Override public Object remove(Object key) { return entries.remove(key); }
+        @Override public void clear() { entries.clear(); }
+        @Override public Set<Entry<Object, Object>> entrySet() { return entries.entrySet(); }
+        @Override public Set<Object> keySet() { return entries.keySet(); }
+        @Override public Collection<Object> values() { return entries.values(); }
     }
 
     public static final class KeySet extends UnifiedSetWithHashingStrategy<Object> {

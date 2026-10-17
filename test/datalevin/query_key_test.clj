@@ -1,0 +1,126 @@
+(ns datalevin.query-key-test
+  (:require [clojure.test :refer [deftest is]]
+            [datalevin.built-ins :as built-ins]
+            [datalevin.core :as d]
+            [datalevin.query.source.fake :as fake]
+            [datalevin.query.source-test :refer [tuple-info]]
+            [datalevin.query.source.control :as control]
+            [datalevin.query.source.runtime :as rt]
+            [datalevin.query.source.value :as value]
+            [datalevin.relation :as relation])
+  (:import [datalevin.utl QueryKey QueryKey$KeyMap QueryKey$KeySet]
+           [java.util AbstractList Arrays Objects]))
+
+(deftest binary-keys-share-equality-hash-and-lookup
+  (doseq [x [(byte-array 0) (byte-array [0 -1 2])
+             [(byte-array [1]) 1.0M nil]
+             (list (byte-array [1]) :end)
+             {:value [(byte-array [1 2])]}
+             (hash-map (byte-array [1]) :a (byte-array [1]) :b)
+             (hash-set (byte-array [1]) (byte-array [1]) (byte-array [2]))
+             {:nested #{[(byte-array [2])] [(byte-array [3])]}}
+             (with-meta [(byte-array [3])] {:ignored (Object.)})]
+          :let [y (if (meta x) (with-meta (value/owned-copy (with-meta x nil)) nil)
+                      (value/owned-copy x))
+                m (QueryKey$KeyMap.)
+                s (QueryKey$KeySet.)]]
+    (is (QueryKey/equals x y))
+    (is (QueryKey/equals y x))
+    (is (QueryKey/equiv x y))
+    (is (= (QueryKey/hash x) (QueryKey/hash y)))
+    (.put m x :found)
+    (.add s x)
+    (is (= :found (.get m y)))
+    (is (not (.add s y)))
+    (let [stored (relation/wrap-array (object-array [x]))
+          lookup (relation/reset-array-lookup! (relation/array-lookup) (object-array [y]))]
+      (is (= stored lookup))
+      (is (= lookup stored))
+      (is (= (hash stored) (hash lookup))))))
+
+(deftest collisions-and-unordered-multiplicity
+  (let [a (byte-array [0 31]) b (byte-array [1 0])
+        m (QueryKey$KeyMap.)]
+    (is (= (Arrays/hashCode a) (Arrays/hashCode b)))
+    (is (not (QueryKey/equals a b)))
+    (.put m a :a)
+    (.put m b :b)
+    (is (= :a (.get m (aclone a))))
+    (is (= :b (.get m (aclone b)))))
+  (let [a (hash-set (byte-array [1]) (byte-array [1]))
+        b #{(byte-array [1]) (byte-array [2])}]
+    (is (not (QueryKey/equals a b)))
+    (is (not (QueryKey/equals b a))))
+  (is (not (QueryKey/equals (hash-map (byte-array [1]) :a (byte-array [1]) :a)
+                           (hash-map (byte-array [1]) :a (byte-array [1]) :b)))))
+
+(deftest nonbinary-semantics-and-predicate-numeric-equivalence
+  (let [values [nil true false 1 (int 1) 1N 1.0 1.0M 1.00M -0.0 0.0 Double/NaN Float/NaN Double/POSITIVE_INFINITY
+                :a 'a "a" [1.0M] [1.00M] '(1 2) [1 2]
+                {:a 1.0M} {:a 1.00M} #{1 2} (sorted-set 1 2)]]
+    (doseq [x values]
+      (is (= (Objects/hashCode x) (QueryKey/hash x))))
+    (doseq [x values y values]
+      (is (= (Objects/equals x y) (QueryKey/equals x y)))
+      (is (= (= x y) (QueryKey/equiv x y)))))
+  (doseq [wrap [#(vector (byte-array [1]) %)
+                #(hash-map :bytes (byte-array [1]) :n %)
+                #(hash-set [(byte-array [1]) %])]]
+    (is (not (QueryKey/equals (wrap 1.0M) (wrap 1.00M))))
+    (is (built-ins/= (wrap 1.0M) (wrap 1.00M)))
+    (is (not (built-ins/not= (wrap 1.0M) (wrap 1.00M))))))
+
+(deftest unordered-key-workspace-is-bounded-and-released
+  (let [x (into {} (map #(vector % (byte-array [1 2]))) (range 100))
+        y (value/owned-copy x)
+        captured (atom nil)]
+    (is (thrown? clojure.lang.ExceptionInfo
+          (rt/with-runtime {:limits {:retained-bytes 4096}}
+            (fn [runtime]
+              (reset! captured (:control runtime))
+              (QueryKey/equals x y)))))
+    (is (every? zero? (vals (control/usage @captured))))
+    (is (QueryKey/equals x y) "The per-query budget is restored after failure")
+    (is (thrown? clojure.lang.ExceptionInfo
+          (rt/with-runtime {}
+            (fn [{:keys [control]}]
+              (is (QueryKey/equals x y))
+              (is (every? zero? (vals (control/usage control))))
+              (control/cancel! control {:error :query-source/cancelled})
+              (QueryKey/hash x)))))
+    (is (QueryKey/equals x y))))
+
+(deftest custom-collection-equality-remains-opaque
+  (let [make-value (fn [data]
+                     (proxy [AbstractList] []
+                       (get [_] data)
+                       (size [] 1)
+                       (equals [other] (= (class this) (class other)))
+                       (hashCode [] 42)))
+        left (make-value (byte-array [1]))
+        right (make-value (byte-array [2]))
+        type {:kind :custom :name :test/opaque-list :version 1 :fingerprint "v1"}]
+    (extend (class left) value/IQuerySourceValue
+      {:-logical-type (fn [_] type) :-retained-bytes (fn [_] 256)})
+    (is (value/matches-type? type left))
+    (is (identical? left (value/owned-copy left)))
+    (is (QueryKey/equals left right))
+    (is (QueryKey/equiv left right))
+    (is (= 42 (QueryKey/hash left)))
+    (is (= (Objects/hashCode [left]) (QueryKey/hash [left])))
+    (let [rows [[1 left]]
+          source (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] type) rows)
+          q '[:find ?id :in $s ?value :where [$s ?id ?value]]]
+      (is (= #{[1]} (d/q q rows right) (d/q q source right))))
+    (let [index (QueryKey$KeyMap.)]
+      (.put index left :found)
+      (is (= :found (.get index right))))))
+
+(deftest key-map-retains-java-map-iteration
+  (let [m (QueryKey$KeyMap.)]
+    (.put m :first 1)
+    (.put m :second 2)
+    (is (= {:first 1 :second 2} (into {} m)))
+    (is (= #{[:first 1] [:second 2]} (set (for [[k v] m] [k v]))))
+    (is (= #{:first :second} (set (keys m))))
+    (is (= #{1 2} (set (vals m))))))

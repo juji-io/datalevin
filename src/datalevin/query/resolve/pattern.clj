@@ -408,7 +408,9 @@
                  (for [datom (db/-search database
                                         (mapv #(when-not (or (qu/free-var? %)
                                                             (= % '_)) %)
-                                              pattern))]
+                                              (if (QueryKey/containsBytes (nth pattern 2 nil))
+                                                (assoc pattern 2 '_)
+                                                pattern)))]
                    [(:e datom) (:a datom) (:v datom)]))]
     (lookup-pattern-coll datoms pattern)))
 

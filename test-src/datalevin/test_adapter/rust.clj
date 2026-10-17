@@ -9,14 +9,15 @@
    [datalevin.test-adapter :as adapter]
    [datalevin.test-adapter.bits :as bits])
   (:import
-   [java.io DataInputStream DataOutputStream]
+   [java.io DataInputStream DataOutputStream IOException Reader StringReader
+    UncheckedIOException Writer]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
    [java.math BigDecimal BigInteger]
    [datalevin.bits Indexable]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.utl GrowingIntArray]
    [java.nio ByteBuffer ByteOrder]
-   [java.util Date UUID]
+   [java.util Date Iterator NoSuchElementException UUID]
    [org.roaringbitmap RoaringBitmap]
    [org.roaringbitmap.buffer ImmutableRoaringBitmap]
    [org.roaringbitmap.longlong Roaring64Bitmap]
@@ -679,10 +680,81 @@
           (avg-value value)))
       (finally (.limit buffer limit)))))
 
+(defn- csv-rows [input options]
+  (let [{:keys [separator quote] :or {separator \, quote \"}} options
+        ^Reader reader (cond (string? input) (StringReader. ^String input)
+                             (instance? Reader input) input
+                             :else (throw (IllegalArgumentException.
+                                            "CSV input must be a String or java.io.Reader")))]
+    (lazy-seq
+      (let [separator (char separator) quote (char quote)
+            state (atom {:units (char-array 0) :offset 0 :eof? false
+                         :skip-lf? false :finished? false})
+            next-row
+            (fn []
+              (loop []
+                (let [{:keys [units offset eof? skip-lf? finished?]} @state]
+                  (when-not finished?
+                    (let [result (adapter/call! :csv/read-record
+                                                [units (long offset) eof? separator quote skip-lf?])]
+                      (case (:kind result)
+                        :end (do (swap! state assoc :finished? true) nil)
+                        :row (do (swap! state assoc :offset (+ (long offset) (long (:consumed result)))
+                                        :skip-lf? (:skip-lf? result) :finished? (:finished? result))
+                                 (mapv #(String. ^chars %) (:cells result)))
+                        :input
+                        (let [chunk (char-array 65536)
+                              n (loop []
+                                  (let [n (try (.read reader chunk 0 (alength chunk))
+                                               (catch IOException error
+                                                 (throw (UncheckedIOException. error))))]
+                                    (if (zero? n) (recur) n)))]
+                          (if (neg? (long n))
+                            (swap! state assoc :eof? true)
+                            (let [remaining (- (alength ^chars units) (long offset))
+                                  joined (char-array (+ remaining (long n)))]
+                              (System/arraycopy units (int offset) joined 0 (int remaining))
+                              (System/arraycopy chunk 0 joined (int remaining) (int n))
+                              (swap! state assoc :units joined :offset 0)))
+                          (recur))))))))
+            prepared (atom ::unprepared)
+            iterator (reify Iterator
+                       (hasNext [_]
+                         (when (= ::unprepared @prepared) (reset! prepared (next-row)))
+                         (some? @prepared))
+                       (next [this]
+                         (if (.hasNext this)
+                           (let [row @prepared] (reset! prepared ::unprepared) row)
+                           (throw (NoSuchElementException.)))))]
+        (map vec (iterator-seq iterator))))))
+
+(defn- write-csv! [^Writer writer data options]
+  (let [opts (apply hash-map options)
+        separator (or (:separator opts) \,)
+        quote (or (:quote opts) \")
+        quote? (:quote? opts)
+        newline ({:lf "\n" :cr+lf "\r\n"} (or (:newline opts) :lf))]
+    (doseq [record data]
+      (loop [cells (seq record)]
+        (when cells
+          (let [string (str (first cells))
+                {:keys [quoted? units]} (adapter/call! :csv/write-cell
+                                                        [(.toCharArray string) (char separator) (char quote)
+                                                         (when quote? (boolean (quote? string)))])]
+            (when quoted? (.write writer (int quote)))
+            (.write writer (String. ^chars units))
+            (when quoted? (.write writer (int quote)))
+            (when-let [more (next cells)]
+              (.write writer (int separator))
+              (recur more)))))
+      (.write writer ^String newline))))
+
 (defrecord RustBackend [peer session info]
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :csv/read-csv (apply csv-rows arguments)
+      :csv/write-csv (apply write-csv! arguments)
       :bits/serialize
       (serialize-value! peer session (first arguments))
 

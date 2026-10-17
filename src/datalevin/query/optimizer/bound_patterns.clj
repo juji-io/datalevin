@@ -28,7 +28,7 @@
    [datalevin.query.resolve :as qresolve]
    [datalevin.util :as u])
   (:import
-   [java.util HashSet List]
+   [java.util List]
    [datalevin.db DB]
    [datalevin.parser Constant Pattern]
    [org.eclipse.collections.impl.list.mutable FastList]))

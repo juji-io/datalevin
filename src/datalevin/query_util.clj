@@ -13,7 +13,8 @@
    [clojure.string :as str]
    [datalevin.util :as u :refer [cond+ raise]])
   (:import
-   [java.util HashSet List]))
+   [java.util List]
+   [datalevin.utl QueryKey$KeySet]))
 
 (def ^{:dynamic true
        :doc     "List of symbols in current pattern that might potentiall be resolved to refs"}
@@ -163,7 +164,7 @@
   [rel sym]
   (let [idx    (long ((:attrs rel) sym))
         tuples ^List (:tuples rel)
-        values (HashSet.)]
+        values (QueryKey$KeySet.)]
     (dotimes [i (.size tuples)]
       (.add values (aget ^objects (.get tuples i) idx)))
     values))

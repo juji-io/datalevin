@@ -187,10 +187,6 @@
 (defn matches-type? [t x]
   (matches-type*? t x false))
 
-(defn execution-type!
-  "Execution uses the shared native query keys, including byte content."
-  [_t])
-
 (defn execution-value!
   ([x] (execution-value! x nil))
   ([x check!]

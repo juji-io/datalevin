@@ -90,6 +90,7 @@
    [datalevin.vector :as v])
   (:import
    [java.util List Collection HashMap HashSet IdentityHashMap UUID Arrays]
+   [datalevin.utl QueryKey QueryKey$KeyMap]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap ScheduledFuture]
    [java.util.concurrent.locks ReentrantReadWriteLock]
    [java.nio ByteBuffer]
@@ -1065,7 +1066,7 @@
       (when-let [props (schema attr)]
         (let [vt       (idx/storage-type lmdb props)
               aid      (props :db/aid)
-              seen     (HashMap.)
+              seen     (QueryKey$KeyMap.)
               dbi-name c/ave]
           (scan/scan lmdb dbi-name
             (with-open [^AutoCloseable iter
@@ -1089,7 +1090,7 @@
               in       (sort-tuples-by-val in v-idx vt)
               nt       (.size ^List in)
               out      (FastList. (* 2 nt))
-              seen     (HashMap. nt)
+              seen     (QueryKey$KeyMap. nt)
               dbi-name c/ave]
           (scan/scan lmdb dbi-name
             (with-open [^AutoCloseable iter
@@ -2734,7 +2735,11 @@
   [^Store store a v]
   (let [lmdb   (.-lmdb store)
         schema (schema store)
-        coll   (av-entities lmdb schema a v)
+        vt     (idx/storage-type lmdb (schema a))
+        coll   (if (scans/content-scan? vt v)
+                 (scans/content-entities lmdb (:db/aid (schema a)) v
+                                          #(QueryKey/equiv %1 %2))
+                 (av-entities lmdb schema a v))
         size   (.size ^Collection coll)
         res    (FastList. size)]
     (doseq [e coll] (.add res (object-array [e])))

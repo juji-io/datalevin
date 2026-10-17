@@ -13,6 +13,7 @@
    [clojure.set :as set]
    [datalevin.db :as db]
    [datalevin.index :as idx]
+   [datalevin.storage.scan :as scans]
    [datalevin.parser :as dp]
    [datalevin.query.optimizer.range :as qor]
    [datalevin.query-util :as qu]
@@ -72,18 +73,22 @@
   [source]
   (if (instance? DefaultSrc source) '$ (:symbol source)))
 
-(defn- unindexed-pattern?
+(defn- residual-pattern?
   [sources clause]
   (when (instance? Pattern clause)
     (let [source (get sources (clause-source-symbol (:source clause)))
           attr (second (:pattern clause))]
       (and source (db/-searchable? source)
            (instance? Constant attr)
-           (get-in (db/-schema source) [(:value attr) :db/noindex])))))
+           (let [props (get (db/-schema source) (:value attr))
+                 value (nth (:pattern clause) 2 nil)]
+             (or (:db/noindex props)
+                 (and (instance? Constant value)
+                      (scans/content-scan? (idx/value-type props) (:value value)))))))))
 
-(defn- contains-unindexed-pattern?
+(defn- contains-residual-pattern?
   [sources clause]
-  (some #(unindexed-pattern? sources %)
+  (some #(residual-pattern? sources %)
         (dp/collect #(instance? Pattern %) clause)))
 
 (defn- not-join-optimizable?
@@ -102,7 +107,7 @@
           all-vars-used?   (set/subset? (set vars) body-vars)
           searchable-src?  (when-let [db (get sources src)]
                              (db/-searchable? db))]
-      (when (and (not (contains-unindexed-pattern? sources parsed-clause))
+      (when (and (not (contains-residual-pattern? sources parsed-clause))
                  searchable-src?
                  (seq vars)
                  pattern-only?
@@ -114,7 +119,7 @@
 (defn- optimizable?
   [sources resolved clause]
   (when (and (instance? Pattern clause)
-             (not (unindexed-pattern? sources clause)))
+             (not (residual-pattern? sources clause)))
     (let [{:keys [pattern]} clause]
       (when (and (instance? Constant (second pattern))
                  (not-any? resolved (map :symbol pattern)))
@@ -231,7 +236,7 @@
 (defn- or-join-optimizable?
   [sources resolved clause pattern-entity-vars rule-derived-vars]
   (when (and (or-join-clause? clause)
-             (not (contains-unindexed-pattern? sources clause)))
+             (not (contains-residual-pattern? sources clause)))
     (let [vars          (get-or-join-vars clause)
           will-be-bound (set/union resolved pattern-entity-vars)
           bound-vars    (filterv will-be-bound vars)

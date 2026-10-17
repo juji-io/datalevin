@@ -134,7 +134,6 @@
                       (fn [_]
                         (doseq [[term column] (map vector (:terms pattern)
                                                   (contract/pattern-columns descriptor pattern))]
-                          (when-not (= :ignore (first term)) (value/execution-type! (:type column)))
                           (when (= :var (first term))
                             (let [sym (second term) t (:type column)]
                               (when (and (contains? @types sym) (not= t (@types sym)))

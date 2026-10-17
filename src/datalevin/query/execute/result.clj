@@ -179,16 +179,14 @@
   (if (seq tuples)
     (let [symbols (:symbols return-map)
           idxs    (range 0 (count symbols))
-          get-i   (tuple-get (first tuples))]
-      (persistent!
-        (reduce
-          (fn [coll tuple]
-            (conj! coll
-                   (persistent!
-                     (reduce
-                       (fn [m i] (assoc! m (nth symbols i) (get-i tuple i)))
-                       (transient {}) idxs))))
-          (transient #{}) tuples)))
+          get-i   (tuple-get (first tuples))
+          rows    (mapv (fn [tuple]
+                          (persistent!
+                            (reduce (fn [m i] (assoc! m (nth symbols i) (get-i tuple i)))
+                                    (transient {}) idxs))) tuples)]
+      (if (some #(QueryKey/containsBytes %) rows)
+        (sp/new-spillable-set rows {:initial-capacity (count rows)})
+        (set rows)))
     #{}))
 
 (defn pull

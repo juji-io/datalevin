@@ -41,3 +41,6 @@
 (defn db-with [db tx-data] (call! :db-with [db tx-data]))
 (defn q [query & inputs] (call! :q (into [query] inputs)))
 (defn close-db [db] (call! :close-db [db]))
+
+(defn read-csv [input & options]
+  (call! :csv/read-csv [input options]))
