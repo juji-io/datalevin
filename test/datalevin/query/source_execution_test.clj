@@ -1,5 +1,5 @@
 (ns datalevin.query.source-execution-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is testing]]
             [datalevin.core :as d]
             [datalevin.interpret :as inter]
             [datalevin.query.source :as source]
@@ -34,6 +34,38 @@
     (is (= 1 (count (filter #{:open-session} @(:events s)))))
     (is (= 2 (count (filter #{:plan} @(:events s)))))
     (is (= [:close-cursor :close-session] (take-last 2 @(:events s))))))
+
+(deftest alternative-selection-backtracks-and-respects-once-replay
+  (let [query '[:find ?id ?name :in $s
+                :where [$s ?id ?name] [$s ?id ?other] [$s ?second ?name]]
+        rows [[1 "a"] [1 "b"] [2 "a"] [3 "c"] [1 "a"]]
+        left {:id :left :covers #{0} :replay :reopen}
+        right {:id :right :covers #{1 2} :replay :reopen}]
+    (doseq [[choices selected]
+            ;; The first alternative cannot complete without overlapping clause 1.
+            [[[(assoc left :id :dead-end :covers #{0 1}) left right] [left right]]
+             [[left (assoc right :replay :once)] nil]
+             [[{:id :whole :covers #{0 1 2} :replay :once}]
+              [{:covers #{0 1 2} :replay :once}]]]]
+      (testing (pr-str choices)
+        (let [s (fake/source tuple-info rows {} (constantly choices))]
+          (if selected
+            (let [plan (d/explain {:run? false} query s)]
+              (is (= (mapv #(select-keys % [:covers :replay]) selected)
+                     (mapv (fn [a] {:covers (:covers a)
+                                    :replay (get-in a [:properties :replay])})
+                           (get-in plan [:sources 0 :selected]))))
+              (is (not-any? #{:open-cursor :fetch} @(:events s)))
+              (is (= (d/q query rows) (d/q query s)))
+              (is (= (count selected) (count (filter #{:open-cursor} @(:events s))))))
+            (doseq [run? [false true]]
+              (is (= {:error :query-source/unsupported :phase :planning}
+                     (select-keys (error-data #(d/explain {:run? run?} query s))
+                                  [:error :phase])))
+              (is (not-any? #{:open-cursor :fetch} @(:events s)))))
+          (is (= 2 (count (filter #{:close-session} @(:events s)))))
+          (is (= (count (filter #{:open-cursor} @(:events s)))
+                 (count (filter #{:close-cursor} @(:events s))))))))))
 
 (deftest eav-reference-joins-and-missing-values
   (let [info (assoc tuple-info :pattern-contract
