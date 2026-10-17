@@ -41,9 +41,10 @@
       (QueryKey/equals expected actual)
       (.equals ^QueryKey$KeyMap (bag expected) (bag actual)))))
 
-(defrecord ObservedSession [delegate events hook request]
+(defrecord ObservedSession [delegate events hook request envelopes]
   spi/IQuerySourceSession
-  (-session-info [_] (spi/-session-info delegate))
+  (-session-info [_]
+    ((get envelopes :session-info identity) (spi/-session-info delegate)))
   (-open-cursor [_ request]
     (hook :open request)
     (let [cursor (spi/-open-cursor delegate request)
@@ -73,7 +74,8 @@
 
 (defn- observe
   ([source] (observe source (fn [_ _])))
-  ([source hook]
+  ([source hook] (observe source hook {}))
+  ([source hook envelopes]
    (let [events (atom []) controls (atom [])]
      {:events events :controls controls
       :source
@@ -84,13 +86,14 @@
           (hook :acquisition request)
           (let [session (spi/-open-session source request)]
             (swap! events conj [:open-session])
-            (let [session (->ObservedSession session events hook request)]
+            (let [session (->ObservedSession session events hook request envelopes)]
               (hook :acquired request)
               session)))
         (-plan-source [_ session request]
           (swap! events conj [:plan (:source-symbol request)])
           (hook :planning request)
-          (let [response (spi/-plan-source source (:delegate session) request)]
+          (let [response ((get envelopes :planning identity)
+                          (spi/-plan-source source (:delegate session) request))]
             (hook :planned {:request request :response response})
             response)))})))
 
@@ -675,9 +678,127 @@
           (is (= (if (= :plan mode) 0 (if aliases? 2 1)) (count @opened)))
           (finally (closed! observed)))))))
 
+(defn explanation!
+  "Check estimates, session consistency, and their diagnostic boundary through
+  an adapter's real sessions, plans, cursors, and reservations."
+  [make-source]
+  (let [secret "private explanation annotation"
+        unknown {:rows nil :row-bytes nil :startup-ms nil :per-row-ns nil
+                 :requests nil :confidence :unknown}
+        zero-estimate {:rows 0 :row-bytes 0 :startup-ms 0 :per-row-ns 0
+                       :requests 0 :confidence :high}
+        known {:rows 200 :row-bytes 32 :startup-ms 1.5M :per-row-ns 100
+               :requests 2 :confidence :low}
+        q '{:find [?id] :in [$a]
+            :where [[$a ?id ?value] [$a ?id ?other]]}
+        annotate (fn [x]
+                   (with-meta (if (map? x) (assoc x :test/private secret) x)
+                     {:private secret}))
+        estimates (fn [estimate response]
+                    (update response :alternatives
+                      #(mapv (fn [a]
+                               (-> a
+                                   (assoc :estimate (annotate estimate)
+                                          :explain {:label secret})
+                                   (update :covers annotate)
+                                   (update :prefilters annotate)
+                                   (update :properties annotate)
+                                   annotate)) %)))
+        make #(make-source (tuple-descriptor :string) [[1 "a"] [2 "b"] [3 "c"]])]
+    (doseq [estimate [unknown (assoc unknown :rows 200) zero-estimate
+                     known (assoc known :confidence :medium)]
+            aliases? [false true], run? [false true]]
+      (testing (str "explain estimate " estimate ", aliases=" aliases? ", run=" run?)
+        (let [planned (atom {}) session-reads (atom 0)
+              observed (observe (make)
+                         (fn [phase payload]
+                           (when (= :planned phase)
+                             (swap! planned assoc (get-in payload [:request :source-symbol])
+                                    (get-in payload [:response :alternatives]))))
+                         {:planning (partial estimates estimate)
+                          :session-info #(do (swap! session-reads inc) (annotate %))})
+              query (cond-> q aliases? (assoc :in '[$a $b]
+                                              :where (conj (:where q) '[$b ?id ?value])))
+              inputs (repeat (if aliases? 2 1) (:source observed))
+              result (apply d/explain {:run? run? :intermediate-counts? false} query inputs)]
+          (is (= (if aliases? #{'$a '$b} #{'$a}) (set (map :source (:sources result)))))
+          (is (= 1 @session-reads))
+          (doseq [{:keys [source consistency selected]} (:sources result)]
+            (is (= :snapshot consistency))
+            (is (= (mapv :covers (@planned source)) (mapv :covers selected)))
+            (is (= (repeat (count selected) estimate) (map :estimate selected))))
+          (if run?
+            (do (is (= 3 (:result-rows result)))
+                (is (seq (:cursors result)))
+                (is (every? #(= 3 (get-in % [:metrics :rows])) (:cursors result))))
+            (do (is (not (contains? result :result-rows)))
+                (is (not (contains? result :cursors)))
+                (is (not-any? #(= :open-cursor (first %)) @(:events observed)))))
+          (is (not (.contains (binding [*print-meta* true] (pr-str result)) secret)))
+          (closed! observed))))
+    ;; A high-confidence zero is advisory: it neither short-circuits the rows
+    ;; above nor permits execution to overrun a configured quota below.
+    (doseq [limits [{:result-rows 1} {:batch-bytes 1}]]
+      (let [observed (observe (make) (fn [_ _]) {:planning (partial estimates zero-estimate)})
+            error (error-data #(d/explain {:run? true} (assoc q :query-source {:limits limits})
+                                         (:source observed)))
+            [category maximum] (first limits)]
+        (is (= :query-source/limit (:error error)))
+        (is (= category (:category error)))
+        (is (= maximum (:maximum error)))
+        (is (< maximum (:attempted error)))
+        (is (not (.contains (pr-str error) secret)))
+        (closed! observed)))
+    (doseq [estimate [(assoc known :rows -1) (assoc known :row-bytes ##NaN)
+                     (assoc known :requests nil) (assoc known :confidence :test/invalid)]
+            run? [false true]]
+      (let [observed (observe (make) (fn [_ _]) {:planning (partial estimates estimate)})
+            error (error-data #(d/explain {:run? run?} q (:source observed)))]
+        (is (= {:error :query-source/invalid :phase :planning :source-symbol '$a}
+               (select-keys error [:error :phase :source-symbol])))
+        (is (not-any? #(= :open-cursor (first %)) @(:events observed)))
+        (is (not (.contains (binding [*print-meta* true] (pr-str error)) secret)))
+        (closed! observed)))
+    (doseq [run? [false true], requested [:statement :best-effort]]
+      (let [observed (observe (make))
+            error (error-data #(d/explain {:run? run?}
+                                         (assoc q :query-source {:consistency requested})
+                                         (:source observed)))]
+        (is (= :query-source/unsupported (:error error)))
+        (is (not-any? #(#{:plan :open-cursor} (first %)) @(:events observed)))
+        (closed! observed)))
+    (doseq [run? [false true]]
+      (let [observed (observe (make) (fn [_ _])
+                             {:session-info #(assoc % :consistency :best-effort)})
+            error (error-data #(d/explain {:run? run?} q (:source observed)))]
+        (is (= {:error :query-source/unsupported :phase :session :source-symbol '$a}
+               (select-keys error [:error :phase :source-symbol])))
+        (is (not-any? #(#{:plan :open-cursor} (first %)) @(:events observed)))
+        (closed! observed)))
+    (let [provider (make)
+          observed (observe provider
+                     (fn [phase _]
+                       (when (= phase :fetch)
+                         (throw (ex-info secret {:error :query-source/snapshot-lost
+                                                 :private secret})))))
+          query (assoc q :in '[$a $b] :where (conj (:where q) '[$b ?id ?value]))
+          error (error-data #(d/explain {:run? true} query (:source observed) (:source observed)))]
+      (is (= :query-source/snapshot-lost (:error error)))
+      (is (= :fetch (:phase error)))
+      (is (#{'$a '$b} (:source-symbol error)))
+      (is (seq (:clause-ids error)))
+      (is (not (.contains (pr-str error) secret)))
+      (closed! observed)
+      (let [fresh (observe provider)
+            result (d/explain {:run? true} query (:source fresh) (:source fresh))]
+        (is (= 3 (:result-rows result)))
+        (is (= [:snapshot :snapshot] (mapv :consistency (:sources result))))
+        (closed! fresh)))))
+
 (defn lifecycle!
   "Exercise public SPI lifetime boundaries without inspecting adapter internals."
   [make-source replace-rows!]
+  (explanation! make-source)
   (cursor-request-contract! make-source)
   (acquisition-boundary! make-source replace-rows!)
   (concurrent-views! make-source replace-rows!)

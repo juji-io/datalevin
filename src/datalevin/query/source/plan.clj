@@ -207,6 +207,22 @@
         (doseq [[a token] @charges]
           (when-not (and a (.remove retained a)) (source/release! token)))))))
 
+(defn- explain-alternative [runtime alternative]
+  (rt/with-context runtime {:alternative-id (:id alternative)}
+    (fn [runtime]
+      ;; Numeric estimates borrow validated, already charged immutable values.
+      ;; Reserve the fixed display containers before allocation. Rebuild maps
+      ;; and strip set metadata: accepted provider annotations are not public
+      ;; diagnostics, even when the caller prints Clojure metadata.
+      (rt/charge! runtime nil 1536 1)
+      (let [{:keys [covers prefilters properties estimate]} alternative]
+        {:covers (with-meta covers nil)
+         :prefilters (with-meta prefilters nil)
+         :properties {:replay (:replay properties) :ordering []
+                      :blocking-state (:blocking-state properties)}
+         :estimate (into {} (map (fn [k] [k (get estimate k)]))
+                         [:rows :row-bytes :startup-ms :per-row-ns :requests :confidence])}))))
+
 (defn acquire-and-plan! [runtime {:keys [entries bindings options] :as prepared}]
   (let [common {:spi-version 1 :features #{} :query-id (:query-id runtime)
                 :authorization (get options :authorization {:principal-id :application})
@@ -236,14 +252,17 @@
                       (rt/own! runtime #(try (close)
                                            (finally (source/unregister-cancel! registration)))))
                     (let [info (rt/invoke runtime :session #(source/-session-info session))
-                          token (rt/charge-metadata! runtime info :session)]
-                      (try (contract/session-info! request info)
-                           (finally (source/release! token))))
-                    (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))))
+                          token (rt/charge-metadata! runtime info :session)
+                          consistency (try (contract/session-info! request info)
+                                           (:consistency info)
+                                           (finally (source/release! token)))]
+                      (mapv #(assoc % :session session :request request
+                                     :session-consistency consistency
+                                     :allow-once? (= 1 (count group))) group)))))))
           groups)
         planned
         (mapv
-          (fn [{:keys [source symbol descriptor clauses session request] :as entry}]
+          (fn [{:keys [source symbol descriptor clauses session request session-consistency] :as entry}]
             (rt/with-context runtime {:source-symbol symbol :clause-ids (mapv :id clauses)}
               (fn [runtime]
                 (let [request (merge request {:source-symbol symbol :source-descriptor descriptor
@@ -255,12 +274,9 @@
                       response (rt/invoke runtime :planning #(source/-plan-source source session request))
                       selected (select-cover runtime request response (:allow-once? entry))]
                   (swap! (:explain runtime) update :sources conj
-                         {:source symbol :consistency (:consistency request)
+                         {:source symbol :consistency session-consistency
                           :pattern-count (count (:patterns entry))
-                          :selected (mapv #(-> (select-keys % [:covers :prefilters])
-                                                (assoc :properties
-                                                       (select-keys (:properties %)
-                                                                    [:replay :ordering :blocking-state]))) selected)})
+                          :selected (mapv #(explain-alternative runtime %) selected)})
                   (mapv #(assoc entry :alternative % :request request) selected))))) acquired)
         fragments (vec (mapcat identity planned))]
     (doseq [group (vals (group-by :session fragments))]

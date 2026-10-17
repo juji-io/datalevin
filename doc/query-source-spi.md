@@ -792,6 +792,12 @@ failures. An allowlisted provider `:label` may be shown; opaque plans, SQL,
 credentials, raw bindings, rows, and source values are never printed. No-query-
 source queries allocate no extension sessions, ledgers, or planning state.
 
+Each `:sources` entry reports the validated session's `:consistency`. Its
+`:selected` entries include the validated `:estimate` envelope from §5,
+preserving unknown values and confidence separately from actual `:cursors`
+metrics. Selected-plan display containers are quota-accounted and omit provider
+extension fields and Clojure metadata, including when metadata printing is enabled.
+
 ## 9. Source conformance
 
 Acceptance follows the [milestone checklist](../roadmap.md#source-milestones);
@@ -845,6 +851,12 @@ deadlines run through query, executed explain, and applicable plan-only paths,
 with and without aliases. They check callback dispatch off the query thread,
 error location, close order, released reservations, and a successful fresh query
 using the same source. Adapter-specific fault and capability tests remain necessary.
+
+The matrix's `explanation!` checks plan-only and executed output for estimates
+and actual consistency. It covers fused/separate plans and shared aliases,
+unknown/partial/numeric estimates, zero estimates with real rows and quota
+failures, invalid estimates, mismatched or unsupported consistency, snapshot
+loss, fresh reuse, and redaction of private annotations under metadata printing.
 
 The [integrated failure regressions](../../dtlvtest/test/datalevin/query/source_failure_test.clj)
 run with `lein test datalevin.query.source-failure-test` from `../dtlvtest`.
