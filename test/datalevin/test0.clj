@@ -2,7 +2,7 @@
   "tests for core operations"
   (:require
    [clojure.test :as t]
-   datalevin.test.bits
+   datalevin.test.bits-codec
    datalevin.test.core
    datalevin.test.components
    datalevin.test.csv
@@ -28,7 +28,7 @@
 (defn ^:export test-clj []
   (let [{:keys [fail error]}
         (t/run-tests
-          'datalevin.test.bits
+          'datalevin.test.bits-codec
           'datalevin.test.core
           'datalevin.test.components
           'datalevin.test.csv

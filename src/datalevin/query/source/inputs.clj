@@ -60,7 +60,7 @@
                 (fail! :query-source/invalid :inputs))) {} columns)))
 
 (defn- own-row! [runtime row]
-  (rt/charge! runtime row)
+  (rt/charge-copy! runtime row)
   (let [check! #(source/check-active! (:control runtime))]
     (run! #(value/execution-value! % check!) (vals row))
     (value/owned-copy row check!)))

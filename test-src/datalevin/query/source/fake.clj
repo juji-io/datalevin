@@ -78,7 +78,8 @@
                         (source/reserve! control {:retained-bytes bytes :in-flight-batches 1}))]
       ;; The fake owns its immutable snapshot; copy mutable leaves for each handoff.
       (try
-        (let [owned (value/owned-copy batch)]
+        (let [owned (value/owned-copy batch)
+              bytes (source/batch-charge-bytes columns owned)]
           (swap! position + (count batch))
           (swap! metrics #(-> % (update :batches inc) (update :rows + (count batch))
                               (update :charged-bytes + bytes)))

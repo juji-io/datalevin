@@ -187,6 +187,7 @@ fn dispatch(request: &Value) -> Value {
             tuple_operation(operation, arguments)
         }
         "bits/encode-bigdec" | "bits/decode-bigdec" => decimal_operation(operation, arguments),
+        "bits/valid-data?" => validation_operation(arguments),
         "bits/type-size" => {
             let [argument] = arguments.as_slice() else {
                 return protocol_error("Type size requires exactly one type");
@@ -655,6 +656,112 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
             },
         ),
     ]))
+}
+
+fn validation_value(value: &Value) -> Option<bits::ValidationValue<'_>> {
+    let Value::Keyword(kind) = field(value, "kind")? else {
+        return None;
+    };
+    if kind.as_ref() == "number" {
+        let number = field(value, "value")?;
+        if !matches!(
+            number,
+            Value::Byte(_)
+                | Value::Short(_)
+                | Value::Integer(_)
+                | Value::Long(_)
+                | Value::Float(_)
+                | Value::Double(_)
+                | Value::BigInt(_)
+                | Value::BigInteger(_)
+                | Value::BigDecimal { .. }
+                | Value::Ratio { .. }
+        ) {
+            return None;
+        }
+        let floating = match field(value, "floating")? {
+            Value::Double(floating) => Ok(f64::from_bits(*floating)),
+            error => {
+                let Value::Long(index) = field(error, "host-error")? else {
+                    return None;
+                };
+                Err(usize::try_from(*index).ok()?)
+            }
+        };
+        let decimal = match field(value, "decimal") {
+            None => None,
+            Some(value @ Value::BigDecimal { .. }) => Some(Ok(value)),
+            Some(error) => {
+                let Value::Long(index) = field(error, "host-error")? else {
+                    return None;
+                };
+                Some(Err(usize::try_from(*index).ok()?))
+            }
+        };
+        return Some(bits::ValidationValue::Number {
+            value: number,
+            floating,
+            decimal,
+        });
+    }
+    let Value::Long(index) = field(value, "host-error")? else {
+        return None;
+    };
+    let index = usize::try_from(*index).ok()?;
+    if kind.as_ref() == "vector" {
+        let values = match field(value, "items") {
+            None => Vec::new(),
+            Some(Value::Vector(values)) => values
+                .iter()
+                .map(validation_value)
+                .collect::<Option<Vec<_>>>()?,
+            _ => return None,
+        };
+        return Some(bits::ValidationValue::Vector(values, index));
+    }
+    if kind.as_ref() == "unsupported-number" {
+        return Some(bits::ValidationValue::UnsupportedNumber);
+    }
+    if !matches!(
+        kind.as_ref(),
+        "nil"
+            | "other"
+            | "string"
+            | "bytes"
+            | "keyword"
+            | "symbol"
+            | "boolean"
+            | "instant"
+            | "uuid"
+    ) {
+        return None;
+    }
+    Some(bits::ValidationValue::Kind(kind.as_ref(), index))
+}
+
+fn validation_operation(arguments: &[Value]) -> Value {
+    let [input, kind] = arguments else {
+        return protocol_error("Validation requires a value and type");
+    };
+    let (Some(input), Some(kind)) = (value_argument(input), value_argument(kind)) else {
+        return protocol_error("Invalid validation argument descriptors");
+    };
+    let Some(input) = validation_value(input) else {
+        return protocol_error("Invalid validation value shape");
+    };
+    match bits::valid_data(&input, kind) {
+        Ok(result) => success(result.map(Value::Bool).unwrap_or(Value::Null)),
+        Err(bits::ValidationError::Host(index)) => {
+            success(map(vec![("host-error", Value::Long(index as i64))]))
+        }
+        Err(bits::ValidationError::UnsupportedNumber) => unsupported(
+            "bits/valid-data?",
+            "Custom number validation is not implemented",
+        ),
+        Err(bits::ValidationError::InvalidNumber) => {
+            protocol_error("Invalid validation numeric value")
+        }
+    }
 }
 
 fn bitmap64_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1309,6 +1416,7 @@ fn main() -> io::Result<()> {
                     keyword("bits/encode-bigdec"),
                     keyword("bits/decode-bigdec"),
                     keyword("bits/type-size"),
+                    keyword("bits/valid-data?"),
                     keyword("bits/tuple-header"),
                     keyword("bits/encode-tuple"),
                     keyword("bits/decode-tuple"),
@@ -1401,6 +1509,7 @@ mod tests {
             "bits/bitmap64-min",
             "bits/bitmap64-max",
             "bits/bitmap64->longs",
+            "bits/valid-data?",
         ] {
             assert_eq!(
                 field(&invoke(operation, Value::Null), "status"),

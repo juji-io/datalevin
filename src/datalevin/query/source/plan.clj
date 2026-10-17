@@ -41,7 +41,7 @@
 (defn- own-clauses! [runtime clauses]
   ;; Bound the traversal before inspecting or copying caller-owned constants.
   ;; Capture mutable leaves, including metadata, before any provider callback.
-  (rt/charge! runtime clauses)
+  (rt/charge-copy! runtime clauses)
   (let [check! #(source/check-active! (:control runtime))]
     (doseq [clause clauses
             term (or (:terms clause) (:args clause))

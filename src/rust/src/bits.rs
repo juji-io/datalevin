@@ -381,6 +381,271 @@ impl VariableType {
     }
 }
 
+/// JVM value shapes supplied by the binding without serializing arbitrary objects.
+pub enum ValidationValue<'a> {
+    Kind(&'a str, usize),
+    Vector(Vec<ValidationValue<'a>>, usize),
+    Number {
+        value: &'a Value,
+        floating: Result<f64, usize>,
+        decimal: Option<Result<&'a Value, usize>>,
+    },
+    UnsupportedNumber,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ValidationError {
+    Host(usize),
+    UnsupportedNumber,
+    InvalidNumber,
+}
+
+fn integer_magnitude(bytes: &[u8]) -> Result<(bool, Vec<u8>), ValidationError> {
+    let bytes = canonical_integer(bytes).map_err(|_| ValidationError::InvalidNumber)?;
+    let negative = bytes[0] >= 128;
+    let mut magnitude = bytes.to_vec();
+    if negative {
+        let mut carry = 1u16;
+        for byte in magnitude.iter_mut().rev() {
+            let word = u16::from(!*byte) + carry;
+            *byte = word as u8;
+            carry = word >> 8;
+        }
+    }
+    let first = magnitude
+        .iter()
+        .position(|&byte| byte != 0)
+        .unwrap_or(magnitude.len());
+    Ok((negative, magnitude[first..].to_vec()))
+}
+
+fn ratio_in_integer_range(numerator: &[u8], denominator: &[u8]) -> Result<bool, ValidationError> {
+    let (negative, numerator) = integer_magnitude(numerator)?;
+    let (negative_denominator, denominator) = integer_magnitude(denominator)?;
+    if negative_denominator || denominator.is_empty() {
+        return Err(ValidationError::UnsupportedNumber);
+    }
+    // |min| = 2^1015; max = 2^1015-1. Multiplying either bound by the
+    // denominator takes a shift and subtraction, without general bignum math.
+    let mut bound = vec![0u8; 126];
+    let mut carry = 0u16;
+    for &byte in denominator.iter().rev() {
+        let word = (u16::from(byte) << 7) | carry;
+        bound.push(word as u8);
+        carry = word >> 8;
+    }
+    if carry != 0 {
+        bound.push(carry as u8);
+    }
+    if !negative {
+        let mut borrow = 0i16;
+        for (index, byte) in bound.iter_mut().enumerate() {
+            let sub = i16::from(if index < denominator.len() {
+                denominator[denominator.len() - 1 - index]
+            } else {
+                0
+            });
+            let word = i16::from(*byte) - sub - borrow;
+            *byte = word as u8;
+            borrow = i16::from(word < 0);
+        }
+    }
+    while bound.last() == Some(&0) {
+        bound.pop();
+    }
+    bound.reverse();
+    Ok(numerator.len() < bound.len() || (numerator.len() == bound.len() && numerator <= bound))
+}
+
+fn decimal_in_range(
+    unscaled: &[u8],
+    scale: i32,
+    bound_scale: i32,
+) -> Result<bool, ValidationError> {
+    static BOUNDS: std::sync::LazyLock<(String, String)> = std::sync::LazyLock::new(|| {
+        let mut positive = vec![255u8; 127];
+        positive[0] = 127;
+        let mut negative = vec![0u8; 127];
+        negative[0] = 128;
+        (
+            integer_decimal(&positive).unwrap(),
+            integer_decimal(&negative).unwrap()[1..].to_owned(),
+        )
+    });
+    let digits = integer_decimal(unscaled).map_err(|_| ValidationError::InvalidNumber)?;
+    let (digits, bound) = if let Some(digits) = digits.strip_prefix('-') {
+        (digits, BOUNDS.1.as_str())
+    } else {
+        (digits.as_str(), BOUNDS.0.as_str())
+    };
+    if digits == "0" {
+        return Ok(true);
+    }
+    let point = digits.len() as i64 - i64::from(scale);
+    let bound_point = bound.len() as i64 - i64::from(bound_scale);
+    if point != bound_point {
+        return Ok(point < bound_point);
+    }
+    Ok(digits
+        .bytes()
+        .chain(std::iter::repeat(b'0'))
+        .take(digits.len().max(bound.len()))
+        .cmp(
+            bound
+                .bytes()
+                .chain(std::iter::repeat(b'0'))
+                .take(digits.len().max(bound.len())),
+        )
+        != std::cmp::Ordering::Greater)
+}
+
+fn numeric_validation(value: &ValidationValue<'_>, kind: &str) -> Result<bool, ValidationError> {
+    let (value, floating, decimal) = match value {
+        ValidationValue::Number {
+            value,
+            floating,
+            decimal,
+        } => (*value, *floating, decimal),
+        ValidationValue::Kind(_, index) | ValidationValue::Vector(_, index) => {
+            return Err(ValidationError::Host(*index));
+        }
+        ValidationValue::UnsupportedNumber => return Err(ValidationError::UnsupportedNumber),
+    };
+    if kind == "float" || kind == "double" {
+        let floating = floating.map_err(ValidationError::Host)?;
+        let bound = if kind == "float" {
+            f64::from(f32::MAX)
+        } else {
+            f64::MAX
+        };
+        return Ok(floating >= -bound && floating <= bound);
+    }
+    if matches!(value, Value::Float(_) | Value::Double(_)) {
+        let floating = floating.map_err(ValidationError::Host)?;
+        let bound = if kind == "bigint" {
+            2f64.powi(1015)
+        } else {
+            f64::INFINITY
+        };
+        return Ok(floating >= -bound && floating <= bound);
+    }
+    if kind == "bigdec" {
+        let value = if matches!(value, Value::Ratio { .. }) {
+            match decimal {
+                Some(Ok(value)) => *value,
+                Some(Err(index)) => return Err(ValidationError::Host(*index)),
+                None => return Err(ValidationError::InvalidNumber),
+            }
+        } else {
+            value
+        };
+        return match value {
+            Value::BigDecimal { unscaled, scale } => decimal_in_range(unscaled, *scale, i32::MIN),
+            Value::BigInt(bytes) | Value::BigInteger(bytes) => decimal_in_range(bytes, 0, i32::MIN),
+            Value::Byte(_) | Value::Short(_) | Value::Integer(_) | Value::Long(_) => Ok(true),
+            _ => Err(ValidationError::InvalidNumber),
+        };
+    }
+    match value {
+        Value::Byte(_) | Value::Short(_) | Value::Integer(_) | Value::Long(_) => Ok(true),
+        Value::BigInt(bytes) | Value::BigInteger(bytes) => Ok(canonical_integer(bytes)
+            .map_err(|_| ValidationError::InvalidNumber)?
+            .len()
+            <= 127),
+        Value::BigDecimal { unscaled, scale } => decimal_in_range(unscaled, *scale, 0),
+        Value::Ratio {
+            numerator,
+            denominator,
+        } => ratio_in_integer_range(numerator, denominator),
+        _ => Err(ValidationError::InvalidNumber),
+    }
+}
+
+fn scalar_validation(
+    value: &ValidationValue<'_>,
+    kind: Option<&str>,
+    tuple: bool,
+) -> Result<bool, ValidationError> {
+    let Some(kind) = kind else { return Ok(false) };
+    let shape = match value {
+        ValidationValue::Kind(kind, _) => *kind,
+        ValidationValue::Vector(..) => "vector",
+        _ => "number",
+    };
+    Ok(match kind {
+        "string" | "db.type/string" => shape == "string",
+        "bytes" | "db.type/bytes" => shape == "bytes",
+        "keyword" | "db.type/keyword" => shape == "keyword",
+        "symbol" | "db.type/symbol" => shape == "symbol",
+        "boolean" | "db.type/boolean" => shape == "boolean",
+        "instant" | "db.type/instant" => shape == "instant",
+        "uuid" | "db.type/uuid" => shape == "uuid",
+        "long" | "id" | "db.type/long" | "db.type/ref" | "int" if kind != "int" || tuple => {
+            match value {
+                ValidationValue::Number { value, .. } => match value {
+                    Value::Byte(_) | Value::Short(_) | Value::Integer(_) => true,
+                    Value::Long(value) => kind != "int" || i32::try_from(*value).is_ok(),
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+        "float" | "db.type/float" => return numeric_validation(value, "float"),
+        "double" | "db.type/double" => return numeric_validation(value, "double"),
+        "bigint" | "db.type/bigint" => return numeric_validation(value, "bigint"),
+        "bigdec" | "db.type/bigdec" => return numeric_validation(value, "bigdec"),
+        "db.type/tuple" => shape == "vector",
+        "data" | "db.type/vec" | "db.type/idoc" => true,
+        _ => false,
+    })
+}
+
+/// Return nil for an empty homogeneous tuple, and booleans otherwise. The
+/// reference treats nil heterogeneous components as valid without type checks.
+pub fn valid_data(
+    value: &ValidationValue<'_>,
+    kind: &Value,
+) -> Result<Option<bool>, ValidationError> {
+    let Value::Vector(types) = kind else {
+        let kind = if let Value::Keyword(kind) = kind {
+            Some(kind.as_ref())
+        } else {
+            None
+        };
+        return scalar_validation(value, kind, false).map(Some);
+    };
+    let ValidationValue::Vector(values, _) = value else {
+        return Ok(Some(false));
+    };
+    if types
+        .iter()
+        .any(|kind| matches!(kind, Value::Keyword(kind) if kind.as_ref() == "data"))
+    {
+        return Ok(Some(false));
+    }
+    if types.len() == 1 && values.is_empty() {
+        return Ok(None);
+    }
+    if types.len() != 1 && types.len() != values.len() {
+        return Ok(Some(false));
+    }
+    for (index, value) in values.iter().enumerate() {
+        if types.len() != 1 && matches!(value, ValidationValue::Kind("nil", _)) {
+            continue;
+        }
+        let kind = &types[if types.len() == 1 { 0 } else { index }];
+        let kind = if let Value::Keyword(kind) = kind {
+            Some(kind.as_ref())
+        } else {
+            None
+        };
+        if !scalar_validation(value, kind, true)? {
+            return Ok(Some(false));
+        }
+    }
+    Ok(Some(true))
+}
+
 /// Fixed storage sizes exposed by bits/type-size. Internal fixed-width fields
 /// such as :short and :int-int intentionally retain the original nil result.
 pub fn type_size(kind: &str) -> Option<usize> {
@@ -404,8 +669,8 @@ pub enum DecimalError {
     InvalidNumber,
 }
 
-fn decimal_approximation(unscaled: &[u8], scale: i32) -> Result<f64, DecimalError> {
-    let unscaled = canonical_integer(unscaled).map_err(DecimalError::Integer)?;
+fn integer_decimal(unscaled: &[u8]) -> Result<String, BigIntegerError> {
+    let unscaled = canonical_integer(unscaled)?;
     let negative = unscaled[0] >= 128;
     let mut magnitude = unscaled.to_vec();
     if negative {
@@ -416,8 +681,7 @@ fn decimal_approximation(unscaled: &[u8], scale: i32) -> Result<f64, DecimalErro
             carry = value >> 8;
         }
     }
-    // Decimal limbs avoid building powers of ten at extreme scales. Rust's
-    // decimal parser rounds to binary64, including underflow and infinity.
+    // Decimal limbs avoid building powers of ten at extreme scales.
     let mut limbs = vec![0u32];
     for byte in magnitude {
         let mut carry = u64::from(byte);
@@ -440,6 +704,11 @@ fn decimal_approximation(unscaled: &[u8], scale: i32) -> Result<f64, DecimalErro
     for part in parts {
         decimal.push_str(&format!("{part:09}"));
     }
+    Ok(decimal)
+}
+
+fn decimal_approximation(unscaled: &[u8], scale: i32) -> Result<f64, DecimalError> {
+    let mut decimal = integer_decimal(unscaled).map_err(DecimalError::Integer)?;
     decimal.push_str(&format!("e{}", -i64::from(scale)));
     decimal.parse().map_err(|_| DecimalError::InvalidNumber)
 }

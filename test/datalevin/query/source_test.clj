@@ -393,4 +393,52 @@
         expected (source/batch-charge-bytes columns [[1 :ok]])]
     (doseq [row [[1 :ok] (subvec [:prefix 1 :ok :suffix] 1 3) (first {1 :ok})]]
       (is (vector? row))
-      (is (= expected (source/batch-charge-bytes columns [row]))))))
+      (is (<= expected (source/batch-charge-bytes columns [row]))))))
+
+(deftest vector-views-charge-their-parent-and-detached-copies-do-not
+  (let [parent (with-meta [(.repeat "x" 8192) :visible (byte-array 8192)]
+                         {:hidden (byte-array 8192)})
+        view (with-meta (subvec parent 1 2) {:visible (java.util.Date. 1)})
+        copied (value/owned-copy view)
+        observed (volatile! 0)
+        retained (value/value-charge view #(vswap! observed +' %))]
+    (is (= view copied))
+    (is (> retained (value/value-charge parent)))
+    (is (= retained @observed))
+    (is (= (value/value-charge copied) (value/copy-charge view)))
+    (is (< (value/copy-charge view) 1024))
+    (is (not (identical? (:visible (meta view)) (:visible (meta copied))))))
+  (let [view (subvec [(Object.) :visible] 1 2)
+        columns [{:type :data :nullable? false}]]
+    (is (value/matches-type? :data view))
+    (is (= [[view]] (value/rows! columns [[view]])))
+    (is (= :query-source/unsupported
+           (category #(source/batch-charge-bytes columns [[view]]))))
+    (is (pos? (source/batch-charge-bytes columns (value/owned-copy [[view]]))))))
+
+(deftest empty-batches-with-retained-state-need-a-reservation
+  (let [rows (with-meta [] {:payload (byte-array 1024)})
+        ctl (control/create)
+        bytes (source/batch-charge-bytes [] rows)
+        request {:control ctl :max-rows 1 :max-bytes 8192}
+        batch {:columns [] :rows rows :row-count 0 :byte-count bytes :exhausted? true}]
+    (try
+      (is (pos? bytes))
+      (is (= :query-source/invalid (category #(contract/batch! [] request batch))))
+      (let [token (source/reserve! ctl {:retained-bytes bytes :in-flight-batches 1})
+            batch (assoc batch :reservation token)]
+        (is (= batch (contract/batch! [] request batch)))
+        (source/release! token)
+        (is (every? zero? (vals (control/usage ctl)))))
+      (finally (control/close! ctl)))))
+
+(deftest copied-fake-batches-report-the-detached-charge
+  (let [view (subvec [(byte-array 1024) 2] 1 2)
+        info (assoc-in tuple-info [:pattern-contract :columns 1 :type] :data)
+        result (harness/run! (fake/source info [[1 [2]]]) patterns
+                             {:bindings {'?name view}})]
+    (is (= [[1 [2]]] (:rows result)))
+    (is (not (instance? clojure.lang.APersistentVector$SubVector
+                        (get-in result [:rows 0 1]))))
+    (is (= (source/batch-charge-bytes (:columns result) (:rows result))
+           (get-in result [:metrics :charged-bytes])))))

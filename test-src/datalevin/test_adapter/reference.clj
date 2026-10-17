@@ -34,6 +34,7 @@
       :bits/put-buffer (apply bits/put-buffer arguments)
       :bits/read-buffer (apply bits/read-buffer arguments)
       :bits/type-size (apply bits/type-size arguments)
+      :bits/valid-data? (apply bits/valid-data? arguments)
       :bits/indexable (apply bits/indexable arguments)
       :bits/giant? (apply bits/giant? arguments)
       :bits/indexable-bytes (apply bits/indexable-bytes arguments)

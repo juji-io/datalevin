@@ -290,12 +290,12 @@
     (batch-limit! :batch-rows (count rows) (:max-rows request))
     (batch-limit! :batch-bytes (:byte-count batch) (:max-bytes request))
     (let [charged (volatile! 0)
-          bytes (v/batch-charge-bytes columns rows
+          bytes (v/batch-charge-bytes (:columns batch) rows
                   (fn [increment]
                     (control/check-active! (:control request))
                     (batch-limit! :batch-bytes (vswap! charged +' increment)
                                   (:max-bytes request))))]
       (ensure! (= (:byte-count batch) bytes) :batch)
-      (when (or (seq rows) (:reservation batch))
+      (when (or (pos? bytes) (:reservation batch))
         (control/accept! (:control request) (:reservation batch) bytes))))
   batch)

@@ -1,7 +1,7 @@
-(ns datalevin.test.bits
+(ns datalevin.test.bits-codec
   (:require
    [clojure.test :refer [deftest is]]
-   [datalevin.bits :as b]
+   [datalevin.test-adapter.bits :as b]
    [datalevin.constants :as c])
   (:import
    [java.nio ByteBuffer]

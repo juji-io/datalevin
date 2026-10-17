@@ -115,6 +115,9 @@
 (defn type-size [value-type]
   (adapter/call! :bits/type-size [value-type]))
 
+(defn valid-data? [value value-type]
+  (adapter/call! :bits/valid-data? [value value-type]))
+
 (defn indexable [entity attribute value value-type max-giant]
   (adapter/call! :bits/indexable [entity attribute value value-type max-giant]))
 

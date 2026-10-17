@@ -268,6 +268,58 @@
           bitmap)
       result)))
 
+(defn- validation-promotion [errors f]
+  (try (f)
+       (catch Exception error
+         (let [index (long (count @errors))]
+           (swap! errors conj #(throw error))
+           {:host-error index}))))
+
+(defn- validation-number [value errors]
+  (let [base {:kind :number :value value
+              :floating (validation-promotion errors #(.doubleValue ^Number value))}]
+    (if (instance? clojure.lang.Ratio value)
+      (assoc base :decimal
+        (validation-promotion errors
+          ;; This is the JVM numeric promotion used when a ratio meets a
+          ;; decimal bound, including the caller's *math-context*.
+          #(clojure.lang.Numbers/divide
+            (BigDecimal. (.-numerator ^clojure.lang.Ratio value))
+            (.-denominator ^clojure.lang.Ratio value))))
+      base)))
+
+(defn- validation-value [value errors include-items?]
+  (if (contains? #{Byte Short Integer Long Float Double clojure.lang.BigInt
+                   BigInteger BigDecimal clojure.lang.Ratio} (class value))
+    (validation-number value errors)
+    (let [index (long (count @errors))
+          _ (swap! errors conj #(.doubleValue ^Number value))
+          kind (cond
+                 (nil? value) :nil
+                 (vector? value) :vector
+                 (string? value) :string
+                 (bytes? value) :bytes
+                 (keyword? value) :keyword
+                 (symbol? value) :symbol
+                 (boolean? value) :boolean
+                 (inst? value) :instant
+                 (uuid? value) :uuid
+                 (number? value) :unsupported-number
+                 :else :other)]
+      (cond-> {:kind kind :host-error index}
+        (and (= kind :vector) include-items?)
+        (assoc :items (mapv #(validation-value % errors false) value))))))
+
+(defn- valid-data! [peer session value value-type]
+  (let [errors (atom [])
+        kind #(when (keyword? %) %)
+        value-type (if (vector? value-type) (mapv kind value-type) (kind value-type))
+        value (validation-value value errors (vector? value-type))
+        result (invoke-peer! peer session :bits/valid-data? [value value-type])]
+    ;; Rust chooses whether an invalid numeric input is reached; ignored tuple
+    ;; fields must not turn a false/nil result into a JVM conversion error.
+    (if (map? result) ((nth @errors (:host-error result))) result)))
+
 (defn- put-sparse! [peer session ^ByteBuffer buffer value]
   (when-not (instance? SparseIntArrayList value)
     (if (satisfies? ISparseIntArrayList value)
@@ -672,6 +724,8 @@
       (:bits/bitmap64-add :bits/bitmap64-contains? :bits/bitmap64-cardinality
        :bits/bitmap64-min :bits/bitmap64-max :bits/bitmap64->longs)
       (bitmap64-operation! peer session operation (first arguments) (rest arguments))
+
+      :bits/valid-data? (apply valid-data! peer session arguments)
 
       :bits/acquire-serialized-bf
       (acquire-serialized-buffer! peer session (first arguments))

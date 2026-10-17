@@ -1,6 +1,6 @@
 (ns datalevin.query.source.value
   "Owned logical values and explicit custom-value validation/accounting hooks."
-  (:import [clojure.lang Ratio RT Sorted]
+  (:import [clojure.lang APersistentVector$SubVector Ratio RT Sorted]
            [java.math BigDecimal BigInteger]
            [java.time Duration Instant Period]
            [java.util Date UUID]))
@@ -90,61 +90,75 @@
       :else false)
     (if-let [metadata (meta x)] (portable? metadata) true)))
 
-(declare value-charge)
+(declare value-charge*)
 
 (defn- charge-part [charge observe!]
   (when observe! (observe! charge))
   charge)
 
-(defn- collection-overhead [x observe!]
+(defn- collection-overhead [x observe! backing?]
   (+' (charge-part (+' 64 (*' 48 (count x))) observe!)
-      (if-let [m (meta x)] (value-charge m observe!) 0)))
+      (if-let [m (meta x)] (value-charge* m observe! backing?) 0)
+      ;; A view pins the entire parent, including elements outside its range
+      ;; and the parent's metadata. An owned copy detaches that parent.
+      (if (and backing? (instance? APersistentVector$SubVector x))
+        (value-charge* (.-v ^APersistentVector$SubVector x) observe! true) 0)))
+
+(defn- value-charge* [x observe! backing?]
+  (when observe! (observe! 0))
+  (cond
+    (satisfies? IQuerySourceValue x)
+    (let [n (-retained-bytes x)]
+      (when-not (and (integer? n) (<= 64 n Long/MAX_VALUE))
+        (fail! :query-source/invalid :values))
+      (charge-part n observe!))
+    (nil? x) (charge-part 8 observe!)
+    (or (boolean? x) (instance? Long x) (instance? Integer x)
+        (instance? Byte x) (instance? Short x) (char? x)
+        (instance? Double x) (instance? Float x)) (charge-part 32 observe!)
+    (string? x) (charge-part (+' 64 (*' 2 (count x))) observe!)
+    (or (keyword? x) (symbol? x))
+    (+' (charge-part 96 observe!) (value-charge* (namespace x) observe! backing?)
+        (value-charge* (name x) observe! backing?)
+        (if-let [m (meta x)] (value-charge* m observe! backing?) 0))
+    (instance? UUID x) (charge-part 48 observe!)
+    (= Date (class x)) (charge-part 64 observe!)
+    (or (instance? Instant x) (instance? Duration x) (instance? Period x))
+    (charge-part 64 observe!)
+    (bytes? x) (charge-part (+' 32 (alength ^bytes x)) observe!)
+    (instance? BigInteger x)
+    (charge-part (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8)) observe!)
+    (instance? clojure.lang.BigInt x)
+    (+' (charge-part 32 observe!) (value-charge* (biginteger x) observe! backing?))
+    (instance? BigDecimal x)
+    (+' (charge-part 64 observe!) (value-charge* (.unscaledValue ^BigDecimal x) observe! backing?))
+    (ratio? x) (+' (charge-part 64 observe!) (value-charge* (.numerator ^Ratio x) observe! backing?)
+                   (value-charge* (.denominator ^Ratio x) observe! backing?))
+    (custom-comparator? x) (fail! :query-source/unsupported :values)
+    (plain-map? x)
+    (+' (charge-part (+' 96 (*' 64 (count x))) observe!)
+        (reduce (fn [n [k v]] (+' n (value-charge* k observe! backing?)
+                                   (value-charge* v observe! backing?))) 0 x)
+        (if-let [m (meta x)] (value-charge* m observe! backing?) 0))
+    (or (vector? x) (set? x) (list? x))
+    (+' (collection-overhead x observe! backing?)
+        (reduce (fn [n child] (+' n (value-charge* child observe! backing?))) 0 x))
+    :else (fail! :query-source/unsupported :values)))
 
 (defn value-charge
-  "Conservative retained size, counting each occurrence and its metadata.
-  The internal observer receives incremental charges before child traversal;
-  it may throw to stop validation on cancellation or a byte limit."
-  ([x] (value-charge x nil))
-  ([x observe!]
-   (when observe! (observe! 0))
-   (cond
-     (satisfies? IQuerySourceValue x)
-     (let [n (-retained-bytes x)]
-       (when-not (and (integer? n) (<= 64 n Long/MAX_VALUE))
-         (fail! :query-source/invalid :values))
-       (charge-part n observe!))
-     (nil? x) (charge-part 8 observe!)
-     (or (boolean? x) (instance? Long x) (instance? Integer x)
-         (instance? Byte x) (instance? Short x) (char? x)
-         (instance? Double x) (instance? Float x)) (charge-part 32 observe!)
-     (string? x) (charge-part (+' 64 (*' 2 (count x))) observe!)
-     (or (keyword? x) (symbol? x))
-     (+' (charge-part 96 observe!) (value-charge (namespace x) observe!)
-         (value-charge (name x) observe!)
-         (if-let [m (meta x)] (value-charge m observe!) 0))
-     (instance? UUID x) (charge-part 48 observe!)
-     (= Date (class x)) (charge-part 64 observe!)
-     (or (instance? Instant x) (instance? Duration x) (instance? Period x))
-     (charge-part 64 observe!)
-     (bytes? x) (charge-part (+' 32 (alength ^bytes x)) observe!)
-     (instance? BigInteger x)
-     (charge-part (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8)) observe!)
-     (instance? clojure.lang.BigInt x)
-     (+' (charge-part 32 observe!) (value-charge (biginteger x) observe!))
-     (instance? BigDecimal x)
-     (+' (charge-part 64 observe!) (value-charge (.unscaledValue ^BigDecimal x) observe!))
-     (ratio? x) (+' (charge-part 64 observe!) (value-charge (.numerator ^Ratio x) observe!)
-                    (value-charge (.denominator ^Ratio x) observe!))
-     (custom-comparator? x) (fail! :query-source/unsupported :values)
-     (plain-map? x)
-     (+' (charge-part (+' 96 (*' 64 (count x))) observe!)
-         (reduce (fn [n [k v]] (+' n (value-charge k observe!)
-                                    (value-charge v observe!))) 0 x)
-         (if-let [m (meta x)] (value-charge m observe!) 0))
-     (or (vector? x) (set? x) (list? x))
-     (+' (collection-overhead x observe!)
-         (reduce (fn [n child] (+' n (value-charge child observe!))) 0 x))
-     :else (fail! :query-source/unsupported :values))))
+  "Conservative retained size, including metadata and vector backing storage.
+  Each occurrence is charged; shared backing may be counted more than once.
+  The internal observer receives incremental charges before child traversal
+  and may throw on cancellation or a byte limit."
+  ([x] (value-charge* x nil true))
+  ([x observe!] (value-charge* x observe! true)))
+
+(defn copy-charge
+  "Charge the detached result of owned-copy without allocating that copy.
+  Hidden vector elements are omitted; immutable custom values keep their full
+  declared retained charge because owned-copy preserves them."
+  ([x] (value-charge* x nil false))
+  ([x observe!] (value-charge* x observe! false)))
 
 (defn- matches-type*? [t x charged?]
   (if (map? t)
@@ -166,7 +180,7 @@
       :uuid (instance? UUID x)
       :instant (= Date (class x))
       :bytes (bytes? x)
-      :data (or charged? (try (value-charge x) true
+      :data (or charged? (try (copy-charge x) true
                              (catch clojure.lang.ExceptionInfo _ false)))
       false)))
 
@@ -189,12 +203,14 @@
      (plain-map? x) (doseq [[k v] x] (execution-value! k check!) (execution-value! v check!))
      (or (vector? x) (set? x) (list? x)) (run! #(execution-value! % check!) x))))
 
-(defn rows! [columns rows]
+(defn rows!
+  "Validate logical rows before copying or sizing their retained representation."
+  [columns rows]
   (when-not (and (vector? rows)
                 (every? #(and (vector? %) (= (count columns) (count %))) rows))
     (fail! :query-source/invalid :batch))
   (doseq [row rows, [column x] (map vector columns row)]
-    (value-charge x)
+    (copy-charge x)
     (when-not (if (nil? x) (:nullable? column) (matches-type*? (:type column) x true))
       (fail! :query-source/invalid :batch)))
   rows)
@@ -203,14 +219,17 @@
   ([columns rows] (batch-charge-bytes columns rows nil))
   ([columns rows observe!]
    (when-not (vector? rows) (fail! :query-source/invalid :batch))
-   (if (empty? rows) 0
+   ;; Ordinary empty batches transfer no row state. Empty views or metadata
+   ;; can still pin data, and need a charge and a reservation of their own.
+   (if (and (empty? rows) (nil? (meta rows))
+            (not (instance? APersistentVector$SubVector rows))) 0
        (+' (charge-part 64 observe!) (value-charge columns observe!)
-           (collection-overhead rows observe!)
+           (collection-overhead rows observe! true)
            (reduce
              (fn [n row]
                (when-not (and (vector? row) (= (count columns) (count row)))
                  (fail! :query-source/invalid :batch))
-               (+' n (collection-overhead row observe!)
+               (+' n (collection-overhead row observe! true)
                    (reduce
                      (fn [n i]
                        (let [x (nth row i)
