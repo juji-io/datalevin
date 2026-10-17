@@ -5,16 +5,19 @@
    [datalevin.sparselist :refer [ISparseIntArrayList ->SparseIntArrayList]]
    [datalevin.util :refer [raise]]
    [datalevin.buffer :as buffer]
+   [clojure.java.io :as io]
    [taoensso.nippy :as nippy]
    [datalevin.test-adapter :as adapter]
-   [datalevin.test-adapter.compress :refer [->ZstdCompressor]]
+   [datalevin.test-adapter.compress :refer [->ZstdCompressor ->HuCompressor]]
+   [datalevin.test-adapter.hu :refer [->Dictionary]]
    [datalevin.test-adapter.bits :as bits])
   (:import
-   [java.io DataInputStream DataOutputStream IOException Reader StringReader
+   [java.io DataInputStream DataOutputStream IOException InputStream Reader StringReader
     UncheckedIOException Writer]
    [java.lang ProcessBuilder ProcessBuilder$Redirect]
    [java.math BigDecimal BigInteger]
    [datalevin.bits Indexable]
+   [datalevin.test_adapter.hu Dictionary]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.utl GrowingIntArray]
    [java.nio ByteBuffer ByteOrder]
@@ -125,6 +128,8 @@
                "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
                "java.util.NoSuchElementException" (java.util.NoSuchElementException. message)
                "java.io.IOException" (java.io.IOException. message)
+               "java.io.EOFException" (if (empty? message) (java.io.EOFException.)
+                                         (java.io.EOFException. message))
                "com.github.luben.zstd.ZstdException" (ZstdException. (long code) message)
                "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
                (adapter/unsupported! :adapter operation
@@ -684,6 +689,31 @@
           (avg-value value)))
       (finally (.limit buffer limit)))))
 
+(defn- key-dictionary! [peer session lengths codes]
+  (->Dictionary session (invoke-peer! peer session :hu/dictionary [lengths codes])))
+
+(defn- load-key-dictionary! [peer session ^InputStream input]
+  ;; The fixed-size format ignores trailing bytes and closes caller input.
+  (with-open [input input]
+    (->Dictionary session (invoke-peer! peer session :hu/load [(.readNBytes input (+ 16 (* 5 65793)))]))))
+
+(defn- key-dictionary-id [session ^Dictionary dictionary]
+  (when-not (identical? session (.-session dictionary))
+    (raise "Dictionary belongs to a different Rust adapter session" {}))
+  (.-id dictionary))
+
+(defn- hu-buffer! [peer session operation dictionary ^ByteBuffer source ^ByteBuffer destination]
+  (let [start (.position source)
+        {:keys [writes consumed result]} (invoke-peer! peer session operation
+                                                      [(key-dictionary-id session dictionary)
+                                                       (bits/get-bytes (.duplicate source))])]
+    (doseq [[offset ^bytes bytes] writes]
+      (.position source (+ start (int offset)))
+      (dotimes [index (alength bytes)] (.put destination (aget bytes index))))
+    (.position source (+ start (int consumed)))
+    ;; Native encode returns the destination when its last byte is padded.
+    (when (result-value session operation result) destination)))
+
 (defn- value-compressor! [peer session dictionary]
   (let [owned (aclone ^bytes dictionary)]
     (invoke-peer! peer session :compression/zstd-dictionary [owned])
@@ -783,6 +813,16 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :hu/codes->hu-tucker (apply key-dictionary! peer session arguments)
+      :hu/load-hu-tucker (load-key-dictionary! peer session (first arguments))
+      :hu/dump-hu-tucker
+      (let [[dictionary path] arguments
+            bytes (invoke-peer! peer session :hu/dump [(key-dictionary-id session dictionary)])]
+        (with-open [output (io/output-stream path)] (.write ^java.io.OutputStream output ^bytes bytes)))
+      (:hu/encode :hu/decode) (apply hu-buffer! peer session operation arguments)
+      :compression/key-compressor (->HuCompressor (apply key-dictionary! peer session arguments))
+      :compression/load-key-compressor
+      (->HuCompressor (load-key-dictionary! peer session (io/input-stream (first arguments))))
       :compression/val-compressor (value-compressor! peer session (first arguments))
       :compression/load-val-compressor
       (value-compressor! peer session

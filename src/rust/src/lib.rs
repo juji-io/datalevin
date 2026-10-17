@@ -3,4 +3,5 @@
 pub mod bits;
 pub mod compress;
 pub mod csv;
+pub mod hu;
 pub mod nippy;

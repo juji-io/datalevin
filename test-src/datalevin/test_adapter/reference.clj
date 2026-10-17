@@ -3,6 +3,7 @@
    [datalevin.bits :as bits]
    [datalevin.compress :as compress]
    [datalevin.interface :as i]
+   [datalevin.hu :as hu]
    [datalevin.core :as d]
    [datalevin.csv :as csv]
    [datalevin.test-adapter :as adapter]))
@@ -11,6 +12,13 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :hu/codes->hu-tucker (apply hu/codes->hu-tucker arguments)
+      :hu/encode (apply hu/encode arguments)
+      :hu/decode (apply hu/decode arguments)
+      :hu/dump-hu-tucker (apply hu/dump-hu-tucker arguments)
+      :hu/load-hu-tucker (apply hu/load-hu-tucker arguments)
+      :compression/key-compressor (apply compress/key-compressor arguments)
+      :compression/load-key-compressor (apply compress/load-key-compressor arguments)
       :compression/val-compressor (apply compress/val-compressor arguments)
       :compression/load-val-compressor (apply compress/load-val-compressor arguments)
       :compression/zstd-compress

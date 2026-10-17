@@ -8,6 +8,7 @@ use datalevin_codec::bits::{
 };
 use datalevin_codec::compress;
 use datalevin_codec::csv::{self, Record};
+use datalevin_codec::hu::{Dictionary, DictionaryError, KeyError};
 use datalevin_codec::nippy::{
     Decoder, Error, ErrorKind, Limits, Value, fast_freeze, fast_thaw, thaw_with_limits,
 };
@@ -174,7 +175,7 @@ fn integer_operation(operation: &str, arguments: &[Value]) -> Value {
     }
 }
 
-fn dispatch(request: &Value) -> Value {
+fn dispatch_with_dictionaries(request: &Value, dictionaries: &mut Vec<Dictionary>) -> Value {
     let Some(Value::Keyword(operation)) = field(request, "op") else {
         return protocol_error("Request requires a keyword :op");
     };
@@ -182,6 +183,9 @@ fn dispatch(request: &Value) -> Value {
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "hu/dictionary" | "hu/load" | "hu/dump" | "hu/encode" | "hu/decode" => {
+            hu_operation(operation, arguments, dictionaries)
+        }
         "compression/zstd-dictionary" | "compression/encode-zstd" | "compression/decode-zstd" => {
             compression_operation(operation, arguments)
         }
@@ -292,6 +296,164 @@ fn dispatch(request: &Value) -> Value {
             &format!("Rust operation is not implemented: {operation}"),
         ),
     }
+}
+
+fn hu_error(message: &str, data: Vec<(&str, Value)>) -> Value {
+    map(vec![
+        ("status", keyword("error")),
+        (
+            "error",
+            map(vec![
+                ("class", text("clojure.lang.ExceptionInfo")),
+                ("message", text(message)),
+                ("data", map(data)),
+            ]),
+        ),
+    ])
+}
+
+fn dictionary_error(error: DictionaryError) -> Value {
+    match error {
+        DictionaryError::Size(lengths, codes) => hu_error(
+            "Invalid Hu-Tucker dictionary size",
+            vec![
+                ("lengths", Value::int(lengths as i64)),
+                ("codes", Value::int(codes as i64)),
+            ],
+        ),
+        DictionaryError::Code {
+            symbol,
+            length,
+            code,
+        } => hu_error(
+            "Invalid Hu-Tucker code",
+            vec![
+                ("symbol", Value::int(symbol as i64)),
+                ("length", Value::int(length as i64)),
+                ("code", Value::Long(code as i64)),
+            ],
+        ),
+        DictionaryError::Overlap(symbol) => hu_error(
+            "Overlapping Hu-Tucker codes",
+            vec![("symbol", Value::int(symbol as i64))],
+        ),
+        DictionaryError::Incomplete => hu_error("Incomplete Hu-Tucker dictionary", vec![]),
+        DictionaryError::NotAlphabetic => {
+            hu_error("Hu-Tucker dictionary is not alphabetic", vec![])
+        }
+        DictionaryError::Truncated => java_error("java.io.EOFException", ""),
+        DictionaryError::Magic(magic) => hu_error(
+            "Invalid magic header",
+            vec![("magic", Value::Bytes(magic.to_vec()))],
+        ),
+        DictionaryError::Version(version) => hu_error(
+            "Unsupported Hu-Tucker dictionary version",
+            vec![("version", Value::int(version as i64))],
+        ),
+        DictionaryError::Flags(flags, reserved) => hu_error(
+            "Unsupported Hu-Tucker dictionary flags",
+            vec![
+                ("flags", Value::int(flags as i64)),
+                ("reserved", Value::int(reserved as i64)),
+            ],
+        ),
+        DictionaryError::HeaderSize(version, lengths, codes) => hu_error(
+            "Invalid Hu-Tucker dictionary size",
+            vec![
+                ("version", Value::int(version as i64)),
+                ("lengths", Value::int(lengths as i64)),
+                ("codes", Value::int(codes as i64)),
+            ],
+        ),
+    }
+}
+
+fn hu_operation(operation: &str, arguments: &[Value], dictionaries: &mut Vec<Dictionary>) -> Value {
+    if operation == "hu/dictionary" || operation == "hu/load" {
+        let dictionary = if operation == "hu/dictionary" {
+            let [lengths, codes] = arguments else {
+                return protocol_error("Hu-Tucker requires code lengths and code words");
+            };
+            let (Some(Value::Bytes(lengths)), Some(Value::IntArray(codes))) =
+                (value_argument(lengths), value_argument(codes))
+            else {
+                return protocol_error("Hu-Tucker requires byte lengths and int code words");
+            };
+            Dictionary::new(
+                lengths.clone(),
+                codes.iter().map(|&code| code as u32).collect(),
+            )
+        } else {
+            let [input] = arguments else {
+                return protocol_error("Hu-Tucker loading requires dictionary bytes");
+            };
+            let Some(Value::Bytes(input)) = value_argument(input) else {
+                return protocol_error("Hu-Tucker dictionary must be bytes");
+            };
+            Dictionary::load(input)
+        };
+        return match dictionary {
+            Ok(dictionary) => {
+                dictionaries.push(dictionary);
+                success(Value::Long(dictionaries.len() as i64))
+            }
+            Err(error) => dictionary_error(error),
+        };
+    }
+    let Some(Value::Long(id)) = arguments.first().and_then(value_argument) else {
+        return protocol_error("Hu-Tucker operation requires a dictionary handle");
+    };
+    let Some(dictionary) = id
+        .checked_sub(1)
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| dictionaries.get(index))
+    else {
+        return protocol_error("Unknown Hu-Tucker dictionary handle");
+    };
+    if operation == "hu/dump" {
+        return if arguments.len() == 1 {
+            success(Value::Bytes(dictionary.dump()))
+        } else {
+            protocol_error("Hu-Tucker dumping requires one dictionary handle")
+        };
+    }
+    let [_, input] = arguments else {
+        return protocol_error("Hu-Tucker codec requires dictionary and input");
+    };
+    let Some(Value::Bytes(input)) = value_argument(input) else {
+        return protocol_error("Hu-Tucker input must be bytes");
+    };
+    let output = if operation == "hu/encode" {
+        dictionary.encode(input)
+    } else {
+        dictionary.decode(input)
+    };
+    let result = match output.error {
+        None => success(Value::Bool(output.padded)),
+        Some(KeyError::MissingTerminator) => hu_error("Missing Hu-Tucker key terminator", vec![]),
+        Some(KeyError::TrailingData) => {
+            hu_error("Trailing data after Hu-Tucker key terminator", vec![])
+        }
+    };
+    success(map(vec![
+        (
+            "writes",
+            Value::Vector(
+                output
+                    .writes
+                    .into_iter()
+                    .map(|write| {
+                        Value::Vector(vec![
+                            Value::Long(write.consumed as i64),
+                            Value::Bytes(write.bytes),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("consumed", Value::Long(output.consumed as i64)),
+        ("result", result),
+    ]))
 }
 
 fn compression_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1505,6 +1667,7 @@ fn write_frame(output: &mut impl Write, value: &Value) -> io::Result<()> {
 fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
+    let mut dictionaries = Vec::new();
     write_frame(
         &mut output,
         &map(vec![
@@ -1522,6 +1685,11 @@ fn main() -> io::Result<()> {
             (
                 "capabilities",
                 Value::Set(vec![
+                    keyword("hu/dictionary"),
+                    keyword("hu/load"),
+                    keyword("hu/dump"),
+                    keyword("hu/encode"),
+                    keyword("hu/decode"),
                     keyword("compression/zstd-dictionary"),
                     keyword("compression/encode-zstd"),
                     keyword("compression/decode-zstd"),
@@ -1582,9 +1750,17 @@ fn main() -> io::Result<()> {
         ]),
     )?;
     while let Some(request) = read_frame(&mut input)? {
-        write_frame(&mut output, &dispatch(&request))?;
+        write_frame(
+            &mut output,
+            &dispatch_with_dictionaries(&request, &mut dictionaries),
+        )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn dispatch(request: &Value) -> Value {
+    dispatch_with_dictionaries(request, &mut Vec::new())
 }
 
 #[cfg(test)]
@@ -1649,6 +1825,11 @@ mod tests {
     #[test]
     fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
         for operation in [
+            "hu/dictionary",
+            "hu/load",
+            "hu/dump",
+            "hu/encode",
+            "hu/decode",
             "compression/zstd-dictionary",
             "compression/encode-zstd",
             "compression/decode-zstd",

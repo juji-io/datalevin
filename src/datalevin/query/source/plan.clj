@@ -153,6 +153,7 @@
 
 (defn- select-cover [runtime request response allow-once?]
   (let [charges (atom []) retained (IdentityHashMap.)
+        failed (volatile! #{}) search-charges (volatile! [])
         admit! (fn [alternative metadata overhead]
                  ;; Validate and bound the ID before including it in errors.
                  (when alternative
@@ -169,19 +170,29 @@
             attempts (volatile! 0)]
         (letfn [(search [remaining covered selected]
                   (source/check-active! (:control request))
-                  (when (> (long (vswap! attempts #(inc (long %)))) 4096)
-                    (fail! :query-source/unsupported :planning))
-                  (if (empty? remaining) selected
-                      (let [id (first (sort remaining))]
-                        (some (fn [a]
-                                (when (and (contains? (:covers a) id)
-                                           (or (= :reopen (get-in a [:properties :replay]))
-                                               (and allow-once? (empty? selected)
-                                                    (set/subset? remaining (:covers a))))
-                                           (empty? (set/intersection covered (:covers a))))
-                                  (search (set/difference remaining (:covers a))
-                                          (set/union covered (:covers a)) (conj selected a))))
-                              alternatives))))]
+                  ;; Remaining patterns alone are insufficient: covered
+                  ;; predicates also constrain which alternatives may follow.
+                  (when-not (contains? @failed covered)
+                    (when (> (long (vswap! attempts #(inc (long %)))) 4096)
+                      (fail! :query-source/unsupported :planning))
+                    (if (empty? remaining) selected
+                        (let [id (first (sort remaining))
+                              result
+                              (some (fn [a]
+                                      (when (and (contains? (:covers a) id)
+                                                 (or (= :reopen (get-in a [:properties :replay]))
+                                                     (and allow-once? (empty? selected)
+                                                          (set/subset? remaining (:covers a))))
+                                                 (empty? (set/intersection covered (:covers a))))
+                                        (search (set/difference remaining (:covers a))
+                                                (set/union covered (:covers a)) (conj selected a))))
+                                    alternatives)]
+                          (when-not result
+                            ;; Memoize only failed states, under the invocation's
+                            ;; quota. Equivalent alternative paths share a state.
+                            (vswap! search-charges conj (rt/charge! runtime covered 512 1))
+                            (vswap! failed conj covered))
+                          result))))]
           (let [selected (search patterns #{} [])]
             (when (nil? selected) (fail! :query-source/unsupported :planning))
             ;; Alternatives were validated above; the search enforces complete,
@@ -190,6 +201,7 @@
             (doseq [a selected] (.put retained a true))
             selected)))
       (finally
+        (run! source/release! @search-charges)
         ;; Keep one charge for each selected envelope. Release response headers,
         ;; discarded alternatives, and conservative duplicate backing charges.
         (doseq [[a token] @charges]

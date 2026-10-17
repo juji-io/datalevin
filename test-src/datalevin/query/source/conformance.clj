@@ -12,7 +12,7 @@
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
-           [java.util Date Random]
+           [java.util Date Objects Random]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
 (defn- descriptor [contract]
@@ -127,10 +127,30 @@
    '{:find [?id] :in [$s] :where [[$s ?id ?v] [(not= ?v nil)]]}
    '{:find [?a ?b] :in [$s] :where [[$s ?a ?v] [$s ?b ?v] [(< ?a ?b)]]}])
 
+(defn- repeated-variable-columns! [make-source]
+  (doseq [width [2 3], mask (range (bit-shift-left 1 width)), batch-size [1 4]]
+    (let [nullable (mapv #(bit-test mask %) (range width))
+          info (descriptor {:kind :tuple
+                            :columns (mapv #(hash-map :type :long :nullable? %) nullable)})
+          rows (into [(vec (repeat width 1)) (vec (repeat width 2))
+                      (vec (repeat width 1))]
+                     (concat (for [i (range width) :when (nullable i)]
+                               (assoc (vec (repeat width 1)) i nil))
+                             (when (every? true? nullable) [(vec (repeat width nil))])))
+          provider (make-source info rows)
+          pattern (into ['$s] (repeat width '?v))
+          q {:find '[?v] :in '[$s] :where [pattern]
+             :query-source {:limits {:batch-rows batch-size}}}]
+      (testing (str "repeated variable, nullable=" nullable ", batch=" batch-size)
+        (doseq [query [q (assoc q :find '[(count ?v) .])]]
+          (let [observed (observe provider)]
+            (compare! query [rows] [(:source observed)] [observed])))))))
+
 (defn tuple-semantics!
   "Compare fused/unfused source plans to eager d/q with deterministic seeds.
   Failure contexts name the seed, logical type and batch size."
   [make-source]
+  (repeated-variable-columns! make-source)
   (doseq [[type values] families, seed [0 1 42], batch-size [1 4]]
     (testing (str "type=" type " seed=" seed " batch=" batch-size)
       (let [rows (generated-rows seed values)
@@ -154,7 +174,111 @@
           (is (= 1 (count (filter #(= :open-session (first %)) @(:events observed)))))
           (is (= {'$a 1 '$b 1} (frequencies (keep #(when (= :plan (first %)) (second %)) @(:events observed))))))))))
 
+(deftype NominalRef [type key]
+  value/IQuerySourceValue
+  (-logical-type [_] type)
+  (-retained-bytes [_] (+ 128 (long (value/value-charge type)) (long (value/value-charge key))))
+  Object
+  (hashCode [_] (.hashCode ^Object [type key]))
+  (equals [_ other]
+    (and (instance? NominalRef other)
+         (= type (.-type ^NominalRef other))
+         (Objects/equals key (.-key ^NominalRef other)))))
+
+(defn- reference-type [domain epoch key-type]
+  {:kind :custom :name :conformance/entity-ref :version 1 :fingerprint "conformance-ref:v1"
+   :parameters {:domain domain :identity-epoch epoch :key-type key-type}})
+
+(defn- nominal-fixture [composite?]
+  (let [key-type (if composite? {:kind :tuple :elements [:string :long]} :long)
+        key (fn [id] (if composite? ["tenant" id] id))
+        order-type (reference-type :orders 0 key-type)
+        customer-type (reference-type :customers 0 key-type)
+        order #(NominalRef. order-type (key %))
+        customer #(NominalRef. customer-type (key %))
+        info (descriptor {:kind :eav :attributes
+                          {:order/id {:entity-type order-type :value-type key-type}
+                           :order/customer {:entity-type order-type :value-type customer-type}
+                           :order/amount {:entity-type order-type :value-type :long}
+                           :customer/id {:entity-type customer-type :value-type key-type}
+                           :customer/name {:entity-type customer-type :value-type :string}
+                           :customer/friend {:entity-type customer-type :value-type customer-type}}})
+        rows [[(order 1) :order/id (key 1)] [(order 2) :order/id (key 2)]
+              [(order 1) :order/customer (customer 7)] [(order 2) :order/customer (customer 7)]
+              [(order 3) :order/customer (customer 8)] [(order 4) :order/customer nil]
+              [(order 1) :order/amount 10] [(order 1) :order/amount 10] [(order 2) :order/amount 20]
+              [(order 3) :order/amount nil]
+              [(customer 7) :customer/id (key 7)] [(customer 8) :customer/id (key 8)]
+              [(customer 7) :customer/name "Ada"] [(customer 8) :customer/name nil]
+              [(customer 7) :customer/friend (customer 7)] [(customer 8) :customer/friend (customer 7)]
+              [nil :customer/name "missing entity"]]]
+    {:info info :rows rows :key key :key-type key-type :order order :customer customer
+     :eager (filterv #(and (some? (first %)) (some? (nth % 2))) rows)}))
+
+(defn- nominal-eav! [make-source]
+  (doseq [composite? [false true], batch-size [1 4]]
+    (testing (str "nominal references, composite=" composite? ", batch=" batch-size)
+      (let [{:keys [info rows eager order customer key key-type]} (nominal-fixture composite?)
+            provider (make-source info rows)
+            options {:limits {:batch-rows batch-size}}
+            queries ['{:find [?order ?name] :in [$s]
+                       :where [[$s ?order :order/customer ?customer] [$s ?customer :customer/name ?name]]}
+                     '{:find [?name] :with [?order] :in [$s]
+                       :where [[$s ?order :order/customer ?customer] [$s ?customer :customer/name ?name]]}
+                     '{:find [?name (count ?order) (sum ?amount)] :in [$s]
+                       :where [[$s ?order :order/customer ?customer] [$s ?customer :customer/name ?name]
+                               [$s ?order :order/amount ?amount]]}
+                     '{:find [?order] :in [$s] :where [[$s ?order :order/amount _]]}
+                     '{:find [?order] :in [$s] :where [[$s ?order :order/customer _]]}
+                     '{:find [?customer] :in [$s] :where [[$s ?customer :customer/friend ?customer]]}
+                     '{:find [?order ?name] :in [$a $b]
+                       :where [[$a ?order :order/customer ?customer] [$b ?customer :customer/name ?name]]}]]
+        (doseq [q queries]
+          (let [observed (observe provider)
+                aliases (count (:in q))]
+            (compare! (assoc q :query-source options) (repeat aliases eager)
+                      (repeat aliases (:source observed)) [observed])))
+        (doseq [[binding input] [['?customer (customer 7)]
+                                 ['[?customer] [(customer 7)]]
+                                 ['[?customer ...] [(customer 7) (customer 7) (customer 8)]]
+                                 ['[[?customer ?tag]] [[(customer 7) :a] [(customer 7) :b]]]]]
+          (let [observed (observe provider)
+                q {:find '[?order] :in ['$s binding]
+                   :where '[[$s ?order :order/customer ?customer]] :query-source options}]
+            (compare! q [eager input] [(:source observed) input] [observed])))
+        (let [observed (observe provider)
+              q {:find '[?order] :in '[$s] :where [['$s '?order :order/customer (customer 7)]]
+                 :query-source options}]
+          (compare! q [eager] [(:source observed)] [observed]))
+        (doseq [input [(order 7) (key 7) (NominalRef. (reference-type :customers 1 key-type) (key 7))]]
+          (let [observed (observe provider)
+                q '[:find ?order :in $s ?customer :where [$s ?order :order/customer ?customer]]]
+            (is (= :query-source/invalid (:error (error-data #(d/q q (:source observed) input)))))
+            (is (empty? @(:controls observed)))
+            (closed! observed)))
+        (doseq [[domain epoch] [[:customers 0] [:suppliers 0] [:customers 1]]]
+          (let [type (reference-type domain epoch key-type)
+                ref (NominalRef. type (key 7))
+                other-info (descriptor {:kind :eav :attributes
+                                        {:customer/id {:entity-type type :value-type key-type}}})
+                other-rows [[ref :customer/id (key 7)]]
+                a (observe provider) b (observe (make-source other-info other-rows))
+                natural '[:find ?left ?right :in $a $b
+                          :where [$a ?left :customer/id ?key] [$b ?right :customer/id ?key]]
+                nominal '[:find ?ref :in $a $b
+                          :where [$a ?ref :customer/id _] [$b ?ref :customer/id _]]]
+            (compare! natural [eager other-rows] [(:source a) (:source b)] [a b])
+            (is (= (and (= domain :customers) (zero? epoch)) (= (customer 7) ref)))
+            (if (= (customer 7) ref)
+              (compare! nominal [eager other-rows] [(:source a) (:source b)] [a b])
+              (let [opens (mapv #(count @(:controls %)) [a b])]
+                (is (= :query-source/unsupported
+                       (:error (error-data #(d/q nominal (:source a) (:source b))))))
+                (is (= opens (mapv #(count @(:controls %)) [a b])))
+                (run! closed! [a b])))))))))
+
 (defn eav-semantics! [make-source]
+  (nominal-eav! make-source)
   (let [info (descriptor {:kind :eav :attributes
                            {:item/key {:entity-type :long :value-type :long}
                             :item/value {:entity-type :long :value-type :string}}})
@@ -173,7 +297,39 @@
         (compare! (assoc q :query-source {:limits {:batch-rows 1}})
                   [eager] [(:source observed)] [observed])))))
 
+(defn- native-nominal! [make-source]
+  (doseq [composite? [false true]]
+    (let [{:keys [info rows eager key customer]} (nominal-fixture composite?)
+          dir (u/tmp-dir (str "source-nominal-conformance-" (random-uuid)))
+          conn (d/create-conn dir
+                 {:native/key (if composite?
+                                {:db/valueType :db.type/tuple
+                                 :db/tupleTypes [:db.type/string :db.type/long]}
+                                {:db/valueType :db.type/long})}
+                 {:wal? false :background-sampling? false})
+          provider (make-source info rows)]
+      (try
+        (d/transact! conn [{:db/id 1 :native/key (key 7)} {:db/id 2 :native/key (key 9)}])
+        (doseq [batch-size [1 4]]
+          (let [observed (observe provider)
+                q {:find '[?native ?ref ?name] :in '[$ $s]
+                   :where '[[?native :native/key ?key] [$s ?ref :customer/id ?key]
+                            [$s ?ref :customer/name ?name]]
+                   :query-source {:limits {:batch-rows batch-size}}}]
+            (compare! q [@conn eager] [@conn (:source observed)] [observed])
+            (is (= #{[1 (customer 7) "Ada"]} (d/q q @conn (:source observed))))
+            (closed! observed)))
+        (let [observed (observe provider)]
+          (is (= :query-source/unsupported
+                 (:error (error-data #(d/q '[:find ?ref :in $ $s
+                                             :where [?ref :native/key _] [$s ?ref :customer/name _]]
+                                           @conn (:source observed))))))
+          (is (empty? @(:controls observed)))
+          (closed! observed))
+        (finally (d/close conn) (u/delete-files dir))))))
+
 (defn native-semantics! [make-source]
+  (native-nominal! make-source)
   (let [dir (u/tmp-dir (str "source-conformance-" (random-uuid)))
         conn (d/create-conn dir {:native/id {:db/valueType :db.type/long}
                                 :native/value {} :native/private {:db/noindex true}}

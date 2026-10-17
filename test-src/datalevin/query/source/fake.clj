@@ -109,6 +109,9 @@
       (when-not (and plan (= (:alternative-id cursor-request) (:id plan))
                      (= (:source-symbol cursor-request) (:source-symbol plan)))
         (value/fail! :query-source/invalid :open))
+      (when (and (= :once (:replay plan)) (:opened? plan))
+        (value/fail! :query-source/unsupported :open))
+      (swap! plans assoc-in [(:plan cursor-request) :opened?] true)
       (fault! faults :open-cursor)
       (swap! events conj :open-cursor)
       (let [matches (evaluate descriptor @snapshot (:clauses plan) (:bindings plan))
@@ -142,6 +145,32 @@
         (when @error (throw @error))))
     nil))
 
+(defn- alternative [descriptor session request {:keys [id covers replay] :or {replay :reopen}}]
+  (let [clauses (filterv #(contains? covers (:id %)) (:clauses request))
+        columns (->> clauses
+                     (filter #(= :pattern (:kind %)))
+                     (mapcat (fn [clause]
+                               (keep (fn [[term column]]
+                                       (when (= :var (first term))
+                                         (assoc column :variable (second term))))
+                                     (map vector (:terms clause)
+                                          (contract/pattern-columns descriptor clause)))))
+                     (reduce (fn [columns column]
+                               (let [v (:variable column)]
+                                 (assoc columns v
+                                        (update column :nullable?
+                                                #(and % (get-in columns [v :nullable?] true)))))) {})
+                     vals vec)
+        handle (Object.)
+        plan {:id id :replay replay :source-symbol (:source-symbol request) :columns columns
+              :clauses clauses :bindings (:bindings request)}]
+    (swap! (:plans session) assoc handle plan)
+    {:id id :plan handle :covers covers :prefilters #{} :requires [] :columns columns
+     :properties {:replay replay :ordering [] :blocking-state :none}
+     :estimate {:rows nil :row-bytes nil :startup-ms nil :per-row-ns nil
+                :requests nil :confidence :unknown}
+     :explain {:label "F0 fake"}}))
+
 (defrecord FakeSource [descriptor rows events faults]
   source/IQuerySource
   (-source-info [_] descriptor)
@@ -157,39 +186,24 @@
                       :acquired-at-ms 0 :data-version nil})
                descriptor (atom (value/owned-copy @rows)) request (atom {}) (atom []) (atom {})
                events faults))
-  (-plan-source [_ session request]
+  (-plan-source [this session request]
     (open! (:state session))
     (source/check-active! (:control request))
     (contract/planning-request! request)
     (fault! faults :planning)
     (swap! events conj :plan)
-    (let [columns (->> (:clauses request)
-                       (filter #(= :pattern (:kind %)))
-                       (mapcat (fn [clause]
-                                 (keep (fn [[term column]]
-                                         (when (= :var (first term))
-                                           (assoc column :variable (second term))))
-                                       (map vector (:terms clause)
-                                            (contract/pattern-columns descriptor clause)))))
-                       (reduce (fn [columns column]
-                                 (let [v (:variable column)]
-                                   (assoc columns v
-                                          (update column :nullable?
-                                                  #(and % (get-in columns [v :nullable?] true)))))) {})
-                       vals vec)
-          handle (Object.)
-          plan {:id :scan :source-symbol (:source-symbol request) :columns columns
-                :clauses (:clauses request) :bindings (:bindings request)}]
-      (swap! (:plans session) assoc handle plan)
-      {:alternatives [{:id :scan :plan handle
-                       :covers (set (map :id (:clauses request))) :prefilters #{}
-                       :requires [] :columns columns
-                       :properties {:replay :reopen :ordering [] :blocking-state :none}
-                       :estimate {:rows nil :row-bytes nil :startup-ms nil :per-row-ns nil
-                                  :requests nil :confidence :unknown}
-                       :explain {:label "F0 fake"}}]})))
+    {:alternatives
+     (mapv #(alternative descriptor session request %)
+           (if-let [choices (:plan-choices this)]
+             (choices request)
+             [{:id :scan :covers (set (map :id (:clauses request)))}]))}))
 
 (defn source
+  "Create an eager test source. Optional plan-choices receives the whole request
+  and returns maps with :id, :covers and optional :replay. Each choice gets its
+  own opaque handle and executes exactly its covered clauses."
   ([descriptor rows] (source descriptor rows {}))
   ([descriptor rows faults]
-   (->FakeSource (source/validate-source-info! descriptor) (atom rows) (atom []) faults)))
+   (->FakeSource (source/validate-source-info! descriptor) (atom rows) (atom []) faults))
+  ([descriptor rows faults plan-choices]
+   (assoc (source descriptor rows faults) :plan-choices plan-choices)))
