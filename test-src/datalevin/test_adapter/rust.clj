@@ -239,6 +239,21 @@
     (when-not little? (.position buffer (+ (.position buffer) (.position target))))
     nil))
 
+(defn- combine-bitmap! [peer session operation ^RoaringBitmap left ^RoaringBitmap right]
+  (.getLongCardinality left)
+  (.getLongCardinality right)
+  (let [^RoaringBitmap result (invoke-peer! peer session operation [left right])]
+    (.clear left)
+    (.or left result)
+    nil))
+
+(defn- aggregate-bitmaps! [peer session operation bitmaps]
+  (when-not (empty? bitmaps)
+    ;; Match the public aggregation API's array element checks before dispatch.
+    (let [bitmaps (into-array RoaringBitmap bitmaps)]
+      (doseq [^RoaringBitmap bitmap bitmaps] (.getLongCardinality bitmap))
+      (invoke-peer! peer session operation [(vec bitmaps)]))))
+
 (defn- put-sparse! [peer session ^ByteBuffer buffer value]
   (when-not (instance? SparseIntArrayList value)
     (if (satisfies? ISparseIntArrayList value)
@@ -614,6 +629,27 @@
 
       (:bits/bitmap-add :bits/bitmap-del)
       (apply mutate-bitmap! peer session operation arguments)
+
+      :bits/bitmap-and
+      (let [[left right] arguments]
+        (cond
+          (nil? left) right
+          (nil? right) left
+          :else (combine-bitmap! peer session operation left right)))
+
+      :bits/bitmap-or
+      (let [[left right] arguments]
+        (when (and (some? left) (some? right))
+          (combine-bitmap! peer session operation left right)))
+
+      (:bits/bitmaps-and :bits/bitmaps-or)
+      (aggregate-bitmaps! peer session operation (first arguments))
+
+      :bits/bitmap-empty?
+      (let [^RoaringBitmap bitmap (first arguments)]
+        (if (nil? bitmap) true
+            (do (.getLongCardinality bitmap)
+                (invoke-peer! peer session operation [bitmap]))))
 
       :bits/acquire-serialized-bf
       (acquire-serialized-buffer! peer session (first arguments))

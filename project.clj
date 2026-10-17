@@ -66,6 +66,7 @@
                                                   "src/java/datalevin/cpp"
                                                   "src/java/datalevin/ha"
                                                   "src/java/datalevin/io"
+                                                  "src/java/datalevin/search"
                                                   "src/java/datalevin/utl"
                                                   "src/java/org"]
                     ;; This root-level bridge class is required by Clojure

@@ -17,6 +17,7 @@
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.analyzer :as a]
+   [datalevin.search.query :as sq]
    [datalevin.udf :as udf]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
@@ -29,7 +30,10 @@
    [datalevin.spill SpillableMap]
    [datalevin.interface IAdmin ISearchEngine]
    [datalevin.utl LRUCache]
-   [java.util ArrayList List Map$Entry Arrays HashMap HashSet]
+   [datalevin.search TermDictionary TermDictionary$Match TermDictionary$Budget
+    TermDictionary$WorkLimitException]
+   [java.util.function IntPredicate]
+   [java.util ArrayList List Map$Entry Arrays HashMap HashSet WeakHashMap]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer FileOutputStream FileInputStream DataOutputStream
     DataInputStream]
@@ -127,6 +131,7 @@
 
 (deftype Candidate [^int tid
                     ^SparseIntArrayList sl
+                    ^objects alternatives
                     ^PeekableIntIterator iter]
   ICandidate
   (skip-before [this limit] (.advanceIfNeeded iter limit) this)
@@ -153,8 +158,23 @@
                   hn?  ((fn [m]
                           (let [did (get-did c)]
                             (merge m {:did did
-                                      :tf  (get-tf c did)}))))
+                                      :tf  (when (.-sl c) (get-tf c did))}))))
                   true (merge {:has-next? hn?}))))))
+
+(defn- candidate-score
+  ^double [^Candidate candidate did ^IntDoubleHashMap wqs ^IntShortHashMap norms]
+  (if-let [^objects alternatives (.-alternatives candidate)]
+    (let [best (loop [i (int 0), best (double 0.0)]
+                 (if (< i (alength alternatives))
+                   (let [^objects entry (aget alternatives i)
+                         postings (aget entry 0)
+                         boost    (double (aget entry 1))
+                         tf       (sl/get postings did)]
+                     (recur (unchecked-inc-int i)
+                            (if tf (max best (* boost (double (tf* tf)))) best)))
+                   best))]
+      (/ (* (.get wqs (.-tid candidate)) (double best)) (double (.get norms did))))
+    (real-score (.-tid candidate) did (get-tf candidate did) wqs norms)))
 
 (defn- find-pivot
   [^IntDoubleHashMap mxs tao-1 minimal-score
@@ -184,9 +204,7 @@
                 :prune
                 (let [tid (.-tid candidate)
                       s   (+ (- ^double score ^double (.get mxs tid))
-                             ^double (real-score tid did
-                                                 (get-tf candidate did)
-                                                 wqs norms))]
+                             (candidate-score candidate did wqs norms))]
                   (if (< s ^double minimal-score)
                     :prune
                     (recur s h (inc k))))))
@@ -231,7 +249,7 @@
         union-bm))))
 
 (defn- first-candidates
-  [{:keys [tids rbms rsls bbm]} ^RoaringBitmap result tao n]
+  [{:keys [tids rbms rsls bbm score-groups]} ^RoaringBitmap result tao n]
   (let [rbms     ^"[Lorg.roaringbitmap.ImmutableBitmapDataProvider;" rbms
         z        (inc (- ^long n ^long tao))
         union-bm (prefix-union-bm rbms z)]
@@ -245,7 +263,7 @@
                      (.andNot result))
               iter (.getIntIterator ^RoaringBitmap bm')]
           (when (.hasNext ^PeekableIntIterator iter)
-            (.add lst (Candidate. tid (nth rsls i) iter))))))))
+            (.add lst (Candidate. tid (nth rsls i) (get score-groups tid) iter))))))))
 
 (defn- next-candidates
   [did ^"[Ldatalevin.search.Candidate;" candidates]
@@ -274,7 +292,7 @@
 
 (declare doc-ref->id stored-doc-entry remove-doc* add-doc* hydrate-query display-xf
          cached-search-results score-docs get-rawtext new-search-engine*
-         parse-query* parse-query get-pos-info)
+         parse-query* parse-query get-pos-info hydrate-matching-query)
 
 (defprotocol IPositions
   (cur-pos [this] "return the current position, or nil if there is no more")
@@ -324,11 +342,21 @@
   (.write w "]"))
 
 (defn- segment-doc
-  [engine did tids ^long max-dist]
-  (let [pos-lst (FastList.)
+  [engine did tids max-dist group-tids]
+  (let [max-dist (long max-dist)
+        pos-lst (FastList.)
         spans   (FastList.)]
     (doseq [tid tids]
-      (when-let [poss (get-positions engine did tid)]
+      (when-let [poss (if-let [actual-tids (get group-tids tid)]
+                        (let [positions (into (sorted-set)
+                                              (mapcat
+                                                (fn [actual-tid]
+                                                  (when-let [info (get-pos-info engine did actual-tid)]
+                                                    (first info))))
+                                              actual-tids)]
+                          (when (seq positions)
+                            (Positions. tid (int-array positions) 0)))
+                        (get-positions engine did tid))]
         (.add pos-lst poss)))
     (when (seq pos-lst)
       (loop [cur-poss (apply min-key cur-pos pos-lst)
@@ -377,16 +405,38 @@
     (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
 
 (defn- proximity-score
-  [engine max-dist tids did wqs norms]
-  (when-let [spans (segment-doc engine did tids max-dist)]
+  [engine max-dist tids did wqs norms group-tids]
+  (when-let [spans (segment-doc engine did tids max-dist group-tids)]
     (transduce (map #(proximity-score* max-dist did spans wqs norms %))
                + 0.0 tids)))
 
+(defn- matching-proximity-weights
+  [tids did ^IntDoubleHashMap wqs score-groups]
+  (let [result (IntDoubleHashMap.)]
+    (doseq [tid tids
+            :let [^objects alts (get score-groups tid)
+                  boost (loop [i (int 0), best (double -1.0), boost (double 0.0)]
+                          (if (< i (alength alts))
+                            (let [^objects entry (aget alts i)
+                                  tf (sl/get (aget entry 0) did)
+                                  b  (double (aget entry 1))
+                                  score (if tf (* b (double (tf* tf))) -1.0)]
+                              (if (or (> score best) (and (= score best) (> b boost)))
+                                (recur (unchecked-inc-int i) score b)
+                                (recur (unchecked-inc-int i) best boost)))
+                            boost))]]
+      (.put result (int tid) (* (.get wqs (int tid)) (double boost))))
+    result))
+
 (defn- proximity-scoring
-  [engine max-dist tids wqs norms ^PriorityQueue pq0 ^PriorityQueue pq]
+  [engine max-dist tids wqs norms ^PriorityQueue pq0 ^PriorityQueue pq context]
   (dotimes [_ (.size pq0)]
-    (let [[tscore did] (.pop pq0)]
-      (if-let [pscore (proximity-score engine max-dist tids did wqs norms)]
+    (let [[tscore did] (.pop pq0)
+          weights (if-let [groups (:score-groups context)]
+                    (matching-proximity-weights tids did wqs groups)
+                    wqs)]
+      (if-let [pscore (proximity-score engine max-dist tids did weights norms
+                                     (:score-group-tids context))]
         (.insertWithOverflow pq [pscore did])
         (.insertWithOverflow pq [tscore did])))))
 
@@ -429,11 +479,11 @@
         (when (not-any? match phrases) did)))))
 
 (defn- match-phrases
-  [{:keys [engine phrases tmid]} did]
+  [{:keys [engine phrases tmid phrase-tmid]} did]
   (let [{:keys [req fbd]} phrases]
     (cond-> did
-      req (match-phrases* req engine tmid true)
-      fbd (match-phrases* fbd engine tmid false))))
+      req (match-phrases* req engine (or phrase-tmid tmid) true)
+      fbd (match-phrases* fbd engine (or phrase-tmid tmid) false))))
 
 (defn- score-term
   [{:keys [^IntDoubleHashMap mxs wqs phrases] :as context} ^Candidate candidate
@@ -442,7 +492,7 @@
         tid         (.-tid candidate)]
     (when (< ^double minimal-score (.get mxs tid))
       (loop [did (get-did candidate) minscore minimal-score]
-        (let [score (real-score tid did (get-tf candidate did) wqs norms)]
+        (let [score (candidate-score candidate did wqs norms)]
           (when (and (< ^double minscore ^double score)
                      (or no-phrases? (match-phrases context did)))
             (.insertWithOverflow ^PriorityQueue pq [score did])))
@@ -640,8 +690,8 @@
            tmid  (transient {})
            bms   (transient {})
            tms   (transient {})]
-      (if-let [{:keys [id mw sl tm wq]} (first qterms)]
-        (let [bm        (.-indices ^SparseIntArrayList sl)
+      (if-let [{:keys [id mw sl tm wq bm]} (first qterms)]
+        (let [bm        (or bm (.-indices ^SparseIntArrayList sl))
               required? (req tm)]
           (.put wqs id wq)
           (.put mxs id (* ^double wq ^double mw))
@@ -662,17 +712,19 @@
                                    (persistent! rbms))
                  :rsls (persistent! rsls)
                  :bms bms
-                 :tms (persistent! tms)
+                 :tms (or (:matched-terms context) (persistent! tms))
                  :mxs mxs
                  :bbm (boolean-bm tmid bms max-doc query)))))))
 
 (defn- all-docs
-  [{:keys [bbm phrases] :as context} top]
+  [{:keys [bbm phrases engine live-docs matching-groups] :as context} top]
   (let [no-phrases? (empty? phrases)]
     (into []
           (comp
             (map (fn [did]
-                   (when (or no-phrases? (match-phrases context did))
+                   (when (and (or (nil? matching-groups)
+                                  (= did (first (stored-doc-entry engine (live-docs did)))))
+                              (or no-phrases? (match-phrases context did)))
                      [0.1 did])))
             (remove nil?)
             (take top))
@@ -769,6 +821,7 @@
                        positions-dbi
                        rawtext-dbi
                        ^SpillableMap terms       ; term-id -> term
+                       ^TermDictionary dictionary
                        ^SpillableMap docs        ; doc-id -> doc-ref
                        ^IntShortHashMap norms    ; doc-id -> norm
                        cache
@@ -796,6 +849,7 @@
   (clear-docs [_]
     (.empty docs)
     (.empty terms)
+    (.clear dictionary)
     (.clear norms)
     (.clear ^LRUCache cache)
     (clear-dbi lmdb terms-dbi)
@@ -823,25 +877,38 @@
                               (or (:doc-filter search-opts)
                                   (:doc-filter default-search-opts))}
                        :as   opts}]
-    (when-let [context (some-> {:engine this :max-doc max-doc}
-                               (parse-query query-analyzer query)
-                               required-terms
-                               hydrate-query
-                               setup-env)]
-      (let [{:keys [tms]}     context
-            {:keys [offset limit top]}
-            (search-page opts search-opts)
-            offset            (long offset)
-            limit             (long limit)
-            top               (long top)]
-        (sequence
-          (comp (drop offset)
-                (take limit)
-                (display-xf this doc-filter display tms))
-          (if (zero? limit)
-            []
-            (cached-search-results this context top proximity-expansion
-                                   proximity-max-dist))))))
+    (let [fuzzy (search-option opts search-opts :fuzzy nil)
+          prefix (search-option opts search-opts :prefix nil)
+          max-term-visits (search-option opts search-opts :max-term-visits 1000000)]
+      (try
+        (when-let [context (some-> {:engine this :max-doc max-doc :live-docs docs
+                                   :fuzzy fuzzy
+                                   :prefix prefix
+                                   :max-prefix-expansions
+                                   (search-option opts search-opts :max-prefix-expansions nil)
+                                   :max-term-visits max-term-visits}
+                                 (parse-query query-analyzer query)
+                                 required-terms
+                                 hydrate-query
+                                 setup-env)]
+          (let [{:keys [tms]} context
+                {:keys [offset limit top]} (search-page opts search-opts)
+                offset (long offset)
+                limit  (long limit)
+                top    (long top)]
+            (sequence
+              (comp (drop offset)
+                    (take limit)
+                    (display-xf this doc-filter display tms))
+              (if (zero? limit)
+                []
+                (cached-search-results this context top proximity-expansion
+                                       proximity-max-dist)))))
+        (catch TermDictionary$WorkLimitException e
+          (throw (ex-info (.getMessage e)
+                          {:error :search/max-term-visits-exceeded
+                           :query query :max-term-visits max-term-visits}
+                          e))))))
 
   IAdmin
   (re-index [this opts]
@@ -900,7 +967,7 @@
         tokens)))
 
 (defn- analyze-phrase-query
-  [query-analyzer ^HashMap phrase-cache pos? query]
+  [query-analyzer ^HashMap phrase-cache pos? query protected?]
   (cond
     (string? query)  (phrase-stats-empty query)
     (keyword? query) (phrase-stats-empty query)
@@ -910,13 +977,20 @@
       (let [tokens (phrase-tokens query-analyzer phrase-cache (:phrase query))
             match  #{tokens}
             empty  #{}]
-        {:query    (if pos? (vec (cons :and tokens)) :empty)
+        {:query    (if pos?
+                     (into [:and] (if protected?
+                                    (map #(hash-map ::sq/exact-token %) tokens)
+                                    tokens))
+                     :empty)
          :all      match
          :possible (if pos? match empty)
          :always   (if pos? match empty)})
 
       (:term query)
-      (phrase-stats-empty (:term query))
+      (phrase-stats-empty (if protected? query (:term query)))
+
+      (and protected? (or (contains? query :fuzzy) (contains? query :prefix)))
+      (phrase-stats-empty query)
 
       :else
       (raise "Invalid search query" {:map query}))
@@ -928,7 +1002,7 @@
               children   (mapv #(analyze-phrase-query query-analyzer
                                                       phrase-cache
                                                       child-pos?
-                                                      %)
+                                                      % protected?)
                                args)
               rewritten  (vec (cons op (mapv :query children)))]
           (case op
@@ -955,9 +1029,9 @@
     (raise "Invalid search query" {:query query})))
 
 (defn- handle-maps
-  [position? phrases analyzer query]
+  [position? phrases analyzer query protected?]
   (let [{:keys [query all possible always]}
-        (analyze-phrase-query analyzer (HashMap.) true query)]
+        (analyze-phrase-query analyzer (HashMap.) true query protected?)]
     (if (seq all)
       (if (not position?)
         (raise "Phrase search requires :index-position? true" {})
@@ -968,13 +1042,16 @@
       query)))
 
 (defn- parse-query
-  [{:keys [engine] :as context} query-analyzer query]
+  [{:keys [engine fuzzy prefix] :as context} query-analyzer query]
   (let [position? (.-index-position? ^SearchEngine engine)
-        phrases   (volatile! {})]  ; :req|:fbd => #{ [ tokens ] }
-    (when-let [q (some->> query
-                          (handle-maps position? phrases query-analyzer)
-                          (parse-query* query-analyzer))]
-      (assoc context :query q :phrases @phrases))))
+        phrases   (volatile! {})
+        expanded? (sq/expanded? query fuzzy prefix)
+        prepared  (handle-maps position? phrases query-analyzer query expanded?)]
+    (if expanded?
+      (when-let [parsed (sq/parse-groups query-analyzer prepared fuzzy prefix)]
+        (merge context parsed {:phrases @phrases}))
+      (when-let [q (parse-query* query-analyzer prepared)]
+        (assoc context :query q :phrases @phrases)))))
 
 (defmacro wrap-cache
   [engine k v]
@@ -1002,7 +1079,7 @@
     (if (.-index-position? ^SearchEngine engine)
       (let [pq0 (priority-queue (* ^long to-get ^long expansion))]
         (tf-idf-scoring context result tao n pq0 norms)
-        (proximity-scoring engine max-dist tids wqs norms pq0 pq))
+        (proximity-scoring engine max-dist tids wqs norms pq0 pq context))
       (tf-idf-scoring context result tao n pq norms))))
 
 (defn- raw-search-results
@@ -1017,10 +1094,10 @@
                         proximity-max-dist result n)))))
 
 (defn- cached-search-results
-  [^SearchEngine engine {:keys [query phrases] :as context} top
+  [^SearchEngine engine {:keys [query phrases matching-groups] :as context} top
    proximity-expansion proximity-max-dist]
   (wrap-cache
-    engine [:search-results query phrases top proximity-expansion
+    engine [:search-results query phrases matching-groups top proximity-expansion
             proximity-max-dist]
     (raw-search-results engine context top proximity-expansion
                         proximity-max-dist)))
@@ -1134,6 +1211,7 @@
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
+        dictionary-terms ^ArrayList (ArrayList.)
         ^LRUCache cache (.-cache engine)
         txs             (FastList.)]
     (when include-text? (.add txs (l/kv-tx :put (.-rawtext-dbi engine) doc-id
@@ -1149,6 +1227,7 @@
             (or (get-term-info engine term)
                 [(let [new-tid (.incrementAndGet ^AtomicInteger max-term)]
                    (.put terms new-tid term)
+                   (.add dictionary-terms [term new-tid])
                    new-tid)
                  0.0
                  (sl/sparse-arraylist)])
@@ -1167,6 +1246,8 @@
       (.add txs (l/kv-tx :put (.-docs-dbi engine) doc-ref doc-info
                          :data :doc-info))
       (transact-kv (.-lmdb engine) txs)
+      (doseq [[term tid] dictionary-terms]
+        (.put ^TermDictionary (.-dictionary engine) term (int tid)))
       (.clear cache)))
   :doc-added)
 
@@ -1281,7 +1362,8 @@
           (doseq [^Map$Entry kv (.entrySet pending-terms)]
             (let [^PendingTerm pending (.getValue kv)]
               (when (.-fresh pending)
-                (.put terms (.-id pending) (.getKey kv)))))
+                (.put terms (.-id pending) (.getKey kv))
+                (.put ^TermDictionary (.-dictionary engine) (.getKey kv) (.-id pending)))))
           (doseq [[doc-id doc-ref unique] new-docs]
             (.put docs-map doc-id doc-ref)
             (.put norms doc-id unique)))
@@ -1404,7 +1486,8 @@
           (doseq [^Map$Entry kv (.entrySet pending-terms)]
             (let [^PendingTerm pending (.getValue kv)]
               (when (.-fresh pending)
-                (.put terms (.-id pending) (.getKey kv)))))
+                (.put terms (.-id pending) (.getKey kv))
+                (.put ^TermDictionary (.-dictionary engine) (.getKey kv) (.-id pending)))))
           (doseq [action state-actions]
             (let [kind   (nth action 0)
                   doc-id (nth action 1)]
@@ -1435,13 +1518,93 @@
           (filter map?))
         (frequencies tokens)))
 
+(defn- hydrate-matching-query
+  [{:keys [^SearchEngine engine ^AtomicInteger max-doc matching-groups tokens
+           phrases req max-term-visits max-prefix-expansions] :as context}]
+  (when-not (pos-int? max-term-visits)
+    (raise ":max-term-visits must be a positive integer"
+           {:max-term-visits max-term-visits}))
+  (when (and (some? max-prefix-expansions)
+             (not (and (pos-int? max-prefix-expansions)
+                       (<= max-prefix-expansions Integer/MAX_VALUE))))
+    (raise ":max-prefix-expansions must be nil or an integer between 1 and 2147483647"
+           {:max-prefix-expansions max-prefix-expansions}))
+  (let [^TermDictionary dictionary (.-dictionary engine)
+        terms      (.-terms engine)
+        infos      (HashMap.)
+        ^TermDictionary$Budget budget (TermDictionary$Budget. (long max-term-visits))
+        freq       (frequencies tokens)
+        info       (fn [tid]
+                     (if (.containsKey infos tid)
+                       (.get infos tid)
+                       (let [term (terms tid)
+                             [id mw postings] (when term (query-term-info engine term))
+                             df (when postings (sl/size postings))
+                             result (when (and df (pos? (long df)))
+                                      {:id id :tm term :mw mw :sl postings :df df})]
+                         (.put infos tid result)
+                         result)))
+        ^IntPredicate live (reify IntPredicate
+                     (test [_ tid] (boolean (info tid))))
+        group-data
+        (into []
+              (keep-indexed
+                (fn [idx [key {:keys [mode term max-edits transpositions?
+                                      max-expansions]}]]
+                  (let [members
+                        (if (= mode :exact)
+                          (when-let [[tid] (query-term-info engine term)]
+                            (when-let [entry (info tid)] [(assoc entry :boost 1.0)]))
+                          (mapv
+                            (fn [^TermDictionary$Match match]
+                              (assoc (info (.-termId match))
+                                     :boost (/ 1.0 (inc (long (.-distance match))))))
+                            (case mode
+                              :prefix (.prefix dictionary ^String term
+                                               (int (or max-prefix-expansions Integer/MAX_VALUE))
+                                               budget live)
+                              :fuzzy (.fuzzy dictionary ^String term (int max-edits)
+                                             (boolean transpositions?) (int max-expansions)
+                                             budget live))))]
+                    (when (seq members)
+                      (let [bm (RoaringBitmap.)
+                            df (reduce max (map :df members))
+                            mw (reduce max (map #(* (double (:boost %))
+                                                    (double (:mw %))) members))
+                            alts (into-array Object
+                                             (map #(object-array [(:sl %) (:boost %)])
+                                                  members))]
+                        (doseq [{:keys [sl]} members]
+                          (.or bm (bitmap-provider->roaring
+                                    (.-indices ^SparseIntArrayList sl))))
+                        {:id (inc (long idx)) :tm key :bm bm :sl nil :df df :mw mw
+                         :wq (* (double (tf* (long (get freq key 1))))
+                                (double (idf df (.get max-doc))))
+                         :alts alts :members members})))))
+              matching-groups)
+        phrase-terms (distinct (mapcat identity (concat (:req phrases) (:fbd phrases))))
+        phrase-info (keep (fn [term]
+                            (when-let [[tid] (query-term-info engine term)] (info tid)))
+                          phrase-terms)
+        members     (concat (mapcat :members group-data) phrase-info)]
+    (when (or (seq group-data) (empty? req))
+      (assoc context
+             :qterms (vec (sort-by :df group-data))
+             :score-groups (into {} (map (juxt :id :alts)) group-data)
+             :score-group-tids (into {} (map (fn [{:keys [id members]}]
+                                               [id (mapv :id members)])) group-data)
+             :matched-terms (into {} (map (juxt :id :tm)) members)
+             :phrase-tmid (into {} (map (juxt :tm :id)) members)))))
+
 (defn- hydrate-query
   [{:keys [engine max-doc tokens] :as context}]
-  (let [qterms (->> (hydrate-query* engine max-doc tokens)
-                    (sort-by :df)
-                    vec)]
-    (when (seq qterms)
-      (assoc context :qterms qterms))))
+  (if (:matching-groups context)
+    (hydrate-matching-query context)
+    (let [qterms (->> (hydrate-query* engine max-doc tokens)
+                      (sort-by :df)
+                      vec)]
+      (when (seq qterms)
+        (assoc context :qterms qterms)))))
 
 (defn- get-doc-ref
   [^SearchEngine engine doc-filter [_ doc-id]]
@@ -1519,15 +1682,17 @@
 
 (defn- init-terms
   [lmdb terms-dbi]
-  (let [terms  (sp/new-spillable-map)
-        max-id (volatile! 0)
-        load   (fn [kv]
+  (let [terms      (sp/new-spillable-map)
+        dictionary (TermDictionary.)
+        max-id     (volatile! 0)
+        load       (fn [kv]
                  (let [term (b/read-buffer (l/k kv) :string)
                        id   (b/read-buffer (l/v kv) :int)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
-                   (.put ^SpillableMap terms id term)))]
+                   (.put ^SpillableMap terms id term)
+                   (.put dictionary term id)))]
     (visit lmdb terms-dbi load [:all-back])
-    [@max-id terms]))
+    [@max-id terms dictionary]))
 
 (defn- init-docs
   [lmdb docs-dbi]
@@ -1544,6 +1709,44 @@
                    (.put norms id norm)))]
     (visit lmdb docs-dbi load [:all-back])
     [@max-id norms docs]))
+
+;; Bulk writers operate directly on DBIs. Keep weak registrations so a commit
+;; can also publish into live engines without extending their lifetime.
+(defonce ^:private ^WeakHashMap open-engines (WeakHashMap.))
+
+(defn- register-engine
+  [engine]
+  (locking open-engines (.put open-engines engine true))
+  engine)
+
+(defn- publish-writer-batch
+  [lmdb terms-dbi ^HashMap hit-terms ^List new-docs]
+  (let [owner (if/kv-info lmdb)
+        engines (locking open-engines (vec (.keySet open-engines)))]
+    (doseq [^SearchEngine engine engines
+            :when (and (if owner
+                         (identical? owner (if/kv-info (.-lmdb engine)))
+                         (identical? lmdb (.-lmdb engine)))
+                       (= terms-dbi (.-terms-dbi engine)))]
+      (locking (.-docs engine)
+        (let [^SpillableMap terms (.-terms engine)
+              ^TermDictionary dictionary (.-dictionary engine)
+              ^SpillableMap docs (.-docs engine)
+              ^IntShortHashMap norms (.-norms engine)
+              ^AtomicInteger max-term (.-max-term engine)
+              ^AtomicInteger max-doc (.-max-doc engine)]
+          (doseq [^Map$Entry entry (when hit-terms (.entrySet hit-terms))]
+            (let [term (.getKey entry)
+                  tid (int (first (.getValue entry)))]
+              (.put terms tid term)
+              (.put dictionary term tid)
+              (.set max-term (max (.get max-term) tid))))
+          (doseq [[id ref norm] new-docs]
+            (.put docs id ref)
+            (.put norms id norm)
+            (.set max-doc (max (.get max-doc) (int id))))
+          (when hit-terms
+            (.clear ^LRUCache (.-cache engine))))))))
 
 (def default-opts {:analyzer        a/en-analyzer
                    :index-position? false
@@ -1651,23 +1854,25 @@
          (doseq [dbi [terms-dbi docs-dbi positions-dbi rawtext-dbi]]
            (if/get-dbi lmdb dbi false)))
        (let [[max-doc norms docs] (init-docs lmdb docs-dbi)
-             [max-term terms]     (init-terms lmdb terms-dbi)]
-         (->SearchEngine lmdb
-                         analyzer
-                         (or query-analyzer analyzer)
-                         terms-dbi
-                         docs-dbi
-                         positions-dbi
-                         rawtext-dbi
-                         terms     ;; term-id -> term
-                         docs      ;; doc-id -> doc-ref
-                         norms     ;; doc-id -> norm
-                         (LRUCache. 10000)
-                         (AtomicInteger. max-doc)
-                         (AtomicInteger. max-term)
-                         index-position?
-                         include-text?
-                         search-opts))))))
+             [max-term terms dictionary] (init-terms lmdb terms-dbi)]
+         (register-engine
+           (->SearchEngine lmdb
+                           analyzer
+                           (or query-analyzer analyzer)
+                           terms-dbi
+                           docs-dbi
+                           positions-dbi
+                           rawtext-dbi
+                           terms     ;; term-id -> term
+                           dictionary
+                           docs      ;; doc-id -> doc-ref
+                           norms     ;; doc-id -> norm
+                           (LRUCache. 10000)
+                           (AtomicInteger. max-doc)
+                           (AtomicInteger. max-term)
+                           index-position?
+                           include-text?
+                           search-opts)))))))
 
 (defn ^:no-doc open-search-engine
   "Open existing search DBIs without creating them. Return nil when missing."
@@ -1686,22 +1891,26 @@
   "transfer state of an existing engine to an new engine that has a
   different LMDB instance, e.g. result of `mark-write`"
   [^SearchEngine old lmdb]
-  (->SearchEngine lmdb
-                  (.-analyzer old)
-                  (.-query-analyzer old)
-                  (.-terms-dbi old)
-                  (.-docs-dbi old)
-                  (.-positions-dbi old)
-                  (.-rawtext-dbi old)
-                  (.-terms old)
-                  (.-docs old)
-                  (.-norms old)
-                  (.-cache old)
-                  (.-max-doc old)
-                  (.-max-term old)
-                  (.-index-position? old)
-                  (.-include-text? old)
-                  (.-search-opts old)))
+  (register-engine
+    (->SearchEngine lmdb
+                    (.-analyzer old)
+                    (.-query-analyzer old)
+                    (.-terms-dbi old)
+                    (.-docs-dbi old)
+                    (.-positions-dbi old)
+                    (.-rawtext-dbi old)
+                    (.-terms old)
+                    (.-dictionary old)
+                    (.-docs old)
+                    (.-norms old)
+                    ;; A write view may have cached postings and result sets
+                    ;; from an aborted transaction. Never carry across views.
+                    (LRUCache. 10000)
+                    (.-max-doc old)
+                    (.-max-term old)
+                    (.-index-position? old)
+                    (.-include-text? old)
+                    (.-search-opts old))))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])
@@ -1718,7 +1927,8 @@
                       index-position?
                       include-text?
                       ^FastList txs
-                      ^HashMap hit-terms]
+                      ^HashMap hit-terms
+                      ^FastList new-docs]
   IIndexWriter
   (write [_ doc-ref doc-text]
     (when-not (s/blank? doc-text)
@@ -1754,22 +1964,28 @@
         (.add txs (l/kv-tx :put docs-dbi doc-ref
                            [doc-id unique (.toArray ^IntHashSet term-set)]
                            :data :doc-info))
+        ;; Publish metadata at batch boundaries to bound writer memory and
+        ;; avoid rescanning the documents DBI when the import commits.
+        (.add new-docs [doc-id doc-ref unique])
         (when (< ^long batch (.size txs))
           (transact-kv lmdb txs)
-          (.clear txs)))))
+          (publish-writer-batch lmdb terms-dbi nil new-docs)
+          (.clear txs)
+          (.clear new-docs)))))
 
   (commit [_]
     (transact-kv lmdb txs)
+    (publish-writer-batch lmdb terms-dbi nil new-docs)
     (.clear txs)
-    (let [iter (.iterator (.entrySet hit-terms))]
-      (loop []
-        (when (.hasNext iter)
-          (let [^Map$Entry kv (.next iter)]
-            (.remove iter)
-            (.add txs (l/kv-tx :put terms-dbi (.getKey kv)
-                               (.getValue kv) :string :term-info))
-            (recur)))))
-    (transact-kv lmdb txs)))
+    (.clear new-docs)
+    (doseq [^Map$Entry kv (.entrySet hit-terms)]
+      (.add txs (l/kv-tx :put terms-dbi (.getKey kv)
+                         (.getValue kv) :string :term-info)))
+    (let [result (transact-kv lmdb txs)]
+      (.clear txs)
+      (publish-writer-batch lmdb terms-dbi hit-terms nil)
+      (.clear hit-terms)
+      result)))
 
 (defn- init-max-id [lmdb dbi]
   (let [max-id (volatile! 0)
@@ -1809,7 +2025,8 @@
                     index-position?
                     include-text?
                     (FastList.)
-                    (HashMap.)))))
+                    (HashMap.)
+                    (FastList.)))))
 
 
 

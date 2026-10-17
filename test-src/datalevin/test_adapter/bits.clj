@@ -34,6 +34,24 @@
 (defn bitmap-del [bitmap member]
   (adapter/call! :bits/bitmap-del [bitmap member]))
 
+(defn bitmap? [value]
+  (instance? org.roaringbitmap.RoaringBitmap value))
+
+(defn bitmap-and [left right]
+  (adapter/call! :bits/bitmap-and [left right]))
+
+(defn bitmap-or [left right]
+  (adapter/call! :bits/bitmap-or [left right]))
+
+(defn bitmaps-and [bitmaps]
+  (adapter/call! :bits/bitmaps-and [bitmaps]))
+
+(defn bitmaps-or [bitmaps]
+  (adapter/call! :bits/bitmaps-or [bitmaps]))
+
+(defn bitmap-empty? [bitmap]
+  (adapter/call! :bits/bitmap-empty? [bitmap]))
+
 (defn serialize-bf [buffer value]
   (adapter/call! :bits/serialize-bf [buffer value]))
 

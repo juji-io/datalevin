@@ -2465,15 +2465,37 @@ engine index."}
     <operands>   ::= <expression>+
     <term>       ::= string | { <pair>+ }
     <pair>       ::= <key> string
-    <key>        ::= :phrase | :term
+    <key>        ::= :phrase | :term | :prefix | :fuzzy
 
 For example, `[:or [:and \"red\" \"fox\" [:not \"lazy\"]] {:phrase \"jump over\"}]`
 
 If the query is a string of words, e.g. `\"word1 word2 word3\"`, it is equivalent
 to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
 
+`{:prefix \"hel\"}` matches indexed tokens beginning with `hel`.
+`{:fuzzy \"helo\" :max-edits 1}` matches indexed tokens within one edit.
+Fuzzy leaves also accept `:transpositions?` and `:max-expansions` below.
+Explicit `:term` leaves and phrases remain exact with query-wide matching options.
+
 `opts` map may have these keys:
 
+  * `:fuzzy` enables typo tolerance on string query terms. Accepts `true` or an
+    option map with `:max-edits` (0..2, default 1), `:transpositions?` (default
+    true), and `:max-expansions` (1..100000, default 50). Adjacent transpositions
+    count as one edit when enabled. Distances count Unicode code points.
+    Live alternatives are selected by distance, then UTF-8 lexical order.
+    Unknown fuzzy option keys are rejected, including in explicit fuzzy leaves.
+  * `:prefix` enables token-prefix matching on string query terms. Default false.
+    Use explicit leaves to mix prefix and fuzzy matching in one expression.
+  * `:max-prefix-expansions` optionally caps live indexed alternatives per
+    analyzed prefix token. Default nil (uncapped). Accepts integers from 1 to
+    2147483647. Exceeding it throws instead of returning partial matches.
+    Short prefixes can be expensive even when `:top` or `:limit` is small.
+  * `:max-term-visits` bounds shared trie traversal work for expanded terms
+    (default 1000000). Exhaustion throws `ExceptionInfo` with `:error
+    :search/max-term-visits-exceeded`, the original `:query`, and the effective
+    limit in its exception data. Local search retains the underlying exception
+    as its cause; remote search returns the server's data under `:err-data`.
   * `:display` can be one of `:refs` (default), `:refs+scores`,
     `:offsets`, `:texts`, or `:texts+offsets`.
     - `:refs` returns a lazy sequence of `doc-ref` ordered by relevance.
@@ -2520,6 +2542,10 @@ to `[:or \"word1\" \"word2\" \"word3\"]` when using the default analyzer.
 
   The search index is stored in the passed-in key value database opened
   by [[open-kv]]. See also [[write]] and [[commit]].
+
+  [[commit]] refreshes already-open search engines for this environment and
+  domain, including their term dictionaries and cached results. Finish the bulk
+  import before issuing searches or writes through those engines.
 
   `opts` is an option map that may contain these keys:
   * `:domain` is an identifier string, indicates the domain of this search

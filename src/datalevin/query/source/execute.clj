@@ -108,9 +108,12 @@
                            ;; The parser requires distinct :in variables, so at
                            ;; most one relational input can bind this entity.
                            (some #(when (contains? (:variables %) entity) %) (:relations input-data)))
-                keys-only? (= :ignore (first (nth terms 2)))
-                terms (if keys-only? (pop terms) terms)
-                read! (if keys-only? native/scan-keys! native/scan!)]
+                bound-value (case value-tag
+                              :const term-value
+                              :var (get bindings term-value)
+                              nil)
+                keys-only? (= :ignore value-tag)
+                terms (if keys-only? (pop terms) terms)]
             {:entity-variable (when (and (= :var entity-tag)
                                          (not (contains? bindings entity))
                                          (nil? relation)
@@ -130,11 +133,14 @@
                          scan (fn [entity-id]
                                 (source/check-active! control)
                                 (swap! (:explain runtime) update :native-scans inc)
-                                (read! control (get snapshots (.-store ^DB native))
-                                       (second (second terms)) entity-id
-                                       (fn [row]
-                                         (when-let [binding (match-row bindings terms row)]
-                                           (emit binding)))))]
+                                (let [snapshot (get snapshots (.-store ^DB native))
+                                      attribute (second (second terms))
+                                      visit (fn [row]
+                                              (when-let [binding (match-row bindings terms row)]
+                                                (emit binding)))]
+                                  (if keys-only?
+                                    (native/scan-keys! control snapshot attribute entity-id visit)
+                                    (native/scan! control snapshot attribute entity-id bound-value visit))))]
                      (if rows
                        (input/with-entity-ids control rows entity #(visit-rows % scan))
                        (scan entity-id))))))})) patterns))

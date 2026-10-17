@@ -2,11 +2,13 @@
 
 ## WIP
 
-### Fixed
-- [Datalog] A re-index bug [#353](https://github.com/datalevin/datalevin/issues/353).
 ### Added
 - [Analytics] infrastructure to work with external data source over virtual
   relation.
+- [Search] fuzzy/prefix fulltext search
+  [#314](https://github.com/datalevin/datalevin/issues/314).
+### Fixed
+- [Datalog] A re-index bug [#353](https://github.com/datalevin/datalevin/issues/353).
 ### Improved
 - [Buffer] Allocate large (> 1 MiB) direct memory buffers on demand and release
   them after idle budget (time and space).

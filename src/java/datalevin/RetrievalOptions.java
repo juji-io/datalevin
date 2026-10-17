@@ -84,6 +84,36 @@ public final class RetrievalOptions {
         return this;
     }
 
+    /** Enables query-wide typo tolerance with the default one-edit radius. */
+    public RetrievalOptions fuzzy(boolean enabled) {
+        props.put(Datalevin.kw("fuzzy"), enabled);
+        return this;
+    }
+
+    /** Sets query-wide fuzzy matching options, such as {@code max-edits}. */
+    public RetrievalOptions fuzzy(Map<?, ?> options) {
+        props.put(Datalevin.kw("fuzzy"), new LinkedHashMap<>(options));
+        return this;
+    }
+
+    /** Enables prefix matching of analyzed query tokens. */
+    public RetrievalOptions prefix(boolean enabled) {
+        props.put(Datalevin.kw("prefix"), enabled);
+        return this;
+    }
+
+    /** Caps live alternatives per prefix token; exceeding the cap throws. */
+    public RetrievalOptions maxPrefixExpansions(long expansions) {
+        props.put(Datalevin.kw("max-prefix-expansions"), expansions);
+        return this;
+    }
+
+    /** Bounds shared trie traversal work across expanded query terms. */
+    public RetrievalOptions maxTermVisits(long visits) {
+        props.put(Datalevin.kw("max-term-visits"), visits);
+        return this;
+    }
+
     /**
      * Sets {@code :display}.
      */

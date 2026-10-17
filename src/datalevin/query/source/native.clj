@@ -17,7 +17,8 @@
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.util :as u])
-  (:import [datalevin.db DB]
+  (:import [datalevin.bits Indexable]
+           [datalevin.db DB]
            [datalevin.storage Store]
            [java.lang AutoCloseable Iterable]
            [java.nio ByteBuffer]
@@ -153,39 +154,69 @@
               result (visit rtx raw eid)]
           (if (reduced? result) result (recur)))))))
 
+(defn- value-range-type [props x]
+  ;; These scalar encodings preserve an equality candidate bucket. Keep the
+  ;; logical equality check: truncated strings and UTF-8 replacements can
+  ;; collide, and Java key equality distinguishes signed floating-point zero.
+  ;; Generic/custom payloads, decimal scales and tuples need other bounds.
+  (let [t (:db/valueType props)]
+    (when (and (some? x)
+               (#{:db.type/boolean :db.type/long :db.type/ref :db.type/uuid
+                  :db.type/instant :db.type/string :db.type/keyword :db.type/symbol
+                  :db.type/float :db.type/double} t)
+               (value/matches-type? (logical-scalar t) x)
+               (not (and (#{:db.type/float :db.type/double} t)
+                         (Double/isNaN (double x)))))
+      t)))
+
 (defn- scan-attribute!
-  [control {:keys [kv schema]} attribute entity-id visit]
+  [control {:keys [kv schema]} attribute entity-id bound-value visit]
   (source/check-active! control)
   (when-let [aid (:db/aid (schema attribute))]
-    ;; AVG starts with an unsigned four-byte attribute ID in both indexes.
-    ;; Prefix bounds include every value/header, giant ID, and custom order key
-    ;; without consulting a value codec. The successor also works at amax.
     (let [aid (int aid)
-          attr-range [:closed-open aid (unchecked-inc-int aid)]
-          noindex? (:db/noindex (schema attribute))
-          ave? (and (nil? entity-id) (not noindex?))]
-      (scan/scan kv (if ave? c/ave c/eav)
-        (cond
-          ave? (visit-range! control dbi rtx cur attr-range :int [:all] :id true visit)
-          (some? entity-id)
-          (visit-range! control dbi rtx cur [:closed entity-id entity-id] :id
-                        attr-range :int false visit)
-          :else
-          ;; Unindexed attributes have no AVE entries. Walk entity keys once,
-          ;; seeking only this attribute's duplicates for each. Keep cancellation
-          ;; checks between entities, even when none has the requested attribute.
-          (with-open [^AutoCloseable entities
-                      (.iterator ^Iterable (lmdb/iterate-key dbi rtx cur [:all] :id))]
-            (scan/scan kv c/eav
-              (loop []
-                (source/check-active! control)
-                (when (.hasNext ^Iterator entities)
-                  (let [eid (bits/read-buffer (lmdb/k (.next ^Iterator entities)) :id)
-                        result (visit-range! control dbi rtx cur [:closed eid eid] :id
-                                             attr-range :int false visit)]
-                    (if (reduced? result) result (recur)))))
-              (throw e))))
-        (throw e)))))
+          props (schema attribute)
+          value-type (value-range-type props bound-value)
+          ;; Reserve before encoding both bounds, including temporary UTF-8
+          ;; arrays for giant strings/keywords/symbols. No user codec runs here.
+          token (when value-type
+                  (source/reserve! control
+                    {:retained-bytes (value/add-charge 4096
+                                       (value/multiply-charge 8 (value/value-charge bound-value)))}))]
+      (try
+        (let [attr-range (if value-type
+                           (let [^Indexable low (bits/indexable nil aid bound-value value-type c/g0)]
+                             ;; Encode once; only the giant-ID suffix differs.
+                             [:closed low (if (bits/giant? low)
+                                            (Indexable. nil aid bound-value (.-f low) (.-b low) c/gmax)
+                                            low)])
+                           ;; AVG starts with an unsigned aid in both indexes;
+                           ;; its successor also works at the largest legal aid.
+                           [:closed-open aid (unchecked-inc-int aid)])
+              range-type (if value-type :avg :int)
+              ave? (and (nil? entity-id) (not (:db/noindex props)))]
+          (scan/scan kv (if ave? c/ave c/eav)
+            (cond
+              ave? (visit-range! control dbi rtx cur attr-range range-type [:all] :id true visit)
+              (some? entity-id)
+              (visit-range! control dbi rtx cur [:closed entity-id entity-id] :id
+                            attr-range range-type false visit)
+              :else
+              ;; Unindexed attributes have no AVE entries. Walk entity keys
+              ;; once and seek only matching duplicates, checking cancellation
+              ;; between entities even when no value matches.
+              (with-open [^AutoCloseable entities
+                          (.iterator ^Iterable (lmdb/iterate-key dbi rtx cur [:all] :id))]
+                (scan/scan kv c/eav
+                  (loop []
+                    (source/check-active! control)
+                    (when (.hasNext ^Iterator entities)
+                      (let [eid (bits/read-buffer (lmdb/k (.next ^Iterator entities)) :id)
+                            result (visit-range! control dbi rtx cur [:closed eid eid] :id
+                                                 attr-range range-type false visit)]
+                        (if (reduced? result) result (recur)))))
+                  (throw e))))
+            (throw e)))
+        (finally (when token (source/release! token)))))))
 
 (defn scan-keys!
   "Visit owned [entity attribute] pairs for an explicit value wildcard. Each
@@ -199,19 +230,22 @@
    (let [token (source/reserve! control
                  {:retained-bytes (value/add-charge 512 (value/value-charge attribute))})]
      (try
-       (scan-attribute! control snapshot attribute entity-id
+       (scan-attribute! control snapshot attribute entity-id nil
                        (fn [_ _ eid] (emit [eid attribute])))
        (finally (source/release! token))))))
 
 (defn scan!
   "Visit owned datoms from a pinned attribute scan without a full-result collector.
-  Entity and attribute bounds apply before any payload reads or decoding."
+  Entity, attribute and eligible scalar value bounds precede payload decoding.
+  Value bounds select candidates; the caller still checks logical equality."
   ([control snapshot attribute emit]
-   (scan! control snapshot attribute nil emit))
-  ([control {:keys [kv] :as snapshot} attribute entity-id emit]
+   (scan! control snapshot attribute nil nil emit))
+  ([control snapshot attribute entity-id emit]
+   (scan! control snapshot attribute entity-id nil emit))
+  ([control {:keys [kv] :as snapshot} attribute entity-id bound-value emit]
    (let [type (attribute-type snapshot attribute)
          check! #(source/check-active! control)]
-     (scan-attribute! control snapshot attribute entity-id
+     (scan-attribute! control snapshot attribute entity-id bound-value
        (fn [rtx ^ByteBuffer raw eid]
          (if (= :native-custom-data (:kind type))
            (let [id (native-value/custom-reference-id raw)

@@ -597,6 +597,36 @@ pub fn bitmap(values: &[i32]) -> roaring::RoaringBitmap {
     bitmap
 }
 
+pub fn bitmap_and(
+    left: &roaring::RoaringBitmap,
+    right: &roaring::RoaringBitmap,
+) -> roaring::RoaringBitmap {
+    left & right
+}
+
+pub fn bitmap_or(
+    left: &roaring::RoaringBitmap,
+    right: &roaring::RoaringBitmap,
+) -> roaring::RoaringBitmap {
+    left | right
+}
+
+pub fn bitmaps_and(bitmaps: &[&roaring::RoaringBitmap]) -> Option<roaring::RoaringBitmap> {
+    let (first, rest) = bitmaps.split_first()?;
+    Some(
+        rest.iter()
+            .fold((*first).clone(), |result, bitmap| result & *bitmap),
+    )
+}
+
+pub fn bitmaps_or(bitmaps: &[&roaring::RoaringBitmap]) -> Option<roaring::RoaringBitmap> {
+    let (first, rest) = bitmaps.split_first()?;
+    Some(
+        rest.iter()
+            .fold((*first).clone(), |result, bitmap| result | *bitmap),
+    )
+}
+
 pub struct BitmapWrites {
     pub header: Vec<Vec<u8>>,
     pub containers: Vec<Vec<Vec<u8>>>,

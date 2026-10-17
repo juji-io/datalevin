@@ -215,6 +215,8 @@ fn dispatch(request: &Value) -> Value {
         }
         "bits/bitmap" | "bits/bitmap-add" | "bits/bitmap-del" | "bits/encode-bitmap"
         | "bits/decode-bitmap" => bitmap_operation(operation, arguments),
+        "bits/bitmap-and" | "bits/bitmap-or" | "bits/bitmaps-and" | "bits/bitmaps-or"
+        | "bits/bitmap-empty?" => bitmap_set_operation(operation, arguments),
         "echo" | "bits/serialize" | "bits/deserialize" | "bits/encode-base64"
         | "bits/decode-base64" | "bits/encode-bigint" | "bits/decode-bigint" => {
             let [argument] = arguments.as_slice() else {
@@ -646,6 +648,68 @@ fn index_operation(operation: &str, arguments: &[Value]) -> Value {
             },
         ),
     ]))
+}
+
+fn bitmap_set_operation(operation: &str, arguments: &[Value]) -> Value {
+    let result = match operation {
+        "bits/bitmap-empty?" => {
+            let [argument] = arguments else {
+                return protocol_error("Bitmap empty check requires exactly one bitmap");
+            };
+            let Some(Value::Bitmap(bitmap)) = value_argument(argument) else {
+                return protocol_error("Bitmap empty check requires a bitmap");
+            };
+            return success(Value::Bool(bitmap.is_empty()));
+        }
+        "bits/bitmap-and" | "bits/bitmap-or" => {
+            let [left, right] = arguments else {
+                return protocol_error("Bitmap set operation requires exactly two bitmaps");
+            };
+            let (Some(Value::Bitmap(left)), Some(Value::Bitmap(right))) =
+                (value_argument(left), value_argument(right))
+            else {
+                return protocol_error("Bitmap set operation requires bitmap values");
+            };
+            Some(if operation == "bits/bitmap-and" {
+                bits::bitmap_and(left, right)
+            } else {
+                bits::bitmap_or(left, right)
+            })
+        }
+        _ => {
+            let [argument] = arguments else {
+                return protocol_error("Bitmap aggregation requires exactly one vector");
+            };
+            let Some(Value::Vector(values)) = value_argument(argument) else {
+                return protocol_error("Bitmap aggregation requires a vector of bitmaps");
+            };
+            let Some(bitmaps) = values
+                .iter()
+                .map(|value| match value {
+                    Value::Bitmap(bitmap) => Some(bitmap),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                return protocol_error("Bitmap aggregation requires bitmap values");
+            };
+            if operation == "bits/bitmaps-and" {
+                bits::bitmaps_and(&bitmaps)
+            } else {
+                bits::bitmaps_or(&bitmaps)
+            }
+        }
+    };
+    let Some(bitmap) = result else {
+        return success(Value::Null);
+    };
+    if bitmap.len() as usize > Limits::default().max_collection_len {
+        return unsupported(
+            operation,
+            "Bitmap cardinality exceeds the adapter transport limit",
+        );
+    }
+    success(Value::Bitmap(bitmap))
 }
 
 fn bitmap_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1172,6 +1236,11 @@ fn main() -> io::Result<()> {
                     keyword("bits/bitmap"),
                     keyword("bits/bitmap-add"),
                     keyword("bits/bitmap-del"),
+                    keyword("bits/bitmap-and"),
+                    keyword("bits/bitmap-or"),
+                    keyword("bits/bitmaps-and"),
+                    keyword("bits/bitmaps-or"),
+                    keyword("bits/bitmap-empty?"),
                     keyword("bits/encode-bitmap"),
                     keyword("bits/decode-bitmap"),
                     keyword("bits/bigint-length"),
@@ -1257,6 +1326,26 @@ mod tests {
 
     #[test]
     fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
+        for operation in [
+            "bits/bitmap-and",
+            "bits/bitmap-or",
+            "bits/bitmaps-and",
+            "bits/bitmaps-or",
+            "bits/bitmap-empty?",
+        ] {
+            assert_eq!(
+                field(&invoke(operation, Value::Null), "status"),
+                Some(&keyword("error"))
+            );
+            let request = map(vec![
+                ("op", keyword(operation)),
+                ("args", Value::Vector(vec![])),
+            ]);
+            assert_eq!(
+                field(&dispatch(&request), "status"),
+                Some(&keyword("error"))
+            );
+        }
         for value in [Value::Null, Value::Bytes(vec![])] {
             assert_eq!(
                 field(&invoke("bits/deserialize", value), "status"),

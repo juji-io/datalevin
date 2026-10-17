@@ -445,3 +445,18 @@
       (is (= :query-source/limit (:error error)))
       (is (= :retained-bytes (:category error))))
     (is (= 0.5 (d/q q rows) (d/q q s)))))
+
+
+(deftest bound-native-string-avoids-unrelated-giant-decoding
+  (let [dir (u/tmp-dir (str "source-value-seek-" (random-uuid)))
+        conn (d/create-conn dir {:item/body {:db/valueType :db.type/string}}
+                            {:wal? false :background-sampling? false})
+        s (fake/source tuple-info [[2 "selected"]])
+        q '{:find [?e] :in [$ $s ?body] :where [[?e :item/body ?body] [$s _ _]]
+            :query-source {:limits {:retained-bytes 81920}}}]
+    (try
+      (d/transact! conn [{:db/id 1 :item/body (.repeat "large" 30000)}
+                        {:db/id 2 :item/body "wanted"}])
+      (is (= #{[2]} (d/q q @conn s "wanted")))
+      (is (= #{} (d/q q @conn s "absent")))
+      (finally (d/close conn) (u/delete-files dir)))))

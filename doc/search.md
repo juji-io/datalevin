@@ -276,6 +276,93 @@ is 45,
   return the document.
 * `:domains` specifies a list of domains to be searched (see below).
 
+#### Fuzzy terms and token prefixes
+
+Exact matching is the default. Enable typo tolerance for analyzed query tokens
+with `:fuzzy`, or use explicit leaves to control each part of a Boolean query:
+
+```clojure
+(d/search engine "datalevn" {:fuzzy true})
+(d/search engine "datalevn" {:fuzzy {:max-edits 2 :transpositions? true
+                                    :max-expansions 50}})
+(d/search engine {:prefix "data"})
+(d/search engine [:and {:fuzzy "datalevn" :max-edits 1} {:term "database"}])
+(d/search engine "data" {:prefix true})
+(d/search engine {:prefix "data"} {:max-prefix-expansions 1000
+                                 :max-term-visits 20000})
+```
+
+These query forms and options also work with Datalog `fulltext` and remote
+search. Java's `RetrievalOptions` provides `fuzzy(boolean)`, `fuzzy(Map)`,
+`prefix(boolean)`, `maxPrefixExpansions(long)`, and `maxTermVisits(long)`.
+Raw option maps can be used from Java, Python, and JavaScript.
+
+The fuzzy defaults are `:max-edits 1`, `:transpositions? true`, and
+`:max-expansions 50`. These are the only supported fuzzy option keys; unknown
+keys in query-wide fuzzy options or explicit fuzzy leaves raise an error.
+`:max-edits` accepts 0, 1, or 2; edits are insertion,
+deletion, substitution, and optionally adjacent transposition. Distances count
+Unicode code points. Transpositions use optimal string alignment, so a substring
+cannot be edited twice. There is no extra minimum-length rule for short tokens.
+`:max-expansions` accepts integers from 1 to 100000. Each fuzzy token selects
+live indexed alternatives by distance, then UTF-8 lexical order; an exact match
+is selected first when present. Terms with no remaining postings do not consume
+this limit.
+
+Prefix matching enumerates tokens beginning with the analyzed prefix. The
+optional `:max-prefix-expansions` search option caps live alternatives per
+analyzed prefix token; it accepts integers from 1 to 2147483647. Its default is
+`nil` (uncapped). Exceeding this cap throws
+`datalevin.search.TermDictionary$ExpansionLimitException`
+instead of silently truncating matches. Dead terms do not consume the cap. The
+cap applies to explicit prefix leaves and to tokens analyzed with `:prefix true`;
+it can also be set in an engine's default `:search-opts`.
+
+Both matching modes share a per-request traversal budget, `:max-term-visits`
+(default 1000000). Exhausting the budget throws `ExceptionInfo` with
+`:error :search/max-term-visits-exceeded`, the original `:query`, and the effective
+`:max-term-visits` in its exception data. Embedded search retains the underlying
+`TermDictionary$WorkLimitException` as its cause; remote search exposes the server's
+exception data under `:err-data` in the client exception. This budget counts
+trie traversal work, rather than documents, posting-list sizes, or returned hits.
+
+Short prefixes can consume substantial CPU and memory on large dictionaries:
+a one-character prefix may expand to a large fraction of the indexed terms,
+loading and combining their posting lists. `:top` and `:limit` do not limit this
+expansion work. For public autocomplete endpoints, require a minimum analyzed
+prefix length (typically 2–3 characters, adjusted for the language and data),
+configure `:max-prefix-expansions`, and lower `:max-term-visits` for the workload.
+Enforce these policies in the application instead of accepting client-supplied
+limit overrides. The library imposes no minimum prefix length by default.
+
+String leaves follow query-wide `:fuzzy` or `:prefix` options. Explicit
+`{:term "..."}` leaves and `{:phrase "..."}` phrases stay exact. An explicit
+fuzzy leaf inherits query-wide fuzzy settings and can override them. Use explicit
+leaves to combine fuzzy and prefix matching; enabling both query-wide options is
+an error. Analysis, including case folding, stemming, and stop-word removal,
+still runs before matching. Matching applies to individual tokens; it does not
+join text across token boundaries.
+
+Alternatives for one analyzed token form one logical query term. They contribute
+once to Boolean matching and match-count ranking tiers. Scoring uses the best
+alternative contribution, a shared inverse document frequency based on the
+largest alternative document frequency, and a distance weight of
+`1 / (1 + distance)`. Prefix alternatives have weight 1. Positional scoring and
+offset displays use the actual matched indexed tokens.
+
+Each search domain builds an in-memory UTF-8 radix trie while loading the keys
+of its existing terms DBI. Indexing updates this trie with the other in-memory
+search indexes; reopening rebuilds it from persisted terms. Prefix enumeration
+and intersection with Lucene-derived Levenshtein automata share the trie. No
+external dictionary, persistent format change, or reindex is required.
+
+When using `search-index-writer`, call `commit` after writing all documents.
+Commit also updates the term dictionary, document metadata, and caches of
+already-open engines for the same environment and search domain. These engines
+can then search the bulk-loaded terms without reopening. Finish the bulk import
+before issuing searches or other writes through those engines; intermediate
+writer batches are not a published search index.
+
 #### Search domains
 
 Documents can be put into different search domains, each corresponding to a
