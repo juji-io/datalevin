@@ -66,9 +66,8 @@
               check! #(source/check-active! control)
               cursor (rt/invoke runtime :open
                                 #(source/-open-cursor session
-                                   (merge request {:plan (:plan alternative) :alternative-id (:id alternative)
-                                                   :source-symbol symbol
-                                                   :definition-fingerprint (:definition-fingerprint descriptor)})))
+                                   (contract/cursor-request request symbol
+                                     (:definition-fingerprint descriptor) alternative)))
               _ (when-not (satisfies? source/IQuerySourceCursor cursor) (fail! :query-source/invalid :open))
               close (rt/own! runtime #(source/-close-cursor! cursor))
               batch-request {:control control :max-rows (get-in request [:limits :batch-rows])

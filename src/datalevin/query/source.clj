@@ -14,7 +14,10 @@
 
 (defprotocol IQuerySourceSession
   (-session-info [session] "Return the acquired read-view metadata.")
-  (-open-cursor [session request] "Open a selected plan in this session's view.")
+  (-open-cursor [session request]
+    "Open a selected plan in this session's view. Request is common context
+    plus :alternative-id, :plan, :source-symbol and :definition-fingerprint;
+    planning inputs remain in the session-owned plan handle.")
   (-cancel-session! [session reason] "Signal cancellation promptly; return nil.")
   (-close-session! [session] "Release this session and its cursors; return nil."))
 

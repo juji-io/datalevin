@@ -19,6 +19,17 @@
 (defn- keyword-set? [x] (and (set? x) (every? keyword? x)))
 (defn- nonnegative? [x] (and (integer? x) (<= 0 x Long/MAX_VALUE)))
 
+(defn cursor-request
+  "Build the baseline open envelope from captured context and a selected plan.
+  Planning inputs belong to the session's handle, not the cursor request."
+  [context source-symbol definition-fingerprint alternative]
+  (assoc (select-keys context [:spi-version :features :query-id :authorization
+                               :consistency :control :limits])
+         :source-symbol source-symbol
+         :definition-fingerprint definition-fingerprint
+         :alternative-id (:id alternative)
+         :plan (:plan alternative)))
+
 (defn type!
   ([t] (type! t nil))
   ([t check!]

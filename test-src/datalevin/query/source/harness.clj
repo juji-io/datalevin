@@ -49,10 +49,8 @@
              response (invoke :planning #(source/-plan-source source session plan-request))
              [alternative] (contract/selection! plan-request response [:scan])
              cursor (invoke :open #(source/-open-cursor
-                                    session (merge request (select-keys alternative [:plan])
-                                                   {:alternative-id (:id alternative)
-                                                    :source-symbol '$test
-                                                    :definition-fingerprint (:definition-fingerprint descriptor)})))
+                                    session (contract/cursor-request request '$test
+                                              (:definition-fingerprint descriptor) alternative)))
              _ (when-not (satisfies? source/IQuerySourceCursor cursor)
                  (throw (ex-info "Invalid source cursor" {:error :query-source/invalid :phase :open})))
              _ (swap! resources conj #(source/-close-cursor! cursor))

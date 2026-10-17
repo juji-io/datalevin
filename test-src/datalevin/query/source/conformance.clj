@@ -12,7 +12,7 @@
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
-           [java.util Date Objects Random UUID]
+           [java.util Date HashSet Objects Random UUID]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
 (defn- descriptor [contract]
@@ -90,7 +90,9 @@
         (-plan-source [_ session request]
           (swap! events conj [:plan (:source-symbol request)])
           (hook :planning request)
-          (spi/-plan-source source (:delegate session) request)))})))
+          (let [response (spi/-plan-source source (:delegate session) request)]
+            (hook :planned {:request request :response response})
+            response)))})))
 
 (defn- closed! [{:keys [events controls]}]
   (let [counts (frequencies (map first @events))]
@@ -197,7 +199,8 @@
   (-logical-type [_] type)
   (-retained-bytes [_] (+ 128 (long (value/value-charge type)) (long (value/value-charge key))))
   Object
-  (hashCode [_] (.hashCode ^Object [type key]))
+  ;; Descriptor equality is Clojure equality; keys retain Java key equality.
+  (hashCode [_] (unchecked-int (bit-xor (hash type) (Objects/hashCode key))))
   (equals [_ other]
     (and (instance? NominalRef other)
          (= type (.-type ^NominalRef other))
@@ -206,6 +209,75 @@
 (defn- reference-type [domain epoch key-type]
   {:kind :custom :name :conformance/entity-ref :version 1 :fingerprint "conformance-ref:v1"
    :parameters {:domain domain :identity-epoch epoch :key-type key-type}})
+
+(defn- reference-type-variants [type]
+  [[:same type true]
+   [:map-order (into (array-map) (reverse (seq type))) true]
+   [:metadata (with-meta type {:conformance/note "annotation"}) true]
+   [:name (assoc type :name :conformance/another-ref) false]
+   [:version (update type :version inc) false]
+   [:fingerprint (assoc type :fingerprint "conformance-ref:v2") false]
+   [:namespaced-extra (assoc type :conformance/extra {:meaning "v2"}) false]
+   [:namespaced-extra-value (assoc type :conformance/extra {:meaning "v3"}) false]
+   [:parameter-extra (assoc-in type [:parameters :refinement] :v2) false]
+   [:domain (assoc-in type [:parameters :domain] :suppliers) false]
+   [:epoch (update-in type [:parameters :identity-epoch] inc) false]])
+
+(defn- reference-identity! [left right same?]
+  (is (= same? (.equals ^Object left right)))
+  (is (= same? (.equals ^Object right left)))
+  (is (= same? (= left right)))
+  (when same?
+    (is (= (.hashCode ^Object left) (.hashCode ^Object right)))
+    (is (= (hash left) (hash right))))
+  ;; Distinct identities may collide; only equal identities must hash alike.
+  (is (= (if same? 1 2) (count (HashSet. [left right]))))
+  (is (= (if same? 1 2) (count (set [left right])))))
+
+(defn- nominal-descriptor-validation! [make-source]
+  (let [type (reference-type :customers 0 :long)
+        ref (NominalRef. type 7)
+        info (descriptor {:kind :eav :attributes {:customer/id {:entity-type type :value-type :long}}})
+        valid (make-source info [[ref :customer/id 7]])]
+    (doseq [[label invalid] [[:kind (assoc type :kind :entity-ref)]
+                             [:name (assoc type :name :entity-ref)]
+                             [:version (assoc type :version 0)]
+                             [:fingerprint (assoc type :fingerprint "")]
+                             [:unknown-field (assoc type :extra :v2)]]]
+      (testing (str "invalid nominal descriptor " label)
+        (let [provider (reify spi/IQuerySource
+                         (-source-info [_] (assoc-in info [:pattern-contract :attributes :customer/id :entity-type]
+                                                    invalid))
+                         (-open-session [_ request] (spi/-open-session valid request))
+                         (-plan-source [_ session request] (spi/-plan-source valid session request)))
+              observed (observe provider)]
+          (is (= :query-source/invalid
+                 (:error (error-data #(d/q '[:find ?ref :in $s :where [$s ?ref :customer/id _]]
+                                          (:source observed))))))
+          (is (empty? @(:controls observed)))
+          (closed! observed))))
+    (let [refs (mapv #(NominalRef. (second %) 7) (reference-type-variants type))
+          observed (observe (make-source (tuple-descriptor :data) (mapv vector (range) refs)))]
+      ;; Three equivalent descriptors plus eight distinct nominal variants.
+      ;; Grouping must preserve changed extra values as well as their presence.
+      (is (= 9 (count (HashSet. refs))))
+      (is (= 9 (d/q '[:find (count ?ref) . :in $s :where [$s _ ?ref]] (:source observed))))
+      (is (= {1 8, 3 1}
+             (frequencies
+               (map second
+                    (d/q '[:find ?ref (count ?id) :in $s :where [$s ?id ?ref]] (:source observed))))))
+      (closed! observed))
+    ;; Descriptor equality is Clojure map equality, including inside extras;
+    ;; hashing must agree even when equal metadata has different JVM hashes.
+    (let [a (NominalRef. (assoc type :conformance/extra {:n 1.0M}) 7)
+          b (NominalRef. (assoc type :conformance/extra {:n 1.00M}) 7)
+          rows [[1 a] [2 b]]
+          provider (make-source (tuple-descriptor :data) rows)
+          q '[:find (count ?ref) . :in $s :where [$s _ ?ref]]
+          observed (observe provider)]
+      (reference-identity! a b true)
+      (is (= 1 (d/q q (:source observed))))
+      (closed! observed))))
 
 (defn- nominal-fixture [composite?]
   (let [key-type (if composite? {:kind :tuple :elements [:string :long]} :long)
@@ -274,28 +346,38 @@
             (is (= :query-source/invalid (:error (error-data #(d/q q (:source observed) input)))))
             (is (empty? @(:controls observed)))
             (closed! observed)))
-        (doseq [[domain epoch] [[:customers 0] [:suppliers 0] [:customers 1]]]
-          (let [type (reference-type domain epoch key-type)
-                ref (NominalRef. type (key 7))
-                other-info (descriptor {:kind :eav :attributes
-                                        {:customer/id {:entity-type type :value-type key-type}}})
-                other-rows [[ref :customer/id (key 7)]]
-                a (observe provider) b (observe (make-source other-info other-rows))
-                natural '[:find ?left ?right :in $a $b
-                          :where [$a ?left :customer/id ?key] [$b ?right :customer/id ?key]]
-                nominal '[:find ?ref :in $a $b
-                          :where [$a ?ref :customer/id _] [$b ?ref :customer/id _]]]
-            (compare! natural [eager other-rows] [(:source a) (:source b)] [a b])
-            (is (= (and (= domain :customers) (zero? epoch)) (= (customer 7) ref)))
-            (if (= (customer 7) ref)
-              (compare! nominal [eager other-rows] [(:source a) (:source b)] [a b])
-              (let [opens (mapv #(count @(:controls %)) [a b])]
-                (is (= :query-source/unsupported
-                       (:error (error-data #(d/q nominal (:source a) (:source b))))))
-                (is (= opens (mapv #(count @(:controls %)) [a b])))
-                (run! closed! [a b])))))))))
+        (doseq [[label type same?] (reference-type-variants (reference-type :customers 0 key-type))]
+          (testing (str "nominal type field " label ", composite=" composite?)
+            (let [ref (NominalRef. type (key 7))
+                  other-info (descriptor {:kind :eav :attributes
+                                          {:customer/id {:entity-type type :value-type key-type}}})
+                  other-rows [[ref :customer/id (key 7)]]
+                  a (observe provider) b (observe (make-source other-info other-rows))
+                  natural '[:find ?left ?right :in $a $b
+                            :where [$a ?left :customer/id ?key] [$b ?right :customer/id ?key]]
+                  nominal '[:find ?ref :in $a $b
+                            :where [$a ?ref :customer/id _] [$b ?ref :customer/id _]]]
+              (compare! natural [eager other-rows] [(:source a) (:source b)] [a b])
+              (reference-identity! (customer 7) ref same?)
+              (if same?
+                (compare! nominal [eager other-rows] [(:source a) (:source b)] [a b])
+                (let [opens (mapv #(count @(:controls %)) [a b])]
+                  (is (= :query-source/unsupported
+                         (:error (error-data #(d/q nominal (:source a) (:source b))))))
+                  (is (= opens (mapv #(count @(:controls %)) [a b])))
+                  (run! closed! [a b])))
+              (let [bound (observe provider)
+                    q '[:find ?order :in $s ?customer :where [$s ?order :order/customer ?customer]]]
+                (if same?
+                  (compare! q [eager ref] [(:source bound) ref] [bound])
+                  (do
+                    (is (= :query-source/invalid
+                           (:error (error-data #(d/q q (:source bound) ref)))))
+                    (is (empty? @(:controls bound)))
+                    (closed! bound)))))))))))
 
 (defn eav-semantics! [make-source]
+  (nominal-descriptor-validation! make-source)
   (nominal-eav! make-source)
   (let [info (descriptor {:kind :eav :attributes
                            {:item/key {:entity-type :long :value-type :long}
@@ -548,9 +630,55 @@
             (when-let [ctl @nested] (control/close! ctl))
             (future-cancel worker)))))))
 
+(defn- cursor-request-contract! [make-source]
+  (doseq [aliases? [false true], mode [:query :explain :plan]]
+    (testing (str "cursor request envelope, aliases=" aliases? ", " mode)
+      (let [info (tuple-descriptor :string)
+            acquired (atom nil)
+            plans (atom {})
+            opened (atom [])
+            common [:spi-version :features :query-id :authorization :consistency :control :limits]
+            observed
+            (observe (make-source info [[1 "a"] [2 "b"] [3 "b"]])
+              (fn [phase request]
+                (case phase
+                  :acquisition (reset! acquired request)
+                  :planned (swap! plans assoc (get-in request [:request :source-symbol]) request)
+                  :open
+                  (let [{:keys [alternative-id plan source-symbol definition-fingerprint]} request
+                        planned (get @plans source-symbol)
+                        selected (some #(when (= alternative-id (:id %)) %)
+                                       (get-in planned [:response :alternatives]))]
+                    (swap! opened conj request)
+                    (is (= (into (set common) [:alternative-id :plan :source-symbol :definition-fingerprint])
+                           (set (keys request))))
+                    (is (= (select-keys @acquired common) (select-keys request common)))
+                    (is (identical? (:control @acquired) (:control request)))
+                    (is (= (:definition-fingerprint info) definition-fingerprint))
+                    (is (some? selected))
+                    (is (identical? (:plan selected) plan))
+                    (is (= {'?name "b"} (get-in planned [:request :bindings]))))
+                  nil)))
+            q (cond-> '{:find [?id] :in [$a ?name]
+                        :where [[$a ?id ?name] [(not= ?id 1)]]
+                        :query-source {:authorization {:principal-id :cursor-test :policy-token "policy"}
+                                       :limits {:batch-rows 1 :in-flight-batches 1}}}
+                aliases? (assoc :in '[$a $b ?name]
+                               :where '[[$a ?id ?name] [$b ?id ?name] [(not= ?id 1)]]))
+            inputs (conj (vec (repeat (if aliases? 2 1) (:source observed))) "b")]
+        (try
+          (case mode
+            :query (is (= #{[2] [3]} (apply d/q q inputs)))
+            :explain (is (= 2 (:result-rows (apply d/explain {:run? true} q inputs))))
+            :plan (is (false? (:executed? (apply d/explain {:run? false} q inputs)))))
+          (is (= (if aliases? #{'$a '$b} #{'$a}) (set (keys @plans))))
+          (is (= (if (= :plan mode) 0 (if aliases? 2 1)) (count @opened)))
+          (finally (closed! observed)))))))
+
 (defn lifecycle!
   "Exercise public SPI lifetime boundaries without inspecting adapter internals."
   [make-source replace-rows!]
+  (cursor-request-contract! make-source)
   (acquisition-boundary! make-source replace-rows!)
   (concurrent-views! make-source replace-rows!)
   (blocking-cancellation! make-source)

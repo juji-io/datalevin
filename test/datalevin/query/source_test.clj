@@ -121,6 +121,44 @@
              (category #(contract/clauses! info [{:id 0 :kind :pattern
                                                  :terms [[:var '?e] attribute [:ignore]]}])))))))
 
+(deftest f0-cursor-open-uses-only-common-context-and-selection
+  (let [inner (fake/source tuple-info [[1 "Ada"] [2 "Bea"]])
+        acquired (atom nil)
+        planned (atom nil)
+        opened (atom nil)
+        delegate (atom nil)
+        provider
+        (reify source/IQuerySource
+          (-source-info [_] tuple-info)
+          (-open-session [_ request]
+            (reset! acquired request)
+            (let [session (source/-open-session inner request)]
+              (reset! delegate session)
+              (reify source/IQuerySourceSession
+                (-session-info [_] (source/-session-info session))
+                (-open-cursor [_ request]
+                  (reset! opened request)
+                  (source/-open-cursor session request))
+                (-cancel-session! [_ reason] (source/-cancel-session! session reason))
+                (-close-session! [_] (source/-close-session! session)))))
+          (-plan-source [_ _ request]
+            (let [response (source/-plan-source inner @delegate request)]
+              (reset! planned {:request request :alternative (first (:alternatives response))})
+              response)))
+        result (harness/run! provider patterns {:bindings {'?name "Ada"}})
+        common [:spi-version :features :query-id :authorization :consistency :control :limits]]
+    (is (= [[1 "Ada"]] (:rows result)))
+    (is (= (into (set common) [:alternative-id :plan :source-symbol :definition-fingerprint])
+           (set (keys @opened))))
+    (is (= (select-keys @acquired common) (select-keys @opened common)))
+    (is (identical? (:control @acquired) (:control @opened)))
+    (is (= '$test (:source-symbol @opened)))
+    (is (= (:definition-fingerprint tuple-info) (:definition-fingerprint @opened)))
+    (is (= (get-in @planned [:alternative :id]) (:alternative-id @opened)))
+    (is (identical? (get-in @planned [:alternative :plan]) (:plan @opened)))
+    (is (= {'?name "Ada"} (get-in @planned [:request :bindings])))
+    (is (= :close-session (last @(:events inner))))))
+
 (deftest owned-batches-snapshots-and-duplicates
   (let [input [[1 "Ada"] [2 nil] [3 "Ada"] [3 "Ada"]]
         fake (fake/source tuple-info input)
