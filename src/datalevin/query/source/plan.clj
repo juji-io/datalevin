@@ -215,13 +215,42 @@
       ;; and strip set metadata: accepted provider annotations are not public
       ;; diagnostics, even when the caller prints Clojure metadata.
       (rt/charge! runtime nil 1536 1)
-      (let [{:keys [covers prefilters properties estimate]} alternative]
-        {:covers (with-meta covers nil)
+      (let [{:keys [id covers prefilters properties estimate]} alternative]
+        {:alternative-id (if (coll? id)
+                           (rt/diagnostic-copy! runtime id)
+                           ;; Scalar IDs borrow the charged selected envelope;
+                           ;; the fixed display charge covers symbol wrappers.
+                           (value/diagnostic-copy id #(source/check-active! (:control runtime))))
+         :covers (with-meta covers nil)
          :prefilters (with-meta prefilters nil)
          :properties {:replay (:replay properties) :ordering []
                       :blocking-state (:blocking-state properties)}
          :estimate (into {} (map (fn [k] [k (get estimate k)]))
                          [:rows :row-bytes :startup-ms :per-row-ns :requests :confidence])}))))
+
+(defn- explain-identifier [runtime identifier]
+  (rt/diagnostic-copy! runtime identifier))
+
+(defn- explain-residuals [runtime {:keys [entries predicates]}]
+  ;; Execution rechecks every predicate on the joined row, including exact
+  ;; provider coverage. Describe those actual checks without their operands.
+  (mapv
+    (fn [{:keys [id operator] :as predicate}]
+      (rt/with-context runtime {:clause-ids [id]}
+        (fn [runtime]
+          ;; Bound display containers, dependency discovery, and sorting before
+          ;; allocation. Symbols borrow already charged names, without metadata.
+          (rt/charge! runtime nil (+ 512 (* 128 (count entries))) 1)
+          (let [variables (contract/variables predicate)
+                sources (keep (fn [{:keys [symbol patterns]}]
+                                (source/check-active! (:control runtime))
+                                (when (some (fn [{:keys [terms]}]
+                                              (some (fn [[tag v]]
+                                                      (and (= :var tag) (contains? variables v))) terms))
+                                            patterns)
+                                  (with-meta symbol nil))) entries)]
+            {:clause-id id :operator operator :source-symbols (vec (sort sources))
+             :stage :before-projection})))) predicates))
 
 (defn acquire-and-plan! [runtime {:keys [entries bindings options] :as prepared}]
   (let [common {:spi-version 1 :features #{} :query-id (:query-id runtime)
@@ -253,16 +282,21 @@
                                            (finally (source/unregister-cancel! registration)))))
                     (let [info (rt/invoke runtime :session #(source/-session-info session))
                           token (rt/charge-metadata! runtime info :session)
-                          consistency (try (contract/session-info! request info)
-                                           (:consistency info)
-                                           (finally (source/release! token)))]
+                          view (try
+                                 (contract/session-info! request info)
+                                 ;; Retain only the public version under its own
+                                 ;; reservation before releasing the envelope.
+                                 {:consistency (:consistency info)
+                                  :data-version (explain-identifier runtime (:data-version info))}
+                                 (finally (source/release! token)))]
                       (mapv #(assoc % :session session :request request
-                                     :session-consistency consistency
+                                     :session-consistency (:consistency view)
+                                     :data-version (:data-version view)
                                      :allow-once? (= 1 (count group))) group)))))))
           groups)
         planned
         (mapv
-          (fn [{:keys [source symbol descriptor clauses session request session-consistency] :as entry}]
+          (fn [{:keys [source symbol descriptor clauses session request session-consistency data-version] :as entry}]
             (rt/with-context runtime {:source-symbol symbol :clause-ids (mapv :id clauses)}
               (fn [runtime]
                 (let [request (merge request {:source-symbol symbol :source-descriptor descriptor
@@ -273,10 +307,14 @@
                       _ (contract/planning-request! request)
                       response (rt/invoke runtime :planning #(source/-plan-source source session request))
                       selected (select-cover runtime request response (:allow-once? entry))]
-                  (swap! (:explain runtime) update :sources conj
-                         {:source symbol :consistency session-consistency
-                          :pattern-count (count (:patterns entry))
-                          :selected (mapv #(explain-alternative runtime %) selected)})
+                  (when (:explain? runtime)
+                    (swap! (:explain runtime) update :sources conj
+                           {:source (with-meta symbol nil) :consistency session-consistency
+                            :definition-id (explain-identifier runtime (:definition-id descriptor))
+                            :definition-fingerprint (:definition-fingerprint descriptor)
+                            :data-version data-version
+                            :pattern-count (count (:patterns entry))
+                            :selected (mapv #(explain-alternative runtime %) selected)}))
                   (mapv #(assoc entry :alternative % :request request) selected))))) acquired)
         fragments (vec (mapcat identity planned))]
     (doseq [group (vals (group-by :session fragments))]
@@ -286,4 +324,7 @@
           {:source-symbol (:symbol (first group))
            :clause-ids (mapv :id (:clauses (first group)))}
           (fn [_] (fail! :query-source/unsupported :planning)))))
+    (when (:explain? runtime)
+      (swap! (:explain runtime) assoc :residual-checks (explain-residuals runtime prepared)
+             :acquisition {:sessions (count groups)}))
     (assoc prepared :fragments fragments)))

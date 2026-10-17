@@ -47,20 +47,22 @@
     ((get envelopes :session-info identity) (spi/-session-info delegate)))
   (-open-cursor [_ request]
     (hook :open request)
-    (let [cursor (spi/-open-cursor delegate request)
+    (let [cursor (spi/-open-cursor delegate ((get envelopes :cursor-request identity) request))
           wrapped
           (reify spi/IQuerySourceCursor
             (-next-batch! [_ batch-request]
               (hook :fetch batch-request)
               (let [batch (spi/-next-batch! cursor batch-request)]
-                (swap! events conj [:batch (:row-count batch)])
+                (swap! events conj [:batch (:row-count batch) (:byte-count batch)])
                 (hook :fetched batch-request)
                 batch))
-            (-cursor-metrics [_] (spi/-cursor-metrics cursor))
+            (-cursor-metrics [_]
+              ((get envelopes :metrics identity) (spi/-cursor-metrics cursor)))
             (-close-cursor! [_]
               (hook :close-cursor request)
               (swap! events conj [:close-cursor])
-              (spi/-close-cursor! cursor)))]
+              (spi/-close-cursor! cursor)
+              (hook :closed-cursor request)))]
       (swap! events conj [:open-cursor])
       (hook :opened request)
       wrapped))
@@ -70,7 +72,8 @@
   (-close-session! [_]
     (hook :close-session request)
     (swap! events conj [:close-session])
-    (spi/-close-session! delegate)))
+    (spi/-close-session! delegate)
+    (hook :closed-session request)))
 
 (defn- observe
   ([source] (observe source (fn [_ _])))
@@ -80,7 +83,7 @@
      {:events events :controls controls
       :source
       (reify spi/IQuerySource
-        (-source-info [_] (spi/-source-info source))
+        (-source-info [_] ((get envelopes :descriptor identity) (spi/-source-info source)))
         (-open-session [_ request]
           (swap! controls conj (:control request))
           (hook :acquisition request)
@@ -92,9 +95,11 @@
         (-plan-source [_ session request]
           (swap! events conj [:plan (:source-symbol request)])
           (hook :planning request)
-          (let [response ((get envelopes :planning identity)
-                          (spi/-plan-source source (:delegate session) request))]
-            (hook :planned {:request request :response response})
+          (let [provider-request ((get envelopes :planning-request identity) request)
+                response ((get envelopes :planning identity)
+                          (spi/-plan-source source (:delegate session) provider-request))]
+            (hook :planned {:request request :provider-request provider-request
+                            :response response})
             response)))})))
 
 (defn- closed! [{:keys [events controls]}]
@@ -615,7 +620,7 @@
                   (is (= '$a (get-in outcome [:error :source-symbol])))
                   (is (= [0] (get-in outcome [:error :clause-ids]))))
                 (when (#{:fetch :fetched} phase)
-                  (is (some #(= [:batch 1] %) @(:events observed))))
+                  (is (some #(= [:batch 1] (take 2 %)) @(:events observed))))
                 (let [events (mapv first @(:events observed))]
                   (is (= (if (= :acquisition phase) 0 1)
                          (count (filter #{:open-session} events))))
@@ -795,10 +800,417 @@
         (is (= [:snapshot :snapshot] (mapv :consistency (:sources result))))
         (closed! fresh)))))
 
+(defn coverage-explanation!
+  "Locate exact coverage, superset filters, and every core predicate check,
+  including checks whose operands come from different sources or only inputs."
+  [make-source]
+  (let [secret "private residual binding"
+        rows [[1 5] [2 20] [3 30] [4 40] [4 40]]
+        ceilings [[1 0] [2 25] [3 0] [4 35]]
+        q '{:find [?id] :in [$a $b ?minimum ?secret]
+            :where [[$a ?id ?score] [$a ?id ?again] [$b ?id ?ceiling]
+                    [(> ?score ?ceiling)] [(>= ?score ?minimum)]
+                    [(not= ?secret "excluded residual value")]]}
+        checks [{:clause-id 3 :operator :> :source-symbols '[$a $b] :stage :before-projection}
+                {:clause-id 4 :operator :>= :source-symbols '[$a] :stage :before-projection}
+                {:clause-id 5 :operator :not= :source-symbols [] :stage :before-projection}]
+        conn (d/create-conn nil {:threshold {:db/valueType :db.type/long}}
+                            {:kv-opts {:inmemory? true}})]
+    (try
+      (d/transact! conn (mapv (fn [[id ceiling]] [:db/add id :threshold ceiling]) ceilings))
+      (doseq [native? [false true], prefilter? [false true]
+              shape [:rows :aggregate :window], run? [false true]]
+        (testing (str "coverage, native=" native? ", prefilter=" prefilter?
+                      ", shape=" shape ", run=" run?)
+          (let [planned (atom {})
+                record-plan (fn [phase payload]
+                              (when (= :planned phase)
+                                (swap! planned assoc (get-in payload [:request :source-symbol]) payload)))
+                ;; A pass-all superset is deliberately unselective. The real
+                ;; adapter sees only patterns; core must enforce predicate 4.
+                envelopes (when prefilter?
+                            {:planning-request #(update % :clauses
+                                                   (fn [cs] (filterv (fn [c] (= :pattern (:kind c))) cs)))
+                             :planning #(assoc-in % [:alternatives 0 :prefilters]
+                                                  (with-meta #{4} {:private secret}))})
+                a (observe (make-source (tuple-descriptor :long) rows) record-plan envelopes)
+                b (when-not native?
+                    (observe (make-source (tuple-descriptor :long) ceilings) record-plan))
+                query (cond-> q
+                        native? (assoc-in [:where 2] '[$b ?id :threshold ?ceiling])
+                        (= shape :aggregate) (assoc :find '[(count ?id) .])
+                        (= shape :window) (assoc :limit 1 :offset 1))
+                inputs [(:source a) (if native? @conn (:source b)) 10 secret]
+                eager [rows (if native? @conn ceilings) 10 secret]
+                observed (cond-> [a] b (conj b))
+                result (apply d/explain {:run? run?} query inputs)]
+            (is (= checks (:residual-checks result)))
+            (when native?
+              (is (= {:kind :native :source-symbol '$b :clause-ids [2] :retained? false}
+                     (select-keys (last (get-in result [:operators :readers]))
+                                  [:kind :source-symbol :clause-ids :retained?])))
+              (when run?
+                (is (pos? (:native-scans result)))
+                (is (= (dec (count (get-in result [:operators :readers])))
+                       (get-in result [:actual-operators :join-indexes])))))
+            (is (= (if native? #{'$a} #{'$a '$b}) (set (map :source (:sources result)))))
+            (doseq [{:keys [source selected]} (:sources result)]
+              (let [plan (@planned source)]
+                ;; Core excludes cross-source predicate 3 before the envelope.
+                (is (not-any? #(= 3 (:id %)) (get-in plan [:request :clauses])))
+                (when (= '$a source)
+                  (is (some #(= 4 (:id %)) (get-in plan [:request :clauses]))
+                      "Predicate 4 is eligible before the planning-request envelope")
+                  (is (= (not prefilter?)
+                         (boolean (some #(= 4 (:id %))
+                                        (get-in plan [:provider-request :clauses]))))
+                      "Only the prefilter envelope removes predicate 4 from the provider request"))
+                (is (= (mapv #(select-keys % [:covers :prefilters]) (get-in plan [:response :alternatives]))
+                       (mapv #(select-keys % [:covers :prefilters]) selected)))))
+            (when prefilter?
+              (is (= #{4} (get-in (first (filter #(= '$a (:source %)) (:sources result)))
+                                  [:selected 0 :prefilters]))))
+            (if run?
+              (is (= (if (= shape :rows) 2 1) (:result-rows result)))
+              (doseq [o observed]
+                (is (not-any? #(= :open-cursor (first %)) @(:events o)))))
+            (let [printed (binding [*print-meta* true] (pr-str result))]
+              (is (not (.contains printed secret)))
+              (is (not (.contains printed "excluded residual value"))))
+            ;; Rechecking after joining must precede aggregation and the final
+            ;; window. Initial rows fail different local/cross-source checks.
+            (let [actual (apply d/q query inputs)
+                  expected (apply d/q query eager)]
+              (case shape
+                :rows (is (= #{[3] [4]} expected actual))
+                :aggregate (is (= 2 expected actual))
+                :window (do (is (= 1 (count expected) (count actual)))
+                            ;; Without ORDER BY either surviving row may follow
+                            ;; OFFSET, but a filtered-out row must never appear.
+                            (is (every? #{[3] [4]} actual)))))
+            (run! closed! observed))))
+      (finally (d/close conn)))))
+
+(defrecord MetadataSession [provider delegate version info-reads]
+  spi/IQuerySourceSession
+  (-session-info [_]
+    (swap! info-reads inc)
+    (with-meta (assoc (spi/-session-info delegate) :data-version version
+                     :test/private "private version annotation")
+      {:private "private version annotation"}))
+  (-open-cursor [_ request] (spi/-open-cursor delegate request))
+  (-cancel-session! [_ reason] (spi/-cancel-session! delegate reason))
+  (-close-session! [_] (spi/-close-session! delegate)))
+
+(defn metadata-explanation!
+  "Pin public definition/data identities across aliases and fragments while
+  the provider publishes new definitions or rows for later invocations."
+  [make-source]
+  (let [private {:private "private version annotation"}
+        definition-id (with-meta [:orders (with-meta 'catalog private)] private)
+        token (fn [position]
+                (with-meta
+                  {:provider/epoch 7 :positions (with-meta [position] private)
+                   :shards (with-meta #{(with-meta 'east private)} private)
+                   :history (with-meta (list position) private)} private))
+        rows [[1 "private row payload"] [2 "private row payload"]]]
+    (doseq [aliases? [false true], run? [false true]
+            phase (if run? [:acquired :planning :fetch] [:acquired :planning])]
+      (testing (str "metadata, aliases=" aliases? ", run=" run? ", refresh=" phase)
+        (let [base (assoc (tuple-descriptor :string) :definition-id definition-id)
+              snapshots
+              (mapv (fn [[fingerprint data-version rows revision counter]]
+                      (let [info (with-meta
+                                   (assoc base :definition-fingerprint fingerprint
+                                          :test/schema-revision revision :test/update-counter counter
+                                          :test/private "private version annotation") private)]
+                        {:info info :version data-version :row-count (count rows)
+                         :provider (make-source info rows)}))
+                    [["metadata:v1" (token 10) (subvec rows 0 1) 17 1]
+                     ["metadata:v1" (token 20) rows 17 1] ; row-only refresh
+                     ["metadata:v2" (token 20) rows 18 2] ; definition refresh
+                     ["metadata:v2" (token 20) rows 99 3]]) ; counter-only refresh
+              current (atom 0) expected (atom nil) advanced? (atom false)
+              descriptor-reads (atom 0) info-reads (atom 0)
+              provider
+              (reify spi/IQuerySource
+                (-source-info [_]
+                  (swap! descriptor-reads inc)
+                  (:info (snapshots @current)))
+                (-open-session [_ request]
+                  (let [{:keys [info provider version]} (snapshots @current)]
+                    (when-not (every? #(= info %) (:source-descriptors request))
+                      (value/fail! :query-source/stale-definition :acquisition))
+                    (->MetadataSession provider (spi/-open-session provider request) version info-reads)))
+                (-plan-source [_ session request]
+                  ;; Plan against the acquired provider even after publication
+                  ;; replaces the source's current metadata/rows.
+                  (spi/-plan-source (:provider session) (:delegate session) request)))
+              observed
+              (observe provider
+                (fn [at request]
+                  (case at
+                    :planning (is (= (:info @expected) (:source-descriptor request)))
+                    :open (is (= (get-in @expected [:info :definition-fingerprint])
+                                 (:definition-fingerprint request)))
+                    nil)
+                  (when (and (= at phase) (compare-and-set! advanced? false true))
+                    (swap! current #(min 3 (inc (long %)))))))
+              q (cond-> '{:find [?id ?name] :in [$a]
+                          :where [[$a ?id ?name] [$a ?id ?other]]}
+                  aliases? (assoc :in '[$a $b]
+                                  :where '[[$a ?id ?name] [$a ?id ?other] [$b ?id ?name]]))
+              inputs (repeat (if aliases? 2 1) (:source observed))
+              explanations
+              (mapv
+                (fn [n]
+                  (let [snapshot (snapshots n)]
+                    (reset! expected snapshot)
+                    (reset! advanced? false)
+                    (let [result (apply d/explain {:run? run?} q inputs)]
+                      (is (= (inc (long n)) @descriptor-reads @info-reads))
+                      (is (= (min 3 (inc (long n))) @current))
+                      (is (= (if aliases? 2 1) (count (:sources result))))
+                      (doseq [s (:sources result)]
+                        (is (= definition-id (:definition-id s)))
+                        (is (= (get-in snapshot [:info :definition-fingerprint]) (:definition-fingerprint s)))
+                        (is (= (:version snapshot) (:data-version s)))
+                        (is (not-any? #(contains? s %)
+                              [:schema-revision :definition-version :schema-fingerprint
+                               :session-id :authorization-token :test/schema-revision
+                               :test/update-counter :test/private])))
+                      (when run? (is (= (:row-count snapshot) (:result-rows result))))
+                      (is (not (.contains (binding [*print-meta* true] (pr-str result)) "private")))
+                      (closed! observed)
+                      result))) (range 4))]
+          ;; Old explanations retain the old view after all later refreshes.
+          (is (= ["metadata:v1" "metadata:v1" "metadata:v2" "metadata:v2"]
+                 (mapv #(get-in % [:sources 0 :definition-fingerprint]) explanations)))
+          (is (= [(token 10) (token 20) (token 20) (token 20)]
+                 (mapv #(get-in % [:sources 0 :data-version]) explanations)))
+          (when-not run?
+            (is (not-any? #(= :open-cursor (first %)) @(:events observed)))))))
+    (doseq [run? [false true]]
+      (let [observed (observe (make-source (tuple-descriptor :string) rows))
+            result (d/explain {:run? run?} '[:find ?id :in $s :where [$s ?id _]] (:source observed))]
+        (is (contains? (first (:sources result)) :data-version))
+        (is (nil? (get-in result [:sources 0 :data-version])))
+        (closed! observed)))
+    (let [version (with-meta {:offsets (vec (range 1024))} private)
+          usage (atom nil)
+          observed (observe (make-source (tuple-descriptor :string) rows)
+                     (fn [phase request]
+                       (when (= phase :planning) (reset! usage (control/usage (:control request)))))
+                     {:session-info #(assoc % :data-version version)})
+          result (d/explain {:run? false} '[:find ?id :in $s :where [$s ?id _]] (:source observed))]
+      (is (= version (get-in result [:sources 0 :data-version])))
+      ;; The session envelope has been released by planning, but the captured
+      ;; display value must still have a reservation of its own.
+      (is (<= (value/value-charge version) (:retained-bytes @usage)))
+      (is (not (.contains (binding [*print-meta* true] (pr-str result)) "private")))
+      (closed! observed))
+    (let [observed (observe (make-source (tuple-descriptor :string) rows) (fn [_ _])
+                           {:session-info #(assoc % :data-version (vec (range 10000)))})
+          error (error-data #(d/explain {:run? false}
+                               '{:find [?id] :in [$s] :where [[$s ?id _]]
+                                 :query-source {:limits {:retained-bytes 65536}}}
+                               (:source observed)))]
+      (is (= :query-source/limit (:error error)))
+      (is (= :retained-bytes (:category error)))
+      (is (= 65536 (:maximum error)))
+      (is (= 1 (count @(:controls observed))))
+      (is (not-any? #(#{:plan :open-cursor} (first %)) @(:events observed)))
+      (closed! observed))))
+
+(defn execution-explanation!
+  "Reconcile operator placement and executed metrics with real adapter events,
+  including short circuits, windows, aliases, and disabled intermediate counts."
+  [make-source]
+  (doseq [scenario [:single :fragments :alias :cross :input :aggregate :empty-input :empty-source :limit]
+          run? [false true], intermediate? [false true], batch-size [1 4]]
+    (testing (str "execution explanation " [scenario run? intermediate? batch-size])
+      (let [rows (if (= :empty-source scenario) [] [[1 "a"] [2 "b"] [3 "b"]])
+            final-usage (atom nil)
+            observed (observe (make-source (tuple-descriptor :string) rows)
+                       (fn [phase payload]
+                         (when (= :closed-session phase)
+                           (reset! final-usage (control/usage (:control payload))))))
+            provider (:source observed)
+            base '{:find [?id] :in [$a] :where [[$a ?id ?value]]}
+            [query inputs]
+            (case scenario
+              :fragments [(assoc base :where '[[$a ?id ?value] [$a ?id ?other]]) [provider]]
+              :alias [(assoc base :in '[$a $b] :where '[[$a ?id ?value] [$b ?id ?other]])
+                      [provider provider]]
+              :cross [(assoc base :in '[$a $b] :where '[[$a ?id ?value] [$b ?other _]])
+                      [provider provider]]
+              (:input :empty-input)
+              [(assoc base :in '[$a [[?id]]])
+               [provider (if (= :input scenario) [[1] [2] [3]] [])]]
+              :aggregate [(assoc base :find '[?value (count ?id)]) [provider]]
+              :limit [(assoc base :limit 1) [provider]]
+              [base [provider]])
+            query (assoc query :query-source {:limits {:batch-rows batch-size :spill-bytes 0}})
+            result (apply d/explain {:run? run? :intermediate-counts? intermediate?} query inputs)
+            operators (:operators result)
+            actual (:actual-operators result)
+            batches (filter #(= :batch (first %)) @(:events observed))
+            selected (for [{:keys [source selected]} (:sources result), a selected]
+                       [source (:alternative-id a)
+                        (vec (sort (into (:covers a) (:prefilters a))))])]
+        (is (= {:sessions 1} (:acquisition result)))
+        (is (= {:storage :memory :spill-policy :reject :replay-spools :none
+                :join-indexes :shared-variables :distinct :find-and-with
+                :grouping (= :aggregate scenario) :result :retained}
+               (dissoc operators :inputs :readers)))
+        (is (= (mapv #(< (long %) (dec (count (:readers operators))))
+                      (range (count (:readers operators))))
+               (mapv :retained? (:readers operators))))
+        (is (= (set selected)
+               (set (map (juxt :source-symbol :alternative-id :clause-ids) (:readers operators)))))
+        (if run?
+          (do
+            (is (= (case scenario (:empty-input :empty-source) 0 :limit 1 :aggregate 2 3)
+                   (:result-rows result)))
+            (is (= (:result-bytes @final-usage) (:result-bytes result)))
+            (is (if (zero? (:result-rows result)) (zero? (:result-bytes result))
+                    (pos? (:result-bytes result))))
+            (is (= intermediate? (contains? result :streamed-rows)))
+            (is (= 0 (:native-scans result) (:spools actual) (:spill-bytes actual)))
+            (is (= (case scenario (:alias :input) 1
+                         :fragments (dec (count (:readers operators))) 0) (:join-indexes actual)))
+            (is (= (if (= :cross scenario) 1 0) (:cross-products actual)))
+            (is (= (case scenario (:alias :cross) [3]
+                         :fragments (vec (repeat (dec (count (:readers operators))) 3)) [])
+                   (:retained-readers actual)))
+            (is (= (case scenario :empty-input [0] :input [3] []) (:inputs actual)))
+            (is (= (case scenario (:empty-input :empty-source) 0 :limit 1 3) (:distinct-rows actual)))
+            (is (= (count batches) (reduce + 0 (map #(get-in % [:metrics :batches]) (:cursors result)))))
+            (is (= (reduce + 0 (map second batches))
+                   (reduce + 0 (map #(get-in % [:metrics :rows]) (:cursors result)))))
+            (is (= (reduce + 0 (map #(nth % 2) batches))
+                   (reduce + 0 (map #(get-in % [:metrics :charged-bytes]) (:cursors result)))))
+            (is (every? #(contains? (set selected) ((juxt :source :alternative-id :clause-ids) %))
+                        (:cursors result)))
+            (is (every? #(nil? (get-in % [:metrics :read-bytes])) (:cursors result)))
+            (is (every? #(zero? (get-in % [:metrics :external-requests])) (:cursors result)))
+            (when (and (= :limit scenario) (= 4 batch-size))
+              ;; Cursor rows describe delivered batches, not accepted results.
+              (is (= 3 (get-in result [:cursors 0 :metrics :rows])))))
+          (doseq [field [:actual-operators :result-rows :result-bytes :cursors :streamed-rows]]
+            (is (not (contains? result field)))))
+        ;; Existing native scan instrumentation observes no scans in plan-only
+        ;; mode; provider execution metrics are absent until cursors run.
+        (is (= 0 (:native-scans result)))
+        (closed! observed)))))
+
+(defn diagnostic-boundary!
+  "Keep private provider annotations and error text out of all diagnostics;
+  retain safe IDs, unknown metrics, limit details, and primary failures."
+  [make-source]
+  (let [secret "private SQL credential binding and row payload"
+        annotate #(with-meta (assoc % :test/private secret) {:private secret})
+        public-id (fn [id] (with-meta [(with-meta 'public/alternative {:private secret}) id]
+                             {:private secret}))
+        envelopes {:descriptor #(with-meta % {:private secret}) :session-info annotate
+                   :planning (fn [response]
+                               (annotate (update response :alternatives
+                                           #(mapv (fn [a] (-> a annotate
+                                                              (update :plan (fn [plan] {:delegate plan :private secret}))
+                                                              (assoc :id (public-id (:id a))
+                                                                     :explain {:label secret}))) %))))
+                   :cursor-request #(-> % (update :alternative-id second) (update :plan :delegate))
+                   :metrics #(annotate (assoc % :read-rows nil :external-requests nil))}
+        source-symbol (with-meta '$a {:private secret})
+        q {:find '[?id] :in [source-symbol] :where [[source-symbol '?id '?value]]}
+        make #(make-source (annotate (tuple-descriptor :string)) [[1 secret] [2 "two"] [3 "three"]])
+        visible? #(.contains (binding [*print-meta* true] (pr-str %)) secret)]
+    (doseq [run? [false true]]
+      (let [observed (observe (make) (fn [_ _]) envelopes)
+            result (d/explain {:run? run?} q (:source observed))]
+        (is (not (visible? result)))
+        (is (every? #(= 'public/alternative (first (:alternative-id %)))
+                    (get-in result [:sources 0 :selected])))
+        (when run?
+          (is (= 3 (:result-rows result)))
+          (is (nil? (get-in result [:cursors 0 :metrics :read-rows])))
+          (is (nil? (get-in result [:cursors 0 :metrics :external-requests]))))
+        (closed! observed)))
+    (doseq [run? [false true], phase (if run? [:planning :fetch] [:planning])]
+      (let [observed (observe (make)
+                       (fn [at _]
+                         (when (or (= at phase) (#{:closed-cursor :closed-session} at))
+                           (throw (ex-info secret (annotate {:phase secret :alternative-id secret})
+                                           (Exception. secret)))))
+                       envelopes)
+            error (try (d/explain {:run? run?} q (:source observed)) nil
+                       (catch clojure.lang.ExceptionInfo e e))]
+        (is (= {:error :query-source/provider :phase phase :source-symbol '$a :clause-ids [0]}
+               (select-keys (ex-data error) [:error :phase :source-symbol :clause-ids])))
+        (when error
+          (is (= (if (= :fetch phase) 2 1) (count (.getSuppressed ^Throwable error))))
+          (is (not (visible? (Throwable->map error))))
+          (doseq [e (cons error (.getSuppressed ^Throwable error))]
+            (is (nil? (.getCause ^Throwable e)))
+            (is (not (visible? (Throwable->map e))))))
+        (closed! observed)))
+    (doseq [category [:batch-bytes :retained-bytes :result-rows :result-bytes :external-requests]
+            close-fault? [false true]]
+      (let [limits (case category
+                     :retained-bytes {:retained-bytes 262144}
+                     :external-requests {:external-requests 1}
+                     {category 1})
+            observed
+            (observe (make)
+              (fn [phase payload]
+                (when (and (= :retained-bytes category) (= :fetched phase))
+                  ;; Real batch acquisition succeeds; core's row/join state
+                  ;; encounters the retained limit on its next reservation.
+                  (let [ctl (:control payload)
+                        available (- (:retained-bytes (control/limits ctl))
+                                     (:retained-bytes (control/usage ctl)))]
+                    (spi/reserve! ctl {:retained-bytes available})))
+                (when (and (= :external-requests category) (= :fetch phase))
+                  ;; Request budget is cumulative, even after release.
+                  (spi/release! (spi/reserve! (:control payload) {:external-requests 1})))
+                (when (and close-fault? (#{:closed-cursor :closed-session} phase))
+                  (throw (ex-info secret {:private secret :source-symbol secret}))))
+              envelopes)
+            query (assoc q :query-source {:limits (assoc limits :batch-rows 1)})
+            error (try (d/explain {:run? true} query (:source observed)) nil
+                       (catch clojure.lang.ExceptionInfo e e))
+            data (ex-data error)]
+        (is (= :query-source/limit (:error data)))
+        (is (= category (:category data)))
+        (is (= (get limits category) (:maximum data)))
+        (is (< (:maximum data) (:attempted data)))
+        (is (= '$a (:source-symbol data)))
+        (is (= [0] (:clause-ids data)))
+        (is (= 'public/alternative (first (:alternative-id data))))
+        (when error
+          (is (nil? (.getCause ^Throwable error)))
+          (is (= (if close-fault? 2 0) (count (.getSuppressed ^Throwable error))))
+          (doseq [e (cons error (.getSuppressed ^Throwable error))]
+            (is (not (visible? (Throwable->map e))))
+            (is (nil? (.getCause ^Throwable e)))))
+        (closed! observed)))
+    (doseq [metrics [(fn [_] {:private secret})
+                    #(assoc % :rows -1) #(assoc % :read-bytes secret)]]
+      (let [observed (observe (make) (fn [_ _]) (assoc envelopes :metrics metrics))
+            error (error-data #(d/explain {:run? true} q (:source observed)))]
+        (is (= {:error :query-source/invalid :phase :metrics :source-symbol '$a :clause-ids [0]}
+               (select-keys error [:error :phase :source-symbol :clause-ids])))
+        (is (not (visible? error)))
+        (closed! observed)))))
+
 (defn lifecycle!
   "Exercise public SPI lifetime boundaries without inspecting adapter internals."
   [make-source replace-rows!]
   (explanation! make-source)
+  (coverage-explanation! make-source)
+  (metadata-explanation! make-source)
+  (execution-explanation! make-source)
+  (diagnostic-boundary! make-source)
   (cursor-request-contract! make-source)
   (acquisition-boundary! make-source replace-rows!)
   (concurrent-views! make-source replace-rows!)
@@ -850,7 +1262,7 @@
         q '{:find [?id] :in [$s] :where [[$s ?id _]] :limit 1
             :query-source {:limits {:batch-rows 1 :in-flight-batches 1}}}]
     (is (= 1 (count (d/q q (:source observed)))))
-    (is (= [[:batch 1]] (filter #(= :batch (first %)) @(:events observed))))
+    (is (= [[:batch 1]] (map #(take 2 %) (filter #(= :batch (first %)) @(:events observed)))))
     (closed! observed)))
 
 (defn key-semantics!

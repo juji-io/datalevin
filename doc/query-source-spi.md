@@ -1,6 +1,7 @@
 # Query-source SPI v1
 
-Status: F0 implemented; initial F1 execution available, conformance gate still open  
+Status: earlier F0/F1 baseline complete; four-shape revision planned
+
 Release placement: [roadmap source milestones](../roadmap.md#source-milestones); embedded JVM execution  
 Public namespace: `datalevin.query.source`  
 Optional contracts: [extensions appendix](query-source-extensions.md)  
@@ -9,7 +10,10 @@ Related plans: [companion federation design](../../federation/federation.md),
 
 This document specifies the boundary between Datalevin's query engine and a
 separately developed source implementation. It makes the minimum contracts
-concrete for the external execution path. Changes remain reviewable
+concrete for the current external execution path. The
+[four-shape revision target](#11-four-shape-revision-target) below extends the
+common model to native Datalevin, SQL, files/exports, and APIs before commitment.
+Changes remain reviewable
 during implementation; SPI v1 becomes an experimental compatibility commitment only after
 the F1 conformance gates pass.
 
@@ -34,10 +38,12 @@ Datalevin proper owns:
 
 The sibling directory `../federation` hosts `datalevin-federation`, a separate
 project with its own build, dependencies, tests, and releases. It owns every
-production source adapter, including the first application-owned local relation adapter, PostgreSQL,
-CSV/dataset integrations, and optional Parquet/DataFusion. It also owns
-discovery, mapping syntax and compilation, external entity-reference values,
+production external source adapter, including the first application-owned local
+relation adapter, APIs, files/exports, PostgreSQL, CSV/dataset integrations, and
+optional Parquet/DataFusion. The companion also owns discovery,
+mapping syntax and compilation, external entity-reference values,
 SQL generation, connections, credentials, and provider-specific conversions.
+Native Datalevin remains a built-in core source.
 
 The dependency direction is `datalevin-federation -> datalevin`. Core neither
 loads the companion automatically nor depends on its namespaces, drivers,
@@ -59,6 +65,217 @@ distributed transaction API is introduced.
 Only an explicit `:in` source binding implementing `IQuerySource` enters this
 path. Existing Datalevin and collection sources keep their current contracts;
 they are not automatically wrapped or reinterpreted as companion adapters.
+
+### 1.1 Four-shape revision target
+
+This section records planned changes before the experimental compatibility
+commitment. Sections 2–9 describe the earlier executable external baseline,
+which requires unparameterized external alternatives, uses one query-wide
+consistency request, and restricts one-shot replay at session scope. These
+rules have not yet been replaced in code. Exact new envelopes and negotiation
+rules must be specified and tested before they become usable.
+
+The common abstraction is a typed logical relation with executable access
+paths, not a remote SQL table. Keep physical source identity and access
+scope, accepted logical relation metadata, alternative access paths, and the
+query-owned read context distinct. Accepted scope and conversion semantics
+participate in the definition fingerprint; query input values remain execution
+data.
+Providers describe required inputs, returned columns, exact clause coverage,
+safe superset filters, and the cost and execution properties of each path.
+
+| Shape | Access-path examples | Provider-specific implementation |
+| --- | --- | --- |
+| Native Datalevin | Indexed EAV lookup, range access, scan, native fragment | Existing native planner, indexes, read context, and full native query semantics. |
+| SQL | Bound lookup, scan, filter/project/join fragment | Dialect translation, driver, transaction, and buffers. |
+| Files/exports | Sequential read, supported partition/column pruning | Format reader, object version/manifest, decoding, and one-shot input ownership. |
+| API | ID lookup, scoped listing, supported search or batch lookup | Endpoint/query translation, credentials, pagination, rate limits, and retries. |
+
+No provider must support every access kind. Scans are optional; lookup-only
+sources are valid. Pushdown capabilities are demonstrated by alternatives,
+not inferred from a shape or advertised as mandatory remote relational work.
+Physical discovery is optional companion I/O; declared schemas are valid.
+
+Required revision work:
+
+1. **Typed input dependencies and binding batches.** Promote parameterized
+   access from the deferred bulk-binding proposal into the common baseline.
+   Providers may still return only input-free alternatives. Core orders
+   dependencies, rejects unsatisfied inputs and unseeded dependency cycles,
+   deduplicates typed input keys without losing outer multiplicity, and
+   associates returned rows with input IDs. Specify bounded cursor-open
+   binding batches and request splitting;
+   no provider batch endpoint is assumed. Unknown costs remain unknown, and
+   per-key HTTP work is explicit and charged rather than hidden as one batch.
+2. **Independent read guarantees.** Negotiate requirements per source and
+   report actual consistency without silently weakening another source.
+   Retain snapshot, statement, and best-effort distinctions; stable replay and
+   exact pinned data versions are separate guarantees. Reissuing an API
+   request is not identical replay. Define consumption groups for independent
+   one-shot paths sharing a session, and reject reuse or spool under quotas.
+   Acquisition may establish an authorized weak context without claiming a
+   stable provider snapshot. Memoized observations do not create one.
+3. **Scope and completion.** Accepted relation metadata fixes tenant,
+   repository, partition, or other configured scope. For supplied bindings,
+   successful exhaustion means completion of that accepted access under the
+   reported consistency, not a global point-in-time snapshot. Pagination and
+   continuation are provider-owned. Known result caps, omitted pages, and
+   request-budget exhaustion fail ordinary Datalog execution; they cannot be
+   reported as successful exhaustion. A capped/search-defined view may be a
+   separately declared relation, never a silently incomplete base relation.
+   Superset filters must preserve every matching row; residual checks cannot
+   repair missing rows. Weak reads disable shortcuts requiring stable replay.
+4. **Native participation.** The existing native planner and executor are
+   the specialized implementation of the common relation/access contract.
+   Activate the native planner bridge when composing mixed queries with
+   external sources. Native-only queries retain their direct execution path,
+   full syntax, indexes, caches, prepared paths, and representations, without
+   federation planning or allocation of federation runtime state. Section 1.3 defines isolation
+   and the mandatory native performance gate.
+5. **Four-shape conformance.** Before F1 closes, compare scan and dependent
+   access with eager evaluation across native, SQL, file/export, and API
+   fixtures. Include empty/duplicate bindings, batch association and request
+   splitting, absent required inputs, mixed consistency, independent one-shot
+   paths, API truncation/errors, and cross-shape joins. Use real native
+   execution and deterministic test providers; fixtures do not certify a real
+   SQL driver or API integration. Existing local and fake suites remain gates.
+6. **Capability and cost planning.** Specify the admissibility rules and
+   conditioned, comparable estimates in Section 1.2. Implement bounded
+   federation plan enumeration and cost-based selection across access shapes
+   and within one shape for queries with external source dependencies.
+   Validate ranking separately from result semantics and hard limits;
+   provider or workload labels cannot substitute for capability/cost evidence.
+
+Logical types/equality, exact coverage and residual rules, metadata identity,
+authorization, bounded results/work, cancellation, cleanup, and redacted
+explanation remain shared. Request/concurrency limits and metrics already
+exist in the baseline; reuse their ledger for API pages, retries, and splitting.
+SQL ASTs, file formats, endpoint schemas, and discovery stay outside core.
+Ordering, aggregate delegation, probes, and borrowed batches remain separate
+capabilities. Production API and export delivery precedes PostgreSQL; release
+placement and both owners' acceptance gates remain in the
+[roadmap](../roadmap.md#source-milestones).
+
+### 1.2 Capability and cost planning target
+
+This is part of the planned baseline revision. The existing estimate fields in
+Section 5 remain the executable envelope until the revised units, conditioning,
+and planning inputs are specified, implemented, and tested. Federation
+selection uses this model for external and mixed queries. Native fragments
+participate through the existing optimizer; native-only queries retain native
+optimization without a second generic planning pass.
+
+Native, SQL, file/export, and resource-API access describe interfaces. OLTP,
+OLAP, and hybrid are workload profiles within those interfaces, not additional
+source kinds. SQL over HTTP retains SQL semantics; HTTP transport does not make
+it a resource lookup/list API. One system may expose several interfaces.
+Workload labels may describe a deployment, but grant no operation, consistency
+guarantee, or cost preference.
+
+**Capabilities determine admissibility.** An alternative must be valid for the
+requested operator, logical input types, bindings, accepted scope, and read
+context. Exact coverage and safe superset prefilters retain their distinct
+semantics. Required inputs, output columns, replay/consumption, completion, and
+hard provider limits are validated before ranking. Negotiating a protocol
+feature establishes envelope support; it does not prove exact support for a
+particular operation. Discovery capability lists remain advisory.
+
+Lookup, scan, pruning, filter/projection, and same-context joins may be offered
+independently. Aggregate/ordering/limit delegation and borrowed/columnar
+transfer remain separately specified capabilities with conformance gates. Any source
+may implement them; no OLAP source kind or mandatory OLAP capability bundle is
+introduced. Core may retain an operation locally when the provider lacks its
+contract and complete bounded input can be obtained.
+
+**Costs rank complete admissible plans.** Providers report estimates in common
+units for a physical alternative invocation at an explicit input/batch size.
+Core supplies bounded planning information about known constants, accepted
+scope, and estimated input rows/distinct keys, preserving unknowns. Estimates
+identify their conditioning, confidence, provenance, and statistics freshness;
+they must not assume that a lookup's input count is one or that a scan is free.
+Core derives invocation counts and whole-plan cost; session setup is separate
+one-time work. Final field names and inclusion rules are a revision deliverable.
+
+| Dimension | Required meaning when an estimate is supplied |
+| --- | --- |
+| Output cardinality and width | Expected returned rows and logical bytes per row for the stated inputs; retained-value charges and wire bytes remain distinct. |
+| Physical access work | Rows/bytes/partitions examined where known, separately from returned rows; unknown backend work stays unknown. |
+| Requests | Expected operations/pages for the stated batch, including provider parameter splitting; provider batch/concurrency/rate ceilings are separate constraints. |
+| Time | Startup and incremental execution/request latency in stated time units, with explicit inclusion and overlap rules to avoid double counting. |
+| Transfer | Expected bytes crossing the source boundary, accounting for projection and any valid reduction at the source. |
+| State | Estimated peak retained memory and spill work for blocking execution or replay; these are estimates, not reservations or guaranteed bounds. |
+
+Core evaluates bounded combinations of alternatives with join order, input
+deduplication/fan-out, decoding, residual checks, local blocking operators,
+spools, and required transfers. Count fused physical work once and shared work
+once only when reuse is legal; include each dependent invocation. A smaller
+fragment or local operation can be cheaper than maximum pushdown. Requested
+concurrency is constrained by provider and query limits; rate-limit waiting
+and request latency affect expected elapsed time.
+
+The initial ranking policy targets estimated end-to-end latency subject to
+admissibility and hard limits. Specify a deterministic conservative fallback
+when evidence cannot support a comparison, retain uncertainty in explain, and
+calibrate the policy against measured workloads. Provider-local optimizer
+scores or billing units cannot be compared or added across systems without an
+explicit conversion policy. Unknown components remain unknown, never zero.
+Estimates do not prove emptiness, uniqueness, complete results, or resource
+feasibility. Runtime accounting enforces limits despite inaccurate estimates.
+
+Baseline planning uses accepted metadata and bounded planning inputs without
+source I/O. Live counts, samples, and source EXPLAIN remain the separately
+budgeted probe extension. Statistics freshness affects cost confidence, not
+the logical definition fingerprint or a query's read-view guarantees.
+
+Conformance must show that a cheap invalid alternative is rejected, identical
+capabilities/costs produce the same selection after an OLTP/OLAP relabeling,
+and controlled changes in selectivity, distinct keys, latency, transfer, or
+batch limits can change the preferred valid plan. Cover unknown, stale, and
+deliberately wrong estimates without changing correct results or quota
+enforcement. Explain separates capability rejection from cost ranking and
+reports estimate assumptions/confidence separately from actual work, using
+bounded structural diagnostics that do not expose bindings or provider secrets.
+
+### 1.3 Native execution isolation and performance
+
+Native Datalevin is a specialized implementation of the shared semantics and
+access contract. The contract does not require a common general-purpose
+executor or public protocol calls inside native hot loops. Native-only queries,
+including existing collection inputs and native-only rules/virtual expansions,
+keep the native optimizer, executor, index operations, caches, prepared-query
+specializations, and internal value representations.
+
+Select the execution route at the query or compiled-fragment boundary.
+Native-only work must not construct federation descriptors or estimate maps,
+validate external envelopes, enumerate source alternatives, open extension
+sessions/cursors, initialize federation ledgers, or copy rows into external
+owned-batch representations. Shared correctness rules may reuse existing
+specialized native code; they do not require new per-row/per-datom protocol
+dispatch or accounting on the native-only path.
+
+The current `source-inputs?` guard detects `IQuerySource` implementations.
+Making ordinary native DB values satisfy that guard would redirect their queries
+to the generic source executor. Native participation must therefore use the
+internal bridge, or first establish explicit native dispatch precedence before
+any native type implements the public protocol. Retain routing regression
+checks alongside the existing supported-query and cache behavior checks.
+
+For mixed queries, expose native fragment capabilities and cost at planning
+boundaries and invoke native operations directly within each selected fragment.
+Federation coordination, conversions, and required resource accounting belong
+to that mixed-query execution and its boundaries. This does not exempt mixed
+native work from the shared limits or promise zero coordination overhead.
+
+Native-only performance is a release constraint. Any reproducible slowdown or
+additional allocation attributable to federation blocks integration until
+eliminated; faster external queries do not offset it. Benchmark the existing
+input guards, prepared paths, cache hits, and startup as well as the proposed
+bridge. Keep a pre-federation native control so an earlier dispatch cost is
+not silently accepted as the baseline. Establish measurement noise and retain
+raw results; passing semantic conformance alone is not performance evidence.
+The [roadmap native performance gate](../roadmap.md#native-execution-performance-gate)
+defines the required workloads and sign-off. These are implementation and
+measurement requirements, not a claim of measured parity from this document.
 
 ## 2. Public protocols
 
@@ -463,6 +680,11 @@ view. Core assumes no ordering or cross-provider comparability. It is not a
 schema/definition fingerprint, session ID, maintenance log position, or promise
 of result-cache reuse.
 
+Non-nil data-version tokens are non-secret portable identifiers suitable for
+diagnostics, like definition IDs. Their semantic values may appear in explain;
+private annotations belong outside those values. Clojure metadata on an
+identifier is not part of its diagnostic representation.
+
 Core completes acquisition and session metadata validation for every source
 before planning any of them. The normal lifecycle is:
 
@@ -543,7 +765,10 @@ values, capability claims, and disjoint coverage in the chosen plan. Unknown
 cardinality, width, or cost components are `nil` with `:confidence :unknown`,
 never optimistic zero. Estimates are advisory, including an estimated zero.
 Provider claims are trusted code claims tested by conformance; structural
-validation cannot prove a SQL translation sound.
+validation cannot prove a SQL translation sound. The revised baseline's
+conditioning, comparable units, and whole-plan ranking are specified as work
+in [Section 1.2](#12-capability-and-cost-planning-target); this existing envelope
+does not establish that implementation.
 
 A variable repeated in covered patterns has one output column with the common
 logical type. Its `:nullable?` is true only when every covered occurrence permits
@@ -558,10 +783,13 @@ execution cursor or consuming a one-shot input.
 
 Rechecks run before distinct, limit, aggregation, or other lossy operations.
 V1 does not delegate those operations or promise source ordering. Providers
-preserve every required row/identity and residual column. Baseline `:requires`
-is empty; core chooses a bounded scan/local join or rejects the plan, never one
+preserve every required row/identity and residual column. In the earlier executable
+baseline, `:requires` is empty; core chooses a bounded scan/local join or rejects the plan, never one
 remote cursor per outer row. Parameterized alternatives require the negotiated
-[bulk-bindings extension](query-source-extensions.md#1-bulk-bindings).
+[bulk-binding proposal](query-source-extensions.md#1-bulk-bindings);
+the four-shape revision promotes this capability into the baseline before
+compatibility commitment. This documentation change does not implement it;
+§§2–9 remain the earlier baseline.
 
 All v1 source alternatives and opaque handles are query-scoped. They must not
 be persisted or retained in shared native plan caches, and cannot own open
@@ -793,10 +1021,72 @@ credentials, raw bindings, rows, and source values are never printed. No-query-
 source queries allocate no extension sessions, ledgers, or planning state.
 
 Each `:sources` entry reports the validated session's `:consistency`. Its
-`:selected` entries include the validated `:estimate` envelope from §5,
-preserving unknown values and confidence separately from actual `:cursors`
-metrics. Selected-plan display containers are quota-accounted and omit provider
-extension fields and Clojure metadata, including when metadata printing is enabled.
+`:selected` entries report exact `:covers` and `:prefilters` as clause-ID sets
+and include a public `:alternative-id` and the validated `:estimate` envelope
+from §5, preserving unknown values
+and confidence separately from actual `:cursors` metrics. Selected-plan display
+containers are quota-accounted and omit provider extension fields and Clojure
+metadata, including when metadata printing is enabled.
+
+The earlier embedded baseline reports the following execution details:
+
+- `:acquisition {:sessions n}` counts acquired sessions separately from execution
+  cursors, including in plan-only explain. Shared aliases count as one session.
+  Session setup work is not inferred from or added to cursor metrics.
+- `:operators` describes planned core placement: relational `:inputs` by input
+  index, ordered `:readers` with source/clause/alternative IDs and `:retained?`,
+  shared-variable join indexes, distinct on find/with variables, optional
+  grouping, and retained results. Its `:storage :memory`, `:spill-policy :reject`,
+  and `:replay-spools :none` describe the current executor policy. Selected
+  provider blocking/replay properties remain under `:sources`.
+- Executed output adds `:actual-operators`: input row counts, retained-reader
+  row counts in planned order (a prefix when an empty table stops execution),
+  indexes and cross products actually built, distinct rows admitted, and
+  actual `:spools` and `:spill-bytes` (both zero in this implementation).
+  An empty stream builds no join indexes. Plan-only output omits these counters.
+- Each `:cursors` entry identifies its `:source`, `:alternative-id`, and
+  `:clause-ids`, and contains the seven allowlisted metrics from §6. Unknown
+  metrics remain `nil`; unknown fields and Clojure metadata are omitted.
+  Rows/bytes count batches delivered by that cursor, including unused rows in
+  the last batch after an early limit. They are not final result sizes.
+- `:result-rows` counts retained output tuples after aggregation and the final
+  window; `:result-bytes` is their conservative result-ledger charge, including
+  container overhead, not serialized bytes. Both remain available with
+  intermediate counts disabled. Plan-only output omits result sizes and cursor
+  metrics; the existing `:native-scans 0` records that no native scans occurred.
+
+Core display containers and copied identifiers are admitted against the query
+budget. A failed execution throws the redacted error, including applicable
+limit details; it does not return a partial successful explanation. Primary
+and suppressed cleanup errors strip provider messages, causes, annotations,
+and extension fields while preserving public structural context.
+
+The same entry identifies the captured logical view with `:definition-id` and
+`:definition-fingerprint`, and separately reports the acquired session's
+`:data-version` (`nil` when unavailable). These values come from the accepted
+descriptor and session metadata, never a later provider refresh. Displayed
+identifiers are copied under the query budget, detached from collection backing,
+and stripped of Clojure metadata recursively. Schema revisions and definition
+update counters are not baseline SPI fields and are not inferred from these
+values or copied from provider annotations; their roles follow the
+[shared version vocabulary](schema-definitions.md#3-revisions-fingerprints-and-data-versions).
+
+The top-level `:residual-checks` vector describes the predicates core evaluates
+on joined rows, in query clause order:
+
+```clojure
+{:clause-id 3 :operator :> :source-symbols [$orders $limits]
+ :stage :before-projection}
+```
+
+`:source-symbols` lists the symbols of sources whose patterns bind the predicate's
+variables, including native sources, sorted by symbol. It is empty when no source
+pattern binds the predicate's variables, for example predicates over only query
+inputs or constants. Core currently rechecks every predicate, including exact
+provider coverage and superset prefilters. `:before-projection` places
+these checks before core projection, aggregation, and final limit/offset.
+The same structural description appears in plan-only and executed explain;
+it contains no operands, bindings, or predicate values.
 
 ## 9. Source conformance
 
@@ -857,6 +1147,26 @@ and actual consistency. It covers fused/separate plans and shared aliases,
 unknown/partial/numeric estimates, zero estimates with real rows and quota
 failures, invalid estimates, mismatched or unsupported consistency, snapshot
 loss, fresh reuse, and redaction of private annotations under metadata printing.
+Its `coverage-explanation!` checks selected coverage and core residuals across
+fused/separate plans, cross-source and native joins, input-only predicates, and
+deliberately permissive prefilters. Eager comparisons and explicit results pin
+filtering before aggregation and limit/offset; plan-only output opens no cursor,
+and predicate constants, bindings, and private metadata stay out of diagnostics.
+The `metadata-explanation!` checks publish row-only, definition, and counter-only
+refreshes during acquisition, planning, and fetching. Real fake/local sessions
+keep their captured versions across aliases and fragments; later invocations
+see the new versions. They also cover unavailable data tokens, nested private
+metadata, retained version charges after releasing the session envelope, and
+oversized-version rejection before planning.
+
+`execution-explanation!` reconciles reported rows, batches, and charged bytes
+with real adapter events across aliases/fragments, empty inputs/results, joins,
+grouping, and early limits. It checks planned versus allocated operators and
+final sizes with intermediate counting disabled. `diagnostic-boundary!` checks
+batch, retained-state, result, and request limits; unknown/invalid metrics;
+and primary/suppressed failures. It injects private metadata, labels, opaque
+handles, row values, and exception causes and checks metadata-aware redaction
+through both adapters. These checks run as part of the same lifecycle suite.
 
 The [integrated failure regressions](../../dtlvtest/test/datalevin/query/source_failure_test.clj)
 run with `lein test datalevin.query.source-failure-test` from `../dtlvtest`.
@@ -1050,8 +1360,9 @@ Core row scratch, distinct/grouping state, and result retention check cancellati
 and remaining quota incrementally while sizing, including any charge multiplier.
 Output checks result-row limits before traversal and result-byte limits during
 it; the final reservation atomically checks all applicable ledger categories.
-Explain reports structural coverage and cursor metrics without provider labels,
-handles, metadata identifiers, bindings, or rows.
+Explain reports the structural and quantitative diagnostics specified in
+[§8](#8-caching-errors-and-explanation), including captured public version
+identifiers, without provider labels, handles, bindings, or rows.
 
 For example, `:in $s [?id ...]` and `:in $s [[?id ?label]]` become owned,
 quota-bound local join tables. Core checks every input value against the native

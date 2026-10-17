@@ -54,6 +54,21 @@
          (with-meta copy (owned-copy metadata check!))
          copy)))))
 
+(defn diagnostic-copy
+  "Copy a validated non-secret portable identifier for diagnostics. Preserve
+  its value, detach collection backing, and omit Clojure metadata at every level.
+  The caller must reserve copy space and supply its cancellation check."
+  [x check!]
+  (check!)
+  (let [copy #(diagnostic-copy % check!)]
+    (cond
+      (symbol? x) (with-meta x nil)
+      (plain-map? x) (into {} (map (fn [[k v]] [(copy k) (copy v)])) x)
+      (vector? x) (mapv copy x)
+      (set? x) (into #{} (map copy) x)
+      (list? x) (apply list (map copy x))
+      :else x)))
+
 (defn add-charge
   "Add fixed overhead with primitive dispatch for long charges and exact overflow."
   [^long overhead charge]

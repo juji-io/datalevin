@@ -88,6 +88,25 @@
          (category #(source/validate-source-info!
                       (with-meta tuple-info {:hidden (atom :mutable)}))))))
 
+(deftest diagnostic-identifiers-drop-metadata-and-detach-backing
+  (let [private {:private "private identifier annotation"}
+        sym (with-meta 'version private)
+        identifier (with-meta
+                     {:key sym :vector (subvec ["private hidden parent" sym] 1)
+                      :map (with-meta {sym (with-meta '(1 2) private)} private)
+                      :set (with-meta #{sym} private)} private)
+        copied (value/diagnostic-copy identifier (fn []))]
+    (is (= identifier copied))
+    (is (not (instance? clojure.lang.APersistentVector$SubVector (:vector copied))))
+    (is (every? #(nil? (meta %)) (tree-seq coll? seq copied)))
+    (is (not (.contains (binding [*print-meta* true] (pr-str copied)) "private"))))
+  (let [checks (atom 0)
+        active! #(when (= 5 (swap! checks inc))
+                   (throw (ex-info "cancelled" {:error :query-source/cancelled})))]
+    (is (= :query-source/cancelled
+           (category #(value/diagnostic-copy (vec (range 100)) active!))))
+    (is (= 5 @checks))))
+
 (deftest descriptor-contract
   (is (= tuple-info (source/validate-source-info! tuple-info)))
   (is (= {:spi-version 1 :features #{}}

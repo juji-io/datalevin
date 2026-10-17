@@ -40,11 +40,24 @@
       (swap! (:redacted-errors runtime) conj error)
       error)))
 
+(declare charge-copy!)
+
+(defn diagnostic-copy!
+  "Own a public identifier without retaining provider annotations or backing."
+  [runtime identifier]
+  (charge-copy! runtime identifier)
+  (value/diagnostic-copy identifier #(source/check-active! (:control runtime))))
+
 (defn with-context
   "Locate failures using core query/plan context, never provider exception data."
   [runtime location f]
-  (let [runtime (update runtime :location merge
-                        (select-keys location [:source-symbol :clause-ids :alternative-id]))]
+  (let [location (into {} (map (fn [[k v]]
+                                [k (cond (= :clause-ids k) (with-meta v nil)
+                                         (symbol? v) (with-meta v nil)
+                                         (coll? v) (diagnostic-copy! runtime v)
+                                         :else v)]))
+                       (select-keys location [:source-symbol :clause-ids :alternative-id]))
+        runtime (update runtime :location merge location)]
     (try (f runtime)
          (catch Throwable e
            (throw (redacted-error runtime (or (:phase (ex-data e)) :execution) e))))))
@@ -139,6 +152,7 @@
   (let [control (control/create (assoc options :parent (:control *runtime*)))
         runtime {:control control :query-id (UUID/randomUUID) :cleanup (atom [])
                  :redacted-errors (atom #{})
+                 :explain? (boolean (:explain? options))
                  :intermediate-counts? (boolean (:intermediate-counts? options))
                  :explain (atom (cond-> {:sources [] :native-scans 0}
                                   (:intermediate-counts? options) (assoc :streamed-rows 0)))}

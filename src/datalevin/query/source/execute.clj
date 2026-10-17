@@ -6,6 +6,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.contract :as contract]
+            [datalevin.query.source.control :as control]
             [datalevin.query.source.inputs :as input]
             [datalevin.query.source.join :as join]
             [datalevin.query.source.native :as native]
@@ -48,7 +49,7 @@
     (when-not (and (map? m) (every? #(contains? m %) ks)
                   (every? #(or (nil? %) (and (integer? %) (<= 0 % Long/MAX_VALUE))) (map m ks)))
       (fail! :query-source/invalid :metrics))
-    (select-keys m ks)))
+    (into {} (map (fn [k] [k (get m k)])) ks)))
 
 (defn- visit-rows [rows emit]
   (loop [rows (seq rows)]
@@ -56,11 +57,10 @@
       (let [result (emit (first rows))]
         (if (reduced? result) result (recur (next rows)))))))
 
-(defn- source-reader [runtime {:keys [session request descriptor symbol alternative]}]
+(defn- source-reader [runtime {:keys [session request descriptor symbol alternative]} location]
   (fn [emit]
     (rt/with-context runtime
-      {:source-symbol symbol :alternative-id (:id alternative)
-       :clause-ids (vec (sort (into (:covers alternative) (:prefilters alternative))))}
+      location
       (fn [runtime]
         (let [control (:control runtime)
               check! #(source/check-active! control)
@@ -91,7 +91,8 @@
               (when-not (or (:exhausted? batch) (reduced? stopped)) (recur))))
           (rt/invoke runtime :close close)
           (swap! (:explain runtime) update :cursors (fnil conj [])
-                 {:source symbol :metrics (rt/invoke runtime :metrics #(metrics cursor))}))))))
+                 (assoc (:location runtime) :source (:source-symbol location)
+                        :metrics (rt/invoke runtime :metrics #(metrics cursor)))))))))
 
 (defn- native-reader [runtime snapshots bindings input-data {:keys [native patterns symbol]}]
   (mapv (fn [pattern]
@@ -112,7 +113,9 @@
                               nil)
                 keys-only? (= :ignore value-tag)
                 terms (if keys-only? (pop terms) terms)]
-            {:entity-variable (when (and (= :var entity-tag)
+            {:description {:kind :native :source-symbol (with-meta symbol nil)
+                           :clause-ids [(:id pattern)]}
+             :entity-variable (when (and (= :var entity-tag)
                                          (not (contains? bindings entity))
                                          (nil? relation)
                                          (not= :const value-tag)
@@ -153,16 +156,41 @@
             (recur (filterv #(not (identical? reader %)) pending)
                    (into available (:variables reader)) (conj deferred reader))
             [pending deferred]))
-        sources (mapv (fn [fragment]
-                        (let [read (source-reader runtime fragment)]
-                          (fn [_ emit] (read emit)))) fragments)]
+        sources (mapv (fn [{:keys [symbol alternative] :as fragment}]
+                        (let [location {:source-symbol (with-meta symbol nil)
+                                        :alternative-id (if (:explain? runtime)
+                                                          (rt/diagnostic-copy! runtime (:id alternative))
+                                                          (:id alternative))
+                                        :clause-ids (vec (sort (into (:covers alternative)
+                                                                  (:prefilters alternative))))}
+                              read (source-reader runtime fragment location)]
+                          {:description (assoc location :kind :source)
+                           :read (fn [_ emit] (read emit))})) fragments)]
     ;; Explicit entity inputs and constant/scalar value constraints keep their
     ;; early native reads, including empty-pattern short circuits. Otherwise,
     ;; build an external relation that binds the entity before native values.
     ;; Native readers borrow IDs from retained tables without replacing their
     ;; original rows, so correlation and duplicate semantics remain intact.
-    (into (into (mapv (fn [{:keys [read]}] (fn [_ emit] (read [] emit))) early) sources)
-          (map :read deferred))))
+    (into (into (mapv (fn [{:keys [read] :as reader}]
+                       (assoc reader :read (fn [_ emit] (read [] emit)))) early) sources)
+          deferred)))
+
+(defn- explain-operators! [runtime prepared readers]
+  ;; Describe placement before execution; actual allocation/row counts are
+  ;; added only by the operators that run, including empty short circuits.
+  (let [inputs (:relations (:input-data prepared))
+        aggregate? (boolean (some dp/aggregate? (dp/find-elements (:qfind (:parsed prepared)))))]
+    (rt/charge! runtime nil (+ 2048 (* 512 (+ (count inputs) (count readers)))) 1)
+    (swap! (:explain runtime) assoc
+           :operators {:storage :memory :spill-policy :reject :replay-spools :none
+                       :inputs (mapv (fn [id] {:input-id id :kind :input}) (range (count inputs)))
+                       :readers (mapv (fn [id reader]
+                                        (assoc (:description reader) :reader-id id
+                                               :retained? (< (long id) (dec (count readers)))))
+                                      (range) readers)
+                       :join-indexes :shared-variables
+                       :distinct :find-and-with
+                       :grouping aggregate? :result :retained})))
 
 (defn- result-shape [parsed rows]
   (let [rows (if-let [return (:qreturn-map parsed)]
@@ -223,18 +251,29 @@
                            #(arithmetic/wrap-aggregate runtime %1 %2))))
                (let [result (result-shape parsed @output)]
                  (swap! (:explain runtime) assoc :result-rows (count @output))
+                 (when (:explain? runtime)
+                   (swap! (:explain runtime) assoc
+                          :result-bytes (:result-bytes (control/usage (:control runtime))))
+                   (swap! (:explain runtime) assoc-in [:actual-operators :distinct-rows] (.size seen)))
                  result))}))
 
-(defn- execute! [runtime {:keys [bindings input-data predicates] :as prepared} snapshots]
-  (let [readers (readers runtime snapshots prepared)
-        readers (if (seq readers) readers [(fn [_ emit] (emit bindings))])
+(defn- execute! [runtime {:keys [bindings input-data predicates] :as prepared} readers]
+  (let [readers (if (seq readers) readers [{:read (fn [_ emit] (emit bindings))}])
         input-tables (mapv :rows (:relations input-data))
+        _ (swap! (:explain runtime) assoc :native-scans 0)
+        _ (when (:explain? runtime)
+            (swap! (:explain runtime) assoc :cursors []
+                   :actual-operators {:inputs (mapv count input-tables) :retained-readers []
+                                      :join-indexes 0 :cross-products 0 :spools 0 :spill-bytes 0}))
         ;; An empty required relation proves the conjunction empty. Reduce
         ;; incrementally so later native scans and source cursors never open.
         tables (when (every? seq input-tables)
-                 (reduce (fn [tables read]
+                 (reduce (fn [tables {:keys [read]}]
                            (let [rows (volatile! [])]
                              (read tables (fn [row] (rt/charge! runtime row) (vswap! rows conj row) nil))
+                             (when (:explain? runtime)
+                               (swap! (:explain runtime) update-in [:actual-operators :retained-readers]
+                                      conj (count @rows)))
                              (if (seq @rows) (conj tables @rows) (reduced nil))))
                          input-tables (butlast readers)))
         {:keys [accept finish stopped?]} (collect-result runtime prepared)
@@ -250,11 +289,15 @@
                                        (finally (source/release! token)))))))
                     (when (predicates? predicates row) (accept row)))))]
       (when (and tables (not (stopped?)))
-        ((last readers) tables (fn [row]
+        ((:read (last readers)) tables (fn [row]
                           (when-let [row (merge-row bindings row)]
                             (when-not @steps
                               (vreset! steps (if (seq tables)
-                                               (join/prepare! runtime row tables) [])))
+                                               (join/prepare! runtime row tables) []))
+                              (when (:explain? runtime)
+                                (swap! (:explain runtime) update :actual-operators assoc
+                                       :join-indexes (count (filter :index @steps))
+                                       :cross-products (count (filter :rows @steps)))))
                             (join! row @steps)))))
       (finish))))
 
@@ -274,6 +317,7 @@
         deadline (timeout/effective-deadline (:qtimeout parsed))]
     (binding [timeout/*deadline* deadline]
       (rt/with-runtime {:limits (:limits options) :timeout-ms (timeout/time-left)
+                        :explain? (some? explain-options)
                         :intermediate-counts? (boolean
                                                (and (:run? explain-options)
                                                     (get explain-options :intermediate-counts? true)))}
@@ -285,8 +329,10 @@
                 (native/validate-types! runtime snapshots (:entries prepared)
                                         (:types prepared) (:input-data prepared))
                 (let [prepared (plan/acquire-and-plan! runtime prepared)
+                      readers (readers runtime snapshots prepared)
+                      _ (when explain-options (explain-operators! runtime prepared readers))
                       result (when (or (nil? explain-options) (:run? explain-options))
-                               (execute! runtime prepared snapshots))]
+                               (execute! runtime prepared readers))]
                   (if explain-options
                     (assoc @(:explain runtime) :query-source? true :executed? (boolean (:run? explain-options)))
                     result))))))))))
