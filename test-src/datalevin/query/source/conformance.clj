@@ -12,7 +12,7 @@
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
-           [java.util Date Objects Random]
+           [java.util Date Objects Random UUID]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
 (defn- descriptor [contract]
@@ -41,25 +41,33 @@
       (QueryKey/equals expected actual)
       (.equals ^QueryKey$KeyMap (bag expected) (bag actual)))))
 
-(defrecord ObservedSession [delegate events hook]
+(defrecord ObservedSession [delegate events hook request]
   spi/IQuerySourceSession
   (-session-info [_] (spi/-session-info delegate))
   (-open-cursor [_ request]
     (hook :open request)
-    (let [cursor (spi/-open-cursor delegate request)]
+    (let [cursor (spi/-open-cursor delegate request)
+          wrapped
+          (reify spi/IQuerySourceCursor
+            (-next-batch! [_ batch-request]
+              (hook :fetch batch-request)
+              (let [batch (spi/-next-batch! cursor batch-request)]
+                (swap! events conj [:batch (:row-count batch)])
+                (hook :fetched batch-request)
+                batch))
+            (-cursor-metrics [_] (spi/-cursor-metrics cursor))
+            (-close-cursor! [_]
+              (hook :close-cursor request)
+              (swap! events conj [:close-cursor])
+              (spi/-close-cursor! cursor)))]
       (swap! events conj [:open-cursor])
-      (reify spi/IQuerySourceCursor
-        (-next-batch! [_ batch-request]
-          (hook :fetch batch-request)
-          (let [batch (spi/-next-batch! cursor batch-request)]
-            (swap! events conj [:batch (:row-count batch)])
-            batch))
-        (-cursor-metrics [_] (spi/-cursor-metrics cursor))
-        (-close-cursor! [_]
-          (swap! events conj [:close-cursor])
-          (spi/-close-cursor! cursor)))))
-  (-cancel-session! [_ reason] (spi/-cancel-session! delegate reason))
+      (hook :opened request)
+      wrapped))
+  (-cancel-session! [_ reason]
+    (hook :cancel-session reason)
+    (spi/-cancel-session! delegate reason))
   (-close-session! [_]
+    (hook :close-session request)
     (swap! events conj [:close-session])
     (spi/-close-session! delegate)))
 
@@ -76,7 +84,9 @@
           (hook :acquisition request)
           (let [session (spi/-open-session source request)]
             (swap! events conj [:open-session])
-            (->ObservedSession session events hook)))
+            (let [session (->ObservedSession session events hook request)]
+              (hook :acquired request)
+              session)))
         (-plan-source [_ session request]
           (swap! events conj [:plan (:source-symbol request)])
           (hook :planning request)
@@ -98,10 +108,17 @@
     (finally (run! closed! observed))))
 
 (def ^:private families
-  {:long [nil -1 0 1 2]
+  {:boolean [nil false true]
+   :long [nil -1 0 1 2 Long/MIN_VALUE Long/MAX_VALUE]
+   :bigint [nil -1N 0N 1N (biginteger 1) 18446744073709551616N]
    :string [nil "" "a" "雪"]
+   :keyword [nil :a :test/a :test/b :测试/值]
+   :symbol [nil 'a 'test/a 'test/b (with-meta 'test/a {:note ["metadata"]})]
+   :uuid [nil (UUID. 0 0) (UUID. 0 1) (UUID. -1 -1)]
+   :instant [nil (Date. -1) (Date. 0) (Date. 1) (Date. Long/MAX_VALUE)]
    :bigdec [nil 1.0M 1.00M -2M 3M]
    :double [nil 0.0 -0.0 1.0 ##Inf ##NaN]
+   :float [nil (float 0) (float -0.0) (float 1) Float/POSITIVE_INFINITY Float/NaN]
    :data [nil [1 nil] (list 1 nil) {:nested [1 "x"]} #{:a :b}
           (Date. 42) (Instant/ofEpochSecond -1 123) (Duration/ofSeconds -2 3)]
    :bytes [nil (byte-array []) (byte-array [0 31]) (byte-array [1 0])
@@ -150,6 +167,7 @@
   "Compare fused/unfused source plans to eager d/q with deterministic seeds.
   Failure contexts name the seed, logical type and batch size."
   [make-source]
+  (is (= value/scalar-types (set (keys families))))
   (repeated-variable-columns! make-source)
   (doseq [[type values] families, seed [0 1 42], batch-size [1 4]]
     (testing (str "type=" type " seed=" seed " batch=" batch-size)
@@ -444,11 +462,98 @@
             (doseq [{:keys [release]} pending] (.countDown ^CountDownLatch release))
             (doseq [worker @workers] (future-cancel worker))))))))
 
+(defn- blocking-cancellation! [make-source]
+  (doseq [phase [:acquisition :acquired :open :opened :fetch :fetched
+                :close-cursor :close-session]
+          cause [:cancel :deadline]
+          aliases? [false true]
+          mode (if (#{:acquisition :acquired :close-session} phase)
+                 [:query :explain :plan] [:query :explain])]
+    (testing (str "blocked " phase ", " cause ", aliases=" aliases? ", " mode)
+      (let [entered (promise)
+            callback (promise)
+            released (CountDownLatch. 1)
+            visits (atom 0)
+            signal! (fn [reason]
+                      (deliver callback {:thread (Thread/currentThread) :reason reason})
+                      (.countDown released))
+            hook (fn [at request]
+                   (when (= :cancel-session at) (signal! request))
+                   (when (and (= phase at)
+                              (= (if (#{:fetch :fetched} phase) 2 1) (swap! visits inc)))
+                     ;; Acquisition has no session callback yet. All later
+                     ;; operations must be released by core's session callback.
+                     ;; After-return hooks deliberately hand the acquired
+                     ;; resource to core even when cancellation won the race.
+                     (let [ctl (:control request)
+                           registration (when (#{:acquisition :acquired} phase)
+                                          (spi/register-cancel! ctl signal!))]
+                       (try
+                         (deliver entered {:control ctl :thread (Thread/currentThread)})
+                         (when-not (.await released 10 TimeUnit/SECONDS)
+                           (throw (ex-info "conformance wait expired" {})))
+                         (finally
+                           (when registration (spi/unregister-cancel! registration)))))))
+            rows [[1 "one"] [2 "two"] [3 "three"]]
+            provider (make-source (tuple-descriptor :string) rows)
+            observed (observe provider hook)
+            q (cond-> '{:find [?id ?v] :in [$a] :where [[$a ?id ?v]]
+                        :query-source {:limits {:batch-rows 1 :in-flight-batches 1}}}
+                aliases? (assoc :in '[$a $b] :where '[[$a ?id ?v] [$b ?id ?v]]))
+            inputs (repeat (if aliases? 2 1) (:source observed))
+            worker (future
+                     (try
+                       {:result (case mode
+                                  :query (apply d/q q inputs)
+                                  :explain (apply d/explain {:run? true} q inputs)
+                                  :plan (apply d/explain {:run? false} q inputs))}
+                       (catch clojure.lang.ExceptionInfo e {:error (ex-data e)})))
+            nested (atom nil)]
+        (try
+          (let [{:keys [control thread] :as waiting} (deref entered 5000 ::timeout)]
+            (is (map? waiting))
+            (when control
+              (is (not (realized? worker)))
+              (if (= :cancel cause)
+                (control/cancel! control {:error :query-source/cancelled :phase :execution})
+                ;; Start a real nested deadline only after the operation is
+                ;; blocked, avoiding compilation/scheduling-dependent timeouts.
+                (reset! nested (control/create {:parent control :timeout-ms 25})))
+              (let [outcome (deref worker 5000 ::timeout)
+                    category (if (= :cancel cause) :query-source/cancelled :query/timeout)
+                    signalled (deref callback 1000 ::timeout)]
+                (is (= category (get-in outcome [:error :error])))
+                (is (not (contains? outcome :result)))
+                (is (= category (get-in signalled [:reason :error])))
+                (is (not (identical? thread (:thread signalled))))
+                (when (#{:acquisition :acquired :open :opened :fetch :fetched} phase)
+                  (is (= '$a (get-in outcome [:error :source-symbol])))
+                  (is (= [0] (get-in outcome [:error :clause-ids]))))
+                (when (#{:fetch :fetched} phase)
+                  (is (some #(= [:batch 1] %) @(:events observed))))
+                (let [events (mapv first @(:events observed))]
+                  (is (= (if (= :acquisition phase) 0 1)
+                         (count (filter #{:open-session} events))))
+                  (when (some #{:open-cursor} events)
+                    (is (< (.lastIndexOf events :close-cursor)
+                           (.lastIndexOf events :close-session)))))
+                (closed! observed)
+                ;; A cancelled session must not poison the source object or a
+                ;; later invocation's captured view and reservations.
+                (let [fresh (observe provider)]
+                  (compare! q (repeat (count inputs) rows)
+                            (repeat (count inputs) (:source fresh)) [fresh])))))
+          (finally
+            (.countDown released)
+            (when-let [ctl @nested] (control/close! ctl))
+            (future-cancel worker)))))))
+
 (defn lifecycle!
   "Exercise public SPI lifetime boundaries without inspecting adapter internals."
   [make-source replace-rows!]
   (acquisition-boundary! make-source replace-rows!)
   (concurrent-views! make-source replace-rows!)
+  (blocking-cancellation! make-source)
   (let [info (tuple-descriptor :string)
         rows [[1 "old"] [2 "two"] [3 "three"]]
         source (make-source info rows)

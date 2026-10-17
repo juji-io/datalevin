@@ -2,6 +2,8 @@
 
 use zstd::zstd_safe::{CCtx, CDict, DCtx, DDict};
 
+pub mod manifest;
+
 pub enum Error {
     Setup,
     Codec(usize),
@@ -15,13 +17,17 @@ pub fn valid_dictionary(dictionary: &[u8]) -> bool {
 pub fn compress(dictionary: &[u8], input: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     let dictionary = CDict::try_create(dictionary, 3).ok_or(Error::Setup)?;
     let mut context = CCtx::try_create().ok_or(Error::Setup)?;
-    context.compress_using_cdict(output, input, &dictionary).map_err(Error::Codec)
+    context
+        .compress_using_cdict(output, input, &dictionary)
+        .map_err(Error::Codec)
 }
 
 pub fn decompress(dictionary: &[u8], input: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     let dictionary = DDict::try_create(dictionary).ok_or(Error::Setup)?;
     let mut context = DCtx::try_create().ok_or(Error::Setup)?;
-    context.decompress_using_ddict(output, input, &dictionary).map_err(Error::Codec)
+    context
+        .decompress_using_ddict(output, input, &dictionary)
+        .map_err(Error::Codec)
 }
 
 impl Error {

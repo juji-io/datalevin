@@ -813,6 +813,15 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :compression/open-compression
+      (let [[dir options loaded-info] arguments
+            {:keys [key-codec value-dictionary] :as opened}
+            (invoke-peer! peer session :compression/open-manifest
+                          [dir options loaded-info (str (UUID/randomUUID))])]
+        (-> opened
+            (dissoc :value-dictionary)
+            (assoc :key-codec (when key-codec (->HuCompressor (->Dictionary session key-codec)))
+                   :value-codec (when value-dictionary (->ZstdCompressor value-dictionary)))))
       :hu/codes->hu-tucker (apply key-dictionary! peer session arguments)
       :hu/load-hu-tucker (load-key-dictionary! peer session (first arguments))
       :hu/dump-hu-tucker

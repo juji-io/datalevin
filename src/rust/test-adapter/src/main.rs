@@ -183,6 +183,7 @@ fn dispatch_with_dictionaries(request: &Value, dictionaries: &mut Vec<Dictionary
         return protocol_error("Request requires a vector of argument descriptors");
     };
     match operation.as_ref() {
+        "compression/open-manifest" => open_compression_operation(arguments, dictionaries),
         "hu/dictionary" | "hu/load" | "hu/dump" | "hu/encode" | "hu/decode" => {
             hu_operation(operation, arguments, dictionaries)
         }
@@ -509,6 +510,70 @@ fn compression_operation(operation: &str, arguments: &[Value]) -> Value {
         ("bytes", Value::Bytes(output)),
         ("result", result),
     ]))
+}
+
+fn open_compression_operation(arguments: &[Value], dictionaries: &mut Vec<Dictionary>) -> Value {
+    let [dir, options, loaded_info, generation] = arguments else {
+        return protocol_error(
+            "Compression open requires directory, options, stored metadata and generation",
+        );
+    };
+    let (Some(Value::Text(dir)), Some(options), Some(loaded_info), Some(Value::Text(generation))) = (
+        value_argument(dir),
+        value_argument(options),
+        value_argument(loaded_info),
+        value_argument(generation),
+    ) else {
+        return protocol_error("Invalid compression open arguments");
+    };
+    match compress::manifest::open(
+        std::path::Path::new(dir),
+        options,
+        loaded_info,
+        generation.clone(),
+    ) {
+        Ok(opened) => {
+            let key_codec = if let Some(dictionary) = opened.key_codec {
+                dictionaries.push(dictionary);
+                Value::Long(dictionaries.len() as i64)
+            } else {
+                Value::Null
+            };
+            success(map(vec![
+                ("manifest", opened.manifest),
+                ("key-codec", key_codec),
+                (
+                    "value-dictionary",
+                    opened
+                        .value_dictionary
+                        .map(Value::Bytes)
+                        .unwrap_or(Value::Null),
+                ),
+                ("key-compress", opened.key_compress),
+                ("val-compress", opened.val_compress),
+            ]))
+        }
+        Err(compress::manifest::Error::Behavior { message, data }) => map(vec![
+            ("status", keyword("error")),
+            (
+                "error",
+                map(vec![
+                    ("class", text("clojure.lang.ExceptionInfo")),
+                    ("message", text(message)),
+                    ("data", data),
+                ]),
+            ),
+        ]),
+        Err(compress::manifest::Error::Dictionary(error)) => dictionary_error(error),
+        Err(compress::manifest::Error::Io(error)) => unsupported(
+            "compression/open-manifest",
+            &format!("Compression dictionary read failed: {error}"),
+        ),
+        Err(compress::manifest::Error::ZstdSetup) => unsupported(
+            "compression/open-manifest",
+            "Zstandard dictionary creation failed",
+        ),
+    }
 }
 
 fn csv_operation(operation: &str, arguments: &[Value]) -> Value {
@@ -1685,6 +1750,7 @@ fn main() -> io::Result<()> {
             (
                 "capabilities",
                 Value::Set(vec![
+                    keyword("compression/open-manifest"),
                     keyword("hu/dictionary"),
                     keyword("hu/load"),
                     keyword("hu/dump"),
@@ -1825,6 +1891,7 @@ mod tests {
     #[test]
     fn malformed_codec_calls_fail_and_missing_formats_remain_unsupported() {
         for operation in [
+            "compression/open-manifest",
             "hu/dictionary",
             "hu/load",
             "hu/dump",

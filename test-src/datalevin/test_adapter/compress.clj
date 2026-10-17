@@ -31,3 +31,6 @@
 
 (defn load-val-compressor [path]
   (adapter/call! :compression/load-val-compressor [path]))
+
+(defn open-compression [dir options loaded-info]
+  (adapter/call! :compression/open-compression [dir options loaded-info]))

@@ -12,6 +12,7 @@
   adapter/Backend
   (invoke! [_ operation arguments]
     (case operation
+      :compression/open-compression (apply compress/open-compression arguments)
       :hu/codes->hu-tucker (apply hu/codes->hu-tucker arguments)
       :hu/encode (apply hu/encode arguments)
       :hu/decode (apply hu/decode arguments)

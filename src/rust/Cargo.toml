@@ -17,6 +17,7 @@ lz4_flex = { version = "0.11", default-features = false, features = ["std", "saf
 snap = "1.1"
 zstd = { version = "0.13", default-features = false }
 xz2 = "0.1"
+sha2 = "0.10.9"
 
 [dev-dependencies]
 roaring-upstream = { package = "roaring", version = "=0.11.5" }
