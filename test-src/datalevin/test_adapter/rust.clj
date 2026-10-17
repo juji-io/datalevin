@@ -1,7 +1,7 @@
 (ns ^:no-doc datalevin.test-adapter.rust
   "A synchronous, bounded Nippy process bridge. No reference engine calls."
   (:require
-   [datalevin.bits :refer [->Indexable ->Retrieved ->CustomReference]]
+   [datalevin.bits :refer [->Indexable ->Retrieved ->CustomReference serialization-allowlist]]
    [datalevin.sparselist :refer [ISparseIntArrayList ->SparseIntArrayList]]
    [datalevin.util :refer [raise]]
    [datalevin.buffer :as buffer]
@@ -89,6 +89,24 @@
                       {:operation operation}))
     {:kind :value :value value}))
 
+(defn- legacy-thaw-error [message]
+  ;; These are JVM codec bindings, not serialized application values. Match
+  ;; Nippy's public error context without running its decoder on the payload.
+  (let [bindings (into {} (remove (comp nil? val))
+                       {'*freeze-fallback* nippy/*freeze-fallback*
+                        '*final-freeze-fallback* nippy/*final-freeze-fallback*
+                        '*auto-freeze-compressor* nippy/*auto-freeze-compressor*
+                        '*custom-readers* nippy/*custom-readers*
+                        '*incl-metadata?* nippy/*incl-metadata?*
+                        '*shared-dict* nippy/*shared-dict*
+                        '*thaw-serializable-allowlist* (serialization-allowlist)
+                        '*thaw-xform* nippy/*thaw-xform*})]
+    (doto (ex-info message {:opts {:compressor :auto :encryptor :auto}
+                            :bindings bindings})
+      (.addSuppressed
+        (IllegalArgumentException.
+          "ByteBuffer must use BIG_ENDIAN order for DataInput/DataOutput semantics (have LITTLE_ENDIAN).")))))
+
 (defn- result-value [session operation response]
   (when-not (map? response)
     (raise "Rust adapter response must be a map" {:operation operation}))
@@ -109,7 +127,7 @@
     (adapter/unsupported! :rust operation
                           (or (:message response) "Unsupported Rust operation"))
     :error
-    (let [{:keys [class message data]} (:error response)]
+    (let [{:keys [class message data context]} (:error response)]
       (when-not (and (string? class) (string? message))
         (raise "Invalid Rust adapter error descriptor" {:response response}))
       (throw (case class
@@ -121,7 +139,10 @@
                "java.lang.NegativeArraySizeException" (NegativeArraySizeException. message)
                "java.util.NoSuchElementException" (java.util.NoSuchElementException. message)
                "java.io.IOException" (java.io.IOException. message)
-               "clojure.lang.ExceptionInfo" (ex-info message (or data {}))
+               "clojure.lang.ExceptionInfo"
+               (if (= :nippy/little-endian-thaw context)
+                 (legacy-thaw-error message)
+                 (ex-info message (or data {})))
                (adapter/unsupported! :adapter operation
                                      (str "Exception class is not mapped: " class)))))
     (raise "Invalid Rust adapter response status" {:response response})))
@@ -181,10 +202,8 @@
 (defn- deserialize-buffer! [peer session ^ByteBuffer buffer]
   (let [limit (.limit buffer)]
     (try
-      (when-not (= ByteOrder/BIG_ENDIAN (.order buffer))
-        (adapter/unsupported! :adapter :bits/deserialize-bf
-                              "Little-endian buffer decode errors are not mapped yet"))
-      (invoke-peer! peer session :bits/deserialize [(bits/get-bytes buffer)])
+      (invoke-peer! peer session :bits/deserialize-bf
+                    [(bits/get-bytes buffer) (= ByteOrder/LITTLE_ENDIAN (.order buffer))])
       ;; Matches the storage API even on codec errors and support gaps. Returned
       ;; values own their bytes; no borrowed buffer crosses the process boundary.
       (finally (.position buffer limit)))))

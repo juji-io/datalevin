@@ -3,7 +3,8 @@
   (:require [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.value :as value])
-  (:import [java.util UUID]))
+  (:import [java.util UUID]
+           [java.util.concurrent.atomic AtomicReference]))
 
 (def ^:dynamic *runtime* nil)
 
@@ -60,17 +61,23 @@
     ;; Callers first attach ownership, then check active before the next operation.
     result))
 
+(deftype Cleanup [^AtomicReference action]
+  clojure.lang.IFn
+  (invoke [_]
+    ;; Taking ownership clears both the resource callback and its runtime
+    ;; context, even when close throws or reenters its own close function.
+    (when-let [[runtime close] (.getAndSet action nil)]
+      (try (close)
+           (catch Throwable e
+             (throw (redacted-error runtime :close e)))))))
+
 (defn own!
-  "Attach one resource and return its idempotent close function."
+  "Attach one resource and return its idempotent close function. Completed
+  cleanup entries release their captured resource and runtime references."
   [runtime close]
-  (let [closed (atom false)
-        close (fn []
-                (when (compare-and-set! closed false true)
-                  (try (close)
-                       (catch Throwable e
-                         (throw (redacted-error runtime :close e))))))]
-    (swap! (:cleanup runtime) conj close)
-    close))
+  (let [cleanup (Cleanup. (AtomicReference. [runtime close]))]
+    (swap! (:cleanup runtime) conj cleanup)
+    (fn [] (cleanup))))
 
 (defn- charge-value! [runtime x size!]
   (let [control (:control runtime)

@@ -192,9 +192,12 @@
                 (let [request (assoc common :source-descriptors (vec (distinct (map :descriptor group))))
                       session (rt/invoke runtime :acquisition #(source/-open-session (:source (first group)) request))]
                   (when-not (satisfies? source/IQuerySourceSession session) (fail! :query-source/invalid :session))
-                  (rt/own! runtime #(source/-close-session! session))
-                  (let [registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
-                    (rt/own! runtime #(source/unregister-cancel! registration)))
+                  (let [close (rt/own! runtime #(source/-close-session! session))
+                        registration (source/register-cancel! (:control runtime) #(source/-cancel-session! session %))]
+                    ;; Keep cancellation active while close waits for provider
+                    ;; work. The first owner also covers registration failure.
+                    (rt/own! runtime #(try (close)
+                                         (finally (source/unregister-cancel! registration)))))
                   (contract/session-info! request (rt/invoke runtime :session #(source/-session-info session)))
                   (mapv #(assoc % :session session :request request :allow-once? (= 1 (count group))) group))))) groups)
         planned
