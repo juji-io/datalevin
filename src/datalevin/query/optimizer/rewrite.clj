@@ -87,12 +87,42 @@
                      (instance? Variable v)
                      (= sym (:symbol v))))))))
 
+(defn- substitutable-input?
+  "Keep key-sensitive inputs as bindings when a literal could broaden a match.
+  Predicate/function-only inputs still substitute. Native Long entity IDs and
+  typed Long values also retain their indexed constant access paths."
+  [parsed-q inputs sym value]
+  (or (nil? value) (boolean? value) (string? value) (keyword? value)
+      (symbol? value) (uuid? value) (bytes? value)
+      (= java.util.Date (class value))
+      (let [sources (into {} (map (fn [qin input]
+                                   [(get-in qin [:variable :symbol]) input])
+                                 (:qin parsed-q) inputs))]
+        (every?
+          (fn [{:keys [source pattern]}]
+            (let [database (get sources (if (instance? DefaultSrc source)
+                                         '$ (:symbol source)))
+                  attr     (:value (nth pattern 1 nil))]
+              (every?
+                (fn [[idx term]]
+                  (or (not= sym (:symbol term))
+                      (and (instance? Long value)
+                           (db/-searchable? database)
+                           (or (zero? (long idx))
+                               (and (= idx 2)
+                                    (#{:db.type/long :db.type/ref}
+                                      (get-in (db/-schema database)
+                                              [attr :db/valueType])))))))
+                (map-indexed vector pattern))))
+          (dp/collect #(instance? Pattern %) (:qwhere parsed-q))))))
+
 (defn- collection-input-candidate
   [parsed-q inputs input-idx qin]
   (when-let [v (scalar-coll-bind-var qin)]
     (let [sym (:symbol v)]
       (when-let [values (small-distinct-coll-values (nth inputs input-idx))]
         (when (and (= 1 (count values))
+                   (substitutable-input? parsed-q inputs sym (first values))
                    (not (contains? (find-var-symbols parsed-q) sym))
                    (not (contains? (with-var-symbols parsed-q) sym))
                    (not (some #(or-join-var? % sym) (:qorig-where parsed-q)))
@@ -143,9 +173,9 @@
                           val (nth inputs i)]
                       (when (and (instance? BindScalar qin)
                                  (instance? Variable v)
-                                 ;; keep sequential inputs as variables so
-                                 ;; function calls don't eagerly evaluate them
+                                 ;; Sequential values could evaluate as forms.
                                  (not (sequential? val))
+                                 (substitutable-input? parsed-q inputs s val)
                                  (not (some #(= s %) finds))
                                  (not (some #(or-join-var? % s) owheres)))
                         [i s])))

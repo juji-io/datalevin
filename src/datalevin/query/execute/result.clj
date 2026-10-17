@@ -184,9 +184,9 @@
                           (persistent!
                             (reduce (fn [m i] (assoc! m (nth symbols i) (get-i tuple i)))
                                     (transient {}) idxs))) tuples)]
-      (if (some #(QueryKey/containsBytes %) rows)
-        (sp/new-spillable-set rows {:initial-capacity (count rows)})
-        (set rows)))
+      ;; Return-map shaping must retain the query's key semantics too, including
+      ;; decimal scale and signed zero, rather than applying Clojure set equality.
+      (sp/new-spillable-set rows {:initial-capacity (count rows)}))
     #{}))
 
 (defn pull

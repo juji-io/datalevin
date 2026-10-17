@@ -12,12 +12,15 @@
   (:refer-clojure :exclude [assoc])
   (:require
    [datalevin.constants :as c]
+   [datalevin.datom :as datom]
    [datalevin.db :as db]
+   [datalevin.index :as index]
    [datalevin.inline :refer [assoc]]
    [datalevin.query-util :as qu]
    [datalevin.query.predicate :as qpred]
    [datalevin.query.resolve.context :refer [rel-with-attr]]
    [datalevin.relation :as r]
+   [datalevin.storage.scan :as scan]
    [datalevin.util :as u]
    [datalevin.validate :as vld])
   (:import
@@ -201,6 +204,22 @@
                   (.add acc (object-array [e])))))))))
     acc))
 
+(defn- key-candidates
+  [database [e a v :as pattern]]
+  (cond
+    (scan/content-scan? (index/value-type (get (db/-schema database) a)) v)
+    (db/-search database (assoc pattern 2 nil))
+
+    (and (nil? e) a (some? v))
+    (do
+      (vld/validate-indexed-attr (db/-schema database) a)
+      ;; AV entity probes echo the requested value. Decode the candidate range
+      ;; instead, so key checks see the stored value, including normalization.
+      (db/-range-datoms database :ave
+                        (datom/datom c/e0 a v) (datom/datom c/emax a v)))
+
+    :else (db/-search database pattern)))
+
 (defn- lookup-pattern-multi-value
   "Perform multiple AV lookups for bound value variable.
    More efficient than full table scan when value is bound to multiple values.
@@ -214,19 +233,9 @@
                               (or (qu/lookup-ref? v) (keyword? v)))
                        (db/entid db v)
                        v)]
-        (let [tuples (db/-search-tuples db [nil a v'])]
-          (when tuples
-            (let [^List ts tuples
-                  n        (.size ts)]
-              (if e-is-var?
-                (dotimes [i n]
-                  (let [^objects t (.get ts i)
-                        result     (object-array 2)]
-                    (aset result 0 (aget t 0))
-                    (aset result 1 v)
-                    (.add acc result)))
-                (dotimes [_ n]
-                  (.add acc (object-array [v])))))))))
+        (doseq [datom (key-candidates db [nil a v'])
+                :when (QueryKey/equals v' (:v datom))]
+          (.add acc (object-array (if e-is-var? [(:e datom) v] [v]))))))
     acc))
 
 (defn- resolve-value-pairs
@@ -372,14 +381,12 @@
 
       :value
       (when-let [^List tuples
-                 (db/-val-eq-scan-e-list
-                   db (pair-input-list value-pairs) 0 attr)]
+                 (lookup-pattern-multi-value db pattern value-values true)]
         (dotimes [i (.size tuples)]
           (let [^objects tuple (.get tuples i)
-                value-originals  (get values (aget tuple 0))
-                entity-originals (get entities (aget tuple 1))]
-            (when (and entity-originals value-originals)
-              (add-bounded-match! acc entity-originals value-originals)))))
+                entity-originals (get entities (aget tuple 0))]
+            (when entity-originals
+              (add-bounded-match! acc entity-originals [(aget tuple 1)])))))
 
       :full
       (when-let [^List tuples (db/-search-tuples db [nil attr nil])]
@@ -414,6 +421,25 @@
                    [(:e datom) (:a datom) (:v datom)]))]
     (lookup-pattern-coll datoms pattern)))
 
+(defn- lookup-bound-value
+  "Use the index for candidates, then check the stored value as a join key.
+  An index can normalize a bound value (for example signed floating zero);
+  removing its column without checking would lose the binding's equality."
+  [context database pattern search-pattern entity-values value]
+  (let [[_ _ resolved-value] search-pattern
+        original-entity (first pattern)
+        bound-entity (substitute-constant context original-entity)
+        entities (if entity-values
+                   (resolve-entity-pairs database entity-values)
+                   [[bound-entity (first search-pattern)]])
+        rows (for [[original eid] entities
+                   datom (key-candidates database (assoc search-pattern 0 eid))
+                   :when (QueryKey/equals resolved-value (:v datom))]
+               [(if (some? original) original (:e datom))
+                (:a datom) value])]
+    (r/relation! (into {} (keep-indexed #(when (qu/binding-var? %2) [%2 %1])) pattern)
+                 (u/map-fl to-array rows))))
+
 (defn lookup-pattern-db
   [context db pattern]
   (let [[e a v]           pattern
@@ -424,6 +450,8 @@
                                  (mapv #(if (or (qu/free-var? %) (= % '_))
                                           nil
                                           %))))
+        bound-value       (when (qu/binding-var? v)
+                            (substitute-constant context v))
         scan-count        (delay (long (db/-count db @search-pattern)))
         entity-values     (when (and (qu/binding-var? e) (keyword? a))
                             (bound-values context e))
@@ -458,6 +486,9 @@
                                  (long (.size ^Set value-values))
                                  @scan-count))]
     (cond
+      (some? bound-value)
+      (lookup-bound-value context db pattern @search-pattern entity-values bound-value)
+
       (db/pending-tx-cache? db)
       (lookup-overlay context db pattern entity-values)
 
@@ -549,9 +580,16 @@
       (if (< i n)
         (let [t (nth tuple i)
               p (nth pattern i)]
-          (if (or (= p '_) (qu/free-var? p) (QueryKey/equiv t p))
-            (recur (unchecked-inc i))
-            false))
+          (cond
+            (= p '_) (recur (unchecked-inc i))
+            (qu/free-var? p)
+            (let [first-idx (.indexOf ^List pattern p)]
+              (if (or (= first-idx i)
+                      (QueryKey/equiv t (nth tuple first-idx)))
+                (recur (unchecked-inc i))
+                false))
+            (QueryKey/equiv t p) (recur (unchecked-inc i))
+            :else false))
         true))))
 
 (defn lookup-pattern-coll
