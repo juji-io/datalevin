@@ -1,6 +1,6 @@
 (ns datalevin.query.source.value
   "Owned logical values and explicit custom-value validation/accounting hooks."
-  (:import [clojure.lang APersistentVector$SubVector Ratio RT Sorted]
+  (:import [clojure.lang APersistentVector$SubVector BigInt Ratio RT Sorted]
            [java.math BigDecimal BigInteger]
            [java.time Duration Instant Period]
            [java.util Date UUID]))
@@ -69,26 +69,40 @@
       (list? x) (apply list (map copy x))
       :else x)))
 
+(defn- add-charges
+  "Add exact charge values. A pair of longs stays on the primitive path;
+  larger integer charges use BigInt arithmetic without boxed math."
+  ([a b]
+   (if (and (instance? Long a) (instance? Long b))
+     (+' (long a) (long b))
+     (.add ^BigInt (bigint a) ^BigInt (bigint b))))
+  ([a b c] (add-charges (add-charges a b) c))
+  ([a b c d] (add-charges (add-charges (add-charges a b) c) d)))
+
 (defn add-charge
   "Add fixed overhead with primitive dispatch for long charges and exact overflow."
   [^long overhead charge]
   (if (instance? Long charge)
     (+' overhead (long charge))
-    (clojure.lang.Numbers/addP overhead charge)))
+    (add-charges overhead charge)))
 
 (defn multiply-charge
   "Scale a charge without truncating an arbitrarily large retained value."
   [^long factor charge]
   (if (instance? Long charge)
     (*' factor (long charge))
-    (clojure.lang.Numbers/multiplyP factor charge)))
+    (.multiply (BigInt/valueOf factor) ^BigInt (bigint charge))))
 
 (defn at-most?
   "Compare against a long bound, preserving exact charges and deadlines beyond it."
   [n ^long maximum]
   (if (instance? Long n)
     (<= (long n) maximum)
-    (clojure.lang.Numbers/lte n maximum)))
+    (and (number? n)
+         ;; Numbers.compare treats NaN as equal to every number, unlike <=.
+         (not (and (or (instance? Double n) (instance? Float n))
+                   (Double/isNaN (double n))))
+         (not (pos? (compare n maximum))))))
 
 (defn- metadata-node? [x]
   (cond
@@ -119,12 +133,13 @@
   charge)
 
 (defn- collection-overhead [x observe! backing? metadata-phase]
-  (+' (charge-part (+' 64 (*' 48 (count x))) observe!)
-      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0)
-      ;; A view pins the entire parent, including elements outside its range
-      ;; and the parent's metadata. An owned copy detaches that parent.
-      (if (and backing? (instance? APersistentVector$SubVector x))
-        (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase) 0)))
+  (add-charges
+    (charge-part (+ 64 (* 48 (count x))) observe!)
+    (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0)
+    ;; A view pins the entire parent, including elements outside its range
+    ;; and the parent's metadata. An owned copy detaches that parent.
+    (if (and backing? (instance? APersistentVector$SubVector x))
+      (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase) 0)))
 
 (defn- value-charge* [x observe! backing? metadata-phase]
   (when observe! (observe! 0))
@@ -140,11 +155,13 @@
     (or (boolean? x) (instance? Long x) (instance? Integer x)
         (instance? Byte x) (instance? Short x) (char? x)
         (instance? Double x) (instance? Float x)) (charge-part 32 observe!)
-    (string? x) (charge-part (+' 64 (*' 2 (count x))) observe!)
+    (string? x) (charge-part (+ 64 (* 2 (count x))) observe!)
     (or (keyword? x) (symbol? x))
-    (+' (charge-part 96 observe!) (value-charge* (namespace x) observe! backing? metadata-phase)
-        (value-charge* (name x) observe! backing? metadata-phase)
-        (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
+    (add-charges
+      (charge-part 96 observe!)
+      (value-charge* (namespace x) observe! backing? metadata-phase)
+      (value-charge* (name x) observe! backing? metadata-phase)
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
     (instance? UUID x) (charge-part 48 observe!)
     (= Date (class x)) (charge-part 64 observe!)
     (or (instance? Instant x) (instance? Duration x) (instance? Period x))
@@ -153,20 +170,25 @@
     (instance? BigInteger x)
     (charge-part (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8)) observe!)
     (instance? clojure.lang.BigInt x)
-    (+' (charge-part 32 observe!) (value-charge* (biginteger x) observe! backing? metadata-phase))
+    (add-charges (charge-part 32 observe!)
+                 (value-charge* (biginteger x) observe! backing? metadata-phase))
     (instance? BigDecimal x)
-    (+' (charge-part 64 observe!) (value-charge* (.unscaledValue ^BigDecimal x) observe! backing? metadata-phase))
-    (ratio? x) (+' (charge-part 64 observe!) (value-charge* (.numerator ^Ratio x) observe! backing? metadata-phase)
-                   (value-charge* (.denominator ^Ratio x) observe! backing? metadata-phase))
+    (add-charges (charge-part 64 observe!)
+                 (value-charge* (.unscaledValue ^BigDecimal x) observe! backing? metadata-phase))
+    (ratio? x) (add-charges (charge-part 64 observe!)
+                            (value-charge* (.numerator ^Ratio x) observe! backing? metadata-phase)
+                            (value-charge* (.denominator ^Ratio x) observe! backing? metadata-phase))
     (custom-comparator? x) (fail! :query-source/unsupported :values)
     (plain-map? x)
-    (+' (charge-part (+' 96 (*' 64 (count x))) observe!)
-        (reduce (fn [n [k v]] (+' n (value-charge* k observe! backing? metadata-phase)
-                                   (value-charge* v observe! backing? metadata-phase))) 0 x)
-        (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
+    (add-charges
+      (charge-part (+ 96 (* 64 (count x))) observe!)
+      (reduce (fn [n [k v]] (add-charges n (value-charge* k observe! backing? metadata-phase)
+                                          (value-charge* v observe! backing? metadata-phase))) 0 x)
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
     (or (vector? x) (set? x) (list? x))
-    (+' (collection-overhead x observe! backing? metadata-phase)
-        (reduce (fn [n child] (+' n (value-charge* child observe! backing? metadata-phase))) 0 x))
+    (add-charges
+      (collection-overhead x observe! backing? metadata-phase)
+      (reduce (fn [n child] (add-charges n (value-charge* child observe! backing? metadata-phase))) 0 x))
     :else (fail! :query-source/unsupported :values)))
 
 (defn value-charge
@@ -263,20 +285,26 @@
    ;; can still pin data, and need a charge and a reservation of their own.
    (if (and (empty? rows) (nil? (meta rows))
             (not (instance? APersistentVector$SubVector rows))) 0
-       (+' (charge-part 64 observe!) (value-charge columns observe!)
-           (collection-overhead rows observe! true nil)
-           (reduce
-             (fn [n row]
-               (when-not (and (vector? row) (= (count columns) (count row)))
-                 (fail! :query-source/invalid :batch))
-               (+' n (collection-overhead row observe! true nil)
-                   (reduce
-                     (fn [n i]
-                       (let [x (nth row i)
-                             bytes (value-charge x observe!)
-                             column (nth columns i)]
-                         ;; The value walk already validated nested :data.
-                         (when-not (if (nil? x) (:nullable? column)
-                                       (matches-type*? (:type column) x true nil))
-                           (fail! :query-source/invalid :batch))
-                         (+' n bytes))) 0 (range (count row))))) 0 rows)))))
+       (add-charges
+         (charge-part 64 observe!)
+         (value-charge columns observe!)
+         (collection-overhead rows observe! true nil)
+         (reduce
+           (fn [n row]
+             (when-not (and (vector? row) (= (count columns) (count row)))
+               (fail! :query-source/invalid :batch))
+             (add-charges
+               n
+               (collection-overhead row observe! true nil)
+               (reduce
+                 (fn [n i]
+                   (let [x (nth row i)
+                         bytes (value-charge x observe!)
+                         column (nth columns i)]
+                     ;; The value walk already validated nested :data.
+                     (when-not (if (nil? x) (:nullable? column)
+                                   (matches-type*? (:type column) x true nil))
+                       (fail! :query-source/invalid :batch))
+                     (add-charges n bytes)))
+                 0 (range (count row)))))
+           0 rows)))))

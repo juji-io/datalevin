@@ -112,7 +112,7 @@
   (is (= {:spi-version 1 :features #{}}
          (contract/negotiate (assoc tuple-info :features #{:unknown/optional}))))
   (is (= :query-source/version
-         (category #(contract/negotiate (assoc tuple-info :spi-versions #{2})))))
+         (category #(contract/negotiate (assoc tuple-info :spi-versions #{9999})))))
   (is (= :query-source/unsupported
          (category #(contract/negotiate
                       (assoc tuple-info :features #{:unknown/required}

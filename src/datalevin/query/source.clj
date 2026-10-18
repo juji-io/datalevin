@@ -1,5 +1,5 @@
 (ns datalevin.query.source
-  "Experimental embedded query-source SPI v1.
+  "Unreleased embedded query-source SPI prototype; the contract may change in place.
 
   Sources are caller-owned. Sessions and owned-batch cursors belong to one
   invocation. See doc/query-source-spi.md for the complete contract."

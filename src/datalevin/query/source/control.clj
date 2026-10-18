@@ -1,7 +1,8 @@
 (ns ^:no-doc datalevin.query.source.control
   "Invocation-owned controls, cancellation deadlines, and shared resource ledger."
   (:require [datalevin.query.source.value :as value :refer [fail!]])
-  (:import [java.util.concurrent CompletableFuture ScheduledThreadPoolExecutor
+  (:import [java.math BigInteger]
+           [java.util.concurrent CompletableFuture ScheduledThreadPoolExecutor
             ThreadFactory TimeUnit ScheduledFuture]))
 
 (def default-limits
@@ -23,6 +24,13 @@
 
 (declare cancel! check-active!)
 
+(defn- remaining-nanos ^BigInteger [deadline]
+  (.max BigInteger/ZERO
+        (.subtract (biginteger deadline) (biginteger (System/nanoTime)))))
+
+(defn- capped-long ^long [^BigInteger n]
+  (.longValue (.min (biginteger Long/MAX_VALUE) n)))
+
 (defn create
   ([] (create {}))
   ([{:keys [limits timeout-ms parent]}]
@@ -33,11 +41,14 @@
                            (and (integer? v) (<= 0 v Long/MAX_VALUE)
                                 (or (not (#{:batch-rows :batch-bytes
                                             :in-flight-batches :concurrent-requests} k))
-                                    (pos? v)))) limits)
+                                    (pos? (long v))))) limits)
                  (or (nil? timeout-ms) (and (integer? timeout-ms)
                                            (<= 0 timeout-ms Long/MAX_VALUE))))
      (fail! :query-source/invalid :context))
-   (let [local-deadline (when timeout-ms (+' (System/nanoTime) (*' timeout-ms 1000000)))
+   (let [local-deadline (when timeout-ms
+                          (.add (biginteger (System/nanoTime))
+                                (.multiply (biginteger timeout-ms)
+                                           (biginteger 1000000))))
          deadlines (keep identity [local-deadline (when parent (.-deadline ^Control parent))])
          control (Control. (if parent (merge-with min (.-limits ^Control parent) limits)
                                (merge default-limits limits))
@@ -54,7 +65,7 @@
          (reset! (.-timer control)
                  (.schedule ^ScheduledThreadPoolExecutor @scheduler
                             ^Runnable #(cancel! control {:error :query/timeout :phase :execution})
-                            (long (min Long/MAX_VALUE (max 0 (-' deadline (System/nanoTime)))))
+                            (capped-long (remaining-nanos deadline))
                             TimeUnit/NANOSECONDS)))
        (when parent (swap! (.-children ^Control parent) conj control)))
      control)))
@@ -64,7 +75,7 @@
 (defn cancelled? [^Control control] (boolean (:reason @(.-state control))))
 (defn remaining-time-ms [^Control control]
   (when-let [deadline (.-deadline control)]
-    (long (min Long/MAX_VALUE (max 0 (quot (-' deadline (System/nanoTime)) 1000000))))))
+    (capped-long (.divide (remaining-nanos deadline) (biginteger 1000000)))))
 
 (defn- dispatch! [^Registration registration reason]
   (CompletableFuture/runAsync

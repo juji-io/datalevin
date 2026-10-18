@@ -342,9 +342,12 @@
           bytes (v/batch-charge-bytes (:columns batch) rows
                   (fn [increment]
                     (control/check-active! (:control request))
-                    (batch-limit! :batch-bytes (vswap! charged +' increment)
+                    ;; Each accepted running total fits the long request cap;
+                    ;; the next increment may still promote the sum to BigInt.
+                    (batch-limit! :batch-bytes
+                                  (vswap! charged #(v/add-charge (long %) increment))
                                   (:max-bytes request))))]
       (ensure! (= (:byte-count batch) bytes) :batch)
-      (when (or (pos? bytes) (:reservation batch))
+      (when (or (not (v/at-most? bytes 0)) (:reservation batch))
         (control/accept! (:control request) (:reservation batch) bytes))))
   batch)

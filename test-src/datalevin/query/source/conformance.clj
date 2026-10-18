@@ -12,7 +12,7 @@
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
-           [java.util Date HashSet Objects Random UUID]
+           [java.util Collection Date HashSet Objects Random UUID]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
 (defn- descriptor [contract]
@@ -155,7 +155,7 @@
    '{:find [?a ?b] :in [$s] :where [[$s ?a ?v] [$s ?b ?v] [(< ?a ?b)]]}])
 
 (defn- repeated-variable-columns! [make-source]
-  (doseq [width [2 3], mask (range (bit-shift-left 1 width)), batch-size [1 4]]
+  (doseq [width [2 3], mask (range (bit-shift-left 1 (long width))), batch-size [1 4]]
     (let [nullable (mapv #(bit-test mask %) (range width))
           info (descriptor {:kind :tuple
                             :columns (mapv #(hash-map :type :long :nullable? %) nullable)})
@@ -208,7 +208,7 @@
   (-retained-bytes [_] (+ 128 (long (value/value-charge type)) (long (value/value-charge key))))
   Object
   ;; Descriptor equality is Clojure equality; keys retain Java key equality.
-  (hashCode [_] (unchecked-int (bit-xor (hash type) (Objects/hashCode key))))
+  (hashCode [_] (unchecked-int (bit-xor (long (hash type)) (Objects/hashCode key))))
   (equals [_ other]
     (and (instance? NominalRef other)
          (= type (.-type ^NominalRef other))
@@ -239,7 +239,8 @@
     (is (= (.hashCode ^Object left) (.hashCode ^Object right)))
     (is (= (hash left) (hash right))))
   ;; Distinct identities may collide; only equal identities must hash alike.
-  (is (= (if same? 1 2) (count (HashSet. [left right]))))
+  (let [^Collection refs [left right]]
+    (is (= (if same? 1 2) (count (HashSet. refs)))))
   (is (= (if same? 1 2) (count (set [left right])))))
 
 (defn- nominal-descriptor-validation! [make-source]
@@ -268,7 +269,7 @@
           observed (observe (make-source (tuple-descriptor :data) (mapv vector (range) refs)))]
       ;; Three equivalent descriptors plus eight distinct nominal variants.
       ;; Grouping must preserve changed extra values as well as their presence.
-      (is (= 9 (count (HashSet. refs))))
+      (is (= 9 (count (HashSet. ^Collection refs))))
       (is (= 9 (d/q '[:find (count ?ref) . :in $s :where [$s _ ?ref]] (:source observed))))
       (is (= {1 8, 3 1}
              (frequencies

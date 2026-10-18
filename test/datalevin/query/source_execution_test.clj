@@ -14,50 +14,6 @@
 
 (def pairs-query '[:find ?id ?name :in $s :where [$s ?id ?name]])
 
-(deftest version-two-metadata-does-not-activate-version-two-execution
-  ;; A dual-version descriptor's namespaced metadata is inert to v1 core.
-  ;; This fixture only implements the selected v1 path; it does not certify v2.
-  (doseq [versions [#{1 2} #{2}]
-          mode [:query :explain :run]]
-    (let [descriptor (assoc tuple-info :spi-versions versions
-                            :datalevin.query.source/v2
-                            {:features #{:test/v2-feature}
-                             :required-features #{:test/v2-feature}
-                             :read-capabilities #{:snapshot}
-                             :scope {:id "test-scope" :kind :full :parameters {}}
-                             :completion {:domain :finite :extent :all-matches}})
-          delegate (fake/source descriptor [[1 "one"]])
-          requests (atom [])
-          s (reify source/IQuerySource
-              (-source-info [_] descriptor)
-              (-open-session [_ request]
-                (swap! requests conj request)
-                (source/-open-session delegate request))
-              (-plan-source [_ session request]
-                (swap! requests conj request)
-                (source/-plan-source delegate session request)))
-          run #(case mode
-                 :query (d/q pairs-query s)
-                 :explain (d/explain {} pairs-query s)
-                 :run (d/explain {:run? true} pairs-query s))]
-      (if (versions 1)
-        (do
-          (let [result (run)]
-            (case mode
-              :query (is (= #{[1 "one"]} result))
-              :explain (is (false? (:executed? result)))
-              :run (is (= 1 (:result-rows result)))))
-          (is (= 2 (count @requests)))
-          (doseq [request @requests]
-            (is (= {:spi-version 1 :features #{}}
-                   (select-keys request [:spi-version :features])))
-            (is (not-any? #(contains? request %)
-                          [:planning-phase :scope-id :read-requirements]))))
-        (do
-          (is (= :query-source/version (category run)))
-          (is (empty? @requests))
-          (is (empty? @(:events delegate))))))))
-
 (deftest query-entry-and-fresh-invocations
   (let [rows [[1 "Ada"] [2 nil] [3 "Ada"] [3 "Ada"]]
         s (fake/source tuple-info rows)]
