@@ -2489,6 +2489,23 @@ reservations unwind on failure, and closed or foreign captures cannot form new
 requests. Wiring typed export derivation and these annotations into the active
 shared planner/rule/union execution paths remains part of the coordinated switch.
 
+The internal [`source.scope`](../src/datalevin/query/source/scope.clj) pass now
+captures those typed boundary interfaces from complete shared branch schemas.
+It maps actual parent inputs only through explicit head arguments/exports,
+keeps the full rule-head set key before wildcard or repeated-argument mapping,
+and retains each branch's complete type contract. Heterogeneous combined outputs
+use `:data` without converting values; equality to a typed fact can subsequently
+narrow that general contract. Its completion adapter accepts already completed
+branch relations, owns the declared head/export values, and delegates projection,
+union and argument unification to shared operators. Attribute expansion uses
+bag union and restores the captured keyword. Retaining containers are admitted
+before allocation, partial admissions unwind on error, and temporary list views
+observe cancellation/closure inside shared loops without escaping in results.
+This adapter does not evaluate branches, join caller witnesses, or authorize
+replay. Producers must already enforce decoding, arithmetic and intermediate
+limits. The active driver still needs to select these interfaces and connect
+region evaluation with the remaining resource audit and coordinated switch.
+
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response
 order. Clause IDs identify occurrences, not text: repeated patterns or predicates

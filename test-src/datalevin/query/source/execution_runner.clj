@@ -15,6 +15,7 @@
             [datalevin.query.source-cursor-test]
             [datalevin.query.source-lowering-test]
             [datalevin.query.source-region-test]
+            [datalevin.query.source-scope-test]
             [datalevin.query.access-dependency-test]
             [datalevin.query.source-native-value-test]
             [datalevin.query.source-native-data-test]
@@ -37,6 +38,7 @@
                                            'datalevin.query.source-cursor-test
                                            'datalevin.query.source-lowering-test
                                            'datalevin.query.source-region-test
+                                           'datalevin.query.source-scope-test
                                            'datalevin.query.access-dependency-test
                                            'datalevin.query.source-native-value-test
                                            'datalevin.query.source-native-data-test

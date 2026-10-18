@@ -48,6 +48,17 @@
         other (assoc t :parameters {:epoch 1})]
     (is (false? (boolean (dependency/supplies? (column '?e t false) (column '?e other false)))))))
 
+(deftest data-admits-specific-types-and-joins-retain-the-more-precise-contract
+  (let [t {:kind :custom :name :example/entity :version 1 :fingerprint "entity:v1" :parameters {:epoch 7}}
+        known {'?e (column '?e :data true)}
+        precise (column '?e t false)]
+    (is (dependency/supplies? precise (column '?e :data false)))
+    (is (false? (boolean (dependency/supplies? (column '?e :data false) precise))))
+    (is (= {'?e precise} (dependency/extend-columns known [precise])))
+    (is (= {'?e precise} (dependency/extend-columns {'?e precise} [(column '?e :data true)])))
+    (is (= :complete (:status (run ['?e] [0]
+                               [(assoc (choice 0 [] ['?v]) :requires [(column '?e :data false)])]))))))
+
 (deftest permissions-and-coverage-are-independent-of-provided-columns
   (let [a (assoc (choice 0 [] ['?a]) :resources #{:once})
         b (assoc (choice 1 ['?a] ['?b]) :resources #{:once})

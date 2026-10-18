@@ -7,9 +7,11 @@
             [datalevin.query.source.control :as control]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]
+            [datalevin.rules.relation :as rule-relation]
             [datalevin.relation :as relation])
   (:import [datalevin.utl QueryKey QueryKey$KeyMap QueryKey$KeySet]
-           [java.util AbstractList Arrays Objects]))
+           [java.util AbstractList Arrays Objects Random]
+           [org.eclipse.collections.impl.list.mutable FastList]))
 
 (deftest binary-keys-share-equality-hash-and-lookup
   (doseq [x [(byte-array 0) (byte-array [0 -1 2])
@@ -124,3 +126,43 @@
     (is (= #{[:first 1] [:second 2]} (set (for [[k v] m] [k v]))))
     (is (= #{:first :second} (set (keys m))))
     (is (= #{1 2} (set (vals m))))))
+
+(deftest rule-constants-use-byte-aware-equality-at-every-head-position
+  (let [a (byte-array [1 2]) b (byte-array [1 2])
+        body (relation/relation! {'?a 0 '?b 1 '?c 2} (FastList. [(object-array [42 :tag a])]))
+        result (rule-relation/map-rule-result body ['?a '?b '?c] [42 '?x b])]
+    (is (= [[:tag]] (mapv vec (:tuples result))))))
+
+(deftest generated-rule-arguments-agree-with-eager-byte-and-numeric-unification
+  (let [random (Random. 142893)
+        bank [nil 1 1N 2 :tag "value" (byte-array [1]) (byte-array [1]) (byte-array [2])
+              [1 (byte-array [1])] [1N (byte-array [1])] {:key (byte-array [2])}]
+        choose #(nth bank (.nextInt random (count bank)))
+        head ['?a '?b '?c '?d]
+        var? #(and (symbol? %) (.startsWith (name %) "?"))]
+    (dotimes [_ 100]
+      (let [input (repeatedly 12 #(vec (repeatedly 4 choose)))
+            input (vec input)
+            args (mapv (fn [i]
+                         (if (.nextBoolean random) (nth ['?x '?y '?x '?z] i)
+                             (value/owned-copy (nth (first input) i)))) (range 4))
+            variables (vec (distinct (filter var? args)))
+            expected
+            (reduce (fn [output row]
+                      (let [bound (reduce (fn [bound [argument x]]
+                                            (when bound
+                                              (if (var? argument)
+                                                (if (contains? bound argument)
+                                                  (when (QueryKey/equiv (get bound argument) x) bound)
+                                                  (assoc bound argument x))
+                                                (when (QueryKey/equiv argument x) bound))))
+                                          {} (map vector args row))]
+                        (if bound
+                          (let [row (mapv bound variables)]
+                            (if (some #(QueryKey/equals % row) output) output (conj output row))) output)))
+                    [] input)
+            body (relation/relation! (zipmap head (range)) (FastList. (mapv object-array input)))
+            result (rule-relation/map-rule-result body head args)
+            actual (mapv (fn [tuple] (mapv #(aget ^objects tuple (long (get (:attrs result) %))) variables))
+                         (:tuples result))]
+        (is (QueryKey/equals expected actual))))))

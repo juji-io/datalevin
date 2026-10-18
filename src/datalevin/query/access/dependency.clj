@@ -6,22 +6,27 @@
 
 (defn supplies?
   "Whether every value declared by from is admitted by to. Complete logical
-  types are compared without coercion or inference from observed values."
+  types are compared without coercion or inference from observed values. :data
+  admits any already validated logical type."
   [from to]
-  (and from (= (:type from) (:type to))
+  (and from (or (= (:type from) (:type to)) (= :data (:type to)))
        (or (:nullable? to) (not (:nullable? from)))))
 
 (defn extend-columns
   "Extend a conjunction's schema after a selected operator. A join can remove
-  nulls, but cannot establish equality between incompatible complete types."
+  nulls and narrow :data by a declared fact type, but cannot establish equality
+  between incompatible complete types."
   [known columns]
   (reduce (fn [known column]
             (when known
               (let [variable (:variable column) before (get known variable)]
-                (when (or (nil? before) (= (:type before) (:type column)))
+                (when (or (nil? before) (= (:type before) (:type column))
+                          (= :data (:type before)) (= :data (:type column)))
                   (assoc known variable
-                         (assoc column :nullable? (and (:nullable? column)
-                                                      (get before :nullable? true))))))))
+                         (assoc column :type (if (and before (= :data (:type column)))
+                                               (:type before) (:type column))
+                                :nullable? (and (:nullable? column)
+                                                (get before :nullable? true))))))))
           known columns))
 
 (defn schedule

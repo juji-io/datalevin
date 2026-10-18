@@ -16,6 +16,7 @@
    [datalevin.rules.clause :refer [rule-args rule-call? rule-head]]
    [datalevin.util :as u :refer [raise]])
   (:import
+   [datalevin.utl QueryKey]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List HashSet]))
 
@@ -85,7 +86,10 @@
         values (object-array n)]
     (dotimes [i n]
       (let [[idx value] (checks i)]
-        (aset idxs i (int idx))
+        ;; Retain the native equality loop for constants without bytes. The
+        ;; sign bit records byte-aware comparison without another flags array.
+        (aset idxs i (int (if (QueryKey/containsBytes value)
+                           (bit-or (long idx) (long Integer/MIN_VALUE)) idx)))
         (aset values i value)))
     [idxs values]))
 
@@ -94,7 +98,10 @@
   (let [n (alength idxs)]
     (loop [i 0]
       (if (< i n)
-        (if (= (aget tuple (aget idxs i)) (aget values i))
+        (if (let [idx (aget idxs i)]
+              (if (neg? idx)
+                (QueryKey/equiv (aget tuple (bit-and idx Integer/MAX_VALUE)) (aget values i))
+                (= (aget tuple idx) (aget values i))))
           (recur (unchecked-inc-int i))
           false)
         true))))
@@ -145,7 +152,9 @@
   (let [n (alength left)]
     (loop [i 0]
       (if (< i n)
-        (if (= (aget tuple (aget left i)) (aget tuple (aget right i)))
+        (if (let [a (aget tuple (aget left i)) b (aget tuple (aget right i))]
+              (or (= a b)
+                  (and (QueryKey/containsBytes b) (QueryKey/equiv a b))))
           (recur (unchecked-inc-int i))
           false)
         true))))

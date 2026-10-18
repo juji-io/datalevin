@@ -14,7 +14,8 @@
     datalevin.query.source.inputs datalevin.query.source.join
     datalevin.query.source.binding datalevin.query.source.access
     datalevin.query.source.session datalevin.query.source.cursor
-    datalevin.query.source.lowering datalevin.query.source.region])
+    datalevin.query.source.lowering datalevin.query.source.region
+    datalevin.query.source.scope])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))
