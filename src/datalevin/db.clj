@@ -95,6 +95,10 @@
 (extend-type Object ISearchable (-searchable? [_] false))
 (extend-type nil ISearchable (-searchable? [_] false))
 
+(defprotocol IControlledTuples
+  (-init-tuples-controlled [db out attr get-v? policy]
+    "Enumerate an attribute with explicit admission and bounded decoding."))
+
 (defprotocol ITuples
   (-init-tuples [db out a v-range pred get-v?])
   (-init-tuples-list [db a v-range pred get-v?])
@@ -845,6 +849,15 @@
       (clear eavt)
       (clear avet)
       db))
+
+  IControlledTuples
+  (-init-tuples-controlled
+    [_ out attr get-v? policy]
+    ((:check! policy))
+    (when-let [props (get (:schema policy) attr)]
+      (let [kv (.-lmdb ^datalevin.storage.Store store)]
+        (scans/ave-tuples-scan-controlled
+          kv out (:db/aid props) get-v? policy))))
 
   ITuples
   (-init-tuples

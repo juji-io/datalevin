@@ -172,6 +172,36 @@
             v (idx/avg-buffer->v lmdb (lmdb/k kv))]
         (.add out (object-array [e v]))))))
 
+(defn ave-tuples-scan-controlled
+  "Enumerate a complete attribute through the ordinary AVE scan driver with
+  explicit row admission and a bounded raw-value visitor. This execution-only
+  API neither samples nor populates native tuple/result caches. The policy's
+  visitor must complete synchronously before the cursor advances."
+  [lmdb ^Collection out aid get-v? {:keys [check! admit-row! visit-value!]}]
+  (check!)
+  (let [failure (volatile! nil)]
+    (try
+      ;; A complete attribute uses its fixed aid prefix. Neither wildcard
+      ;; execution nor range setup needs a value codec or custom order function.
+      (visit-list-key-range
+        lmdb c/ave
+        (fn [kv]
+          (try
+            (check!)
+            (admit-row!)
+            (let [eid (.getLong ^ByteBuffer (lmdb/v kv) 0)]
+              (if get-v?
+                (visit-value! (lmdb/k kv) eid
+                              (fn [value] (check!) (.add out (object-array [eid value]))))
+                (.add out (object-array [eid]))))
+            (catch Throwable e (vreset! failure e) (throw e))))
+        [:closed-open (int aid) (unchecked-inc-int (int aid))] :int :id)
+      ;; The ordinary storage visitor adds native context to failures. Preserve
+      ;; the original controlled admission/cancellation error after that scan
+      ;; has unwound its cursor and transaction leases.
+      (catch Throwable e (throw (or @failure e)))))
+  (check!))
+
 (defn ave-tuples-scan-need-v-vpred
   [lmdb ^Collection out vpred aid vt val-ranges sample-indices]
   (ave-tuples-scan*

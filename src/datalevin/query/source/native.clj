@@ -25,6 +25,7 @@
            [java.util Iterator]))
 
 (defn validate! [database]
+  (when-not (instance? DB database) (fail! :query-source/unsupported :native-view))
   (when (or (db/remote-store? (.-store ^DB database))
             (db/pending-tx-cache? database)
             (and (u/supports-virtual-threads?) (.isVirtual (Thread/currentThread)))
@@ -34,13 +35,18 @@
 (defn with-views
   "Pin each native store on the query's platform thread for the whole invocation."
   [databases f]
+  (doseq [database databases] (validate! database))
   (letfn [(pin [stores snapshots]
             (if-let [^Store store (first stores)]
               (let [kv (.-lmdb store)]
                 (storage/maybe-ensure-current! store)
                 (custom/with-snapshot kv
-                  (let [schema (schema/load-schema kv)]
-                    (pin (next stores) (assoc snapshots store {:kv kv :schema schema})))))
+                  (let [schema (schema/load-schema kv) closed? (atom false)
+                        context ^datalevin.custom_datalog.ReadContext (.get custom/read-context)
+                        snapshot {:kv kv :schema schema :closed? closed?
+                                  :thread (Thread/currentThread) :rtx (.-rtx context)}]
+                    (try (pin (next stores) (assoc snapshots store snapshot))
+                         (finally (reset! closed? true))))))
               (f snapshots)))]
     (pin (distinct (map #(.-store ^DB %) databases)) {})))
 
@@ -72,6 +78,23 @@
                                   [:custom/type :definition :payload]))
             {:kind :native-custom-data}))
         (fail! :query-source/unsupported :native-type))))
+
+(defn check-view!
+  "A controlled native step borrows its pinned view only on the owning thread."
+  [control snapshot]
+  (source/check-active! control)
+  (when-not (and snapshot (:closed? snapshot) (not @(:closed? snapshot))
+                 (identical? (:thread snapshot) (Thread/currentThread)))
+    (fail! :query-source/invalid :native-view)))
+
+(defn logical-type!
+  "Validate a bounded native decoder without invoking arbitrary custom codecs.
+  Nullable native tuple components use the broad logical :data envelope."
+  [snapshot attribute]
+  (let [t (attribute-type snapshot attribute)]
+    (when (= :native-custom-data (:kind t))
+      (fail! :query-source/unsupported :native-type))
+    (if (map? t) :data t)))
 
 (defn- matches-native-type? [type x check!]
   ;; Native heterogeneous tuples retain absent component values as nil. The
@@ -236,6 +259,49 @@
                        (fn [_ _ eid] (emit [eid attribute])))
        (finally (source/release! token))))))
 
+(defn raw-visitor
+  "Build a synchronous bounded decoder for an existing native scan. Its emit
+  callback borrows [entity attribute value] until it returns; retaining values
+  requires a separate owned admission. This function opens no scan or cursor."
+  [control {:keys [kv]} attribute type emit]
+  (let [check! #(source/check-active! control)]
+    (fn [rtx ^ByteBuffer raw eid]
+      (if (= :native-custom-data (:kind type))
+        (let [id (native-value/custom-reference-id raw)
+              payloads (i/get-dbi kv c/custom-values false)]
+          (lmdb/put-read-key payloads rtx id :id)
+          (if-let [^ByteBuffer buffer (lmdb/get-kv payloads rtx)]
+            (visit-value control buffer (.remaining buffer) attribute :data
+                         (fn [] buffer) #(native-value/prepare-data % check!) emit eid)
+            (fail! :query-source/invalid :native-value)))
+        (let [giant (bits/avg->giant-id raw)]
+          (if (= c/normal giant)
+            (visit-value control raw (.remaining raw) attribute type
+                         (when (= type :data) #(native-value/inline-data-buffer raw))
+                         (if (= type :data)
+                           #(native-value/prepare-data % check!)
+                           #(native-value/prepare-inline % type check!)) emit eid)
+            (let [giants (i/get-dbi kv c/giants false)]
+              (lmdb/put-read-key giants rtx giant :id)
+              (if-let [buffer (lmdb/get-kv giants rtx)]
+                (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
+                             #(index/giant-datom-buffer buffer)
+                             #(native-value/prepare-giant % type eid attribute check!)
+                             emit eid)
+                (fail! :query-source/invalid :native-value)))))))))
+
+(defn value-visitor
+  "Decode values borrowed from the shared scan loop in the pinned read view."
+  [control snapshot attribute]
+  (check-view! control snapshot)
+  (let [type (attribute-type snapshot attribute)]
+    (fn [raw eid callback]
+      (check-view! control snapshot)
+      ;; Reuse the visitor's bounded scratch and decoding, while the consumer
+      ;; owns the row before any subsequent cursor operation.
+      ((raw-visitor control snapshot attribute type
+                    (fn [[_ _ value]] (callback value))) (:rtx snapshot) raw eid))))
+
 (defn scan!
   "Visit owned datoms from a pinned attribute scan without a full-result collector.
   Entity, attribute and eligible scalar value bounds precede payload decoding.
@@ -244,31 +310,6 @@
    (scan! control snapshot attribute nil nil emit))
   ([control snapshot attribute entity-id emit]
    (scan! control snapshot attribute entity-id nil emit))
-  ([control {:keys [kv] :as snapshot} attribute entity-id bound-value emit]
-   (let [type (attribute-type snapshot attribute)
-         check! #(source/check-active! control)]
-     (scan-attribute! control snapshot attribute entity-id bound-value
-       (fn [rtx ^ByteBuffer raw eid]
-         (if (= :native-custom-data (:kind type))
-           (let [id (native-value/custom-reference-id raw)
-                 payloads (i/get-dbi kv c/custom-values false)]
-             (lmdb/put-read-key payloads rtx id :id)
-             (if-let [^ByteBuffer buffer (lmdb/get-kv payloads rtx)]
-               (visit-value control buffer (.remaining buffer) attribute :data
-                            (fn [] buffer) #(native-value/prepare-data % check!) emit eid)
-               (fail! :query-source/invalid :native-value)))
-           (let [giant (bits/avg->giant-id raw)]
-             (if (= c/normal giant)
-               (visit-value control raw (.remaining raw) attribute type
-                            (when (= type :data) #(native-value/inline-data-buffer raw))
-                            (if (= type :data)
-                              #(native-value/prepare-data % check!)
-                              #(native-value/prepare-inline % type check!)) emit eid)
-               (let [giants (i/get-dbi kv c/giants false)]
-                 (lmdb/put-read-key giants rtx giant :id)
-                 (if-let [buffer (lmdb/get-kv giants rtx)]
-                   (visit-value control buffer (index/giant-datom-raw-size buffer) attribute type
-                                #(index/giant-datom-buffer buffer)
-                                #(native-value/prepare-giant % type eid attribute check!)
-                                emit eid)
-                   (fail! :query-source/invalid :native-value)))))))))))
+  ([control snapshot attribute entity-id bound-value emit]
+   (scan-attribute! control snapshot attribute entity-id bound-value
+                    (raw-visitor control snapshot attribute (attribute-type snapshot attribute) emit))))

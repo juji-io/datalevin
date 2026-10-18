@@ -12,6 +12,7 @@
             [datalevin.query.source.envelope :as envelope]
             [datalevin.query.source.region :as region]
             [datalevin.query.source.runtime :as rt]
+            [datalevin.query.source.scope :as scope]
             [datalevin.query.source.session :as session]
             [datalevin.query.source.value :as value :refer [fail!]])
   (:import [java.util IdentityHashMap]))
@@ -102,6 +103,20 @@
         (reset! state :captured)
         (->Compilation child entries compiled prepared state close))
       (catch Throwable e (close-after-error! child close e)))))
+
+(defn refine!
+  "Apply engine-owned typed boundary proofs while capture is still pure. The
+  returned compilation shares the original lifecycle; requests and acquisition
+  have not started. No source estimates or provider alternatives prove empty."
+  [runtime compilation boundaries]
+  (ensure! (and (instance? Compilation compilation)
+                (identical? (:control runtime) (get-in compilation [:runtime :control]))
+                (= (:query-id runtime) (get-in compilation [:runtime :query-id]))
+                (= :captured @(:state compilation))))
+  (let [{:keys [runtime compiled close]} compilation]
+    (try
+      (assoc compilation :compiled (scope/refine-regions! runtime compiled boundaries))
+      (catch Throwable e (close-after-error! runtime close e)))))
 
 (defn plan!
   "Plan every live source/region pair once, then audit selected coverage and

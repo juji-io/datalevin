@@ -26,6 +26,22 @@
 
 (defn- error [f] (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 
+(deftest exact-constant-mismatches-prune-without-coercing-equivalent-values
+  (rt/with-runtime {}
+    (fn [runtime]
+      (doseq [[e a v bindings] [[[:const "not-an-id"] :row/name [:var '?v] {}]
+                                 [[:var '?e] :row/name [:const 42] {}]
+                                 [[:var '?e] :row/age [:var '?v] {'?v "not-a-long"}]
+                                 [[:const nil] :row/name [:var '?v] {}]]]
+        (let [result (lowering/lower! runtime descriptor (pattern e [:const a] v) bindings #{})]
+          (is (= :incompatible-constant (:empty-proof result)))
+          (is (empty? (:branches result)))))
+      (doseq [e [1 1N (int 1) (biginteger 1)]]
+        (let [result (lowering/lower! runtime descriptor
+                       (pattern [:const e] [:const :row/name] [:var '?v]) {} #{})]
+          (is (nil? (:empty-proof result)))
+          (is (= 1 (count (:branches result)))))))))
+
 (deftest known-attributes-specialize-without-dispatch-and-preserve-the-original-binding
   (rt/with-runtime {}
     (fn [runtime]

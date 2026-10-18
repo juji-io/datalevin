@@ -289,6 +289,17 @@
             ires (assoc :result (-execute step db ires))
             isp  (assoc :sample (-sample step db isp))))))))
 
+(defn ^:no-doc initialization-step
+  "Emit the existing native initialization for one complete fixed attribute.
+  This is pure: no metadata refresh, statistics, cache, sampling or read is
+  needed to choose between a single pattern's physical alternatives. The
+  caller validates its schema and supplies nil for an unobserved value."
+  [entity attribute value-variable]
+  (first (init-steps nil entity
+                    {:free [{:attr attribute :var value-variable}]
+                     :bound [] :mpath [:free 0]}
+                    true false (if value-variable #{value-variable} #{}))))
+
 (defn- base-plan
   ([db nodes e]
    (base-plan db nodes e false true))

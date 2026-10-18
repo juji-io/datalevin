@@ -83,6 +83,10 @@
      The factory declares :in dependencies and :cols exports; the concrete
      step also preserves carried input columns. Used by scoped access plans."))
 
+(defprotocol IControlledStep
+  (-execute-controlled [step db source policy]
+    "Execute with explicit admission/decoding callbacks; never sample or cache."))
+
 (defprotocol ITerminalDistinctSink
   (-add-distinct-batch! [sink tuples]
     "Add a batch already distinct in the terminal projection."))
@@ -259,6 +263,17 @@
 (defrecord InitStep
     [attr pred val range vars in out know-e? cols strata seen-or-joins mcount
      result sample]
+
+  IControlledStep
+  (-execute-controlled [_ db _ policy]
+    ;; Only a complete attribute initialization uses this boundary. Narrowed
+    ;; ranges and known entities require their own controlled storage paths.
+    (when (or result sample know-e? pred val range)
+      ((:unsupported! policy)))
+    ((:check! policy))
+    (let [out (FastList.)]
+      (db/-init-tuples-controlled db out attr (< 1 (count vars)) policy)
+      out))
 
   IStep
   (-type [_] :init)

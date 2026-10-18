@@ -2538,10 +2538,26 @@ The same compiler runs terminal projection, `:with`, baseline aggregates,
 windows and return shapes through the shared result processor with explicit
 workspace/cancellation hooks. Results are fully realized and independently
 owned before cleanup; failed execution/collection closes compilation resources
-immediately. Current compiler core operations are scalar predicates and
-identity/ground bindings. Mixed native/local-source clause emission, complete
-input parsing, static empty-branch propagation and the remaining decode/operator
-audit are prerequisites to activating this program in `q`/`explain`.
+immediately. Typed boundary no-match proofs propagate upward through all-empty
+sites and downward through empty ancestors before provider requests. Exact
+literal/scalar mismatches also eliminate impossible EAV facts; numeric/custom
+or sequential representation differences do not establish no-match proofs.
+Some equality-aware rule constant input edges still reject as unsupported.
+
+The internal [`source.native-plan`](../src/datalevin/query/source/native_plan.clj)
+bridge now executes native fixed-attribute initializations with variable entity
+and variable/wildcard value terms over indexed local DBs. The native planner's
+pure initialization emitter reads no mutable store metadata, statistics or
+native caches and invokes no installed access methods. Its steps use explicit
+controlled step/storage interfaces and the shared AVE scan driver.
+They admit rows before allocation, decode through the bounded raw-value visitor,
+own values before advancing the cursor, and join through the shared bounded
+join. Wildcards skip payload decoding. The invocation pins native snapshots
+across provider planning and execution; views cannot escape or move threads.
+Controlled reads bypass native tuple/result caches. Other compiler core work
+currently includes scalar predicates and identity/ground bindings. Remaining
+native plan/read paths, collection/native-rule emission, complete input parsing
+and the operator/decode audit precede activation in `q`/`explain`.
 
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response

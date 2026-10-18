@@ -17,7 +17,7 @@
     datalevin.query.source.lowering datalevin.query.source.region
     datalevin.query.source.scope datalevin.query.source.descriptor
     datalevin.query.source.envelope datalevin.query.source.planning
-    datalevin.query.source.program])
+    datalevin.query.source.program datalevin.query.source.native-plan])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))

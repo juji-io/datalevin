@@ -258,6 +258,20 @@
      (when check! (check!))
      matches?)))
 
+(defn disjoint-constant?
+  "Prove that an owned constant cannot equal any non-null value of a logical
+  type. A representation mismatch alone is insufficient for numeric values,
+  sequential tuples or custom equality. Unknown overlap is never an empty
+  proof; callers must preserve ordinary predicate/constant equality."
+  [type x check!]
+  (check!)
+  (or (nil? x)
+      (and (not (matches-type? type x check!))
+           (not (or (satisfies? IQuerySourceValue x)
+                    (= :custom (:kind type))
+                    (and (number? x) (#{:long :bigint :float :double :bigdec} type))
+                    (and (= :tuple (:kind type)) (sequential? x)))))))
+
 (defn execution-value!
   ([x] (execution-value! x nil))
   ([x check!]

@@ -86,6 +86,78 @@
                  (set (map (comp set vals :bindings second) (events-of events :plan)))))
           (is (= 2 (count (events-of events :open)))))))))
 
+(deftest typed-empty-rules-prune-the-whole-conjunction-before-provider-planning
+  (doseq [query ['[:find ?v :in $s % :where ($s named "not-an-entity" ?v)]
+                 '[:find ?v :in $s % :where [$s ?other :row/value _]
+                   ($s nested "not-an-entity" ?v)]
+                 '[:find ?v :in $s % :where
+                   (or ($s named "not-an-entity" ?v)
+                       ($s nested "also-not-an-entity" ?v))]]]
+    (let [events (atom []) saved (atom nil)
+          rules '[[(named [?e] ?v) [?e :row/value ?v]]
+                  [(nested ?e ?v) (named ?e ?v)]]]
+      (rt/with-runtime {}
+        (fn [runtime]
+          (reset! saved runtime)
+          (let [p (compile! runtime events query rules [] nil {})]
+            (is (empty? (program/result! runtime p)))
+            (is (= 1 (count (events-of events :descriptor))))
+            (is (= 1 (count (events-of events :acquire))))
+            (is (empty? (events-of events :plan)))
+            (is (empty? (events-of events :open))))))
+      (is (= 1 (count (events-of events :session-close))))
+      (is (every? zero? (vals (control/usage (:control @saved))))))))
+
+(deftest typed-empty-branches-do-not-remove-live-union-or-rule-alternatives
+  (doseq [[query rules]
+          [['[:find ?v :in $s % :where
+              (or ($s named "not-an-entity" ?v) ($s named 1 ?v))]
+            '[[(named [?e] ?v) [?e :row/value ?v]]]]
+           ['[:find ?v :in $s % :where ($s selected ?v)]
+            '[[(named [?e] ?v) [?e :row/value ?v]]
+              [(selected ?v) (named "not-an-entity" ?v)]
+              [(selected ?v) (named 1 ?v)]]]]]
+    (let [events (atom [])]
+      (rt/with-runtime {}
+        (fn [runtime]
+          (let [p (compile! runtime events query rules [] nil {})]
+            (is (= #{["one"]} (program/result! runtime p)))
+            (is (= 1 (count (events-of events :plan))))
+            (is (= 1 (count (events-of events :open))))))))))
+
+(deftest numeric-representation-mismatch-does-not-become-an-empty-proof
+  (let [events (atom [])
+        failure (error (fn []
+                         (rt/with-runtime {}
+                           (fn [runtime]
+                             (compile! runtime events
+                               '[:find ?v :in $s % :where ($s named 1N ?v)]
+                               '[[(named [?e] ?v) [?e :row/value ?v]]] [] nil {})))))]
+    (is (= :query-source/unsupported (:error failure)))
+    (is (empty? (events-of events :acquire)))
+    (is (empty? (events-of events :plan)))))
+
+(deftest late-function-type-proofs-propagate-up-and-down-nested-regions
+  (doseq [[query rules expected-plans expected]
+          [['[:find ?v :in $s % :where ($s keyed "not-an-id" ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(identity ?e) ?key]]]
+            0 #{}]
+           ['[:find ?v :in $s % :where [$s ?sibling :row/value _] ($s outer "not-an-id" ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(identity ?e) ?key]]
+              [(outer ?key ?v) (keyed ?key ?v)]]
+            0 #{}]
+           ['[:find ?v :in $s % :where ($s keyed "not-an-id" ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(identity ?e) ?key]]
+              [(keyed ?key ?v) [?e :row/value ?v] [(ground "not-an-id") ?key]]]
+            1 #{["one"] ["two"]}]]]
+    (let [events (atom [])]
+      (rt/with-runtime {}
+        (fn [runtime]
+          (let [p (compile! runtime events query rules [] nil {})]
+            (is (= expected (program/result! runtime p)))
+            (is (= expected-plans (count (events-of events :plan))))
+            (is (= expected-plans (count (events-of events :open))))))))))
+
 (deftest multiple-rule-branches-deduplicate-the-complete-head-before-outer-fanout
   (let [events (atom [])
         rules '[[(named ?e ?v) [?e :row/value ?v]]

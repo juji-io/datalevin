@@ -2,6 +2,7 @@
   "Compile captured v2 regions into shared, materialized plan steps. Scoped
   calls execute complete child regions once and join their projected results
   back to the original outer witnesses. No alternate Datalog interpreter."
+  (:refer-clojure :exclude [run!])
   (:require [clojure.set :as set]
             [datalevin.join :as join]
             [datalevin.parser :as parser]
@@ -14,13 +15,15 @@
             [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.inputs :as inputs]
+            [datalevin.query.source.native :as native]
+            [datalevin.query.source.native-plan :as native-plan]
             [datalevin.query.source.planning :as planning]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.scope :as scope]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation]
             [datalevin.spill :as spill])
-  (:import [datalevin.parser Constant FindColl FindRel FindScalar FindTuple Function Predicate Variable]
+  (:import [datalevin.parser Constant DefaultSrc FindColl FindRel FindScalar FindTuple Function Pattern Predicate Variable]
            [datalevin.utl QueryKey QueryKey$KeySet]
            [java.util AbstractList List]
            [org.eclipse.collections.impl.list.mutable FastList]))
@@ -199,14 +202,22 @@
               (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))
               (:tuples result))))))))
 
-(defn- schemas [compiled root-columns check!]
+(defn- schemas [compiled native-specs root-columns check!]
   (reduce
     (fn [schemas r]
       (let [id (:region-id r)
             initial (if (= id (:root-region compiled)) (columns-map root-columns)
                         (into {} (map #(vector % (column % :data true))) (:input-vars r)))
-            initial (add-columns initial (mapcat :columns (:patterns r)))
-            initial (add-columns initial (map (fn [[v x]] (column v (value-type x) (nil? x))) (:bindings r)))
+            fact-columns (concat (mapcat :columns (:patterns r))
+                                 (mapcat #(get-in native-specs [(:path %) :columns]) (:core-clauses r)))
+            produced (set (map :variable fact-columns))
+            initial (add-columns initial fact-columns)
+            ;; A known constraint does not change the type of a body producer.
+            ;; Its compatibility is checked at the captured scope boundary.
+            initial (reduce-kv (fn [schema v x]
+                                 (if (contains? produced v) schema
+                                     (assoc schema v (column v (value-type x) (nil? x)))))
+                               initial (:bindings r))
             initial
             (reduce
               (fn [schema site]
@@ -222,17 +233,26 @@
                                   (add-columns body
                                     (map (fn [[v _]] (column v :keyword false))
                                          (get-in compiled [:regions (child-id branch) :patterns 0 :restore]))))))
-                            (:branches site))
+                            (filter #(get-in compiled [:regions (child-id %) :live?]) (:branches site)))
                       outputs
                       (mapv (fn [v]
                               (let [cs (mapv #(or (get % v) (get schema v) (column v :data true)) branches)]
-                                (column v (if (apply = (map :type cs)) (:type (first cs)) :data)
+                                (column v (if (and (seq cs) (apply = (map :type cs))) (:type (first cs)) :data)
                                         (boolean (some :nullable? cs))))) (canonical (:exports site) check!))]
                   (add-columns schema outputs))) initial
               (filter #(= id (:parent-region %)) (:sites compiled)))
-            final (reduce (fn [schema {:keys [node]}]
-                            (check!)
-                            (add-columns schema (:columns (pure-spec node schema check!)))) initial (:core-clauses r))]
+            [final _]
+            (reduce (fn [[schema produced] {:keys [node path]}]
+                      (check!)
+                      (let [columns (:columns (if (instance? Pattern node) (get native-specs path)
+                                                  (pure-spec node schema check!)))]
+                        [(reduce (fn [schema column]
+                                   (let [v (:variable column)]
+                                     (if (and (contains? (:bindings r) v) (not (contains? produced v)))
+                                       (assoc schema v column)
+                                       (add-columns schema [column])))) schema columns)
+                         (into produced (map :variable) columns)]))
+                    [initial produced] (:core-clauses r))]
         (assoc schemas id final))) {} (reverse (:regions compiled))))
 
 (defn- scope-parent-columns [site schema known-inputs child-schemas check!]
@@ -268,13 +288,56 @@
                              (and (integer? x) (<= (if (= key :qlimit) 1 0) x Long/MAX_VALUE))))
                 (assoc parsed key x))) parsed [:qlimit :qoffset])))
 
+(defn- input! [runtime check! compiled input-columns input-tuples]
+  (let [root (:root-region compiled) constants (get-in compiled [:regions root :bindings])
+        supplied (columns-map input-columns)
+        columns (into input-columns
+                  (map (fn [v] (column v (value-type (get constants v)) (nil? (get constants v)))))
+                  (canonical (set/difference (set (keys constants)) (set (keys supplied))) check!))
+        _ (ensure! (set/subset? (set (map :variable columns))
+                               (get-in compiled [:regions root :input-vars])))
+        tuples (FastList.)
+        source (if (nil? input-tuples) (do (ensure! (empty? input-columns)) [[]]) input-tuples)
+        input-vars (mapv :variable input-columns) read-item! (inputs/item-reader source)]
+    (loop []
+      (check!)
+      (when-let [[tuple] (read-item!)]
+        (retain! runtime (containers! runtime 1 (count columns)))
+        (let [row (inputs/tuple-row (:control runtime) input-vars tuple)
+              values (mapv (fn [{:keys [variable type nullable?]}]
+                             (let [x (if (contains? row variable) (get row variable) (get constants variable))]
+                               (ensure! (if (nil? x) nullable? (value/matches-type? type x check!))) x)) columns)]
+          (retain! runtime (rt/charge-copy! runtime values))
+          (.add tuples (object-array (value/owned-copy values check!))))
+        (recur)))
+    {:columns columns :relation (relation/relation! (zipmap (map :variable columns) (range)) tuples)}))
+
+(defn- boundaries! [runtime check! compiled native-specs root-columns]
+  (let [all-schemas (schemas compiled native-specs root-columns check!) boundaries (volatile! [])]
+    (letfn [(region! [id inputs]
+              (check!)
+              (let [schema (add-columns (get all-schemas id) inputs)]
+                (doseq [[index site] (map-indexed vector (:sites compiled))
+                        :when (and (= id (:parent-region site)) (seq (:branches site)))]
+                  (let [parent (scope-parent-columns site schema inputs all-schemas check!)
+                        outputs (mapv (fn [b] {:region-id (child-id b)
+                                              :columns (vec (vals (get all-schemas (child-id b))))}) (:branches site))
+                        boundary (scope/interfaces! runtime compiled index parent outputs)]
+                    (vswap! boundaries conj boundary)
+                    (doseq [branch (:branches boundary) :when (not (:empty? branch))]
+                      (region! (:region-id branch) (:inputs branch)))))))]
+      (when (get-in compiled [:regions (:root-region compiled) :live?])
+        (region! (:root-region compiled) root-columns))
+      @boundaries)))
+
 (defn- compile-program!
   "Compile captured regions and real typed input tuples into executable shared
   steps. This is the revised internal compiler, not a caller-supplied interface
   fixture. Scalar predicates/functions and positive rule/union/attribute sites
   use existing engine operators. Unsupported core operators reject before
-  acquisition; mixed native-DB operator emission remains separate."
-  [runtime compilation input-columns input-tuples]
+  acquisition. Native initializations use the existing planner and the explicit
+  controlled storage boundary within the caller's pinned views."
+  [runtime compilation input-columns input-tuples snapshots]
   (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
   (let [runtime (:runtime compilation) compiled (:compiled compilation)
@@ -283,39 +346,27 @@
                     (ensure! (not= :closed @state)))
         run-region (fn [id input] (check!) (ensure! @runner) (@runner id input))
         _ (rt/own! runtime #(do (reset! state :closed) (reset! runner nil)))
-        root-input (volatile! nil) tables (volatile! nil)
+        _ (terminal-query! compiled)
+        entries (into {} (map (juxt :symbol identity)) (:entries compilation))
+        native-specs
+        (into {} (for [r (:regions compiled) {:keys [node path]} (:core-clauses r)
+                       :when (instance? Pattern node)
+                       :let [source (:source node)
+                             source (if (or (nil? source) (instance? DefaultSrc source))
+                                      (:default-source r) (:symbol source))
+                             database (:native (get entries source))]]
+                   [path {:database database :requires []
+                          :columns (native-plan/columns! runtime snapshots database node)}]))
+        input (input! runtime check! compiled input-columns input-tuples)
+        root-columns (:columns input)
+        proofs (boundaries! runtime check! compiled native-specs root-columns)
+        compilation (planning/refine! runtime compilation proofs)
+        _ (doseq [proof proofs] ((:close proof)))
+        tables (volatile! nil)
         planned
           (planning/plan! runtime compilation
             (fn [runtime compiled]
-              (let [_ (terminal-query! compiled)
-                    constants (get-in compiled [:regions root :bindings])
-                    supplied (columns-map input-columns)
-                    root-columns (into input-columns
-                                   (map (fn [v] (column v (value-type (get constants v)) (nil? (get constants v)))))
-                                   (canonical (set/difference (set (keys constants)) (set (keys supplied))) check!))
-                    _ (ensure! (set/subset? (set (map :variable root-columns))
-                                           (get-in compiled [:regions root :input-vars])))
-                    input (FastList.)
-                    source (if (nil? input-tuples) (do (ensure! (empty? input-columns)) [[]]) input-tuples)
-                    input-vars (mapv :variable input-columns)
-                    read-item! (inputs/item-reader source)]
-                (loop []
-                  (check!)
-                  (when-let [[tuple] (read-item!)]
-                   (let [token (containers! runtime 1 (count root-columns))]
-                    (retain! runtime token)
-                    (let [row (inputs/tuple-row (:control runtime) input-vars tuple)
-                          values (mapv (fn [{:keys [variable type nullable?]}]
-                                         (let [x (if (contains? row variable)
-                                                   (get row variable)
-                                                   (get constants variable))]
-                                           (ensure! (if (nil? x) nullable? (value/matches-type? type x check!))) x)) root-columns)
-                          token (rt/charge-copy! runtime values)]
-                      (retain! runtime token)
-                      (.add input (object-array (value/owned-copy values check!)))))
-                   (recur)))
-                (vreset! root-input (relation/relation! (zipmap (map :variable root-columns) (range)) input))
-                (let [all-schemas (schemas compiled root-columns check!)
+                (let [all-schemas (schemas compiled native-specs root-columns check!)
                       interfaces (atom {})]
                   (letfn [(region! [id inputs]
                             (check!)
@@ -327,8 +378,13 @@
                                                op (access/core-operator! runtime id op-id requires columns #{} step)]
                                            (vswap! core assoc path op-id) (vswap! operators conj op)))]
                               (doseq [{:keys [node path]} (:core-clauses r)]
-                                (let [spec (pure-spec node schema check!)]
-                                  (add! path (:requires spec) (:columns spec) (pure-factory runtime check! node spec))))
+                                (let [native? (instance? Pattern node)
+                                      spec (if native? (get native-specs path) (pure-spec node schema check!))
+                                      factory (if native?
+                                                (native-plan/factory! runtime snapshots (:database spec) node (:columns spec)
+                                                  check! #(joined! runtime check! %1 %2))
+                                                (pure-factory runtime check! node spec))]
+                                  (add! path (:requires spec) (:columns spec) factory)))
                               (doseq [[index site] (map-indexed vector (:sites compiled))
                                       :when (= id (:parent-region site))]
                                 (let [parent (scope-parent-columns site schema inputs all-schemas check!)
@@ -344,7 +400,7 @@
                               (swap! interfaces assoc id {:inputs inputs :operators @operators :core @core})))]
                     (when (:live? (nth (:regions compiled) root)) (region! root root-columns))
                     (vreset! tables @interfaces)
-                    @interfaces)))))
+                    @interfaces))))
           schedules (planning/schedules runtime planned)
           executable
           (into {}
@@ -373,16 +429,18 @@
                                  (:tuples input) steps)]
               (relation/relation! (zipmap cols (range)) tuples)))))
       (reset! state :ready)
-      (->Program runtime compilation planned root @root-input executable state runner)))
+      (->Program runtime compilation planned root (:relation input) executable state runner)))
 
 (defn compile!
   "Compile a captured region graph and typed input rows into shared steps.
   All failed construction, including final step assembly, unwinds immediately."
-  [runtime compilation input-columns input-tuples]
-  (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
-                (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
-  (try (compile-program! runtime compilation input-columns input-tuples)
-       (catch Throwable e (fail-program! (:runtime compilation) compilation e))))
+  ([runtime compilation input-columns input-tuples]
+   (compile! runtime compilation input-columns input-tuples {}))
+  ([runtime compilation input-columns input-tuples snapshots]
+   (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
+                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
+   (try (compile-program! runtime compilation input-columns input-tuples snapshots)
+        (catch Throwable e (fail-program! (:runtime compilation) compilation e)))))
 
 (defn execute!
   "Execute a compiled region graph once, with no replay of its external paths.
@@ -454,3 +512,15 @@
                       (map own-row!) raw)
       :else (mapv own-row! raw)))
    (catch Throwable e (fail-program! (:runtime program) (:compilation program) e))))
+
+(defn run!
+  "Compile and finish a captured query inside native read views pinned for the
+  entire invocation. No borrowed native context may escape this callback."
+  [runtime compilation input-columns input-tuples]
+  (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
+                (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
+  (try
+    (native/with-views (keep :native (:entries compilation))
+      (fn [snapshots]
+        (result! runtime (compile! runtime compilation input-columns input-tuples snapshots))))
+    (catch Throwable e (fail-program! (:runtime compilation) compilation e))))

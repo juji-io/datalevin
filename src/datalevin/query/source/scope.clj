@@ -81,8 +81,16 @@
         (some (fn [[v x]]
                 (check!)
                 (let [column (get head-map v)]
-                  (not (if (nil? x) (:nullable? column)
-                           (value/matches-type? (:type column) x check!))))) constants)
+                  (when-not (if (nil? x) (:nullable? column)
+                                (value/matches-type? (:type column) x check!))
+                    ;; A representation mismatch is not an equality proof.
+                    ;; Numeric equivalents, sequential tuples and user-defined
+                    ;; equality need a constant-filtering input edge before
+                    ;; they can be emitted by this compiler. Reject that gap
+                    ;; rather than silently eliminating a satisfiable branch.
+                    (when-not (value/disjoint-constant? (:type column) x check!)
+                      (unsupported!))
+                    true))) constants)
         empty? (or (not (:live? region)) (boolean incompatible-constant?))
         call-columns (when-not empty?
                        (reduce (fn [m column]
@@ -238,6 +246,56 @@
                 (= (:query-id runtime) (get-in boundary [:owner :query-id]))
                 (not @(:closed? boundary)) (not @(get-in boundary [:owner :closed?]))))
   boundary)
+
+(defn refine-regions!
+  "Propagate captured boundary no-match proofs through the region tree before
+  provider requests are built. A conjunction is empty when any of its sites
+  has no live branch; an empty ancestor suppresses all descendant access work.
+  Authorization and descriptor validation remain query-wide."
+  [runtime compiled boundaries]
+  (let [active! #(control/check-active! (:control runtime))
+        regions (:regions compiled) sites (:sites compiled)]
+    (ensure! (vector? boundaries))
+    (let [token (control/reserve! (:control runtime)
+                  {:retained-bytes (+ 2048 (* 2048 (count regions)) (* 1024 (count boundaries)))})]
+      (try
+        (let [proved
+              (reduce (fn [ids boundary]
+                        (check! runtime boundary)
+                        (let [index (:site-index boundary)
+                              _ (ensure! (and (integer? index) (<= 0 index) (< index (count sites))))
+                              site (nth sites index)
+                              owner (get-in regions [(:parent-region site) :owner])
+                              child-id #(if (map? %) (:region-id %) %)]
+                          (ensure! (and (identical? owner (:owner boundary))
+                                        (= (select-keys site [:kind :parent-region :path])
+                                           (select-keys boundary [:kind :parent-region :path]))
+                                        (= (mapv child-id (:branches site))
+                                           (mapv :region-id (:branches boundary)))))
+                          (into ids (comp (filter :empty?) (map :region-id)) (:branches boundary))))
+                      #{} boundaries)
+              children (group-by :parent-region (filter #(seq (:branches %)) sites))
+              empty-ids
+              (reduce (fn [ids r]
+                        (active!)
+                        (let [id (:region-id r)]
+                          (if (or (:empty? r) (contains? ids id)
+                                  (some (fn [site]
+                                          (every? #(contains? ids (if (map? %) (:region-id %) %))
+                                                  (:branches site))) (get children id)))
+                            (conj ids id) ids))) proved (reverse regions))
+              refined
+              (reduce (fn [result r]
+                        (active!)
+                        (let [empty? (contains? empty-ids (:region-id r))
+                              parent (:parent-region r)]
+                          (conj result (assoc r :empty? empty?
+                                               :live? (and (not empty?)
+                                                           (or (nil? parent) (:live? (nth result parent))))))))
+                      [] regions)]
+          (rt/own! runtime #(control/release! token))
+          (assoc compiled :regions refined))
+        (catch Throwable e (control/release! token) (throw e))))))
 
 (defn- admit-container! [runtime tokens rows width]
   ;; Shared projection/union helpers allocate their sized lists, key indexes,

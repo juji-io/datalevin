@@ -57,6 +57,15 @@
         ;; Restoring the attribute also unifies its repeated occurrences in E/V.
         ;; A declared type excluding that keyword is an exact no-match proof.
         compatible? (and by-variable
+                         ;; Constants and captured scalar constraints can prove
+                         ;; no fact only under ordinary equality, not merely a
+                         ;; different Java numeric/collection representation.
+                         (not-any? (fn [[[tag x] type]]
+                                     (check!)
+                                     (cond (= :const tag) (value/disjoint-constant? type x check!)
+                                           (and (= :var tag) (contains? bindings x))
+                                           (value/disjoint-constant? type (get bindings x) check!)
+                                           :else false)) columns)
                          (every? (fn [[original [_ x] type]]
                                    (or (not= [:var variable] original)
                                        (value/matches-type? type x check!)))
@@ -114,7 +123,11 @@
                       :branches branches
                       :empty-proof (when (empty? branches)
                                      (if (and known? (not (contains? attributes attribute)))
-                                       :undeclared-attribute :incompatible-repeated-variable))}
+                                       :undeclared-attribute
+                                       (if (some (fn [[tag x]]
+                                                   (or (= :const tag) (and (= :var tag) (contains? bindings x))))
+                                                 [(first (:terms clause)) (nth (:terms clause) 2)])
+                                         :incompatible-constant :incompatible-repeated-variable)))}
               held @tokens
               close (rt/own! runtime #(when (compare-and-set! closed? false true)
                                        (doseq [token held] (control/release! token))))]

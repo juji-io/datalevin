@@ -20,6 +20,7 @@
             [datalevin.query.source-envelope-test]
             [datalevin.query.source-planning-test]
             [datalevin.query.source-program-test]
+            [datalevin.query.source-native-plan-test]
             [datalevin.query.bounded-join-test]
             [datalevin.query.access-dependency-test]
             [datalevin.query.source-native-value-test]
@@ -48,6 +49,7 @@
                                            'datalevin.query.source-envelope-test
                                            'datalevin.query.source-planning-test
                                            'datalevin.query.source-program-test
+                                           'datalevin.query.source-native-plan-test
                                            'datalevin.query.bounded-join-test
                                            'datalevin.query.access-dependency-test
                                            'datalevin.query.source-native-value-test
