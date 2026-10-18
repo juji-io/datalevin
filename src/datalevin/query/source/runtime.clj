@@ -51,12 +51,15 @@
 (defn with-context
   "Locate failures using core query/plan context, never provider exception data."
   [runtime location f]
+  (when (and (contains? location :region-id)
+             (not (and (integer? (:region-id location)) (<= 0 (:region-id location) Long/MAX_VALUE))))
+    (value/fail! :query-source/invalid :planning))
   (let [location (into {} (map (fn [[k v]]
                                 [k (cond (= :clause-ids k) (with-meta v nil)
                                          (symbol? v) (with-meta v nil)
                                          (coll? v) (diagnostic-copy! runtime v)
                                          :else v)]))
-                       (select-keys location [:source-symbol :clause-ids :alternative-id]))
+                       (select-keys location [:source-symbol :region-id :clause-ids :alternative-id]))
         runtime (update runtime :location merge location)]
     (try (f runtime)
          (catch Throwable e

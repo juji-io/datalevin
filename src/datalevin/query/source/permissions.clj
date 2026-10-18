@@ -224,6 +224,23 @@
                         (not (contains? request :consumption-group))) :open)
           nil))))
 
+(defn planning-permission
+  "Inspect the shared resource behind an alternative without reserving an open.
+  The returned resource key is invocation-local, opaque, and never diagnostic
+  metadata. Execution must still reserve immediately before its open attempt."
+  [^Consumption permissions alternative]
+  (let [ctl (.-ctl permissions)]
+    (locking (monitor ctl)
+      (control/check-active! ctl)
+      (when (:closed? @(.-state permissions))
+        (fail! :query-source/invalid :planning {:state :closed}))
+      (let [properties (:properties alternative)
+            request (select-keys properties [:consumption-group])
+            group (open-group! permissions alternative request)]
+        {:resource [permissions group]
+         :opens (get-in (.-groups permissions) [group :opens])
+         :spent? (pos? (long (get-in @(.-state permissions) [:groups group :attempts])))}))))
+
 (defn reserve-open!
   "Reserve an attempt before calling the provider. Closing releases concurrency
   only: a failed or cancelled one-shot attempt remains spent. No replay property

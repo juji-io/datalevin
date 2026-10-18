@@ -91,6 +91,9 @@
   ([path demand bounds work source]
    (read-access-prefix path demand bounds work source nil))
   ([path demand bounds work source bindings]
+   (when-not (qaccess/planning-sample? path)
+     (raise "Access path does not permit planning reads"
+            {:error :query-source/unsupported :phase :planning}))
    (let [cursor (qaccess/open-access
                   path demand bounds work source bindings)]
      (try

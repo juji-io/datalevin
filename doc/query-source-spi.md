@@ -2685,6 +2685,18 @@ satisfiable, with no unseeded cycles or illegal one-shot reuse. Validate
 the chosen complete query plan before opening any execution cursor. If no valid
 plan is available, raise `:query-source/unsupported`; never execute partial coverage.
 
+The preparatory [`source.access`](../src/datalevin/query/source/access.clj)
+bridge constructs shared `AccessPlan` records from captured, validated
+alternatives. It schedules one logical region from explicit typed input/export
+columns and checks complete single-pattern coverage without native cardinality
+or cost conversion. Its query-wide validation checks selected regions together
+for one-shot resource reuse. It performs no provider callbacks and admits no
+implicit replay/spool. The shared sampling hook enforces the path's
+`:none`/`:execution` policy before opening a cursor. These are internal
+primitives; `q`/`explain` still use the prototype planner. Descriptor/session
+validation, compiler region/export construction, native planner participation,
+and dependent access execution still require the coordinated runtime switch.
+
 The initial policy is `:eav-structural-v1`. Among legal, dependency-ready choices
 for the same work, prefer bound-entity lookup, then bound-value lookup, then
 attribute enumeration, breaking ties by the canonical access key below.
