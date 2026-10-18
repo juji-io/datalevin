@@ -360,3 +360,17 @@
                        (QueryKey/equals values (:values previous)))
                (fail! :query-source/invalid :batch))))))
      bytes)))
+
+(defn ^:no-doc owned-bindings-header-charge
+  "Fixed charge for core-generated binding vectors without metadata/backing.
+  This is a sizing component, not a legal empty dependent input envelope."
+  [requires observe!]
+  (add-charges (charge-part 64 observe!)
+               (value-charge requires observe!)
+               (collection-overhead [] observe! true nil)))
+
+(defn ^:no-doc owned-binding-element-charge
+  "Incremental vector slot and binding charge. The collector has already
+  validated/owned this binding and established typed key/ID uniqueness."
+  [binding observe!]
+  (add-charges (charge-part 48 observe!) (value-charge binding observe!)))

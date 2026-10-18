@@ -11,7 +11,8 @@
 (def ^:private execution-namespaces
   '[datalevin.query.source.execute datalevin.query.source.plan
     datalevin.query.source.runtime datalevin.query.source.native
-    datalevin.query.source.inputs datalevin.query.source.join])
+    datalevin.query.source.inputs datalevin.query.source.join
+    datalevin.query.source.binding])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))

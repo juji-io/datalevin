@@ -2293,6 +2293,22 @@ batch still charges its ID vector. The two-argument input-free path keeps its
 existing charge and allocates no ID state. Their availability does not admit
 dependent cursors under the still-active prototype descriptor/session contract.
 
+The internal [`source.binding`](../src/datalevin/query/source/binding.clj)
+primitive is also implemented as preparation. Its caller creates one ID space
+for the invocation's dependent accesses and collects all outer associations for
+each chosen logical access before admitting any of its input batches. It owns
+keys and witnesses, applies query/provider row and byte caps, and rejects a
+one-shot access that would require multiple opens. Each response is checked
+against the IDs of its particular input batch, including returned required
+variables; rows fan out synchronously to every associated witness. Only final
+exhaustion marks a batch complete. Keys, indexes, witnesses, batch containers,
+and temporary sizing state are quota-accounted and cleared on failure/close.
+Batch assembly sizes each key once and matches `binding-charge-bytes` exactly
+for its generated vectors. The cursor adapter still owns envelope admission,
+permission reservation, and cursor/batch lifetime; downstream shared operators
+must own and charge values they retain. The prototype executor does not yet
+call this primitive, and input-free paths allocate none of its state.
+
 <a id="106-conditioned-planning-and-deterministic-selection"></a>
 
 ### 10.6 EAV access planning and deterministic selection

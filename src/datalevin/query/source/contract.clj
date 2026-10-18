@@ -60,11 +60,12 @@
 (defn binding-columns!
   "Validate the nonempty ordered typed inputs of a dependent access. This pure
   helper does not admit a source descriptor or negotiate an SPI revision."
-  [columns]
-  (ensure! (and (vector? columns) (seq columns) (v/portable? columns)) :batch)
-  (doseq [column columns] (column! column true nil))
-  (ensure! (= (count columns) (count (set (map :variable columns)))) :batch)
-  columns)
+  ([columns] (binding-columns! columns nil))
+  ([columns check!]
+   (ensure! (and (vector? columns) (seq columns) (v/portable? columns check!)) :batch)
+   (doseq [column columns] (column! column true check!))
+   (ensure! (= (count columns) (count (set (map :variable columns)))) :batch)
+   columns))
 
 (defn pattern-contract!
   ([contract] (pattern-contract! contract nil))
