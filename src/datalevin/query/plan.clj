@@ -77,6 +77,12 @@
   (-sample [step db source] "sample the step, not all steps implement")
   (-explain [step context] "explain the query step"))
 
+(defprotocol IStepFactory
+  (-instantiate-step [factory input-cols]
+    "Build an IStep for the selected tuple layout without reading any source.
+     The factory declares :in dependencies and :cols exports; the concrete
+     step also preserves carried input columns. Used by scoped access plans."))
+
 (defprotocol ITerminalDistinctSink
   (-add-distinct-batch! [sink tuples]
     "Add a batch already distinct in the terminal projection."))

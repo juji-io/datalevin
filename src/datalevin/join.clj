@@ -15,7 +15,7 @@
    [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [ concatv raise]])
   (:import
-   [java.util BitSet Collection Map Set List Map$Entry]
+   [java.util AbstractList BitSet Collection Map Set List Map$Entry]
    [datalevin.utl QueryKey$KeyMap QueryKey$KeySet]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
@@ -208,6 +208,65 @@
                                                  (.get tuples2 j)
                                                  keep-idxs2))))))))
             acc))))))
+
+(defn- checked-relation [rel check!]
+  (let [^List tuples (:tuples rel)]
+    (assoc rel :tuples
+           (when tuples
+             (proxy [AbstractList] []
+               (size [] (check!) (.size tuples))
+               (get [i] (check!) (.get tuples i)))))))
+
+(defn- hash-join-row-count
+  "Count exact output multiplicity using the join's key and bucket semantics.
+  The caller admits both counting and execution indexes before entering here."
+  [left right check!]
+  (let [^List a (:tuples left) ^List b (:tuples right)
+        common (qu/intersect-keys (:attrs left) (:attrs right))]
+    (if (or (nil? a) (nil? b)) 0
+        (if (empty? common)
+          (*' (.size a) (.size b))
+          (let [[small large small-attrs large-attrs]
+                (if (< (.size a) (.size b)) [a b (:attrs left) (:attrs right)]
+                    [b a (:attrs right) (:attrs left)])
+                build (first (tuple-key-fns small-attrs common))
+                lookup (second (tuple-key-fns large-attrs common))
+                ^Map index (hash-tuples build small)]
+            (loop [i 0 rows 0]
+              (check!)
+              (if (= i (.size ^List large)) rows
+                  (let [bucket (.get index (lookup (.get ^List large i)))]
+                    (recur (inc i) (+' rows (cond (nil? bucket) 0
+                                                  (u/array? bucket) 1
+                                                  :else (.size ^List bucket))))))))))))
+
+(defn hash-join-bounded
+  "Run the shared hash join with explicit allocation and cancellation hooks.
+  No hooks are consulted by the ordinary hash-join entry point. reserve! takes
+  (output-rows, bytes), admitting list capacity as well as exact integer bytes;
+  retain! owns a successful result reservation, release! releases workspace.
+  Input values are borrowed from already owned relations. Output containers
+  are admitted before the join creates any output tuple, using exact key/bag
+  multiplicity rather than the Cartesian upper bound for an equijoin."
+  [left right {:keys [check! reserve! retain! release!]}]
+  (check!)
+  (let [left (checked-relation left check!) right (checked-relation right check!)
+        n (if-let [^List xs (:tuples left)] (.size xs) 0)
+        m (if-let [^List xs (:tuples right)] (.size xs) 0)
+        width (+ (count (:attrs left)) (count (:attrs right)))
+        workspace (reserve! 0 (+' 4096 (*' 128 width) (*' (min n m) (+' 512 (*' 32 width)))))
+        retained (volatile! nil) success? (volatile! false)]
+    (try
+      (let [rows (hash-join-row-count left right check!)]
+        (vreset! retained (reserve! rows (+' 2048 (*' 128 width) (*' rows (+' 96 (*' 16 width))))))
+        (let [result (hash-join left right)]
+          (check!)
+          (retain! @retained)
+          (vreset! success? true)
+          result))
+      (finally
+        (release! workspace)
+        (when (and @retained (not @success?)) (release! @retained))))))
 
 (defn hash-join-into
   [rel1 rel2 sink]

@@ -175,7 +175,8 @@
   (if (u/array? tuple) typed-aget get))
 
 (defn tuples->return-map
-  [return-map tuples]
+  ([return-map tuples] (tuples->return-map return-map tuples nil))
+  ([return-map tuples set-options]
   (if (seq tuples)
     (let [symbols (:symbols return-map)
           idxs    (range 0 (count symbols))
@@ -186,8 +187,8 @@
                                     (transient {}) idxs))) tuples)]
       ;; Return-map shaping must retain the query's key semantics too, including
       ;; decimal scale and signed zero, rather than applying Clojure set equality.
-      (sp/new-spillable-set rows {:initial-capacity (count rows)}))
-    #{}))
+      (sp/new-spillable-set rows (assoc (or set-options {}) :initial-capacity (count rows))))
+    #{})))
 
 (defn pull
   [find-elements context resultset]

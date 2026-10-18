@@ -19,7 +19,7 @@
   (into {} (map (fn [r] [(:region-id r) {:inputs [] :operators [] :core {}}]))
         (filter :live? (:regions compiled))))
 
-(defn- provider [events config]
+(defn provider [events config]
   (let [descriptor (get config :descriptor fixture/descriptor)
         facts (get config :facts [[1 :row/value "one"] [2 :row/value "two"]])]
     (reify source/IQuerySource

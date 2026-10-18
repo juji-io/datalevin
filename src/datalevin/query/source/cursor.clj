@@ -229,7 +229,8 @@
             ;; Realize maps once under admission, including a streaming/reused
             ;; input tuple. Collector deduplication never reads a mutable outer
             ;; tuple again. Input-free cross products also keep owned witnesses.
-            outers (when (seq input-cols)
+            outer-input? (or (seq input-cols) (some? tuples))
+            outers (when outer-input?
                      (eduction (map (fn [tuple]
                                       (let [{:keys [bindings token]} (tuple-bindings! runtime input-cols tuple)]
                                         (vswap! input-tokens conj token)
@@ -254,11 +255,10 @@
         (try
           (if dependent?
             (lookup! runtime group plan ids outers save!)
-            (if (seq input-cols)
+            (if outer-input?
               (let [owned (into [] outers)]
-                (when (seq owned)
-                  (scan! runtime group plan
-                         (fn [row] (doseq [outer owned] (save! outer row))))))
+                (scan! runtime group plan
+                       (fn [row] (doseq [outer owned] (save! outer row)))))
               (scan! runtime group plan #(save! {} %))))
           (check!)
           (let [held @tokens]

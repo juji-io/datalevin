@@ -2504,8 +2504,8 @@ Both revised estimate shapes retain unknowns and zero without native cost
 conversion. Owned selected envelopes retain their reservations; discarded
 candidates release theirs. Failure closes all compilation resources immediately.
 Focused tests run selected flat-query paths through shared `AccessStep` execution,
-including native-seeded dependent lookups. The active compiler still needs to
-emit scoped execution steps and select this lifecycle for `q`/`explain`.
+including native-seeded dependent lookups. The query entry point still needs
+the coordinated native/compiler/adapter switch.
 
 The internal [`source.scope`](../src/datalevin/query/source/scope.clj) pass now
 captures those typed boundary interfaces from complete shared branch schemas.
@@ -2523,6 +2523,25 @@ This adapter does not evaluate branches, join caller witnesses, or authorize
 replay. Producers must already enforce decoding, arithmetic and intermediate
 limits. The active driver still needs to select these interfaces and connect
 region evaluation with the remaining resource audit and coordinated switch.
+
+The internal [`source.program`](../src/datalevin/query/source/program.clj)
+compiler now emits actual scoped execution steps from those annotations and
+typed inputs. Shared `IStepFactory` instances bind concrete tuple positions
+after scheduling, preserving carried columns when external accesses change the
+layout. Scoped calls collect distinct input keys before executing child regions
+once, complete their shared projection/set boundary, and join results back to
+all original outer witnesses. The shared bounded hash join admits counting and
+execution indexes and exact output multiplicity before materialization; guarded
+input lists observe cancellation inside its existing loops. Input-free accesses
+retain zero-column outer multiplicity and exhaust normally on empty outer input.
+The same compiler runs terminal projection, `:with`, baseline aggregates,
+windows and return shapes through the shared result processor with explicit
+workspace/cancellation hooks. Results are fully realized and independently
+owned before cleanup; failed execution/collection closes compilation resources
+immediately. Current compiler core operations are scalar predicates and
+identity/ground bindings. Mixed native/local-source clause emission, complete
+input parsing, static empty-branch propagation and the remaining decode/operator
+audit are prerequisites to activating this program in `q`/`explain`.
 
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response

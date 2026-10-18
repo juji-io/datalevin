@@ -2,7 +2,8 @@
   "Owned capture and planning lifecycle for the revised contract. The shared
   compiler supplies actual typed region interfaces before acquisition. This
   internal entry point is not yet selected by q/explain."
-  (:require [datalevin.query.source :as source]
+  (:require [datalevin.parser :as parser]
+            [datalevin.query.source :as source]
             [datalevin.query.source.access :as access]
             [datalevin.query.source.binding :as binding]
             [datalevin.query.source.control :as control]
@@ -19,6 +20,34 @@
 (defrecord ^:private Planned [compilation groups schedules])
 
 (defn- ensure! [ok] (when-not ok (fail! :query-source/invalid :planning)))
+
+(defn- own-syntax! [runtime syntax]
+  ;; Parser nodes and their :source metadata can both retain caller-owned
+  ;; constants. Own them before the first descriptor/acquisition callback.
+  (let [tokens (volatile! []) success? (volatile! false)
+        check! #(control/check-active! (:control runtime))
+        own! #(do (vswap! tokens conj %) %)]
+    (try
+      (letfn [(copy [x depth]
+                (check!)
+                (when (> depth 128) (fail! :query-source/limit :planning))
+                (cond
+                  (parser/-traversable? x)
+                  (do
+                    (own! (control/reserve! (:control runtime) {:retained-bytes 1024}))
+                    (let [node (reduce-kv (fn [node key value] (assoc node key (copy value (inc depth)))) x x)
+                          metadata (meta x)]
+                      (own! (rt/charge-copy! runtime metadata))
+                      (with-meta node (value/owned-copy metadata check!))))
+                  (and (vector? x) (some parser/-traversable? x))
+                  (do (own! (control/reserve! (:control runtime) {:retained-bytes (+ 256 (* 64 (count x)))}))
+                      (mapv #(copy % (inc depth)) x))
+                  :else (do (own! (rt/charge-copy! runtime x)) (value/owned-copy x check!))))]
+        (let [owned (copy syntax 0) held @tokens]
+          (rt/own! runtime #(doseq [token held] (control/release! token)))
+          (vreset! success? true)
+          owned))
+      (finally (when-not @success? (doseq [token @tokens] (control/release! token)))))))
 
 (defn- close-after-error! [runtime close error]
   (let [primary (rt/redacted-error runtime (or (:phase (ex-data error)) :planning) error)]
@@ -49,7 +78,9 @@
     (try
       (control/check-active! (:control runtime))
       (ensure! (vector? entries))
-      (let [token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 1024 (count entries)))})
+      (let [parsed (own-syntax! child parsed)
+            rules (own-syntax! child rules)
+            token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 1024 (count entries)))})
             _ (rt/own! child #(control/release! token))
             seen (IdentityHashMap.)
             entries

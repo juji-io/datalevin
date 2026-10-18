@@ -934,8 +934,21 @@
               :post-top-k-enrichment diagnostic)])
     [parsed-q context]))
 
-(defn- result-processor
-  [parsed-q]
+(defn- aggregate-results [find-elements context tuples]
+  (if-let [options (::result-policy context)]
+    (qagg/aggregate find-elements context tuples (:check! options) (:wrap-aggregate options))
+    (qagg/aggregate find-elements context tuples)))
+
+(defn- post-process-results [find return-map context tuples]
+  (if-let [post-process (:post-process (::result-policy context))]
+    (post-process find return-map tuples)
+    (-post-process find return-map tuples)))
+
+(defn ^:no-doc result-processor
+  "Compile shared result processing. An explicit bounded caller may supply
+  aggregate cancellation/workspace hooks and an owned post-processing policy;
+  ordinary queries use the existing operators and result representations."
+  ([parsed-q]
   (let [find          (:qfind parsed-q)
         find-elements (dp/find-elements find)
         result-arity  (count find-elements)
@@ -955,7 +968,7 @@
               with (mapv #(subvec % 0 result-arity))
 
               aggregate?
-              (qagg/aggregate find-elements context)
+              (aggregate-results find-elements context)
 
               (seq having)
               (qagg/apply-having having find-elements)
@@ -964,13 +977,17 @@
               (pull find-elements context)
 
               true
-              (-post-process find return-map))]
+              (post-process-results find return-map context))]
         (result-explain context result)
         (if (instance? FindRel find)
           (if order
             (order result (:qlimit parsed-q) (:qoffset parsed-q))
             (result-window result (:qlimit parsed-q) (:qoffset parsed-q)))
           result)))))
+  ([parsed-q options]
+   (let [process (result-processor parsed-q)]
+     (fn [parsed-q context]
+       (process parsed-q (assoc context ::result-policy options))))))
 
 (defn- finish-query
   [parsed-q context]

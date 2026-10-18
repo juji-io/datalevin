@@ -32,8 +32,11 @@
         {:kind :collection :columns [(column child)]}))
     :else (fail! :query-source/unsupported :inputs)))
 
-(defn- item-reader [input]
-  (when-not (u/seqable? input) (fail! :query-source/invalid :inputs))
+(defn item-reader
+  "Pull one borrowed item at a time. Own it before advancing a reusable Java
+  producer; unlike seq on an Iterable, this path never prefetches a chunk."
+  [input]
+  (when-not (or (u/seqable? input) (u/array? input)) (fail! :query-source/invalid :inputs))
   ;; seq on a Java Iterable may prefetch a chunk. Read its iterator directly so
   ;; a producer can reuse mutable row buffers after each owned handoff.
   (if (and (not (instance? Seqable input))
@@ -49,7 +52,10 @@
           (vreset! tail items)
           (when items [(first items)]))))))
 
-(defn- tuple-row [control columns input]
+(defn tuple-row
+  "Read only a tuple binding's declared prefix, skipping ignored values and
+  leaving an unused or unbounded tail untouched. The caller owns the result."
+  [control columns input]
   ;; Read only the declared prefix, matching native tuple binding. Do not count
   ;; or realize an unused tail, or inspect values bound to `_`.
   (let [read! (item-reader input)]

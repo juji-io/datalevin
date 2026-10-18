@@ -198,8 +198,8 @@
 (defrecord ^:private CoreOperator [owner region-id id requires columns after step])
 
 (defn core-operator!
-  "Capture the typed interface of an existing shared plan step. Only the
-  step's explicit input/output variables enter the dependency graph; hidden
+  "Capture the typed interface of a shared step or tuple-layout factory. Only
+  its explicit input/output variables enter the dependency graph; hidden
   native, rule or union body bindings stay private. after contains local work
   IDs that must finish before this step (for example a residual's boundary).
   This function neither samples nor executes the supplied step."
@@ -208,7 +208,8 @@
         token (rt/charge-metadata! runtime [region-id id requires columns after] :planning)]
     (try
       (ensure! (and (nonnegative-id? region-id) (nonnegative-id? id)
-                    (set? after) (satisfies? plan/IStep step)))
+                    (set? after) (or (satisfies? plan/IStep step)
+                                    (satisfies? plan/IStepFactory step))))
       (columns! requires check!)
       (columns! columns check!)
       (ensure! (and (= (set (map :variable requires)) (:in step))

@@ -62,7 +62,9 @@
         (try
           (let [result (f (checked-values control values))]
             (source/check-active! control)
-            (when (wide-number? result) (rt/charge! runtime result))
+            (when (wide-number? result)
+              (let [retained (rt/charge! runtime result)]
+                (rt/own! runtime #(source/release! retained))))
             result)
           (finally (when token (source/release! token))))))
     f))
