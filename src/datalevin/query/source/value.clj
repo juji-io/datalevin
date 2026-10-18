@@ -1,6 +1,7 @@
 (ns datalevin.query.source.value
   "Owned logical values and explicit custom-value validation/accounting hooks."
   (:import [clojure.lang APersistentVector$SubVector BigInt Ratio RT Sorted]
+           [datalevin.utl QueryKey]
            [java.math BigDecimal BigInteger]
            [java.time Duration Instant Period]
            [java.util Date UUID]))
@@ -308,3 +309,54 @@
                      (add-charges n bytes)))
                  0 (range (count row)))))
            0 rows)))))
+
+(defn- binding-id? [x]
+  (and (integer? x) (<= 0 x Long/MAX_VALUE)))
+
+(defn dependent-batch-charge-bytes
+  "Charge the dependent batch shape, including IDs on an empty final batch.
+  The input-free helper above deliberately never allocates or charges IDs."
+  ([columns rows binding-ids]
+   (dependent-batch-charge-bytes columns rows binding-ids nil))
+  ([columns rows binding-ids observe!]
+   (when-not (and (vector? rows) (vector? binding-ids)
+                  (= (count rows) (count binding-ids)))
+     (fail! :query-source/invalid :batch))
+   (let [bytes (add-charges (batch-charge-bytes columns rows observe!)
+                            (charge-part 64 observe!)
+                            (value-charge binding-ids observe!))]
+     (doseq [id binding-ids]
+       (when observe! (observe! 0))
+       (when-not (binding-id? id) (fail! :query-source/invalid :batch)))
+     bytes)))
+
+(defn binding-charge-bytes
+  "Charge a nonempty dependent open after its required columns are validated.
+  IDs and typed keys must be unique; metadata and backing views are included.
+  The observer can reject quota excess before descending into retained values."
+  ([requires bindings] (binding-charge-bytes requires bindings nil))
+  ([requires bindings observe!]
+   (when-not (and (vector? requires) (seq requires) (vector? bindings) (seq bindings))
+     (fail! :query-source/invalid :batch))
+   (let [bytes (add-charges (charge-part 64 observe!)
+                            (value-charge requires observe!)
+                            (value-charge bindings observe!))]
+     (dotimes [i (count bindings)]
+       (when observe! (observe! 0))
+       (let [{:keys [binding-id values] :as binding} (nth bindings i)]
+         (when-not (and (plain-map? binding) (contains? binding :binding-id) (contains? binding :values)
+                        (every? #(or (#{:binding-id :values} %) (qualified-keyword? %)) (keys binding))
+                        (binding-id? binding-id) (vector? values) (= (count requires) (count values)))
+           (fail! :query-source/invalid :batch))
+         (doseq [[column x] (map vector requires values)]
+           (when-not (if (nil? x) (:nullable? column) (matches-type*? (:type column) x true nil))
+             (fail! :query-source/invalid :batch)))
+         ;; Batches are already capped before execution. Pairwise validation
+         ;; avoids allocating an uncharged secondary dedup index while sizing.
+         (dotimes [j i]
+           (when observe! (observe! 0))
+           (let [previous (nth bindings j)]
+             (when (or (= binding-id (:binding-id previous))
+                       (QueryKey/equals values (:values previous)))
+               (fail! :query-source/invalid :batch))))))
+     bytes)))

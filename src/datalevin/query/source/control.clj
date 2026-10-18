@@ -6,10 +6,12 @@
             ThreadFactory TimeUnit ScheduledFuture]))
 
 (def default-limits
-  {:batch-rows 4096 :batch-bytes 1048576 :in-flight-batches 2
+  {:batch-rows 4096 :batch-bytes 1048576 :binding-rows 256 :binding-bytes 262144
+   :in-flight-batches 2
    :retained-bytes 67108864 :spill-bytes 1073741824 :result-rows 1000000
    :result-bytes 67108864 :external-requests 1024 :concurrent-requests 4})
-(def ledger-keys (disj (set (keys default-limits)) :batch-rows :batch-bytes))
+(def ledger-keys
+  (disj (set (keys default-limits)) :batch-rows :batch-bytes :binding-rows :binding-bytes))
 
 (deftype Control [limits deadline state timer parent closed children])
 (deftype Registration [control callback])
@@ -39,7 +41,7 @@
                  (every? (set (keys default-limits)) (keys limits))
                  (every? (fn [[k v]]
                            (and (integer? v) (<= 0 v Long/MAX_VALUE)
-                                (or (not (#{:batch-rows :batch-bytes
+                                (or (not (#{:batch-rows :batch-bytes :binding-rows :binding-bytes
                                             :in-flight-batches :concurrent-requests} k))
                                     (pos? (long v))))) limits)
                  (or (nil? timeout-ms) (and (integer? timeout-ms)
@@ -94,6 +96,7 @@
           (when-not (or (:reason @state) (:closed? @state) @(.-closed control))
             (let [registrations (:registrations @state)]
               (swap! state assoc :reason reason :registrations #{})
+              (.notifyAll ^Object state)
               registrations)))]
     (doseq [registration registrations] (dispatch! registration reason)))
   nil)
@@ -155,7 +158,8 @@
                        (-> s
                            (update :usage #(merge-with - % (dissoc (.-charges token)
                                                                   :external-requests)))
-                           (update :reservations disj token)))))))
+                           (update :reservations disj token))))
+        (.notifyAll ^Object state))))
   nil)
 
 (defn accept!
@@ -191,7 +195,8 @@
             (swap! (.-children ^Control parent) disj control)
             (swap! state update :registrations
                    #(into #{} (remove (fn [^Registration r] (identical? control (.-control r)))) %)))
-          (swap! state assoc :closed? true :registrations #{})))))
+          (swap! state assoc :closed? true :registrations #{}))
+        (.notifyAll ^Object state))))
   nil)
 
 (defn complete!

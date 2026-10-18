@@ -2113,6 +2113,33 @@ these alongside query concurrency limits and any limits shared across queries.
 Every page, retry, and split request charges the cumulative request ledger;
 waiting for a permit is cancellable and observes the query deadline.
 
+The preparatory public helpers `datalevin.query.source/request-limiter` and
+`datalevin.query.source/acquire-request!` implement shared request admission.
+Create one Closeable limiter during session setup with the invocation's control
+and the session's request-constraints map, and share it across all aliases,
+cursors, and explicit groups. Every actual backend operation, including setup,
+pages, retries, and splits, acquires its own Closeable permit:
+
+```clojure
+(with-open [permit (source/acquire-request! session-request-limiter)]
+  (fetch-page!))
+```
+
+A permit marks one request start and owns concurrency until that operation
+finishes, including on failure. Closing it releases live charges without
+refunding a request start or its rolling rate history. Waiting holds no request
+start or concurrency slot; its retained state is quota-accounted and observes
+cancellation, interruption, deadlines, and limiter/control closure. Close the
+limiter during session cleanup. Metadata needed by outstanding permits remains
+accounted until they close. Backend constraints shared across invocations remain
+provider-owned.
+
+Core's internal consumption helper separately implements default/explicit open
+permissions, reserving attempts before provider calls and retaining spent
+one-shot attempts after failures. These helpers are preparation for the
+coordinated migration; the prototype session validator and executor have not
+yet switched to these v2 declarations.
+
 ### 10.5 Dependent access and binding batches
 
 V2 alternatives retain `:id`, `:plan`, `:covers`, `:prefilters`, `:columns`, and
@@ -2257,6 +2284,14 @@ input IDs and per-row output IDs. Input batches are charged to
 retained memory until their users release them; returned
 `:byte-count`/`:reservation` cover the extended batch. Headers, dedup indexes,
 and outer associations remain accounted for even when zero rows are returned.
+
+The public accounting helpers and binding limits are implemented as preparation
+for the runtime switch. The dependent helper validates required columns, IDs,
+typed input tuples, and duplicate keys under query-key equality. Both output
+charge shapes include metadata and retained backing; an empty dependent final
+batch still charges its ID vector. The two-argument input-free path keeps its
+existing charge and allocates no ID state. Their availability does not admit
+dependent cursors under the still-active prototype descriptor/session contract.
 
 <a id="106-conditioned-planning-and-deterministic-selection"></a>
 

@@ -6,6 +6,7 @@
   (:require [datalevin.query.dispatch :as dispatch]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.permissions :as permissions]
             [datalevin.query.source.value :as value])
   (:import [java.lang ClassValue]))
 
@@ -84,8 +85,32 @@
 (defn release!
   "Release live charges idempotently; cumulative external requests are not refunded."
   [reservation] (control/release! reservation))
+
+(defn request-limiter
+  "Create a Closeable request limiter once per session. Share it across every
+  alias and independent consumption group, including during session setup."
+  [control constraints]
+  (permissions/request-limiter control constraints))
+
+(defn acquire-request!
+  "Wait for an actual backend request permit under the shared query ledger,
+  session concurrency, rolling rate, cancellation, and deadline. Close the
+  returned permit in finally, including on provider errors. Pages, retries,
+  and split requests each acquire a separate permit."
+  [limiter]
+  (permissions/acquire-request! limiter))
 (defn batch-charge-bytes
   "Conservative retained charge for owned values. Custom values must implement
-  datalevin.query.source.value/IQuerySourceValue; unknown values reject."
-  [columns rows]
-  (value/batch-charge-bytes columns rows))
+  datalevin.query.source.value/IQuerySourceValue; unknown values reject. The
+  two-argument input-free shape allocates no ID state. Dependent batches supply
+  one binding ID per row, including [] on an empty final batch."
+  ([columns rows] (value/batch-charge-bytes columns rows))
+  ([columns rows binding-ids]
+   (value/dependent-batch-charge-bytes columns rows binding-ids)))
+
+(defn binding-charge-bytes
+  "Conservative retained charge for a nonempty dependent open's typed, unique
+  binding tuples and IDs. Input-free opens omit bindings and never call this."
+  [requires bindings]
+  (contract/binding-columns! requires)
+  (value/binding-charge-bytes requires bindings))
