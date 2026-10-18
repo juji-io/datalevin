@@ -7,43 +7,36 @@ This appendix collects work beyond the [baseline query-source SPI](query-source-
 and [companion plan](../../federation/federation.md). Extension negotiation follows
 [the SPI rules](query-source-spi.md#version-negotiation-and-source-information).
 
-The earlier bulk-binding envelope is retained below as input to the
-[SPI four-shape revision](query-source-spi.md#11-four-shape-revision-target).
-Parameterized access is now required baseline design work before F1 sign-off,
-not a follow-up that may wait until after F3. Probes and the other protocol
-extensions below still require envelope design and conformance gates.
+Required input bindings are part of the specified
+[SPI v2 revision](query-source-spi.md#10-spi-v2-revised-four-shape-contract),
+which remains implementation and conformance work before F1 sign-off. Probes
+and the other protocol extensions below still require separate envelope design
+and conformance gates.
 DataFusion/Parquet is a companion backend choice, not an SPI feature keyword.
+These adapters expose mapped entities and attributes through the revised EAV
+interface. Columnar or tuple batches are execution representations; arbitrary
+tuple inputs continue to use the existing Datalog facilities.
 
 <a id="1-bulk-bindings"></a>
 
-## 1. Required input bindings (revision input)
+<a id="1-required-input-bindings-revision-input"></a>
 
-This is the earlier optional proposal, not an implemented or final revised
-baseline envelope. Its optional SPI v1 feature keyword was `:bulk-bindings`.
-The revision must settle baseline fields and negotiation before compatibility
-commitment; the revised baseline should not depend on the earlier optional
-feature flag. The earlier proposal specifies:
+## 1. Required input bindings (SPI v2)
 
-When negotiated, an alternative may declare nonempty `:requires`, an ordered vector of
-typed variable columns. Its cursor-open request also includes
-`:bindings [{:binding-id 0 :values [...]} ...]` under explicit row/byte limits.
-Core deduplicates typed binding keys and retains their association with every
-outer tuple, including multiplicity. IDs are query-local opaque integers.
+The earlier optional `:bulk-bindings` proposal is superseded by the
+[authoritative v2 binding contract](query-source-spi.md#105-dependent-access-and-binding-batches).
+Use [v2 negotiation](query-source-spi.md#101-version-selection-and-compatibility),
+not the old feature flag. V1 retains empty `:requires` and its original open/batch
+envelopes; v2 defines required columns, bounded input batches, query-key
+deduplication, response IDs, all-bindings completion, and request splitting.
 
-Returned batches include `:binding-ids`, parallel to `:rows`, referring only to
-requested IDs. Empty results for a key require no row. Core fans matches back
-to all corresponding outer tuples before Datalog projection/aggregation. Rows
-cannot depend on request or response order to identify their key.
-
-Source parameter limits may split one binding batch into bounded requests.
-Each request consumes the shared budget and uses the same session view. This
-contract does not permit rescanning a one-shot source for each binding batch.
-The revised baseline must also handle providers without a bulk endpoint:
-splitting into per-key requests consumes actual request/concurrency budgets and
-is reflected in estimates and metrics. Lookup-only paths require a finite seed
-of typed inputs; missing seeds and unseeded cyclic dependencies fail before execution.
-Session consistency and replay are independent: a fresh HTTP call is not stable
-replay, and independent one-shot paths need explicit consumption groups.
+The revision also specifies
+[per-source reads](query-source-spi.md#103-per-source-read-requirements-and-actual-guarantees),
+[consumption groups](query-source-spi.md#104-consumption-groups-and-replay),
+[scope/completion](query-source-spi.md#102-accepted-scope-and-completion), and
+[conditioned costs and fallback](query-source-spi.md#106-conditioned-planning-and-deterministic-selection).
+Implementations must pass those contracts together; this appendix adds no
+alternative envelope. The explicit anchor above remains for existing links.
 
 ### Additional conformance
 
@@ -98,7 +91,7 @@ and interaction with residual predicates, joins, duplicates/`:with`, and
 read consistency before advertising support. In particular, a source-local
 limit cannot discard rows required by later residual checks or joins.
 
-Use the [common capability/cost model](query-source-spi.md#12-capability-and-cost-planning-target)
+Use the [specified capability/cost contract](query-source-spi.md#106-conditioned-planning-and-deterministic-selection)
 to compare delegated and local execution, including transferred rows/bytes,
 provider work, startup, and local retained state. For analytical workloads,
 measure reductions from exact aggregation and legal ordering/limit pushdown;

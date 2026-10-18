@@ -3,14 +3,39 @@
 
   Sources are caller-owned. Sessions and owned-batch cursors belong to one
   invocation. See doc/query-source-spi.md for the complete contract."
-  (:require [datalevin.query.source.contract :as contract]
+  (:require [datalevin.query.dispatch :as dispatch]
+            [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
-            [datalevin.query.source.value :as value]))
+            [datalevin.query.source.value :as value])
+  (:import [java.lang ClassValue]))
 
 (defprotocol IQuerySource
   (-source-info [source] "Return immutable metadata without provider I/O.")
   (-open-session [source request] "Authorize and acquire one read view.")
   (-plan-source [source session request] "Plan all eligible clauses without reads."))
+
+(defn- source-predicate [protocol]
+  (if-not (seq (:impls protocol))
+    (fn [input] (instance? datalevin.query.source.IQuerySource input))
+    ;; Negative satisfies? walks the class hierarchy. Cache both outcomes;
+    ;; ClassValue keeps arbitrary caller classes from being retained forever.
+    (let [checks (proxy [ClassValue] [] (computeValue [_] (volatile! nil)))
+          nil-source? (satisfies? protocol nil)]
+      (fn [input]
+        (or (instance? datalevin.query.source.IQuerySource input)
+            (if (nil? input) nil-source?
+                (let [result (.get ^ClassValue checks (class input))]
+                  (if-some [known @result] known
+                           (vreset! result (satisfies? protocol input))))))))))
+
+;; extend/extend-type updates the protocol Var. Publish a fresh predicate on
+;; those rare updates, so native calls need no protocol-map lookup or cache
+;; invalidation check. Var root updates use the same monitor as installation.
+(locking #'IQuerySource
+  (add-watch #'IQuerySource ::source-routing
+             (fn [_ _ _ protocol]
+               (dispatch/install-source-predicate! (source-predicate protocol))))
+  (dispatch/install-source-predicate! (source-predicate IQuerySource)))
 
 (defprotocol IQuerySourceSession
   (-session-info [session] "Return the acquired read-view metadata.")

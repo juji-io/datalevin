@@ -15,8 +15,6 @@
             Placeholder Pattern Predicate FindRel BindScalar]
            [java.util IdentityHashMap]))
 
-(defn source-inputs? [inputs] (boolean (some #(satisfies? source/IQuerySource %) inputs)))
-
 (defn- term [x]
   (cond
     (instance? Variable x) [:var (:symbol x)]
@@ -97,7 +95,8 @@
                           {:source-symbol sym
                            :clause-ids (mapv :id (filter #(= sym (:source-symbol %)) patterns))}
                           (fn [runtime]
-                            (if (satisfies? source/IQuerySource input)
+                            (if (and (not (instance? datalevin.db.DB input))
+                                     (satisfies? source/IQuerySource input))
                               (let [descriptor (or (.get descriptors input)
                                                    (let [d (rt/invoke runtime :descriptor #(source/-source-info input))]
                                                      (rt/charge-metadata! runtime d :descriptor)

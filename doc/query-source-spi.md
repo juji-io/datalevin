@@ -1,6 +1,6 @@
-# Query-source SPI v1
+# Query-source SPI
 
-Status: earlier F0/F1 baseline complete; four-shape revision planned
+Status: earlier F0/F1 baseline implemented; SPI v2 revision specified, implementation pending
 
 Release placement: [roadmap source milestones](../roadmap.md#source-milestones); embedded JVM execution  
 Public namespace: `datalevin.query.source`  
@@ -11,11 +11,12 @@ Related plans: [companion federation design](../../federation/federation.md),
 This document specifies the boundary between Datalevin's query engine and a
 separately developed source implementation. It makes the minimum contracts
 concrete for the current external execution path. The
-[four-shape revision target](#11-four-shape-revision-target) below extends the
-common model to native Datalevin, SQL, files/exports, and APIs before commitment.
-Changes remain reviewable
-during implementation; SPI v1 becomes an experimental compatibility commitment only after
-the F1 conformance gates pass.
+[four-shape revision target](#11-four-shape-revision-target) extends the common
+model to native Datalevin, SQL, files/exports, and APIs before commitment.
+[Section 10](#10-spi-v2-revised-four-shape-contract) specifies the revised v2
+envelopes and negotiation; §§2–9 retain the earlier executable v1 baseline.
+Changes remain reviewable during implementation; the revised SPI becomes an
+experimental compatibility commitment only after the F1 conformance gates pass.
 
 This is the authoritative core source contract. The companion plan specifies
 provider behavior and delivery; it cannot add baseline capabilities here.
@@ -73,14 +74,29 @@ commitment. Sections 2–9 describe the earlier executable external baseline,
 which requires unparameterized external alternatives, uses one query-wide
 consistency request, and restricts one-shot replay at session scope. These
 rules have not yet been replaced in code. Exact new envelopes and negotiation
-rules must be specified and tested before they become usable.
+rules are specified in [Section 10](#10-spi-v2-revised-four-shape-contract) as
+SPI v2 and must be implemented and tested before they become usable.
 
-The common abstraction is a typed logical relation with executable access
-paths, not a remote SQL table. Keep physical source identity and access
-scope, accepted logical relation metadata, alternative access paths, and the
-query-owned read context distinct. Accepted scope and conversion semantics
-participate in the definition fingerprint; query input values remain execution
-data.
+The federation interface is mapped entities and attributes, queried through
+source-qualified EAV patterns. Native Datalevin supplies its existing entities
+and attributes; companion adapters map external identity, fields, references,
+and missing-value semantics into that interface. Core receives the accepted
+attribute types, cardinality, entity/reference domains, and absence semantics
+through the [v2 logical schema](#logical-schema-guarantees). Physical columns,
+endpoint paths, conversion implementations, and supporting proofs remain
+provider-owned. Each mapped attribute denotes a typed entity/value relation
+with executable access paths. Keep physical
+source identity and access scope, accepted mapping metadata, alternative access
+paths, and the query-owned read context distinct. Accepted scope and conversion
+semantics participate in the definition fingerprint; query input values remain
+execution data.
+
+Arbitrary tuple and collection inputs remain existing Datalog facilities.
+Planning alternatives and cursor batches use tuples of variable bindings as
+their execution representation, including wide results of fused EAV patterns.
+Neither introduces a separate tuple-source federation model. V2 requires an
+EAV pattern contract as specified in Section 10.1; the tuple source contract
+in Sections 2–9 documents the earlier executable v1 baseline.
 Providers describe required inputs, returned columns, exact clause coverage,
 safe superset filters, and the cost and execution properties of each path.
 
@@ -96,14 +112,14 @@ sources are valid. Pushdown capabilities are demonstrated by alternatives,
 not inferred from a shape or advertised as mandatory remote relational work.
 Physical discovery is optional companion I/O; declared schemas are valid.
 
-Required revision work:
+Required implementation and conformance work under Section 10:
 
 1. **Typed input dependencies and binding batches.** Promote parameterized
    access from the deferred bulk-binding proposal into the common baseline.
    Providers may still return only input-free alternatives. Core orders
    dependencies, rejects unsatisfied inputs and unseeded dependency cycles,
    deduplicates typed input keys without losing outer multiplicity, and
-   associates returned rows with input IDs. Specify bounded cursor-open
+   associates returned rows with input IDs. Implement bounded cursor-open
    binding batches and request splitting;
    no provider batch endpoint is assumed. Unknown costs remain unknown, and
    per-key HTTP work is explicit and charged rather than hidden as one batch.
@@ -111,7 +127,7 @@ Required revision work:
    report actual consistency without silently weakening another source.
    Retain snapshot, statement, and best-effort distinctions; stable replay and
    exact pinned data versions are separate guarantees. Reissuing an API
-   request is not identical replay. Define consumption groups for independent
+   request is not identical replay. Implement consumption groups for independent
    one-shot paths sharing a session, and reject reuse or spool under quotas.
    Acquisition may establish an authorized weak context without claiming a
    stable provider snapshot. Memoized observations do not create one.
@@ -139,7 +155,7 @@ Required revision work:
    paths, API truncation/errors, and cross-shape joins. Use real native
    execution and deterministic test providers; fixtures do not certify a real
    SQL driver or API integration. Existing local and fake suites remain gates.
-6. **Capability and cost planning.** Specify the admissibility rules and
+6. **Capability and cost planning.** Implement the admissibility rules and
    conditioned, comparable estimates in Section 1.2. Implement bounded
    federation plan enumeration and cost-based selection across access shapes
    and within one shape for queries with external source dependencies.
@@ -160,7 +176,8 @@ placement and both owners' acceptance gates remain in the
 
 This is part of the planned baseline revision. The existing estimate fields in
 Section 5 remain the executable envelope until the revised units, conditioning,
-and planning inputs are specified, implemented, and tested. Federation
+and planning inputs in [Section 10.6](#106-conditioned-planning-and-deterministic-selection)
+are implemented and tested. Federation
 selection uses this model for external and mixed queries. Native fragments
 participate through the existing optimizer; native-only queries retain native
 optimization without a second generic planning pass.
@@ -194,7 +211,7 @@ scope, and estimated input rows/distinct keys, preserving unknowns. Estimates
 identify their conditioning, confidence, provenance, and statistics freshness;
 they must not assume that a lookup's input count is one or that a scan is free.
 Core derives invocation counts and whole-plan cost; session setup is separate
-one-time work. Final field names and inclusion rules are a revision deliverable.
+one-time work. Section 10.6 fixes field names, units, and inclusion rules.
 
 | Dimension | Required meaning when an estimate is supplied |
 | --- | --- |
@@ -214,9 +231,9 @@ concurrency is constrained by provider and query limits; rate-limit waiting
 and request latency affect expected elapsed time.
 
 The initial ranking policy targets estimated end-to-end latency subject to
-admissibility and hard limits. Specify a deterministic conservative fallback
-when evidence cannot support a comparison, retain uncertainty in explain, and
-calibrate the policy against measured workloads. Provider-local optimizer
+admissibility and hard limits. Use Section 10.6's deterministic structural
+fallback when evidence cannot support a comparison, retain uncertainty in
+explain, and calibrate the policy against measured workloads. Provider-local optimizer
 scores or billing units cannot be compared or added across systems without an
 explicit conversion policy. Unknown components remain unknown, never zero.
 Estimates do not prove emptiness, uniqueness, complete results, or resource
@@ -253,12 +270,16 @@ owned-batch representations. Shared correctness rules may reuse existing
 specialized native code; they do not require new per-row/per-datom protocol
 dispatch or accounting on the native-only path.
 
-The current `source-inputs?` guard detects `IQuerySource` implementations.
-Making ordinary native DB values satisfy that guard would redirect their queries
-to the generic source executor. Native participation must therefore use the
-internal bridge, or first establish explicit native dispatch precedence before
-any native type implements the public protocol. Retain routing regression
-checks alongside the existing supported-query and cache behavior checks.
+The entry-point guard gives native DB values precedence over `IQuerySource`,
+including protocol extensions to the DB class. Adapters load the public
+`datalevin.query.source` namespace when implementing its protocols; this installs
+source detection without loading the executor. Core-only applications leave
+that optional detection inactive. Direct implementations and late protocol
+extensions are both supported. The executor resolves on the first external
+invocation; native-only calls retain their route before and after that load.
+The mixed planner uses the same native precedence. No adapter registration API
+or per-row dispatch is added. Retain routing regression checks alongside the
+existing supported-query and cache behavior checks.
 
 For mixed queries, expose native fragment capabilities and cost at planning
 boundaries and invoke native operations directly within each selected fragment.
@@ -342,11 +363,17 @@ Repointing at an unrelated system changes the source-instance ID. Context IDs
 must distinguish incompatible catalogs, authorization profiles, and snapshot
 requirements without embedding credentials.
 
-Two pattern contracts are supported:
+The earlier executable v1 baseline supports two pattern contracts:
 
 - `:tuple`: positional columns; a pattern has exactly the declared arity.
 - `:eav`: exactly three terms with a constant advertised attribute, as specified
   in the [EAV descriptor contract](#eav-descriptor-contract) below.
+
+The revised federation interface requires `:eav` under
+[Section 10.1](#101-version-selection-and-compatibility). V1's positional source
+contract is retained here to document existing code and tests. Ordinary Datalog
+tuple inputs and the binding tuples exchanged during execution keep their own
+roles under the revised contract.
 
 Core selects the highest mutually supported SPI version and the supported
 intersection of `:features` before opening a session. With no common version,
@@ -410,10 +437,13 @@ tuple source, with this `:pattern-contract`:
 
 Both types use [Section 3](#3-logical-values-and-clause-envelopes); they are type
 descriptors, not column maps or physical type names. These are the only baseline
-EAV fields; namespaced annotations may be ignored. Cardinality and physical
-uniqueness are not advertised guarantees in v1: core must not infer either from
-this envelope. Companion mapping constraints remain inputs to the companion's
-own safe fusion.
+EAV fields in the earlier executable v1 contract; namespaced annotations may
+be ignored. V1 does not advertise cardinality or reference classification beyond
+the types, so core cannot infer them. The required
+[v2 logical schema](#logical-schema-guarantees) supplies accepted cardinality,
+entity/reference domains, and absence semantics alongside these types. Physical
+expressions, uniqueness proofs, and conversion implementations stay with the
+provider in both versions.
 
 This example extends the companion's [normalized orders mapping](../../federation/federation.md#43-compilation-to-the-spi)
 with a `:order/customer` reference. Its target is the same source's `:customer`
@@ -530,6 +560,13 @@ data: an adapter that needs to distinguish equal physical rows exposes an
 identity column. Core does not invent stable
 IDs or deduplicate away `:with` variables. Existing Datalog projection and
 aggregation boundaries determine observable duplicate semantics.
+
+Virtual definitions preserve nullable tuple outputs under the analytics plan's
+[output-column contract](../analytics.md#output-columns-and-nullability).
+Their normalized output descriptors include both `:type` and `:nullable?`;
+composition validates that contract before source acquisition and includes it
+in definition/dependency fingerprints. Expansion does not turn an explicit
+`nil` into an absent EAV fact or silently narrow a nullable column.
 
 Core expands accepted virtual definitions before source planning and assigns
 query-local clause IDs. The IDs are opaque to providers and stable for that
@@ -785,11 +822,11 @@ Rechecks run before distinct, limit, aggregation, or other lossy operations.
 V1 does not delegate those operations or promise source ordering. Providers
 preserve every required row/identity and residual column. In the earlier executable
 baseline, `:requires` is empty; core chooses a bounded scan/local join or rejects the plan, never one
-remote cursor per outer row. Parameterized alternatives require the negotiated
-[bulk-binding proposal](query-source-extensions.md#1-bulk-bindings);
-the four-shape revision promotes this capability into the baseline before
-compatibility commitment. This documentation change does not implement it;
-§§2–9 remain the earlier baseline.
+remote cursor per outer row. SPI v2 defines required inputs and cursor-open
+binding batches in [Section 10.5](#105-dependent-access-and-binding-batches),
+superseding the earlier [bulk-binding proposal](query-source-extensions.md#1-bulk-bindings).
+This documentation change does not implement it; §§2–9 remain the earlier
+baseline.
 
 All v1 source alternatives and opaque handles are query-scoped. They must not
 be persisted or retained in shared native plan caches, and cannot own open
@@ -893,8 +930,9 @@ selecting `:replay :once` permits only one source cursor for that session across
 all alternatives and aliases. Core rejects a plan requiring additional reads,
 or explicitly spools once under quotas and reports that spool. A provider that
 supports more independent reads can expose a replayable session snapshot.
-Finer-grained consumption groups are deferred. No implicit sampling or replay
-is allowed.
+SPI v2 replaces that session-wide restriction with the explicit
+[consumption groups](#104-consumption-groups-and-replay) in Section 10.4.
+No implicit sampling or replay is allowed in either version.
 
 `-cursor-metrics` is non-blocking and returns cumulative `:batches`, `:rows`,
 `:charged-bytes`, `:read-rows`, `:read-bytes`, `:external-requests`, and
@@ -1110,6 +1148,25 @@ focused integration suite with:
 ```sh
 clojure -M:test -m datalevin.query.source.execution-runner
 ```
+
+Run [native isolation checks](../test-src/datalevin/query/native_isolation_runner.clj)
+in separate JVMs; they deliberately install protocol extensions and check both
+public-SPI/core load orders:
+
+```sh
+clojure -M:test -m datalevin.query.native-isolation-runner
+clojure -M:test -e '(require (quote datalevin.query.source)) (require (quote datalevin.query.native-isolation-runner)) (datalevin.query.native-isolation-runner/-main)'
+```
+
+These checks cover direct/extended sources, native DB precedence, native syntax,
+caches and prepared reads, lazy executor loading, and rejection of native-image
+source execution before lazy resolution. The last check uses the JVM execution
+mode property; it does not certify a native-image build. The separate
+[measurement script](../script/query_source_native_gate.clj) compares native
+entry points with a reconstructed control that removes source routing. It
+records raw timings, thread allocations, loading, GC, and the control source;
+it supplements the [performance gate](../roadmap.md#native-execution-performance-gate)
+and does not replace its historical control or complete workload requirements.
 
 The [shared execution matrix](../test-src/datalevin/query/source/conformance.clj)
 is test support, separate from the runtime SPI. It accepts an adapter constructor
@@ -1585,7 +1642,677 @@ that read.
 Combining one-shot fragments within a session rejects unless a complete
 reopenable alternative is available.
 
-The [F1 gates](../roadmap.md#f1-execution-checks) remain open for the complete
-fault/conformance matrix and the remaining value/execution cases. Control
-construction, plan/batch validation, and provisional size constants remain
-internal implementation details.
+The earlier v1 F1 baseline is complete. The revised
+[F1 gates](../roadmap.md#f1-execution-checks) remain open for SPI v2, its
+four-shape execution matrix, and native performance sign-off. Control construction,
+plan/batch validation, and provisional size constants remain internal
+implementation details.
+
+## 10. SPI v2: revised four-shape contract
+
+Status: specified implementation target, not implemented by this documentation
+change. This section defines SPI version `2`. Sections 2–9 remain the executable
+version `1` contract. V2 retains the protocol method signatures, logical values,
+clause coverage, ownership, authorization, cancellation, quota ledger, and
+error/redaction rules unless explicitly replaced below. Unknown unqualified
+fields are invalid; namespaced annotations grant no capability. Native-only
+queries retain §1.3's direct execution and performance requirements.
+
+### 10.1 Version selection and compatibility
+
+`-source-info` keeps the required top-level fields from §2. Its
+`:pattern-contract` must be `{:kind :eav :attributes {...}}` under the
+EAV descriptor contract: every exposed attribute declares its entity and value
+types, including nominal reference types where applicable. The accepted mapping
+defines entity identity, attribute names, conversions, and missing-value
+semantics. The required `:logical-schema` in the v2 map exposes the accepted
+logical guarantees defined below. Core consumes that compiled schema; mapping
+compilation and the physical evidence supporting its guarantees remain
+companion-owned.
+
+Revised federation planning admits only EAV source descriptors, including legacy
+providers used through its v1 compatibility path. A tuple source must acquire an
+accepted entity/attribute mapping before joining this model; a `:tuple` pattern
+contract raises `:query-source/unsupported` before acquisition. Existing Datalog
+tuple/collection inputs remain valid without an `IQuerySource` wrapper. Logical
+tuple types within keys or attribute values, required-input tuples, and returned
+binding tuples remain supported; they do not change the source pattern contract.
+
+A source advertising version `2` must additionally supply the recognized, immutable
+`:datalevin.query.source/v2` map:
+
+```clojure
+{:spi-versions #{2}
+ ;; Other required §2 identity and fingerprint fields remain.
+ ;; :pattern-contract is the compiled EAV descriptor described above.
+ :features #{}
+ :required-features #{}
+ :datalevin.query.source/v2
+ {:features #{}
+  :required-features #{}
+  :logical-schema logical-schema
+  :read-capabilities #{:snapshot :statement :best-effort}
+  :scope {:id "scope:tenant-a" :kind :restricted
+          :parameters {:tenant :tenant-a}}
+  :completion {:domain :finite :extent :all-matches}}}
+```
+
+Top-level feature sets belong to v1; the nested feature sets belong to v2.
+All fields shown inside the v2 map are required. A v2-only source uses empty
+top-level feature sets. Optional features are negotiated within the selected
+version; dependent access and the other contracts in this section are baseline
+v2 envelopes, not optional feature flags. `:bulk-bindings` does not select v2.
+
+Core captures descriptors, forms physical session groups (§10.3), and chooses
+the highest version supported by core and every alias in each group. Negotiated
+features are the intersection of core support and every member's selected-version
+feature set; every member's required features must be a subset. Core validates
+that version's envelope and required features before acquisition.
+No common version raises `:query-source/version`; a missing/malformed v2 map
+raises `:query-source/invalid`. Unsupported required features raise
+`:query-source/unsupported`. A query option `:query-source {:spi-version 2}`
+requires exactly that version for every external group; omission allows the
+highest common version per group. Do not retry a rejected v2 request as v1.
+The option is a positive integer; an unsupported requested version raises
+`:query-source/version`.
+
+A source may advertise `#{1 2}` only when it implements both contracts faithfully
+for the same logical definition. The namespaced v2 map remains ignorable metadata
+to v1 core; the selected `:spi-version` determines interpretation. A scan-only
+provider may implement v2 with empty `:requires`; a lookup-only provider must
+not invent a v1 scan. Each session reports the selected version and features
+exactly, and every planning/open request carries them. Handles and sessions
+never cross versions. Mixed versions in different physical groups are allowed
+only through core's explicit v1 compatibility path:
+
+- an EAV provider using v1 receives its original request, alternative, and batch
+  envelopes, with v2-only limit/option fields omitted from provider requests;
+- its one effective consistency request is the requirement for that group;
+- it supplies only input-free alternatives and its session-wide one-shot rule;
+- its unknown costs remain unknown under v2 planning, and no consumption-group
+  independence or dependent access is inferred from annotations;
+- its entity/value types and v1 no-fact absence semantics remain available, but
+  cardinality and explicit entity/reference domains are unknown. Core must not
+  recover guarantees by interpreting provider-specific type parameters or
+  annotations, including an unselected v2 envelope.
+
+Legacy rows/width may supply advisory cardinality hints. V1 elapsed fields do
+not establish the complete v2 elapsed estimate; missing run/setup components
+remain unknown rather than being filled with zero.
+
+These rules permit a revised core to use a legacy provider; they do not enable
+v2 in the current executor. Conformance must test v1-only, v2-only, and dual
+providers, mixed groups, incompatible aliases, and failure before acquisition.
+
+#### Logical schema guarantees
+
+`:datalevin.query.source/v2 :logical-schema` is a required immutable map with
+exactly the unqualified keys `:domains` and `:attributes`. The pattern contract
+continues to supply entity/value types; this envelope adds logical guarantees
+without requiring core to parse a provider's mapping language. For the orders
+example in §2, `order-type` and `customer-type` are its complete custom type
+descriptors, and `order-domain` and `customer-domain` are their accepted nominal
+domain IDs:
+
+```clojure
+{:domains {order-domain {:entity-type order-type}
+           customer-domain {:entity-type customer-type}}
+ :attributes
+ {:order/id {:entity-domain order-domain
+             :cardinality :one :absence :no-fact :reference-domain nil}
+  :order/amount {:entity-domain order-domain
+                 :cardinality :one :absence :no-fact :reference-domain nil}
+  :order/customer {:entity-domain order-domain
+                   :cardinality :one :absence :no-fact
+                   :reference-domain customer-domain}}}
+```
+
+Every field shown for a domain or attribute is required. Namespaced annotations
+remain inert. `:domains` is a nonempty finite map keyed by non-nil, non-secret,
+immutable portable IDs; core compares those IDs without interpreting their
+provider-specific structure. Each value supplies a complete logical
+`:entity-type`. IDs must distinguish unrelated identity domains; sharing an ID
+across sources requires an explicitly accepted common identity contract. The
+companion may use its accepted `[source-instance-id domain identity-epoch]` IDs.
+Domain entries may include a
+reference target whose attributes this source does not expose.
+
+`:attributes` has exactly the same keys as the EAV pattern contract:
+
+| Field | Accepted logical guarantee |
+|---|---|
+| `:entity-domain` | An ID in `:domains` identifying the attribute's entity domain. That domain's `:entity-type` must equal the pattern's `:entity-type`. |
+| `:cardinality` | `:one`, `:many`, or `:unknown`. `:one` permits zero or one distinct logical value per entity; `:many` permits zero or more; `:unknown` supplies no bound. Distinctness uses query-key equality. |
+| `:absence` | Exactly `:no-fact` in v2: an absent value contributes no EAV fact, including for `_` and unprojected values. Returned entity/value terms remain non-nullable. |
+| `:reference-domain` | `nil` for an attribute without a declared reference guarantee, otherwise an ID in `:domains`. Its `:entity-type` must equal the attribute's `:value-type`; it identifies the target domain of returned references. |
+
+Domain compatibility uses the opaque ID together with its complete entity type,
+including the type's version, fingerprint, and parameters under §3. Equal IDs
+with incompatible types do not license shared-domain reasoning. Matching scalar
+key types or attribute names cannot establish a shared domain. A declared
+reference does not promise target existence, inverse uniqueness, or referential
+integrity. Ordinary scalar-key joins keep their existing equality semantics.
+
+These guarantees apply to the captured logical definition and accepted scope
+under the acquired read context. `:one` is an at-most-one value guarantee; it
+does not imply attribute presence, value-to-entity uniqueness, a physical row
+count, or permission to change `:with` multiplicity. Aliases or mappings with
+matching domains do not automatically share the same population or read view.
+A combined mapped source must establish guarantees for its combined attribute
+relations: two individually single-valued mappings can introduce conflicting
+values for the same entity, so their union cannot simply inherit `:one`.
+
+Core may use the accepted guarantees for reference-domain propagation,
+single-valued access/fan-out reasoning, join planning, and validation of
+semantic rewrites. It must retain an attribute's existence test when no separate
+exact proof establishes presence. Such a proof may come from validated clause
+coverage; cardinality, estimates, and reference declarations cannot supply it.
+Rewrites comparing multiple observations must satisfy the read/replay contract;
+one value per observation does not make separate weak reads identical.
+Failed or incomplete requests cannot be interpreted as absent attributes.
+
+The native bridge projects native attribute types/cardinality, native reference
+domains, and no-fact absence semantics into the same planning vocabulary for
+mixed queries. Native domains are qualified by database identity; this metadata
+does not change native entity-ID representations or equality. Native-only
+queries retain §1.3's direct path without allocating federation descriptors.
+
+Core validates complete attribute coverage, enum values, domain references, and
+type agreement before acquisition; violations raise `:query-source/invalid`.
+It checks structure and compatibility, while providers establish and enforce
+the claimed guarantees using accepted constraints, declared policies, or
+validation. Physical columns, endpoint paths, conversion code, and proof
+artifacts stay provider-owned. A known violated guarantee fails execution with
+`:query-source/invalid`; it cannot silently become an estimate or be weakened
+mid-query. Metadata validation does not prove the provider's physical data sound.
+
+The complete logical schema participates in the definition fingerprint alongside
+the EAV pattern contract and accepted scope. Changing cardinality, domains,
+reference classification, or absence semantics requires a new accepted
+descriptor and dependent-plan revalidation. Statistics and measured costs do
+not change these guarantees. Plan-only explain may show their bounded logical
+fields under §8's redaction and accounting rules; it must not expose supporting
+physical metadata or proofs.
+
+### 10.2 Accepted scope and completion
+
+The v2 source descriptor fixes these contracts before planning:
+
+| Field | Required meaning |
+|---|---|
+| `:scope :id` | Nonempty non-secret string identifying this accepted scope under the provider's versioned definition scheme. |
+| `:scope :kind` | `:full` or `:restricted`, relative to the declared logical relation. Neither grants access beyond authorization. |
+| `:scope :parameters` | Immutable portable map of accepted tenant, repository, partition, window, or other scope parameters; `{}` for an unrestricted scope. Credentials and runtime handles are forbidden. |
+| `:completion :domain` | Exactly `:finite` in v2. Unbounded subscriptions/streams require another contract. |
+| `:completion :extent` | `:all-matches` for the complete accepted relation, or `:declared-view` for an explicitly defined bounded/search/capped view. |
+
+The complete scope and completion maps participate in the definition fingerprint,
+along with the normalized mapping/query and conversions. The same scope ID must
+not denote different accepted parameters. A `:declared-view` includes its exact
+membership rule, cap, ordering/tie policy where relevant, and search/window
+semantics in the accepted definition. It is a distinct logical relation, never
+a way to advertise an incomplete scan of a broader one. Request bindings narrow
+an access within that scope; they do not mutate it or enter its fingerprint.
+Any scope change requires a new accepted descriptor and revalidation.
+
+Each alternative names the captured `:scope-id` and promises
+`:completion :all-bindings`. Successful cursor exhaustion means that every
+supplied binding has received all matching rows for that alternative's exact
+coverage within the accepted relation. Safe superset rows remain subject to
+residual checks. Completion does not imply a snapshot across pages or opens;
+the actual read guarantee in §10.3 applies.
+
+Pagination tokens and retries remain provider-owned. A known result cap,
+unavailable continuation, omitted page, or partial backend response must fail
+with `:query-source/incomplete`, unless the narrower result is the accepted
+`:declared-view` itself. Budget/deadline/cancellation failures retain their
+existing categories. None may be returned as successful exhaustion. Reaching
+the query's own early-stop condition closes the cursor without claiming source
+completion; partial observations cannot back a complete replay spool.
+
+### 10.3 Per-source read requirements and actual guarantees
+
+Query options retain `:consistency` as a default and add alias overrides:
+
+```clojure
+{:query-source
+ {:consistency :snapshot
+  :sources {'$native {:consistency :snapshot}
+            '$crm {:consistency :best-effort}}}}
+```
+
+The default is `:snapshot`. `:sources` keys must name actual source variables
+in the expanded invocation, including native inputs in mixed queries; unknown
+aliases/options are invalid. Each override has exactly `:consistency` (plus
+inert namespaced annotations). These are minimum guarantees, ordered
+`:snapshot > :statement > :best-effort`. A stronger actual guarantee is allowed
+and reported; a weaker one is rejected. Native-only calls keep the native path.
+
+Core groups aliases by source-instance ID, compute-context ID, and effective
+principal/policy requirements, with compatible logical views. It takes the
+strongest requirement across the group; it never opens separate weaker views
+to bypass a conflict. The descriptors' `:read-capabilities` are nonempty sets
+of the three guarantees; advertising a stronger guarantee also supports weaker
+minima. If any member lacks a guarantee at least as strong as the effective
+minimum, fail with `:query-source/unsupported` before acquisition. Different
+physical groups keep independent requirements. Incompatible authorization or scope bindings
+fail rather than being silently broadened or substituted.
+Alias names or different requested consistency levels cannot by themselves
+justify different compute-context IDs to evade this grouping rule.
+
+V1 descriptors have no read-capability set. The compatibility path passes the
+effective minimum through the original acquisition envelope and validates the
+reported guarantee there; it cannot promise the v2 metadata-only rejection gate.
+
+The common v2 context retains the seven fields in §4; `:consistency` is now the
+group's effective minimum. Acquisition adds both `:source-descriptors` and
+`:read-requirements`, a map from every alias in the group to its requested
+minimum. Core forwards the selected common context unchanged to that group's
+planning and opens. `-session-info` reports the original identity/authorization
+fields, `:spi-version 2`, the negotiated features, and actual `:consistency`:
+
+| Actual guarantee | Promise |
+|---|---|
+| `:snapshot` | All fragments, binding batches, pages, and permitted repeated reads in the group observe one pinned logical view. Loss of that view fails the query. |
+| `:statement` | One cursor invocation, including all of its bindings, internal requests, and pages, observes one logical view. Different opens may observe different views. |
+| `:best-effort` | The provider completes the declared access but cannot promise one stable view even within a cursor. |
+
+A backend snapshot per HTTP request does not establish `:statement` for a
+multi-page cursor. Acquisition may establish authorization and scope for a weak
+session without acquiring a snapshot. All reported guarantees must satisfy the
+effective minimum and be supported by every member's advertised capabilities
+(including their implied weaker guarantees); otherwise close the session
+and fail with `:query-source/unsupported`. Query explain records requested and
+actual guarantees separately for every alias and the effective group minimum.
+
+Session `:data-version` retains §4's meaning: an exact pinned group view token,
+or `nil` if unavailable. Statement/best-effort sessions report `nil`; this
+version introduces no per-cursor version-token envelope. Snapshot sessions may
+also report `nil` when no external token exists. Read consistency, identical
+replay, and exact version tokens remain independent declarations. A materialized
+observation stabilizes those rows, not the backend history; it cannot upgrade
+actual consistency or enable cross-read emptiness/uniqueness shortcuts.
+
+### 10.4 Consumption groups and replay
+
+V2 session information additionally contains `:consumption-groups`, a vector
+of declarations, and session-wide request constraints:
+
+```clojure
+{:consumption-groups
+ [{:id :orders-stream :opens :once :max-open-cursors 1}
+  {:id :customer-lookups :opens :many :max-open-cursors 1}]
+ :request-constraints
+ {:max-concurrent-requests 2
+  :rate-limit {:requests 10 :per-ms 1000}}}
+```
+
+Group IDs are unique non-secret keywords/strings within a session and last
+until session close; their identity is `(session-id, group-id)`, not an alias,
+alternative ID, or cursor. Every alternative names one existing group. All
+paths/aliases consuming the same underlying one-shot resource must name the
+same group. Independent streams may use separate groups in one session.
+Provider-private resources shared across queries require provider-side ownership
+enforcement as well; new query IDs cannot restore a consumed stream.
+
+`:opens :once` permits one cursor-open attempt across all group alternatives,
+aliases, and binding batches during the session, with `:max-open-cursors 1`.
+`:opens :many` permits repeated opens up to the positive concurrent-open limit.
+Core reserves the permission before calling open. A failed open spends a
+one-shot permission; cleanup never replenishes it. Metadata/planning consumes
+no permission. Internal page fetches/retries use the same cursor but consume
+actual request budgets. No additional cursor is opened speculatively.
+
+Each alternative's `:properties :replay` is `:identical` or `:unstable`.
+`:identical` guarantees the same logical row multiset for the same alternative,
+scope, and typed binding values in that session, allowing binding-ID renaming;
+order remains unspecified. `:unstable` makes no such promise. This property
+does not grant another open, override the group's limit, or upgrade consistency.
+Repeated live API calls normally have unstable replay. Changed bindings describe
+a different access and are not a replay of previous results.
+
+A plan requiring repeated logical use must either have permitted identical
+replay or explicitly materialize one complete observation under memory/spill
+quotas. Spool identity includes the session/group, captured definition/scope,
+exact coverage, and typed binding keys. Share it only when its complete rows
+are sufficient for the other use through exact local evaluation. Closing an
+incomplete cursor, observing a prefix, or recording one key does not complete
+another key or relation. Spooling never grants a second one-shot open.
+
+One-shot dependent access therefore needs all required keys in one legal input
+batch, or a different complete access that core can spool and index. A plan
+needing multiple opens of that group is rejected before execution. Unknown key
+counts may be collected under quotas before its single open; exceeding the
+admitted batch fails rather than truncating or reopening. A chosen full scan
+may feed multiple local lookups only after its required complete spool exists.
+Identical-replay reuse is forbidden for unstable accesses unless the plan
+explicitly shares a captured complete observation; explain exposes that choice.
+
+Session request constraints apply across all groups and aliases.
+`:max-concurrent-requests` is positive; `:rate-limit` is either `nil` (no
+additional advertised rate limit) or positive `:requests` and `:per-ms`, meaning
+at most that many request starts in any rolling interval. Providers enforce
+these alongside query concurrency limits and any limits shared across queries.
+Every page, retry, and split request charges the cumulative request ledger;
+waiting for a permit is cancellable and observes the query deadline.
+
+### 10.5 Dependent access and binding batches
+
+V2 alternatives retain `:id`, `:plan`, `:covers`, `:prefilters`, `:columns`, and
+`:explain`. Their IDs are stable nonempty keywords/strings for an unchanged
+structural planning request. They additionally require the following fields;
+the v1 `:estimate` field moves to the conditioned estimate response in §10.6:
+
+```clojure
+{:requires [{:variable ?customer :type :long :nullable? false}]
+ :scope-id "scope:tenant-a"
+ :completion :all-bindings
+ :properties {:consumption-group :customer-lookups
+              :replay :unstable :ordering [] :blocking-state :none}
+ :constraints {:max-binding-rows 100
+               :max-binding-bytes 65536
+               :max-request-binding-rows 20}}
+```
+
+`:requires` is an ordered vector of unique variable/type/nullability columns;
+`[]` means input-free access. Every required variable must occur in the accepted
+clause/input envelope and be available from query inputs or earlier operators
+before open. No hidden correlation or provider callback into the outer query is
+allowed. `:columns` declares returned variables; together they must supply the
+variables needed to implement covered clauses and downstream demand. A required
+variable may also be returned, but each returned value must equal its associated
+input under `QueryKey.equals`. Repeated-variable types/nullability follow §5.
+
+Core constructs a dependency DAG and rejects absent inputs, self-supplying
+alternatives, and unseeded cycles before opening execution cursors. A constant
+or a finite query/native/source input can seed a path. The admitted input domain
+must satisfy every required column's type and nullability. Core cannot silently
+drop unsupported keys: it must prove they cannot match the logical relation,
+choose another complete path, or reject the plan. Runtime violations are errors.
+
+Core deduplicates the ordered input tuples with shared `QueryKey.equals`/`hash`,
+owns their mutable values, and retains the association to every outer tuple and
+its multiplicity under quotas. It does not use raw-tuple Clojure map equality.
+Deduplication is within the chosen logical access; unstable reads do not permit
+an unannounced cache across separate access occurrences. Matches fan back out
+before projection, `:with`, distinct, or aggregation. An empty input relation
+produces no matches and opens no cursor.
+Evaluate each distinct key once per logical access: either collect its outer
+associations before lookup or retain its matches until all matching outer rows
+have been processed. Exceeding retention quotas fails; it cannot silently turn
+deduplication into repeated unstable reads.
+
+V2 query limits add positive `:binding-rows` (default `256`) and `:binding-bytes`
+(default `262144`). These cap each open's input batch, independently of returned
+`:batch-rows`/`:batch-bytes`. Alternative constraint values are positive integers.
+The effective cap is the minimum of provider and query row/byte caps. Core
+splits by both; a single oversized key fails `:query-source/limit`. The provider
+may split a legal cursor input further at `:max-request-binding-rows`; `1`
+supports endpoints without bulk lookup. Pages and retries are additional actual
+requests, never hidden in one logical-batch charge.
+
+`-open-cursor` receives the seven common context fields, the four fields from
+§6, and exactly these additions (besides inert namespaced annotations):
+
+```clojure
+{:scope-id "scope:tenant-a"
+ :consumption-group :customer-lookups
+ :bindings [{:binding-id 7 :values [42]}
+            {:binding-id 8 :values [99]}]}
+```
+
+IDs are core-assigned query-local nonnegative signed-64-bit integers, opaque to
+providers. An ID is never reused for a different logical access or key within
+the query; exact replay may reuse its IDs. Each open has unique IDs and unique
+input tuples under query-key equality. IDs persist through the access's
+replay/spool and are not reassigned to different values. Values
+are owned fixed-arity vectors in `:requires` order. Input-free access receives
+one synthetic binding with `:values []` and its own ID. An empty binding vector
+is not a legal open. Providers borrow these immutable-for-use values until
+cursor close and copy them if retained longer, with retained-state accounting.
+
+Before open, core validates IDs, arity, types/nullability, scope/fingerprint,
+handle/session/group membership, binding caps, and available group permission.
+The provider verifies the same captured execution contract. The handle contains
+the immutable clauses and known planning constants; runtime bindings are exactly
+the declared required inputs, not permission to replan or change coverage.
+
+Returned owned batches keep §6's fields and add:
+
+```clojure
+{:binding-ids [8 7 7]
+ :completed-binding-ids []
+ :exhausted? false}
+```
+
+`:binding-ids` is parallel to `:rows`, with one requested ID per row; response
+order and row values cannot substitute for it. Multiple rows for one ID and
+identical rows for different IDs are legal. Unknown IDs, wrong lengths, or
+incompatible returned input variables are invalid. Provider rows retain their
+logical multiplicity; core does not deduplicate them merely by binding ID.
+
+`:completed-binding-ids` must be empty on non-final batches. On the final batch,
+`:exhausted? true` requires exactly all requested IDs, each once, including keys
+with no matches. Final rows are allowed. This is the all-bindings completion
+acknowledgment from §10.2; there is no partial-success result in ordinary `d/q`.
+Empty non-final batches and `nil` exhaustion remain invalid. No subsequent
+advance is allowed after the validated final batch.
+
+V2 adds public sizing helpers `(binding-charge-bytes requires bindings)` and
+`(batch-charge-bytes columns rows binding-ids completed-binding-ids)`. They use
+the same conservative, cancellation-aware ownership accounting as §6, including
+ID vectors and retained backing. Input batches are charged to retained memory
+until their users release them; returned `:byte-count`/`:reservation` cover the
+extended batch. Core sizes a legal final acknowledgment when splitting input
+batches, so its IDs fit the output batch byte cap. Headers, dedup indexes, and
+outer associations cannot escape accounting even when zero rows are returned.
+
+### 10.6 Conditioned planning and deterministic selection
+
+V2 uses two explicit phases of `-plan-source`; neither performs source I/O or
+opens cursors. All planning metadata is bounded and charged as in §5. The common
+context uses the acquired group's effective request, with actual guarantees
+available in its validated session information.
+
+**Alternatives.** One call per source symbol extends §5's request with
+`:planning-phase :alternatives`, the captured `:scope-id`, and
+`:available-inputs`, an ordered vector of typed variable columns that query
+inputs or other operators could supply. It is an availability description, not
+a promise that every dependency schedule is possible. `:bindings` still holds
+only known scalar values. Return `{:alternatives [...]}` with §10.5 alternatives;
+planning cannot consume outer relations to discover keys or selectivity.
+
+**Estimates.** After constructing candidate schedules, core may call the same
+method with `:planning-phase :estimates`. The request has the common context,
+`:source-symbol`, `:source-descriptor`, `:scope-id`, and `:contexts` only. Each
+context refers to an already returned alternative and is immutable:
+
+```clojure
+{:id 12
+ :alternative-id :lookup-customers
+ :input-rows 1200
+ :distinct-keys 300
+ :binding-count 100
+ :binding-bytes 16384
+ :invocations 3
+ :request-concurrency 2
+ :input-confidence :medium
+ :known-bindings {?minimum 50}}
+```
+
+Context IDs are unique core-assigned query-local nonnegative signed-64-bit
+integers. `:input-rows` is the
+outer cardinality before key deduplication; `:distinct-keys` is for the ordered
+`:requires` tuple, and `:invocations` is the number of opens represented by this
+scenario. These counts and `:binding-bytes` are nonnegative finite estimates or
+`nil`, never an assumed one/zero. `:binding-count` is a positive integer hypothetical
+batch size within all known row caps, not an assertion that its keys exist.
+Core uses separate contexts for full/tail batches when their sizes differ.
+Input-free access has one empty binding per invocation. Concurrency is a
+positive integer request count bounded by session/query constraints, not a
+license to exceed rate limits. `:known-bindings` contains only previously
+available scalar constants; there are no samples of unknown outer values.
+`:input-confidence` is `:high`, `:medium`, `:low`, or `:unknown` and travels into
+the whole-plan uncertainty calculation. Unknown byte fit still needs runtime
+batch splitting; it cannot prove an invocation count.
+
+Return `{:estimates [...]}`, one entry per requested context, with exactly:
+`:context-id`, `:alternative-id`, `:cost`, `:confidence`, and `:provenance`.
+No alternatives, handles, or new capability claims may appear in this response.
+The context reference supplies the conditioning; a response cannot change it.
+All keys in the following `:cost` table are required. Each value is a finite
+nonnegative number or `nil` for unknown, per one cursor invocation at that
+context's binding count and request concurrency:
+
+| Cost field | Unit and inclusion rule |
+|---|---|
+| `:output-rows` | Returned rows across all supplied binding IDs, before core fan-out and residual checks. |
+| `:row-bytes` | Mean owned logical row/container charge; excludes wire bytes and the separately sized binding-ID envelope. |
+| `:read-rows`, `:read-bytes`, `:read-partitions` | Physical backend work examined, not merely rows returned. Unknown internal work is `nil`. |
+| `:external-requests` | All expected backend operations/pages, parameter splitting, and retries for this invocation. In-process work may be zero. |
+| `:transfer-bytes` | External bytes received, using wire/compressed size; zero for wholly local access. |
+| `:startup-ns` | Cursor setup before row-processing work, excluding session acquisition. |
+| `:run-ns` | Remaining elapsed time to completion, including fetches, pagination, decoding/owned-copy work, retries, rate-limit waits, and provider spill at the stated concurrency. |
+| `:peak-retained-bytes` | Peak provider-owned live state during this invocation, distinct from transferred batches/core state. |
+| `:spill-read-bytes`, `:spill-write-bytes` | Expected provider spill I/O; its elapsed time is already included above. |
+
+Envelope `:confidence` describes the non-`nil` estimates, using the same four
+levels as input confidence; an entirely unknown estimate uses `:unknown` and
+all cost fields `nil`. `:provenance` requires `:kind` (one of `:exact`,
+`:statistics`, `:heuristic`, `:unknown`), `:id` (non-secret string or `nil`),
+`:observed-at-ms` (epoch milliseconds or `nil`), and `:valid-for-ms` (duration
+in milliseconds or `nil`).
+Timestamps/durations are nonnegative integers. Statistics with missing/future
+timestamps or expired validity are stale for ranking. A static exact/heuristic
+model may use `nil` timestamps. No SQL, raw keys, samples, or secrets belong in
+provenance. Estimated zero is never proof of emptiness or zero resource use.
+
+Core may refine downstream contexts after receiving upstream cardinality
+estimates, within these query options and fixed defaults:
+
+```clojure
+{:query-source
+ {:planning {:max-alternatives 32
+             :max-plan-states 1024
+             :max-estimate-contexts 128
+             :max-estimate-rounds 4
+             :estimate-max-age-ms 300000}}}
+```
+
+The first bound is per source enumeration call; plan states, estimate contexts,
+and rounds are query-wide totals. All are positive integers except nonnegative
+maximum age. A round calls each source at most once with its pending contexts.
+Enumerate unique partial/complete plan states breadth-first by placed-fragment
+count and then canonical plan key, counting each expanded state once. Use
+canonical source/alternative/context order for estimate rounds. Failure to find
+a complete admissible plan within the budget raises
+`:query-source/unsupported` with reason `:planning-budget`; it does not execute
+a partial plan. With a complete plan available, exhausted estimate budgets
+leave unresolved costs unknown and use the fallback below. Explain reports
+search/estimate budget exhaustion; there is no hidden unbounded optimizer pass.
+
+Core validates complete coverage, typed dependencies, scope/completion, actual
+read guarantees, consumption permissions, and hard provider constraints before
+ranking. It chooses batch sizes under both byte and row caps; known request/rate
+constraints bound scheduling independently of estimates. Unknown cardinality
+does not bypass quotas, and no estimate reserves resources or certifies fit.
+Providers may return unknown costs but must provide enforceable capabilities
+and constraints. Provider-local optimizer scores and billing units are not costs
+in this envelope.
+
+The initial ranking policy is versioned `:latency-v1`. It models a serial core
+fragment schedule and does not credit overlap across fragment invocations.
+Sum `startup-ns + run-ns` for each estimated invocation, with separate full/tail
+contexts, and add calibrated core operator time for key deduplication, fan-out,
+joins, residuals, blocking operators, and spools. Count legal shared/fused work
+once; multiply dependent work by the modeled invocation count, not by outer
+multiplicity. Provider-internal concurrency is already reflected in `:run-ns`;
+do not add request latency, transfer time, decode time, or spill time a second
+time. Session acquisition is measured once per group and added as a common
+query cost, never charged per alternative. Retained/spill state follows the
+operator lifetime schedule rather than adding peak estimates as elapsed time.
+Missing core calibration, invocation counts, or elapsed operands makes the
+whole-plan elapsed estimate unknown.
+
+Use latency ranking only when every remaining complete candidate has a finite
+elapsed estimate, all inputs/time operands have at least medium confidence,
+and statistics are fresh at core's single captured planning timestamp. Freshness
+uses the smaller of provider validity and `:estimate-max-age-ms`; missing
+statistics validity is stale. Low, unknown, or stale evidence remains visible
+but cannot discard a competing complete plan. Otherwise apply one structural
+fallback to all complete candidates, lexicographically minimizing:
+
+1. explicit replay spools;
+2. blocking core materializations;
+3. dependency depth (longest required-input path in the operator DAG);
+4. dependent-access sites;
+5. physical fragments; and
+6. the canonical plan key.
+
+These are structural counts, not estimates with unknowns replaced by zero.
+For equal latency scores use the same tie-break tuple. The canonical key encodes
+source symbols, stable alternative IDs, covered clause IDs, required-variable
+order, and core operator topology in a fixed tagged order. Compare keywords by
+namespace/name, symbols by their full qualified name, and strings by Unicode
+code-point order, with explicit type tags distinguishing keywords from strings.
+It excludes handles,
+session/query UUIDs, map iteration order, provider labels, and workload labels.
+Explain records `:policy :latency-v1`, `:selection` (`:estimated` or
+`:structural-fallback`), `:estimated-elapsed-ns`, and `:planning-time-ms`.
+`:fallback-reasons` is a sorted vector drawn from `:unknown-cost`,
+`:low-confidence`, `:stale-statistics`, `:estimate-budget`, and
+`:uncalibrated-core`, empty for estimated selection. It also reports
+conditioning/confidence/freshness and separate actual metrics;
+raw binding values stay redacted. The same contracts, planning inputs, and
+captured timestamp must yield the same choice regardless of response ordering.
+
+### 10.7 Revision conformance and failure gates
+
+V2 remains unavailable until core and companion tests cover the revised
+envelopes and the four shapes, including these requirements:
+
+- mapped native/SQL/file/API entities and attributes share source-qualified
+  EAV query semantics, including nominal identity, references, and missing
+  attributes; tuple source descriptors reject before acquisition, including
+  through the v1 compatibility path, while ordinary Datalog tuple inputs and
+  binding/result batches remain valid;
+- logical-schema validation rejects missing attributes, unresolved domains,
+  incompatible entity/reference types, and invalid cardinality/absence policies
+  before acquisition; v1 compatibility leaves unavailable guarantees unknown;
+- native and external fixtures expose equivalent accepted logical guarantees;
+  absent single-valued attributes, dangling references, shared-domain mappings
+  with different populations, combined mappings with conflicting values, and
+  weak reads cannot justify unsafe existence, uniqueness, or replay rewrites;
+- logical-guarantee changes invalidate fingerprints and dependent plans while
+  statistics changes do not; provider proof artifacts remain outside public
+  descriptors and diagnostics;
+- negotiation never dispatches v2 fields through v1, never downgrades after an
+  error, and rejects incompatible shared-alias versions before acquisition;
+- required-input DAGs, empty seeds, unseeded cycles, binary/decimal key identity,
+  duplicate outer multiplicities, nullable inputs, input-free synthetic IDs,
+  arbitrary response order, zero-match IDs, malformed IDs, and row/byte splitting;
+- bulk and per-key endpoints charge every request/page/retry, respect shared
+  concurrency/rate limits, and clean up after failure between binding batches;
+- independent source guarantees coexist, shared aliases use the strongest
+  minimum, unsupported conflicts fail, and multi-page weak reads never claim
+  statement or snapshot consistency;
+- independent one-shot groups each open once, aliases of the same stream cannot
+  reopen it, failed opens consume permission, and bounded complete spools support
+  only the bindings/coverage actually captured;
+- final completion includes every requested ID, even for no matches; caps,
+  missing pages, budget exhaustion, and early stops never masquerade as complete
+  broader relations or reusable complete spools;
+- cheap invalid alternatives lose before ranking; known selectivity, key counts,
+  batch ceilings, latency, transfer, and rate limits affect comparable costs;
+  unknown/stale/missing estimates trigger the specified structural fallback;
+- ties, reordered provider responses, estimate-budget exhaustion, and OLTP/OLAP
+  relabeling preserve deterministic selection; inaccurate estimates affect
+  performance but never result correctness, completeness, or quota enforcement;
+- revised execution retains native-only routing and the mandatory native
+  performance gate. No v2 bridge is activated merely to validate native queries.
+
+Malformed envelopes use `:query-source/invalid`; no legal capability/dependency
+schedule uses `:query-source/unsupported`; known incomplete access uses
+`:query-source/incomplete`. Existing authorization, stale-definition, lost-view,
+limit, cancellation, timeout, provider-failure, and cleanup categories retain
+their meanings. All new errors and explain data follow §8's redaction rules.
