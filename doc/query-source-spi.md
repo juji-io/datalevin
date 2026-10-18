@@ -2016,6 +2016,22 @@ replay, and exact version tokens remain independent declarations. A materialized
 observation stabilizes those rows, not the backend history; it cannot upgrade
 actual consistency or enable cross-read emptiness/uniqueness shortcuts.
 
+The internal [`source.session`](../src/datalevin/query/source/session.clj)
+lifecycle implements this grouping/acquisition behavior as preparation. Its
+`prepare!` consumes captured descriptors after full schema/type validation and
+checks every alias and group before provider acquisition. `acquire!` opens all
+prepared groups eagerly, once, and validates the actual guarantee against every
+captured descriptor, even when aliases describe the same logical view. It owns
+returned sessions before observing late cancellation, retains cancellation
+registration through close, and unwinds partially acquired sessions and
+snapshots before rethrowing. Its explanation copies distinguish alias minimums,
+group minimums, and actual guarantees without authorization or provider-private
+metadata. Providers still admit setup I/O through their session-wide request
+limiter; core validation creates no duplicate limiter or synthetic request
+charge. Native read contexts remain owned by the existing engine. These helpers
+are not yet called by `q`/`explain`; the coordinated descriptor/adapter/runtime
+switch remains pending.
+
 ### 10.4 Consumption groups and replay
 
 V2 defaults to one consumption group for the whole session. Session information

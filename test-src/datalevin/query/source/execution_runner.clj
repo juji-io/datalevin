@@ -11,6 +11,7 @@
             [datalevin.query.source-binding-test]
             [datalevin.query.source-binding-execution-test]
             [datalevin.query.source-access-test]
+            [datalevin.query.source-session-test]
             [datalevin.query.source-native-value-test]
             [datalevin.query.source-native-data-test]
             [datalevin.query.source-native-variable-tuple-test]
@@ -28,6 +29,7 @@
                                            'datalevin.query.source-binding-test
                                            'datalevin.query.source-binding-execution-test
                                            'datalevin.query.source-access-test
+                                           'datalevin.query.source-session-test
                                            'datalevin.query.source-native-value-test
                                            'datalevin.query.source-native-data-test
                                            'datalevin.query.source-native-variable-tuple-test

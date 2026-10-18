@@ -49,6 +49,20 @@
 
 (deftype RequestStart [^BigInteger at reservation])
 
+(defn request-constraints!
+  "Validate already admitted immutable session request constraints. This pure
+  check creates no limiter and does not charge an actual backend request."
+  ([constraints] (request-constraints! constraints nil))
+  ([constraints check!]
+   (when check! (check!))
+   (fields! constraints #{:max-concurrent-requests :rate-limit} :session)
+   (ensure! (positive-long? (:max-concurrent-requests constraints)) :session)
+   (when-some [rate (:rate-limit constraints)]
+     (when check! (check!))
+     (fields! rate #{:requests :per-ms} :session)
+     (ensure! (and (positive-long? (:requests rate)) (positive-long? (:per-ms rate))) :session))
+   constraints))
+
 (defn request-limiter
   "Create one session-wide limiter, shared by every alias and consumption group.
   Setup, pages, retries, and splits each acquire a permit. Close with the session;
@@ -56,13 +70,9 @@
   [ctl constraints]
   (let [metadata (metadata! ctl constraints 2048)]
     (try
-      (fields! constraints #{:max-concurrent-requests :rate-limit} :session)
+      (request-constraints! constraints #(control/check-active! ctl))
       (let [maximum (:max-concurrent-requests constraints)
             rate (:rate-limit constraints)]
-        (ensure! (positive-long? maximum) :session)
-        (when (some? rate)
-          (fields! rate #{:requests :per-ms} :session)
-          (ensure! (and (positive-long? (:requests rate)) (positive-long? (:per-ms rate))) :session))
         (RequestLimiter. ctl (long maximum) (long (if rate (:requests rate) 0))
                          (when rate (.multiply (biginteger (:per-ms rate)) (biginteger 1000000)))
                          (LinkedList.) (volatile! {:active 0 :waiting 0 :closed? false}) metadata))
