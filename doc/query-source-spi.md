@@ -2325,6 +2325,28 @@ permission reservation, and cursor/batch lifetime; downstream shared operators
 must own and charge values they retain. The prototype executor does not yet
 call this primitive, and input-free paths allocate none of its state.
 
+The internal [`source.cursor`](../src/datalevin/query/source/cursor.clj) adapter
+now admits both shapes for captured v2 session/access plans. It validates the
+captured source/region/scope/session boundary, reserves the open attempt before
+the provider call, owns late-returned cursors before checking cancellation, and
+keeps batch reservations live through synchronous delivery. It validates IDs
+and echoed inputs for the complete batch before emitting rows. Missing final
+exhaustion or a known truncated response fails with `:query-source/incomplete`;
+it cannot return a successful prefix. Normal and exceptional closure release
+cursor concurrency, input associations, batch envelopes, and transferred
+reservations, preserving primary errors and redacting suppressed close errors.
+
+Shared `AccessStep` execution, including its pipe hook, has an explicit batched
+method for this adapter. The method collects all outer witnesses before any
+dependent open, evaluates each distinct key once for that logical access, and
+preserves returned multiplicity during fan-out. Overlapping variables use
+`QueryKey.equals`; retained output is copied and charged separately from borrowed
+provider batches through invocation cleanup. Input-free execution creates no ID
+space or binding index. These hooks do not activate revised descriptors or
+replace the current query entry point's prototype executor. Compiler-driven
+regions and the full shared-operator resource audit are still required for the
+coordinated runtime switch.
+
 <a id="106-conditioned-planning-and-deterministic-selection"></a>
 
 ### 10.6 EAV access planning and deterministic selection

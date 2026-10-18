@@ -160,6 +160,16 @@
             (.add tuples tuple)))))
     tuples))
 
+(defn- read-step-access
+  [path demand bounds work db input-cols access-cols cols source]
+  (if (and (= :query-source (:method path))
+           (satisfies? qaccess/IBatchedAccessMethod (:implementation path)))
+    (qaccess/-execute-batched-access (:implementation path) path demand bounds work
+                                     db input-cols cols source)
+    (if (seq input-cols)
+      (read-correlated-all path demand bounds work db input-cols access-cols cols source)
+      (read-access-all path demand bounds work db))))
+
 (defrecord AccessStep
     [expr path demand bounds work in out cols input-cols access-cols
      access-source strata seen-or-joins result sample]
@@ -170,20 +180,13 @@
   (-execute [_ db source]
     (let [db (or access-source db)]
       (or result
-          (if (seq input-cols)
-            (read-correlated-all path demand bounds work db input-cols
-                                 access-cols cols source)
-            (read-access-all path demand bounds work db)))))
+          (read-step-access path demand bounds work db input-cols access-cols cols source))))
 
   (-execute-pipe [_ db source sink]
     (let [db (or access-source db)]
       (p/add-batch sink
                    (or result
-                       (if (seq input-cols)
-                         (read-correlated-all
-                           path demand bounds work db input-cols access-cols
-                           cols source)
-                         (read-access-all path demand bounds work db))))))
+                       (read-step-access path demand bounds work db input-cols access-cols cols source)))))
 
   (-sample [_ db _source]
     (or sample

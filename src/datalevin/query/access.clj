@@ -82,6 +82,12 @@
     "Open an access path after substituting variables supplied by an outer
      logical subset."))
 
+(defprotocol IBatchedAccessMethod
+  (-execute-batched-access [method path demand bounds work source input-cols output-cols tuples]
+    "Execute a complete logical access over all outer tuples. The method owns
+     bounded deduplication/fan-out and retained output; it must not reopen once
+     per outer row. Used by query-source paths that declare this protocol."))
+
 (defprotocol IAccessCursor
   (-next-batch [cursor]
     "Return the next AccessBatch.")

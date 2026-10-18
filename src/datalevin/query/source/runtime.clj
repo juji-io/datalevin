@@ -12,7 +12,8 @@
 (def categories
   #{:query-source/version :query-source/unsupported :query-source/invalid
     :query-source/unauthorized :query-source/stale-definition :query-source/snapshot-lost
-    :query-source/limit :query-source/cancelled :query-source/provider :query/timeout})
+    :query-source/limit :query-source/cancelled :query-source/provider
+    :query-source/incomplete :query/timeout})
 
 (def ^:private phases
   #{:descriptor :inputs :clauses :projection :window :execution-mode :context

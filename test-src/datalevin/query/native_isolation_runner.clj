@@ -13,7 +13,7 @@
     datalevin.query.source.runtime datalevin.query.source.native
     datalevin.query.source.inputs datalevin.query.source.join
     datalevin.query.source.binding datalevin.query.source.access
-    datalevin.query.source.session])
+    datalevin.query.source.session datalevin.query.source.cursor])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))
