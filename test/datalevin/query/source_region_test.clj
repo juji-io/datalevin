@@ -274,6 +274,45 @@
         (is (= :query-source/invalid
                (:error (error #(request! runtime r [{:variable '?hidden :type :long :nullable? false}])))))))))
 
+(deftest request-exports-come-from-visible-patterns-and-shared-step-interfaces
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [compiled (compile! runtime '[:find ?e ?name :in $s :where [$s ?e :row/name ?name]])
+            [r] (:regions compiled)
+            columns [{:variable '?seed :type :long :nullable? false}
+                     {:variable '?private :type :string :nullable? false}]
+            operator (source-access/core-operator! runtime 0 0 [] columns #{}
+                       (plan/map->InitStep {:in #{} :cols ['?seed '?private]}))
+            other (source-access/core-operator! runtime 0 1 []
+                    [{:variable '?private :type :long :nullable? false}] #{}
+                    (plan/map->InitStep {:in #{} :cols ['?private]}))
+            inputs (source-access/available-inputs! runtime r [] [operator other])
+            request (request! runtime r inputs)]
+        (is (= [{:variable '?e :type :long :nullable? false}
+                {:variable '?name :type :string :nullable? false}] inputs))
+        (is (= inputs (:available-inputs request)))
+        (is (not (.contains (pr-str request) "?private")))
+        (is (not (.contains (pr-str request) "?seed")))
+        (is (= :query-source/invalid
+               (:error (error #(source-access/available-inputs! runtime r [(first inputs)] [])))))
+        ((:close compiled))
+        (is (= :query-source/invalid
+               (:error (error #(source-access/available-inputs! runtime r [] [operator])))))))))
+
+(deftest export-derivation-rolls-back-immediately-if-workspace-admission-fails
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [compiled (compile! runtime '[:find ?e :in $s :where [$s ?e :row/name _]])
+            [r] (:regions compiled) ctl (:control runtime)
+            remaining (- (:retained-bytes (control/limits ctl)) (:retained-bytes (control/usage ctl)))
+            held (control/reserve! ctl {:retained-bytes (- remaining 300)})
+            before (control/usage ctl)]
+        (try
+          (is (= :query-source/limit
+                 (:error (error #(source-access/available-inputs! runtime r [] [])))))
+          (is (= before (control/usage ctl)))
+          (finally (control/release! held)))))))
+
 (deftest requests-cannot-substitute-another-captured-definition-or-invocation
   (rt/with-runtime {}
     (fn [runtime]

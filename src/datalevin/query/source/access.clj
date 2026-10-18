@@ -5,6 +5,8 @@
   (:require [clojure.set :as set]
             [datalevin.parser]
             [datalevin.query.access :as access]
+            [datalevin.query.access.dependency :as dependency]
+            [datalevin.query.plan :as plan]
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.permissions :as permissions]
@@ -37,9 +39,7 @@
 (defn- column-map [columns]
   (into {} (map (juxt :variable identity)) columns))
 
-(defn- supplies? [from to]
-  (and from (= (:type from) (:type to))
-       (or (:nullable? to) (not (:nullable? from)))))
+(def ^:private supplies? dependency/supplies?)
 
 (defn- text-compare
   "Compare Unicode code points, including supplementary characters. Java's
@@ -195,116 +195,174 @@
   (let [{:keys [source-symbol region-id covers]} (options plan)]
     [source-symbol region-id (first covers)]))
 
-(defn- ready? [known used plan]
-  (let [{:keys [requires permission]} (options plan)]
-    (and (every? #(supplies? (get known (:variable %)) %) requires)
-         (or (= :many (:opens permission))
-             (and (not (:spent? permission)) (not (contains? used (:resource permission))))))))
+(defrecord ^:private CoreOperator [owner region-id id requires columns after step])
 
-(defn- extend-known [known columns]
-  (reduce (fn [known column]
-            (when known
-              (let [variable (:variable column) before (get known variable)]
-                (when (or (nil? before) (= (:type before) (:type column)))
-                  (assoc known variable
-                         (assoc column :nullable? (and (:nullable? column)
-                                                      (get before :nullable? true))))))))
-          known columns))
+(defn core-operator!
+  "Capture the typed interface of an existing shared plan step. Only the
+  step's explicit input/output variables enter the dependency graph; hidden
+  native, rule or union body bindings stay private. after contains local work
+  IDs that must finish before this step (for example a residual's boundary).
+  This function neither samples nor executes the supplied step."
+  [runtime region-id id requires columns after step]
+  (let [ctl (:control runtime) check! #(control/check-active! ctl)
+        token (rt/charge-metadata! runtime [region-id id requires columns after] :planning)]
+    (try
+      (ensure! (and (nonnegative-id? region-id) (nonnegative-id? id)
+                    (set? after) (satisfies? plan/IStep step)))
+      (columns! requires check!)
+      (columns! columns check!)
+      (ensure! (and (= (set (map :variable requires)) (:in step))
+                    (= (mapv :variable columns) (:cols step))))
+      (let [clean #(mapv (fn [column] (select-keys column [:variable :type :nullable?])) %)
+            captured (value/diagnostic-copy [(clean requires) (clean columns) after] check!)
+            operator (->CoreOperator {:control ctl :query-id (:query-id runtime)} region-id id
+                                    (nth captured 0) (nth captured 1) (nth captured 2) step)]
+        (rt/own! runtime #(control/release! token))
+        operator)
+      (catch Throwable e (control/release! token) (throw e)))))
+
+(defn- core-operator? [runtime region-id operator]
+  (and (instance? CoreOperator operator) (= region-id (:region-id operator))
+       (identical? (:control runtime) (get-in operator [:owner :control]))
+       (= (:query-id runtime) (get-in operator [:owner :query-id]))))
+
+(defn available-inputs!
+  "Derive potential request exports from captured local pattern schemas and
+  existing shared operators. These are possible supplies, never actual seeds.
+  The dependency scheduler must still prove their ordering. Only variables
+  visible in this region can enter a provider request."
+  [runtime region input-columns operators]
+  (let [ctl (:control runtime) check! #(control/check-active! ctl)
+        owner (:owner region)
+        token (rt/charge-metadata! runtime input-columns :planning)
+        workspace (volatile! nil)]
+    (try
+      (ensure! (and (identical? ctl (:control owner)) (= (:query-id runtime) (:query-id owner))
+                    (not @(:closed? owner)) (vector? operators)
+                    (every? #(core-operator? runtime (:region-id region) %) operators)))
+      (columns! input-columns check!)
+      (ensure! (set/subset? (set (map :variable input-columns)) (:input-vars region)))
+      (vreset! workspace
+        (control/reserve! ctl {:retained-bytes (+ 1024 (* 512 (+ (count input-columns)
+                                                              (reduce + 0 (map (comp count :columns) (:patterns region)))
+                                                              (reduce + 0 (map (comp count :columns) operators)))))}))
+      (let [possible (concat input-columns (mapcat :columns (:patterns region)) (mapcat :columns operators))
+            known (reduce (fn [known column]
+                            (check!)
+                            (if (contains? (:available-vars region) (:variable column))
+                              (or (dependency/extend-columns known
+                                    [(select-keys column [:variable :type :nullable?])])
+                                  (fail! :query-source/unsupported :planning))
+                              known)) {} possible)
+            columns (->> (vals known)
+                         (sort #(compare-keys (:variable %1) (:variable %2) check!)) vec)
+            output-token (rt/charge-copy! runtime columns)]
+        (try
+          (let [output (value/diagnostic-copy columns check!)]
+            (rt/own! runtime #(control/release! output-token))
+            output)
+          (catch Throwable e (control/release! output-token) (throw e))))
+      (finally (control/release! token)
+               (when-let [token @workspace] (control/release! token))))))
 
 (defn schedule!
   "Validate complete region-local coverage and schedule typed AccessPlans.
-  Inputs are explicit legal exports from the enclosing engine operator. Never
-  infer an export from another region or inspect outer rows. Single-pattern
+  Inputs are actual seeds from the enclosing engine operator. Optional captured
+  core operators contribute typed outputs only after their dependencies run.
+  Never infer an export from another region or inspect outer rows. Single-pattern
   choices use :eav-structural-v1; fused candidates stay unavailable. Feasibility
   search shares the invocation ledger and the existing 4096-state bound.
   Caller-owned candidate/request reservations must live through execution."
-  [runtime region-id input-columns requests plans]
-  (let [started (System/nanoTime)
-        ctl (:control runtime) check! #(control/check-active! ctl)
-        charges (volatile! []) output-token (volatile! nil)
-        own-work! (fn [bytes]
-                    (let [token (control/reserve! ctl {:retained-bytes bytes})]
-                      (vswap! charges conj token)))]
-    (try
-      (ensure! (and (nonnegative-id? region-id) (vector? requests) (vector? plans)))
-      (vswap! charges conj (rt/charge-metadata! runtime input-columns :planning))
-      (columns! input-columns check!)
-      (own-work! (+ 2048 (* 1024 (count plans)) (* 512 (count requests))))
-      (doseq [request requests]
-        (vswap! charges conj (rt/charge-copy! runtime (request-metadata request)))
-        (request! request check!)
-        (ensure! (= region-id (:region-id request))))
-      (let [request-map (into {} (map (juxt :source-symbol identity)) requests)
-            _ (ensure! (= (count requests) (count request-map)))
-            required (into #{} (mapcat (fn [request]
-                                        (for [clause (:clauses request) :when (= :pattern (:kind clause))]
-                                          [(:source-symbol request) region-id (:id clause)]))) requests)
-            live-vars (into #{} (mapcat :required-vars) requests)
-            _ (doseq [plan plans]
-                (check!)
-                (let [o (options plan) request (get request-map (:source-symbol o))]
-                  (ensure! (and request (= region-id (:region-id o))
-                                (identical? request (get-in o [:capture :request]))
-                                (set/subset? (into #{} (map #(vector (:source-symbol o) region-id %)) (:covers o))
-                                             required)))))
-            _ (doseq [[source-symbol candidates] (group-by #(get-in % [:expr :source]) plans)]
-                (ensure! (<= (count candidates) (:max-alternatives (request-map source-symbol))))
-                (ensure! (= (count candidates)
-                            (count (set (map #(get-in % [:path :options :alternative-id]) candidates))))))
-            candidates (->> plans
-                            (map (fn [plan]
-                                   (let [o (options plan)]
-                                     (assoc-in plan [:path :options :permission]
-                                               (permissions/planning-permission
-                                                 (:consumption o) (get-in o [:capture :alternative]))))))
-                            (filter #(= 1 (count (:covers (options %)))))
-                            (sort (fn [a b]
-                                    (check!)
-                                    (let [work (compare-keys (work-key a) (work-key b) check!)]
-                                      (if (zero? work)
-                                        (let [kind (compare (kind-rank (get-in a [:path :options :access :kind]))
-                                                            (kind-rank (get-in b [:path :options :access :kind])))]
-                                          (if (zero? kind)
-                                            (compare-keys (:canonical-key (options a)) (:canonical-key (options b)) check!)
-                                            kind)) work))))
-                            vec)
-            failed (volatile! #{}) attempts (volatile! 0)]
-        (letfn [(search [known done used]
-                  (check!)
-                  (let [state [known done used]]
-                    (when-not (contains? @failed state)
-                      (when (> (vswap! attempts inc) search-bound)
-                        (fail! :query-source/unsupported :planning))
-                      (if (and (= done required) (set/subset? live-vars (set (keys known)))) []
-                          (let [result
-                                (some (fn [plan]
-                                        (check!)
-                                        (let [work (work-key plan) o (options plan)
-                                              permission (:permission o)]
-                                          (when (and (not (contains? done work)) (ready? known used plan))
-                                            (when-let [known (extend-known known (:columns o))]
-                                              (let [used (cond-> used (= :once (:opens permission))
-                                                           (conj (:resource permission)))]
-                                                (when-let [tail (search known (conj done work) used)]
-                                                  (cons plan tail))))))) candidates)]
-                            (when-not result
-                              (own-work! (+ 512 (* 64 (count done)) (* 256 (count known)) (* 128 (count used))))
-                              (vswap! failed conj state))
-                            result)))))]
-          (let [selected (search (column-map input-columns) #{} #{})]
-            (when-not selected (fail! :query-source/unsupported :planning))
-            ;; Reserve all output containers before building them. Estimates are
-            ;; never converted into native scores, cardinalities, or emptiness.
-            (vreset! output-token (control/reserve! ctl {:retained-bytes (+ 1024 (* 512 (count selected)))}))
-            (let [result {:region-id region-id :policy :eav-structural-v1 :selection :structural
-                          :estimated-access-ns nil :fallback-reasons [] :plans selected
-                          :planning-time-ms (/ (double (- (System/nanoTime) started)) 1000000.0)}]
-              (let [token @output-token] (rt/own! runtime #(control/release! token)))
-              (vreset! output-token nil)
-              result))))
-      (finally
-        (when-let [token @output-token] (control/release! token))
-        (doseq [token @charges] (control/release! token))))))
+  ([runtime region-id input-columns requests plans]
+   (schedule! runtime region-id input-columns requests plans []))
+  ([runtime region-id input-columns requests plans operators]
+   (let [started (System/nanoTime)
+         ctl (:control runtime) check! #(control/check-active! ctl)
+         charges (volatile! []) output-token (volatile! nil)
+         own-work! (fn [bytes]
+                     (let [token (control/reserve! ctl {:retained-bytes bytes})]
+                       (vswap! charges conj token)))]
+     (try
+       (ensure! (and (nonnegative-id? region-id) (vector? requests) (vector? plans)
+                     (vector? operators) (every? #(core-operator? runtime region-id %) operators)
+                     (= (count operators) (count (set (map :id operators))))))
+       (vswap! charges conj (rt/charge-metadata! runtime input-columns :planning))
+       (columns! input-columns check!)
+       (own-work! (+ 2048 (* 1024 (count plans)) (* 512 (count requests)) (* 1024 (count operators))))
+       (doseq [request requests]
+         (vswap! charges conj (rt/charge-copy! runtime (request-metadata request)))
+         (request! request check!)
+         (ensure! (= region-id (:region-id request))))
+       (let [request-map (into {} (map (juxt :source-symbol identity)) requests)
+             _ (ensure! (= (count requests) (count request-map)))
+             required (into #{} (mapcat (fn [request]
+                                         (for [clause (:clauses request) :when (= :pattern (:kind clause))]
+                                           [(:source-symbol request) region-id (:id clause)]))) requests)
+             live-vars (into #{} (mapcat :required-vars) requests)
+             _ (doseq [plan plans]
+                 (check!)
+                 (let [o (options plan) request (get request-map (:source-symbol o))]
+                   (ensure! (and request (= region-id (:region-id o))
+                                 (identical? request (get-in o [:capture :request]))
+                                 (set/subset? (into #{} (map #(vector (:source-symbol o) region-id %)) (:covers o))
+                                              required)))))
+             _ (doseq [[source-symbol candidates] (group-by #(get-in % [:expr :source]) plans)]
+                 (ensure! (<= (count candidates) (:max-alternatives (request-map source-symbol))))
+                 (ensure! (= (count candidates)
+                             (count (set (map #(get-in % [:path :options :alternative-id]) candidates))))))
+             candidates (->> plans
+                             (map (fn [plan]
+                                    (let [o (options plan)]
+                                      (assoc-in plan [:path :options :permission]
+                                                (permissions/planning-permission
+                                                  (:consumption o) (get-in o [:capture :alternative]))))))
+                             (filter #(= 1 (count (:covers (options %)))))
+                             (sort (fn [a b]
+                                     (check!)
+                                     (let [work (compare-keys (work-key a) (work-key b) check!)]
+                                       (if (zero? work)
+                                         (let [kind (compare (kind-rank (get-in a [:path :options :access :kind]))
+                                                             (kind-rank (get-in b [:path :options :access :kind])))]
+                                           (if (zero? kind)
+                                             (compare-keys (:canonical-key (options a)) (:canonical-key (options b)) check!)
+                                             kind)) work))))
+                             vec)
+             local-work (into #{} (map #(vector :core region-id (:id %))) operators)
+             required (set/union required local-work)
+             _ (doseq [operator operators]
+                 (ensure! (set/subset? (:after operator) required)))
+             choices (into (mapv (fn [operator]
+                                  {:kind :core :value operator :covers #{[:core region-id (:id operator)]}
+                                   :requires (:requires operator) :columns (:columns operator)
+                                   :after (:after operator) :resources #{}})
+                                (sort-by :id operators))
+                           (map (fn [plan]
+                                  (let [o (options plan) p (:permission o)]
+                                    {:kind :access :value plan :covers #{(work-key plan)}
+                                     :requires (:requires o) :columns (:columns o) :after #{}
+                                     :resources (if (= :once (:opens p)) #{(:resource p)} #{})
+                                     :unavailable? (and (= :once (:opens p)) (:spent? p))}))) candidates)
+             result (dependency/schedule {:inputs input-columns :required-work required
+                                          :required-vars live-vars :choices choices
+                                          :check! check! :reserve! own-work! :max-states search-bound})]
+         (when-not (= :complete (:status result)) (fail! :query-source/unsupported :planning))
+         ;; Native/core steps remain private and keep their shared implementation.
+         ;; Only selected external AccessPlans enter the provider explanation.
+         (let [selected (:choices result)
+               plan-count (count (filter #(= :access (:kind %)) selected))]
+           (vreset! output-token
+             (control/reserve! ctl {:retained-bytes (+ 1024 (* 512 plan-count) (* 1024 (count operators)))}))
+           (let [result {:region-id region-id :policy :eav-structural-v1 :selection :structural
+                         :estimated-access-ns nil :fallback-reasons []
+                         :plans (into [] (comp (filter #(= :access (:kind %))) (map :value)) selected)
+                         :operators (mapv #(select-keys % [:kind :value]) selected)
+                         :planning-time-ms (/ (double (- (System/nanoTime) started)) 1000000.0)}]
+             (let [token @output-token] (rt/own! runtime #(control/release! token)))
+             (vreset! output-token nil)
+             result)))
+       (finally
+         (when-let [token @output-token] (control/release! token))
+         (doseq [token @charges] (control/release! token)))))))
 
 (defn validate-query!
   "Audit all selected regions together before execution. Region-local planning

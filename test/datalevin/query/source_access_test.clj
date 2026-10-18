@@ -73,6 +73,112 @@
     (Collections/shuffle items random)
     (vec items)))
 
+(defn- local-operator! [runtime region id requires columns after]
+  (source-access/core-operator! runtime region id requires columns after
+    (plan/map->IdentityStep {:in (set (map :variable requires)) :cols (mapv :variable columns)})))
+
+(defrecord PlanningTrap [in cols private-value]
+  plan/IStep
+  (-type [_] (throw (Exception. "unexpected step callback")))
+  (-execute [_ _ _] (throw (Exception. "unexpected execution")))
+  (-execute-pipe [_ _ _ _] (throw (Exception. "unexpected pipe")))
+  (-sample [_ _ _] (throw (Exception. "unexpected sample")))
+  (-explain [_ _] (throw (Exception. "unexpected private explanation"))))
+
+(deftest local-step-planning-and-explanation-use-only-its-explicit-interface
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [private "do-not-emit-this-native-or-rule-body"
+            opaque (reify Object (toString [_] (throw (Exception. "do not inspect body"))))
+            column (assoc (column '?e) :private/annotation private)
+            operator (source-access/core-operator! runtime 0 0 [] [column] #{}
+                       (->PlanningTrap #{} ['?e] opaque))
+            schedule (source-access/schedule! runtime 0 [] [] [] [operator])
+            explain (source-access/explain! runtime schedule)]
+        (is (= [(dissoc column :private/annotation)] (:columns operator)))
+        (is (= [:core] (mapv :kind (:operators schedule))))
+        (is (= [] (:steps explain)))
+        (is (not (.contains (pr-str explain) private)))
+        (is (not (contains? explain :operators)))))))
+
+(deftest shared-local-exports-are-scheduled-before-dependent-access
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [events (atom []) r (request '$s 3 [(pattern 0 '?e :a '?v)] [(column '?e)])
+            plans (candidates runtime r (consumption runtime)
+                              [(alternative :lookup #{0} :entity-lookup [(column '?e)] [(column '?v)])] events)
+            operator (local-operator! runtime 3 0 [] [(column '?e)] #{})
+            schedule (source-access/schedule! runtime 3 [] [r] plans [operator])]
+        (is (= :query-source/unsupported
+               (:error (error #(source-access/schedule! runtime 3 [] [r] plans)))))
+        (is (= [:core :access] (mapv :kind (:operators schedule))))
+        (is (identical? operator (get-in schedule [:operators 0 :value])))
+        (is (= [:lookup] (ids schedule)))
+        (is (empty? @events))))))
+
+(deftest local-operators-cannot-hide-a-cycle-or-supply-a-nullable-or-incompatible-key
+  (doseq [[requires columns] [[[(column '?v)] [(column '?e) (column '?v)]]
+                              [[] [(column '?e :string false)]]
+                              [[] [(column '?e :long true)]]]]
+    (rt/with-runtime {}
+      (fn [runtime]
+        (let [events (atom []) r (request '$s 0 [(pattern 0 '?e :a '?v)] [(column '?e)])
+              plans (candidates runtime r (consumption runtime)
+                                [(alternative :lookup #{0} :entity-lookup [(column '?e)] [(column '?v)])] events)
+              operator (local-operator! runtime 0 0 requires columns #{})]
+          (is (= :query-source/unsupported
+                 (:error (error #(source-access/schedule! runtime 0 [] [r] plans [operator])))))
+          (is (empty? @events)))))))
+
+(deftest core-ordering-barriers-are-enforced-even-for-already-bound-variables
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [events (atom []) inputs [(column '?e)]
+            r (request '$s 0 [(pattern 0 '?e :a '?v)] inputs)
+            plans (candidates runtime r (consumption runtime)
+                              [(alternative :lookup #{0} :entity-lookup inputs [(column '?v)])] events)
+            first (local-operator! runtime 0 8 inputs inputs #{['$s 0 0]})
+            second (local-operator! runtime 0 2 inputs inputs #{[:core 0 8]})
+            schedule (source-access/schedule! runtime 0 inputs [r] plans [second first])]
+        (is (= [:access :core :core] (mapv :kind (:operators schedule))))
+        (is (= [8 2] (mapv (comp :id :value) (rest (:operators schedule)))))
+        (is (empty? @events))))))
+
+(deftest only-the-captured-shared-step-schema-can-enter-a-local-interface
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [step (plan/map->IdentityStep {:in #{'?e} :cols ['?e '?v]})
+            before (control/usage (:control runtime))]
+        (doseq [[requires columns] [[[] [(column '?e) (column '?v)]]
+                                   [[(column '?e)] [(column '?e)]]
+                                   [[(column '?e)] [(column '?e) (column '?private)]]]]
+          (is (= :query-source/invalid
+                 (:error (error #(source-access/core-operator! runtime 0 0 requires columns #{} step))))))
+        (is (= before (control/usage (:control runtime))))))))
+
+(deftest local-operator-identities-cannot-cross-regions-or-invocations
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [operator (local-operator! runtime 4 0 [] [(column '?e)] #{})]
+        (is (= :query-source/invalid
+               (:error (error #(source-access/schedule! runtime 0 [] [] [] [operator])))))
+        (is (= :query-source/invalid
+               (:error (error #(source-access/schedule! runtime 4 [] [] [] [operator operator])))))
+        (rt/with-runtime {}
+          (fn [other]
+            (is (= :query-source/invalid
+                   (:error (error #(source-access/schedule! other 4 [] [] [] [operator])))))))))))
+
+(deftest local-ordering-edges-must-name-work-in-the-same-region
+  (rt/with-runtime {}
+    (fn [runtime]
+      (doseq [after [#{[:core 8 0]} #{['$missing 4 0]}]]
+        (let [operator (local-operator! runtime 4 0 [] [(column '?e)] after)
+              before (control/usage (:control runtime))]
+          (is (= :query-source/invalid
+                 (:error (error #(source-access/schedule! runtime 4 [] [] [] [operator])))))
+          (is (= before (control/usage (:control runtime)))))))))
+
 (deftest bridge-uses-shared-access-records-without-native-costs-or-planning-reads
   (rt/with-runtime {}
     (fn [runtime]

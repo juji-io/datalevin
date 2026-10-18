@@ -2756,12 +2756,20 @@ The preparatory [`source.access`](../src/datalevin/query/source/access.clj)
 bridge constructs shared `AccessPlan` records from captured, validated
 alternatives. It schedules one logical region from explicit typed input/export
 columns and checks complete single-pattern coverage without native cardinality
-or cost conversion. Its query-wide validation checks selected regions together
+or cost conversion. Its dependency search uses the shared
+[`access.dependency`](../src/datalevin/query/access/dependency.clj) scheduler.
+Captured native/core `IStep` interfaces contribute typed outputs only after
+their own dependencies and explicit ordering barriers are satisfied. Visible
+potential exports for planning requests come from lowered pattern schemas and
+those interfaces; potential exports cannot seed themselves or hide a cycle
+through a local operator. Scoped operators publish only their exported columns,
+keeping body variables private. The search remains bounded at 4096 states and
+uses an explicit stack. Its query-wide validation checks selected regions together
 for one-shot resource reuse. It performs no provider callbacks and admits no
 implicit replay/spool. The shared sampling hook enforces the path's
 `:none`/`:execution` policy before opening a cursor. These are internal
 primitives; `q`/`explain` still use the prototype planner. Descriptor/session
-validation, typed export derivation and compiler activation, native planner participation,
+validation, active scoped-interface emission and compiler activation, native planner participation,
 and dependent access execution still require the coordinated runtime switch.
 
 The initial policy is `:eav-structural-v1`. Among legal, dependency-ready choices

@@ -109,6 +109,35 @@
 (defn- step [p input-cols]
   (plan/access-step (:expr p) (:path p) (access/complete-demand :exact nil) (:bounds p) (:work p) input-cols))
 
+(deftest scheduled-native-seed-and-dependent-access-preserve-all-outer-witnesses
+  (let [events (atom [])]
+    (rt/with-runtime {:limits {:binding-rows 2}}
+      (fn [runtime]
+        (let [{:keys [plan]} (fixture runtime events {})
+              p (plan true)
+              outers [[1 :a] [2 :b] [3 :c] [1 :d] [1 :a] [4 :e] [3 :f]]
+              native (plan/map->InitStep {:in #{} :cols ['?e '?tag]
+                                         :result (mapv object-array outers)})
+              operator (source-access/core-operator! runtime 3 0 []
+                         [{:variable '?e :type :long :nullable? false}
+                          {:variable '?tag :type :keyword :nullable? false}] #{} native)
+              request (get-in p [:path :options :capture :request])
+              schedule (source-access/schedule! runtime 3 [] [request] [p] [operator])]
+          (is (nil? (source-access/validate-query! runtime [schedule])))
+          (is (empty? (events-of events :open)))
+          (let [[cols output]
+                (reduce (fn [[cols tuples] {:keys [kind value]}]
+                          (let [s (if (= :core kind) (:step value) (step value cols))]
+                            [(:cols s) (plan/-execute s nil tuples)]))
+                        [[] nil] (:operators schedule))]
+            (is (= ['?e '?tag '?v] cols))
+            (is (= (frequencies (map (fn [[e tag]] [e tag (str e)]) outers))
+                   (frequencies (map vec output)))))
+          (is (= [[1] [2] [3] [4]]
+                 (mapv :values (mapcat :bindings (map second (events-of events :open))))))
+          (is (= 2 (count (events-of events :open))))
+          (is (= 2 (count (events-of events :close)))))))))
+
 (deftest input-free-shared-step-uses-the-exact-open-shape-without-id-state
   (let [events (atom []) saved (atom nil)]
     (rt/with-runtime {}
