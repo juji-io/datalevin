@@ -13,6 +13,8 @@
             [datalevin.query.source-access-test]
             [datalevin.query.source-session-test]
             [datalevin.query.source-cursor-test]
+            [datalevin.query.source-lowering-test]
+            [datalevin.query.source-region-test]
             [datalevin.query.source-native-value-test]
             [datalevin.query.source-native-data-test]
             [datalevin.query.source-native-variable-tuple-test]
@@ -32,6 +34,8 @@
                                            'datalevin.query.source-access-test
                                            'datalevin.query.source-session-test
                                            'datalevin.query.source-cursor-test
+                                           'datalevin.query.source-lowering-test
+                                           'datalevin.query.source-region-test
                                            'datalevin.query.source-native-value-test
                                            'datalevin.query.source-native-data-test
                                            'datalevin.query.source-native-variable-tuple-test

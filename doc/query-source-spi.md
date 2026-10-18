@@ -2423,6 +2423,20 @@ partial success. Shared one-shot permissions and read guarantees apply across
 all branches. A partial attribute spool is not a complete observation of the
 other attributes.
 
+The internal [`source.lowering`](../src/datalevin/query/source/lowering.clj)
+preparation implements fixed specialization, canonical attribute branches,
+runtime dispatch metadata, branch-specific types/guarantees, restored attribute
+bindings and repeated-term unification. It retains caller multiplicity while
+visiting compatible branches, observes cancellation and reentrant closure, and
+admits retained planning state before expansion. Undeclared keywords and proven
+disjoint repeated-variable types can establish no matches. Different descriptors
+whose value domains may overlap, including `:data`, cannot establish that proof;
+an unsupported repeated-variable type contract is rejected rather than erased.
+Internal acquired-session/shared-step tests compare its lowered reads with eager
+EAV facts, including heterogeneous attributes, wildcard and repeated terms,
+zero-column reads, self-joins, aggregates and `:with`. The active prototype
+query compiler does not yet select this pass.
+
 Each branch keeps its declared entity/value types, reference domains, and
 non-null fact terms; the restored attribute binding has type `:keyword` and is
 non-null. Different attributes may yield heterogeneous values or entity domains
@@ -2459,6 +2473,21 @@ share local variables merely because names or rule bodies match. Likewise,
 union branches and the inputs/outputs of lossy operations stay distinct. A
 plain conjunction can remain one region containing several source accesses and
 core operations; it does not require one region per pattern.
+
+The internal [`source.region`](../src/datalevin/query/source/region.clj)
+preparation annotates engine-owned parser query/rule nodes without replacing
+their evaluation. It records explicit head/argument mappings and set boundaries,
+separate call-site and union scopes, generated attribute branches, stable IDs,
+and parent reachability. Native rule nodes remain in the shared engine; recursive
+external calls and external negation remain unsupported by this initial pass.
+It builds flat planning requests from captured descriptors and explicit typed
+exports supplied by the shared planner. Requests contain only that source's
+lowered occurrences; core residuals and private/enclosing/sibling nodes remain
+private. Statically empty ancestors eliminate descendant access work while
+leaving query-wide validation/authorization requirements intact. Planning
+reservations unwind on failure, and closed or foreign captures cannot form new
+requests. Wiring typed export derivation and these annotations into the active
+shared planner/rule/union execution paths remains part of the coordinated switch.
 
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response
@@ -2732,7 +2761,7 @@ for one-shot resource reuse. It performs no provider callbacks and admits no
 implicit replay/spool. The shared sampling hook enforces the path's
 `:none`/`:execution` policy before opening a cursor. These are internal
 primitives; `q`/`explain` still use the prototype planner. Descriptor/session
-validation, compiler region/export construction, native planner participation,
+validation, typed export derivation and compiler activation, native planner participation,
 and dependent access execution still require the coordinated runtime switch.
 
 The initial policy is `:eav-structural-v1`. Among legal, dependency-ready choices

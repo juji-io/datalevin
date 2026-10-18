@@ -60,21 +60,23 @@
         (string? x) 4 (vector? x) 5
         :else (fail! :query-source/invalid :planning)))
 
-(defn- key-compare [a b check!]
+(defn compare-keys
+  "Compare admitted structural identifiers in canonical Unicode/numeric order."
+  [a b check!]
   (let [tag (key-tag a) other (key-tag b)]
     (if (not= tag other) (compare tag other)
         (case tag
           0 0
           1 (compare a b)
           2 (text-compare (str a) (str b) check!)
-          3 (let [n (key-compare (namespace a) (namespace b) check!)]
+          3 (let [n (compare-keys (namespace a) (namespace b) check!)]
               (if (zero? n) (text-compare (name a) (name b) check!) n))
           4 (text-compare a b check!)
           5 (loop [i 0]
               (check!)
               (cond (= i (count a)) (if (= i (count b)) 0 -1)
                     (= i (count b)) 1
-                    :else (let [c (key-compare (nth a i) (nth b i) check!)]
+                    :else (let [c (compare-keys (nth a i) (nth b i) check!)]
                             (if (zero? c) (recur (inc i)) c))))))))
 
 (defn- canonical-key [options]
@@ -258,12 +260,12 @@
                             (filter #(= 1 (count (:covers (options %)))))
                             (sort (fn [a b]
                                     (check!)
-                                    (let [work (key-compare (work-key a) (work-key b) check!)]
+                                    (let [work (compare-keys (work-key a) (work-key b) check!)]
                                       (if (zero? work)
                                         (let [kind (compare (kind-rank (get-in a [:path :options :access :kind]))
                                                             (kind-rank (get-in b [:path :options :access :kind])))]
                                           (if (zero? kind)
-                                            (key-compare (:canonical-key (options a)) (:canonical-key (options b)) check!)
+                                            (compare-keys (:canonical-key (options a)) (:canonical-key (options b)) check!)
                                             kind)) work))))
                             vec)
             failed (volatile! #{}) attempts (volatile! 0)]
