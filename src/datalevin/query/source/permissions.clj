@@ -220,7 +220,7 @@
                       metadata))
       (catch Throwable e (control/release! metadata) (throw e)))))
 
-(defn- open-group! [^Consumption permissions alternative request]
+(defn- open-group! [^Consumption permissions alternative request phase]
   (let [properties (:properties alternative)
         alternative-id (:consumption-group properties)
         request-id (:consumption-group request)]
@@ -228,10 +228,10 @@
       (do (ensure! (and (contains? properties :consumption-group)
                         (contains? request :consumption-group)
                         (= alternative-id request-id)
-                        (contains? (.-groups permissions) request-id)) :open)
+                        (contains? (.-groups permissions) request-id)) phase)
           request-id)
       (do (ensure! (and (not (contains? properties :consumption-group))
-                        (not (contains? request :consumption-group))) :open)
+                        (not (contains? request :consumption-group))) phase)
           nil))))
 
 (defn planning-permission
@@ -246,7 +246,7 @@
         (fail! :query-source/invalid :planning {:state :closed}))
       (let [properties (:properties alternative)
             request (select-keys properties [:consumption-group])
-            group (open-group! permissions alternative request)]
+            group (open-group! permissions alternative request :planning)]
         {:resource [permissions group]
          :opens (get-in (.-groups permissions) [group :opens])
          :spent? (pos? (long (get-in @(.-state permissions) [:groups group :attempts])))}))))
@@ -261,7 +261,7 @@
       (control/check-active! ctl)
       (when (:closed? @(.-state permissions))
         (fail! :query-source/invalid :open {:state :closed}))
-      (let [group (open-group! permissions alternative request)
+      (let [group (open-group! permissions alternative request :open)
             {:keys [opens max-open-cursors]} (get (.-groups permissions) group)
             {:keys [active attempts]} (get-in @(.-state permissions) [:groups group])]
         (when (and (= :once opens) (pos? (long attempts)))

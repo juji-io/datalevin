@@ -11,7 +11,8 @@
                                    :row/age {:entity-type :long :value-type :long}
                                    :row/ref {:entity-type :long :value-type :long}
                                    :tag/self {:entity-type :keyword :value-type :keyword}}}
-   :logical-schema {:attributes {:row/name {:entity-domain :row :reference-domain nil
+   :logical-schema {:domains {:row {:entity-type :long} :tag {:entity-type :keyword}}
+                    :attributes {:row/name {:entity-domain :row :reference-domain nil
                                             :cardinality :one :absence :no-fact}
                                   :row/age {:entity-domain :row :reference-domain nil
                                            :cardinality :one :absence :no-fact}

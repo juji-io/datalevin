@@ -2489,6 +2489,24 @@ reservations unwind on failure, and closed or foreign captures cannot form new
 requests. Wiring typed export derivation and these annotations into the active
 shared planner/rule/union execution paths remains part of the coordinated switch.
 
+The internal [`source.planning`](../src/datalevin/query/source/planning.clj)
+lifecycle now connects owned v2 descriptor capture, grouped acquisition,
+region-local provider planning, shared access selection, and whole-query
+consumption validation. It captures a provider object's descriptor once across
+aliases and validates all requests before acquisition. The shared compiler must
+publish each live region's actual typed inputs and captured operators, with
+explicit coverage of every private clause/site; missing core work rejects
+before acquisition. [`source.descriptor`](../src/datalevin/query/source/descriptor.clj)
+validates the complete revised EAV schema and scope, and
+[`source.envelope`](../src/datalevin/query/source/envelope.clj) validates every
+returned candidate, including unused envelopes and hidden vector backing.
+Both revised estimate shapes retain unknowns and zero without native cost
+conversion. Owned selected envelopes retain their reservations; discarded
+candidates release theirs. Failure closes all compilation resources immediately.
+Focused tests run selected flat-query paths through shared `AccessStep` execution,
+including native-seeded dependent lookups. The active compiler still needs to
+emit scoped execution steps and select this lifecycle for `q`/`explain`.
+
 The internal [`source.scope`](../src/datalevin/query/source/scope.clj) pass now
 captures those typed boundary interfaces from complete shared branch schemas.
 It maps actual parent inputs only through explicit head arguments/exports,
@@ -2785,9 +2803,11 @@ uses an explicit stack. Its query-wide validation checks selected regions togeth
 for one-shot resource reuse. It performs no provider callbacks and admits no
 implicit replay/spool. The shared sampling hook enforces the path's
 `:none`/`:execution` policy before opening a cursor. These are internal
-primitives; `q`/`explain` still use the prototype planner. Descriptor/session
-validation, active scoped-interface emission and compiler activation, native planner participation,
-and dependent access execution still require the coordinated runtime switch.
+primitives; `q`/`explain` still use the prototype planner. Full revised
+descriptor/session/envelope validation and an internal planning lifecycle are
+available. Active scoped-interface emission, compiler activation, native planner
+participation and the complete shared-operator resource audit still require the
+coordinated runtime switch.
 
 The initial policy is `:eav-structural-v1`. Among legal, dependency-ready choices
 for the same work, prefer bound-entity lookup, then bound-value lookup, then

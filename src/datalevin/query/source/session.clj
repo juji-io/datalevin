@@ -1,10 +1,11 @@
 (ns ^:no-doc datalevin.query.source.session
   "Captured alias requirements and grouped acquisition for the revised contract.
-  This internal lifecycle consumes validated descriptors; the prototype query
+  This internal lifecycle validates captured descriptors; the prototype query
   entry point does not call it. Native read contexts remain engine-owned."
   (:require [clojure.set :as set]
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.descriptor :as descriptor]
             [datalevin.query.source.permissions :as permissions]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]])
@@ -70,22 +71,6 @@
      :planning {:max-alternatives (get planning :max-alternatives 32)
                 :estimate-max-age-ms (get planning :estimate-max-age-ms 300000)}}))
 
-(defn- descriptor! [descriptor]
-  ;; Complete schema/type/scope validation belongs to the descriptor validator
-  ;; before this boundary. Never negotiate or translate the prototype here.
-  (when-not (= #{2} (:spi-versions descriptor)) (fail! :query-source/version :descriptor))
-  (when-not (= :eav (get-in descriptor [:pattern-contract :kind]))
-    (fail! :query-source/unsupported :descriptor))
-  (ensure! (and (every? #(some? (get descriptor %))
-                        [:source-instance-id :compute-context-id :definition-id])
-                (string? (:definition-fingerprint descriptor)) (seq (:definition-fingerprint descriptor))
-                (set? (:features descriptor)) (every? keyword? (:features descriptor))
-                (set? (:required-features descriptor)) (every? keyword? (:required-features descriptor))
-                (set/subset? (:required-features descriptor) (:features descriptor))
-                (set? (:read-capabilities descriptor)) (seq (:read-capabilities descriptor))
-                (every? #(contains? rank %) (:read-capabilities descriptor))) :descriptor)
-  descriptor)
-
 (defn- logical-view [descriptor]
   ;; Ignore inert envelope annotations without erasing complete nominal types
   ;; or accepted scope parameters. Different logical views are kept separately.
@@ -104,8 +89,12 @@
 
 (defn- compatible-views! [runtime entries]
   (reduce (fn [accepted {:keys [descriptor]}]
-            (let [id (:definition-id descriptor)]
-              (if-let [previous (get accepted id)]
+            (let [id (:definition-id descriptor)
+                  scope (:scope descriptor)
+                  scope-view (select-keys scope [:kind :parameters])]
+              (when-let [previous (get-in accepted [:scopes (:id scope)])]
+                (ensure! (= previous scope-view) :descriptor))
+              (if-let [previous (get-in accepted [:definitions id])]
                 (do
                   (when-not (= (:definition-fingerprint previous) (:definition-fingerprint descriptor))
                     (fail! :query-source/stale-definition :descriptor))
@@ -118,12 +107,15 @@
                                                  {:retained-bytes (+ 4096 (* 512 nodes))})]
                       (try (ensure! (= (logical-view previous) (logical-view descriptor)) :descriptor)
                            (finally (control/release! token)))))
-                  accepted)
-                (assoc accepted id descriptor)))) {} entries))
+                  (assoc-in accepted [:scopes (:id scope)] scope-view))
+                (-> accepted
+                    (assoc-in [:definitions id] descriptor)
+                    (assoc-in [:scopes (:id scope)] scope-view)))))
+          {:definitions {} :scopes {}} entries))
 
 (defn prepare!
   "Capture all alias minima and check every physical group before acquisition.
-  Descriptors must already pass full v2 schema/type validation. Descriptor and
+  Captured descriptors pass full v2 schema/type validation here. Descriptor and
   option metadata are admitted here; source/native objects are borrowed. The
   shared authorization is preserved, and overrides accept consistency only."
   [runtime entries options]
@@ -156,7 +148,7 @@
                           (ensure! (and (nil? native) (satisfies? source/IQuerySource source)) :inputs)
                           (when-not (.containsKey descriptors descriptor)
                             (own-token! (rt/charge-metadata! runtime descriptor :descriptor))
-                            (descriptor! descriptor)
+                            (descriptor/source-info! descriptor #(control/check-active! ctl))
                             (.put descriptors descriptor true))
                           {:symbol symbol :source source :descriptor descriptor})
                         (do (ensure! (some? native) :inputs) {:symbol symbol :native native})))) entries)
