@@ -38,6 +38,29 @@
     (native/with-views [database]
       #(program/execute! runtime (program/compile! runtime c columns input %)))))
 
+(deftest ordinary-inputs-seed-correlated-native-and-dependent-rule-accesses
+  (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many
+                          :db/noindex true}}
+    [{:db/id 1 :native/text ["a" "b"]} {:db/id 2 :native/text "b"}]
+    (fn [database _]
+      (let [events (atom [])
+            query '[:find ?e ?tag ?name :in $n $s % [[?e ?text ?tag]]
+                    :where [$n ?e :native/text ?text] ($s named ?e ?name)]
+            rules '[[(named [?id] ?name) [?id :row/value ?name]]]
+            input [[1 "a" :first] [1 "a" :first] [1 "b" :second]
+                   [2 "a" :missing] [2 "b" :third] [nil "b" :null]]]
+        (rt/with-runtime {}
+          (fn [runtime]
+            ;; Inline the rule in the eager oracle: its complete EAV meaning
+            ;; must preserve the entity/text/tag correlation from :in.
+            (is (= (d/q '[:find ?e ?tag ?name :in $n $s % [[?e ?text ?tag]]
+                          :where [$n ?e :native/text ?text] [$s ?e :row/value ?name]]
+                         database [[1 :row/value "one"] [2 :row/value "two"]] rules input)
+                   (program/query! runtime query
+                     [database (fixture/provider events {:lookup-only? true}) rules input])))
+            (is (every? zero? (vals (control/usage (:control runtime)))))))
+        (is (= 1 (count (events-of events :session-close))))))))
+
 (deftest native-value-constants-and-equality-predicates-skip-unrelated-payloads
   (let [giant (apply str (repeat 1000000 "z"))]
     (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}

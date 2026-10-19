@@ -2589,8 +2589,23 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, collection/native-rule emission, complete input parsing
+native plan/read paths, collection/native-rule emission, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
+
+The internal `source.program/query!` bridge now parses ordinary query syntax and
+`:in` arguments into that compiler. Source aliases and `%` rules are extracted
+before capture. Scalar, tuple, collection, relation and nested bindings become
+owned shared Relations; bounded hash joins admit their products before output
+allocation and preserve correlations and duplicate witnesses. Only complete
+owned inputs establish a homogeneous type/nullability; heterogeneous and empty
+columns remain `:data`. Reusable Java rows and tuple leaves are detached before
+the producer advances. Ignored inputs and unused tuple tails remain unread;
+arity validation pulls at most one extra argument. Direct scalar limit/offset
+parameters resolve before provider callbacks. Input preparation observes query
+timeouts, cancellation and quotas, and all invocation resources close before
+returning independently owned results. This is an internal execution bridge:
+plain scalar function arguments, textual rules, some captured scalar type edges,
+public routing and plan-only explanation integration remain pending.
 
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response

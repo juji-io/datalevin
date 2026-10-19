@@ -17,7 +17,8 @@
     datalevin.query.source.lowering datalevin.query.source.region
     datalevin.query.source.scope datalevin.query.source.descriptor
     datalevin.query.source.envelope datalevin.query.source.planning
-    datalevin.query.source.program datalevin.query.source.native-plan])
+    datalevin.query.source.program datalevin.query.source.native-plan
+    datalevin.query.source.input-program])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))
@@ -131,7 +132,17 @@
         (cancel ctl {:error :query-source/cancelled :phase :execution})
         (with-bindings {(resolve 'datalevin.query.source.runtime/*runtime*) {:control ctl}}
           (native-queries! conn))
-        (finally (close ctl))))))
+        (finally (close ctl))))
+    ;; The explicit internal v2 bridge must also keep DB precedence after that
+    ;; broad protocol extension. Load it only after all public isolation checks.
+    (require 'datalevin.query.source.program)
+    (let [run (resolve 'datalevin.query.source.runtime/with-runtime)
+          execute (resolve 'datalevin.query.source.program/query!)]
+      (is (= #{[10] [20]}
+             (run {} (fn [runtime]
+                       (execute runtime '[:find ?v :in $native [?id ...]
+                                          :where [$native ?id :value ?v]]
+                                [@conn [1 2]]))))))))
 
 (defn -main [& _]
   (binding [test/*report-counters* (ref test/*initial-report-counters*)]

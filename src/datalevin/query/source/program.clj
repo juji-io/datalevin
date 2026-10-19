@@ -14,6 +14,7 @@
             [datalevin.query.source.access :as access]
             [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.input-program :as input-program]
             [datalevin.query.source.inputs :as inputs]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.native-plan :as native-plan]
@@ -350,7 +351,7 @@
   use existing engine operators. Unsupported core operators reject before
   acquisition. Native initializations use the existing planner and the explicit
   controlled storage boundary within the caller's pinned views."
-  [runtime compilation input-columns input-tuples snapshots]
+  [runtime compilation input-columns input-tuples snapshots prepared-input]
   (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
   (let [runtime (:runtime compilation) compiled (:compiled compilation)
@@ -369,7 +370,7 @@
                                       (:default-source r) (:symbol source))
                              database (:native (get entries source))]]
                    [path (assoc (native-plan/spec! runtime snapshots database node literal-terms) :database database)]))
-        input (input! runtime check! compiled input-columns input-tuples)
+        input (or prepared-input (input! runtime check! compiled input-columns input-tuples))
         root-columns (:columns input)
         proofs (boundaries! runtime check! compiled native-specs root-columns)
         compilation (planning/refine! runtime compilation proofs)
@@ -458,7 +459,7 @@
   ([runtime compilation input-columns input-tuples snapshots]
    (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
                  (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
-   (try (compile-program! runtime compilation input-columns input-tuples snapshots)
+   (try (compile-program! runtime compilation input-columns input-tuples snapshots nil)
         (catch Throwable e (fail-program! (:runtime compilation) compilation e)))))
 
 (defn execute!
@@ -543,3 +544,47 @@
       (fn [snapshots]
         (result! runtime (compile! runtime compilation input-columns input-tuples snapshots))))
     (catch Throwable e (fail-program! (:runtime compilation) compilation e))))
+
+(defn query!
+  "Execute ordinary query syntax and :in arguments through the internal v2
+  compiler. Inputs are owned before descriptor callbacks, and all preparation,
+  compilation and session resources close before the owned result returns.
+  This entry point does not activate v2 in public q/explain."
+  ([runtime query arguments] (query! runtime query arguments nil))
+  ([runtime query arguments options]
+   (let [child (assoc runtime :cleanup (atom [])) primary (volatile! nil)
+         close (rt/own! runtime
+                 #(let [held (reverse @(:cleanup child)) error (volatile! nil)]
+                    (reset! (:cleanup child) [])
+                    (doseq [f held]
+                      (try (f) (catch Throwable e
+                                 (if-let [first-error @error]
+                                   (.addSuppressed ^Throwable first-error e)
+                                   (vreset! error e)))))
+                    (when-let [e @error] (throw e))))]
+     (try
+       (let [check! #(control/check-active! (:control child))
+             _ (retain! child (rt/charge-copy! child query))
+             parsed (input-program/parse! parser/parse-query (value/owned-copy query check!))
+             ctl (control/create {:parent (:control child) :timeout-ms (:qtimeout parsed)})
+             _ (rt/own! child #(control/close! ctl))
+             child (assoc child :control ctl)
+             check! #(control/check-active! ctl)
+             input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
+             compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
+                           (:bindings input) (set (map :variable (:columns input))) options)]
+         (native/with-views (keep :native (:entries compilation))
+           (fn [snapshots]
+             (result! child (compile-program! child compilation nil nil snapshots
+                              (select-keys input [:columns :relation]))))))
+       (catch Throwable e
+         (let [error (rt/redacted-error child (or (:phase (ex-data e)) :inputs) e)]
+           (vreset! primary error)
+           (control/cancel! (:control child) (select-keys (ex-data error) [:error :phase]))
+           (throw error)))
+       (finally
+         (try (close)
+              (catch Throwable e
+                (if-let [error @primary]
+                  (.addSuppressed ^Throwable error e)
+                  (throw (rt/redacted-error child :close e))))))))))
