@@ -97,6 +97,37 @@
     (swap! (:cleanup runtime) conj cleanup)
     (fn [] (cleanup))))
 
+(defn with-workspace
+  "Run synchronous work with an isolated cleanup stack on the same control.
+  Consume or copy borrowed results before returning. Completed workspaces do
+  not leave one cleanup entry per iteration in the parent invocation."
+  [runtime f]
+  (let [token (source/reserve! (:control runtime) {:retained-bytes 1024})
+        workspace (assoc runtime :cleanup (atom []))
+        primary (volatile! nil)]
+    (binding [*runtime* workspace]
+      (try
+        (invoke workspace :execution #(f workspace))
+        (catch Throwable e (vreset! primary e) (throw e))
+        (finally
+          (let [failure (volatile! nil)]
+            (doseq [close (reverse @(:cleanup workspace))]
+              (try (close)
+                   (catch Throwable e
+                     (let [error (redacted-error workspace :close e)]
+                       (if-let [original (or @primary @failure)]
+                         (.addSuppressed ^Throwable original error)
+                         (vreset! failure error))))))
+            (reset! (:cleanup workspace) [])
+            (source/release! token)
+            (when-let [error @failure]
+              ;; A deadline first observed during cleanup precedes a close
+              ;; failure, just as it does at the outer invocation boundary.
+              (let [cancelled (try (source/check-active! (:control workspace)) nil
+                                   (catch Throwable e
+                                     (redacted-error workspace :execution e)))]
+                (throw (if cancelled (doto ^Throwable cancelled (.addSuppressed error)) error))))))))))
+
 (defn- charge-value! [runtime x size! overhead multiplier result?]
   (let [control (:control runtime)
         limits (control/limits control)

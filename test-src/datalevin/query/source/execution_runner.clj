@@ -4,6 +4,8 @@
             [datalevin.query-key-test]
             [datalevin.query.source-test]
             [datalevin.query.source-runtime-test]
+            [datalevin.query.source-value-limits-test]
+            [datalevin.query.source-recursion-test]
             [datalevin.query.source-execution-test]
             [datalevin.query.source-conformance-test]
             [datalevin.query.source-join-index-test]
@@ -35,6 +37,8 @@
   (let [{:keys [fail error]} (test/run-tests 'datalevin.query-key-test
                                            'datalevin.query.source-test
                                            'datalevin.query.source-runtime-test
+                                           'datalevin.query.source-value-limits-test
+                                           'datalevin.query.source-recursion-test
                                            'datalevin.query.source-execution-test
                                            'datalevin.query.source-conformance-test
                                            'datalevin.query.source-join-index-test

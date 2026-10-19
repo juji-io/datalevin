@@ -25,6 +25,7 @@
             recursive-branch? rename-rule rule-args rule-call? rule-head
             source stable-head-idxs]]
    [datalevin.rules.eav :refer [eval-linear-eav-branch-with-dedup]]
+   [datalevin.rules.fixed-point :as fixed-point]
    [datalevin.rules.eav-specialize
     :refer [add-bound-transitive-tuple!
             bound-transitive-full-scan-min-observations
@@ -995,14 +996,11 @@
                 (r/add-to-seen! init-rel seen)
                 (assoc m rname seen)))
             {} stratum)]
-      (loop [totals      start-totals
-             deltas      start-totals
-             has-deltas? (some r/rel-not-empty (vals start-totals))
-             iter        0]
-        (if (not has-deltas?)
-          totals
-          (let [iter-context
-                (assoc clean-context
+      (fixed-point/run! start-totals (vec stratum)
+        {:dependencies stratum-deps
+         :parallel? (> (count stratum) 1)
+         :prepare! (fn [_ deltas]
+                     (assoc clean-context
                        :rules full-renamed-rules
                        :rels seed-rels
                        :rule-rels (merge base-rule-rels
@@ -1012,58 +1010,25 @@
                        ;; (pre-computed non-recursive rules), not the
                        ;; stratum's iterative totals which can affect
                        ;; clause ordering in ways that break correctness
-                       :rule-totals base-rule-rels)
-
-                ;; Fused tuple production with deduplication.
-                eval-one
-                (fn [rname]
-                  (let [branches (rec-branches-map rname)
-                        deps     (stratum-deps rname)
-                        dep-delta?
-                        (some (fn [dep]
-                                (let [rel (deltas dep)]
-                                  (and rel (r/rel-not-empty rel))))
-                              deps)]
-                    (when (and branches dep-delta?)
-                      (let [deduped (eval-rule-body-with-dedup
-                                      iter-context rname branches
-                                      resolve-clause-fn
-                                      (seen-sets rname))]
-                        (when (r/rel-not-empty deduped)
-                          [rname deduped])))))
-
-                new-deltas
-                (if (> (count stratum) 1)
-                  (into {} (keep identity) (pmap eval-one stratum))
-                  (if-let [result (eval-one (first stratum))]
-                    {(first result) (second result)}
-                    {}))
-
-                new-totals
-                (if (and temporal-elim?
-                         (not *keep-temporal-intermediates*))
-                  (if (some r/rel-not-empty (vals new-deltas))
-                    new-deltas
-                    totals)
-                  (reduce
-                    (fn [acc rname]
-                      (let [diff (new-deltas rname)]
-                        (if diff
-                          (update acc rname r/sum-rel diff)
-                          acc)))
-                    totals stratum))
-
-                ;; Check for magic explosion: if magic rules have grown
-                ;; beyond threshold, abort and fall back to non-magic
-                _ (when magic-threshold
-                    (let [cur-size (magic-rules-size new-totals)]
-                      (when (> cur-size ^long magic-threshold)
-                        (raise "Magic explosion"
-                                        {:type         ::magic-explosion
-                                         :current-size cur-size
-                                         :threshold    magic-threshold}))))]
-            (recur new-totals new-deltas
-                   (seq new-deltas) (inc iter))))))))
+                       :rule-totals base-rule-rels))
+         :evaluate! (fn [iter-context rname]
+                      (when-let [branches (rec-branches-map rname)]
+                        (eval-rule-body-with-dedup iter-context rname branches resolve-clause-fn (seen-sets rname))))
+         :merge! (fn [totals new-deltas]
+                   (if (and temporal-elim? (not *keep-temporal-intermediates*))
+                     (if (some r/rel-not-empty (vals new-deltas)) new-deltas totals)
+                     (reduce (fn [acc rname]
+                               (if-let [diff (new-deltas rname)] (update acc rname r/sum-rel diff) acc))
+                             totals stratum)))
+         ;; Check for magic explosion before publishing the next iteration.
+         :growth! (when magic-threshold
+                    (fn [new-totals]
+                      (let [cur-size (magic-rules-size new-totals)]
+                        (when (> cur-size ^long magic-threshold)
+                          (raise "Magic explosion"
+                                 {:type         ::magic-explosion
+                                  :current-size cur-size
+                                  :threshold    magic-threshold})))))}))))
 
 (defn- solve-stratified*
   [context rule-name args resolve-clause-fn]

@@ -2629,6 +2629,29 @@ native programs retain their existing core nodes; controlled emission remains
 pending and rejects before provider acquisition. Ordinary native `q` continues
 to select its direct execution path.
 
+The native evaluator and internal controlled recursion adapter now share the
+same delta-iteration driver. The controlled adapter accepts completed compiled
+body relations, runs serially on the pinned-view thread, and uses shared typed
+keys and relation union. It projects complete heads before seen-set insertion,
+copies borrowed values before reading another tuple, and reserves indexes,
+containers and owned payloads before retaining answers. Body workspaces release
+after synchronous result consumption; superseded total/delta lists release
+after each iteration. Seen keys and their values remain owned until the result
+handle closes. Cleanup does not accumulate one parent entry per iteration.
+This is an internal operator boundary, not a clause interpreter: recursive
+query syntax, stratification and call/body interface emission remain pending.
+Native public routing and clause evaluation continue through the existing
+engine, using its native operations with the shared iteration driver.
+
+Internal logical value walkers bound nesting at 128, including metadata,
+retained vector backing and nested logical tuples. Structural envelopes count
+toward that bound. Excess depth is `:query-source/limit`, observed before copying
+or hashing a borrowed recursive key can exhaust the JVM stack. Cancellation and
+deadlines retain precedence; a depth/resource failure during type validation
+cannot become a false mismatch or an empty proof. Detached vector copies need
+only traverse visible contents, while retained-value accounting also checks
+their hidden backing.
+
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response
 order. Clause IDs identify occurrences, not text: repeated patterns or predicates

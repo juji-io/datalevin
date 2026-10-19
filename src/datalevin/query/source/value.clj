@@ -36,8 +36,33 @@
 
 (defn plain-map? [x] (and (map? x) (not (record? x))))
 
+(def ^:private maximum-depth 128)
+
+(defn- check-depth! [depth phase]
+  (when (> depth maximum-depth) (fail! :query-source/limit phase)))
+
 (defn- custom-comparator? [x]
   (and (sorted? x) (not (identical? RT/DEFAULT_COMPARATOR (.comparator ^Sorted x)))))
+
+(defn- owned-copy* [x check! depth]
+  (when check! (check!))
+  (check-depth! depth :values)
+  (if (satisfies? IQuerySourceValue x)
+    x
+    (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
+          copy-child #(owned-copy* % check! (inc depth))
+          copy (cond
+                 (bytes? x) (aclone ^bytes x)
+                 (= Date (class x)) (Date. (.getTime ^Date x))
+                 (vector? x) (mapv copy-child x)
+                 (plain-map? x) (into (if (sorted? x) (empty x) {})
+                                      (map (fn [[k v]] [(copy-child k) (copy-child v)])) x)
+                 (set? x) (into (if (sorted? x) (empty x) #{}) (map copy-child) x)
+                 (list? x) (apply list (map copy-child x))
+                 :else x)]
+      (when check! (check!))
+      (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
+        (with-meta copy (copy-child metadata)) copy))))
 
 (defn owned-copy
   "Detach mutable leaves in supported values, including metadata. Custom values
@@ -45,33 +70,12 @@
   caller must reserve the value's charge before copying retained query state.
   An internal check callback can stop copying on cancellation."
   ([x] (owned-copy x nil))
-  ([x check!]
-   (when check! (check!))
-   (if (satisfies? IQuerySourceValue x)
-     x
-     (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
-           copy (cond
-                  (bytes? x) (aclone ^bytes x)
-                  (= Date (class x)) (Date. (.getTime ^Date x))
-                  (vector? x) (mapv #(owned-copy % check!) x)
-                  (plain-map? x) (into (if (sorted? x) (empty x) {})
-                                       (map (fn [[k v]] [(owned-copy k check!)
-                                                        (owned-copy v check!)])) x)
-                  (set? x) (into (if (sorted? x) (empty x) #{}) (map #(owned-copy % check!)) x)
-                  (list? x) (apply list (map #(owned-copy % check!) x))
-                  :else x)]
-       (when check! (check!))
-       (if-let [metadata (when (instance? clojure.lang.IObj copy) (meta x))]
-         (with-meta copy (owned-copy metadata check!))
-         copy)))))
+  ([x check!] (owned-copy* x check! 0)))
 
-(defn diagnostic-copy
-  "Copy a validated non-secret portable identifier for diagnostics. Preserve
-  its value, detach collection backing, and omit Clojure metadata at every level.
-  The caller must reserve copy space and supply its cancellation check."
-  [x check!]
+(defn- diagnostic-copy* [x check! depth]
   (check!)
-  (let [copy #(diagnostic-copy % check!)]
+  (check-depth! depth :values)
+  (let [copy #(diagnostic-copy* % check! (inc depth))]
     (cond
       (symbol? x) (with-meta x nil)
       (plain-map? x) (into {} (map (fn [[k v]] [(copy k) (copy v)])) x)
@@ -79,6 +83,13 @@
       (set? x) (into #{} (map copy) x)
       (list? x) (apply list (map copy x))
       :else x)))
+
+(defn diagnostic-copy
+  "Copy a validated non-secret portable identifier for diagnostics. Preserve
+  its value, detach collection backing, and omit Clojure metadata at every level.
+  The caller must reserve copy space and supply its cancellation check."
+  [x check!]
+  (diagnostic-copy* x check! 0))
 
 (defn- add-charges
   "Add exact charge values. A pair of longs stays on the primitive path;
@@ -123,19 +134,23 @@
     (custom-comparator? x) false
     :else (or (plain-map? x) (vector? x) (set? x) (list? x))))
 
+(defn- portable*? [x check! depth]
+  (when check! (check!))
+  (check-depth! depth :values)
+  (let [child? #(portable*? % check! (inc depth))]
+    (and (metadata-node? x)
+         (cond
+           (plain-map? x) (every? (fn [[k v]] (and (child? k) (child? v))) x)
+           (or (vector? x) (set? x) (list? x)) (every? child? x)
+           :else true)
+         (if-let [metadata (meta x)] (child? metadata) true))))
+
 (defn portable?
   "Metadata, including Clojure metadata, must be immutable EDN data.
   Mutable dates/arrays are row values, not descriptor or plan metadata.
   An internal check callback observes cancellation during validation."
   ([x] (portable? x nil))
-  ([x check!]
-   (when check! (check!))
-   (and (metadata-node? x)
-        (cond
-          (plain-map? x) (every? (fn [[k v]] (and (portable? k check!) (portable? v check!))) x)
-          (or (vector? x) (set? x) (list? x)) (every? #(portable? % check!) x)
-          :else true)
-        (if-let [metadata (meta x)] (portable? metadata check!) true))))
+  ([x check!] (portable*? x check! 0)))
 
 (declare value-charge*)
 
@@ -143,17 +158,18 @@
   (when observe! (observe! charge))
   charge)
 
-(defn- collection-overhead [x observe! backing? metadata-phase]
+(defn- collection-overhead [x observe! backing? metadata-phase depth]
   (add-charges
     (charge-part (+ 64 (* 48 (count x))) observe!)
-    (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0)
+    (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0)
     ;; A view pins the entire parent, including elements outside its range
     ;; and the parent's metadata. An owned copy detaches that parent.
     (if (and backing? (instance? APersistentVector$SubVector x))
-      (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase) 0)))
+      (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase (inc depth)) 0)))
 
-(defn- value-charge* [x observe! backing? metadata-phase]
+(defn- value-charge* [x observe! backing? metadata-phase depth]
   (when observe! (observe! 0))
+  (check-depth! depth (or metadata-phase :values))
   (when (and metadata-phase (not (metadata-node? x)))
     (fail! :query-source/invalid metadata-phase))
   (cond
@@ -170,9 +186,9 @@
     (or (keyword? x) (symbol? x))
     (add-charges
       (charge-part 96 observe!)
-      (value-charge* (namespace x) observe! backing? metadata-phase)
-      (value-charge* (name x) observe! backing? metadata-phase)
-      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
+      (value-charge* (namespace x) observe! backing? metadata-phase depth)
+      (value-charge* (name x) observe! backing? metadata-phase depth)
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0))
     (instance? UUID x) (charge-part 48 observe!)
     (= Date (class x)) (charge-part 64 observe!)
     (or (instance? Instant x) (instance? Duration x) (instance? Period x))
@@ -182,24 +198,24 @@
     (charge-part (+' 64 (quot (+ 7 (.bitLength ^BigInteger x)) 8)) observe!)
     (instance? clojure.lang.BigInt x)
     (add-charges (charge-part 32 observe!)
-                 (value-charge* (biginteger x) observe! backing? metadata-phase))
+                 (value-charge* (biginteger x) observe! backing? metadata-phase depth))
     (instance? BigDecimal x)
     (add-charges (charge-part 64 observe!)
-                 (value-charge* (.unscaledValue ^BigDecimal x) observe! backing? metadata-phase))
+                 (value-charge* (.unscaledValue ^BigDecimal x) observe! backing? metadata-phase depth))
     (ratio? x) (add-charges (charge-part 64 observe!)
-                            (value-charge* (.numerator ^Ratio x) observe! backing? metadata-phase)
-                            (value-charge* (.denominator ^Ratio x) observe! backing? metadata-phase))
+                            (value-charge* (.numerator ^Ratio x) observe! backing? metadata-phase depth)
+                            (value-charge* (.denominator ^Ratio x) observe! backing? metadata-phase depth))
     (custom-comparator? x) (fail! :query-source/unsupported :values)
     (plain-map? x)
     (add-charges
       (charge-part (+ 96 (* 64 (count x))) observe!)
-      (reduce (fn [n [k v]] (add-charges n (value-charge* k observe! backing? metadata-phase)
-                                          (value-charge* v observe! backing? metadata-phase))) 0 x)
-      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase) 0))
+      (reduce (fn [n [k v]] (add-charges n (value-charge* k observe! backing? metadata-phase (inc depth))
+                                          (value-charge* v observe! backing? metadata-phase (inc depth)))) 0 x)
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0))
     (or (vector? x) (set? x) (list? x))
     (add-charges
-      (collection-overhead x observe! backing? metadata-phase)
-      (reduce (fn [n child] (add-charges n (value-charge* child observe! backing? metadata-phase))) 0 x))
+      (collection-overhead x observe! backing? metadata-phase depth)
+      (reduce (fn [n child] (add-charges n (value-charge* child observe! backing? metadata-phase (inc depth)))) 0 x))
     :else (fail! :query-source/unsupported :values)))
 
 (defn value-charge
@@ -207,15 +223,15 @@
   Each occurrence is charged; shared backing may be counted more than once.
   The internal observer receives incremental charges before child traversal
   and may throw on cancellation or a byte limit."
-  ([x] (value-charge* x nil true nil))
-  ([x observe!] (value-charge* x observe! true nil)))
+  ([x] (value-charge* x nil true nil 0))
+  ([x observe!] (value-charge* x observe! true nil 0)))
 
 (defn metadata-charge
   "Validate immutable metadata while charging its retained storage. Reject
   custom values without invoking their hooks. Observe limits/cancellation
   before descending into children, including metadata and vector parents."
   [x phase observe!]
-  (value-charge* x observe! true phase))
+  (value-charge* x observe! true phase 0))
 
 (defn vector-parent
   "Return the retained parent of a vector view, or nil for an owned vector."
@@ -227,37 +243,42 @@
   "Charge the detached result of owned-copy without allocating that copy.
   Hidden vector elements are omitted; immutable custom values keep their full
   declared retained charge because owned-copy preserves them."
-  ([x] (value-charge* x nil false nil))
-  ([x observe!] (value-charge* x observe! false nil)))
+  ([x] (value-charge* x nil false nil 0))
+  ([x observe!] (value-charge* x observe! false nil 0)))
 
-(defn- matches-type*? [t x charged? check!]
-  (when check! (check!))
-  (if (map? t)
-    (case (:kind t)
-      :tuple (and (vector? x) (= (count x) (count (:elements t)))
-                  (every? true? (map #(matches-type*? %1 %2 charged? check!) (:elements t) x)))
-      :custom (and (satisfies? IQuerySourceValue x) (= t (-logical-type x)))
-      false)
-    (case t
-      :boolean (boolean? x)
-      :long (instance? Long x)
-      :bigint (or (instance? BigInteger x) (instance? clojure.lang.BigInt x))
-      :double (instance? Double x)
-      :float (instance? Float x)
-      :bigdec (instance? BigDecimal x)
-      :string (string? x)
-      :keyword (keyword? x)
-      :symbol (symbol? x)
-      :uuid (instance? UUID x)
-      :instant (= Date (class x))
-      :bytes (bytes? x)
-      :data (or charged?
-                (try (copy-charge x (when check! (fn [_] (check!)))) true
-                     (catch clojure.lang.ExceptionInfo _
-                       ;; Cancellation must not become a type mismatch.
-                       (when check! (check!))
-                       false)))
-      false)))
+(defn- matches-type*?
+  ([t x charged? check!] (matches-type*? t x charged? check! 0))
+  ([t x charged? check! depth]
+    (when check! (check!))
+    (check-depth! depth :types)
+    (if (map? t)
+      (case (:kind t)
+        :tuple (and (vector? x) (= (count x) (count (:elements t)))
+                    (every? true? (map #(matches-type*? %1 %2 charged? check! (inc depth)) (:elements t) x)))
+        :custom (and (satisfies? IQuerySourceValue x) (= t (-logical-type x)))
+        false)
+      (case t
+        :boolean (boolean? x)
+        :long (instance? Long x)
+        :bigint (or (instance? BigInteger x) (instance? clojure.lang.BigInt x))
+        :double (instance? Double x)
+        :float (instance? Float x)
+        :bigdec (instance? BigDecimal x)
+        :string (string? x)
+        :keyword (keyword? x)
+        :symbol (symbol? x)
+        :uuid (instance? UUID x)
+        :instant (= Date (class x))
+        :bytes (bytes? x)
+        :data (or charged?
+                  (try (copy-charge x (when check! (fn [_] (check!)))) true
+                       (catch clojure.lang.ExceptionInfo e
+                         ;; Resource failure must not become a type mismatch.
+                         (when check! (check!))
+                         (when (#{:query-source/limit :query-source/cancelled :query/timeout} (:error (ex-data e)))
+                           (throw e))
+                         false)))
+        false))))
 
 (defn matches-type?
   "Check a logical type, optionally observing cancellation inside nested data
@@ -282,13 +303,16 @@
                     (and (number? x) (#{:long :bigint :float :double :bigdec} type))
                     (and (= :tuple (:kind type)) (sequential? x)))))))
 
+(defn- execution-value* [x check! depth]
+  (when check! (check!))
+  (check-depth! depth :values)
+  (cond
+    (plain-map? x) (doseq [[k v] x] (execution-value* k check! (inc depth)) (execution-value* v check! (inc depth)))
+    (or (vector? x) (set? x) (list? x)) (run! #(execution-value* % check! (inc depth)) x)))
+
 (defn execution-value!
   ([x] (execution-value! x nil))
-  ([x check!]
-   (when check! (check!))
-   (cond
-     (plain-map? x) (doseq [[k v] x] (execution-value! k check!) (execution-value! v check!))
-     (or (vector? x) (set? x) (list? x)) (run! #(execution-value! % check!) x))))
+  ([x check!] (execution-value* x check! 0)))
 
 (defn rows!
   "Validate logical rows before copying or sizing their retained representation."
@@ -313,14 +337,14 @@
        (add-charges
          (charge-part 64 observe!)
          (value-charge columns observe!)
-         (collection-overhead rows observe! true nil)
+         (collection-overhead rows observe! true nil 0)
          (reduce
            (fn [n row]
              (when-not (and (vector? row) (= (count columns) (count row)))
                (fail! :query-source/invalid :batch))
              (add-charges
                n
-               (collection-overhead row observe! true nil)
+               (collection-overhead row observe! true nil 0)
                (reduce
                  (fn [n i]
                    (let [x (nth row i)
@@ -391,7 +415,7 @@
   [requires observe!]
   (add-charges (charge-part 64 observe!)
                (value-charge requires observe!)
-               (collection-overhead [] observe! true nil)))
+               (collection-overhead [] observe! true nil 0)))
 
 (defn ^:no-doc owned-binding-element-charge
   "Incremental vector slot and binding charge. The collector has already

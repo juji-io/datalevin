@@ -177,3 +177,38 @@
       (is (> (:attempted error) maximum))
       (is (= [:head] @visits))
       (is (every? zero? (vals (control/usage @captured)))))))
+
+(deftest synchronous-workspaces-release-without-growing-parent-cleanup
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [events (atom [])]
+        (dotimes [i 100]
+          (rt/with-workspace runtime
+            (fn [workspace]
+              (is (identical? workspace rt/*runtime*))
+              (is (identical? (:control runtime) (:control workspace)))
+              (let [token (source/reserve! (:control workspace) {:retained-bytes 4096})]
+                (rt/own! workspace #(do (swap! events conj [i :first]) (source/release! token)))
+                (rt/own! workspace #(swap! events conj [i :last])))
+              (rt/with-workspace workspace
+                #(rt/own! % (fn [] (swap! events conj [i :nested]))))))
+          (is (empty? @(:cleanup runtime)))
+          (is (every? zero? (vals (control/usage (:control runtime))))))
+        (is (= (vec (mapcat (fn [i] [[i :nested] [i :last] [i :first]]) (range 100))) @events))))))
+
+(deftest workspace-cleanup-observes-cancellation-before-close-errors
+  (let [captured (atom nil)
+        error (try
+                (rt/with-runtime {}
+                  (fn [runtime]
+                    (reset! captured (:control runtime))
+                    (rt/with-workspace runtime
+                      (fn [workspace]
+                        (rt/own! workspace #(throw (Exception. "private close")))
+                        (rt/own! workspace #(control/cancel! (:control workspace)
+                                             {:error :query-source/cancelled}))))))
+                (catch Throwable e e))]
+    (is (= :query-source/cancelled (:error (ex-data error))))
+    (is (= [:query-source/provider] (mapv #(-> % ex-data :error) (.getSuppressed ^Throwable error))))
+    (is (not (.contains (pr-str error) "private")))
+    (is (every? zero? (vals (control/usage @captured))))))
