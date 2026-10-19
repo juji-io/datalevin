@@ -123,7 +123,9 @@
           (scan-giant-av lmdb i/list-range-keep key)
           (get-list lmdb c/ave key :avg :id))))))
 
-(defn- ave-key-range
+(defn ave-key-range
+  "Encode an attribute/value interval shared by AVE keys and EAV duplicates.
+  Callers must reserve encoding scratch and admit any custom codec first."
   [aid vt val-range]
   (let [[[cl lv] [ch hv]] val-range
         op                (cond
@@ -172,58 +174,81 @@
             v (idx/avg-buffer->v lmdb (lmdb/k kv))]
         (.add out (object-array [e v]))))))
 
+(defn- controlled-key! [policy key scan!]
+  (if-let [with-key! (:with-key! policy)]
+    (with-key! key (fn [key-policy]
+                     (when-not (:empty? key-policy) (scan! (merge policy key-policy)))))
+    (scan! policy)))
+
 (defn ave-tuples-scan-controlled
-  "Enumerate a complete attribute through the ordinary AVE scan driver with
+  "Read an attribute through the ordinary AVE scan driver with
   explicit row admission and a bounded raw-value visitor. This execution-only
   API neither samples nor populates native tuple/result caches. The policy's
   visitor must complete synchronously before the cursor advances."
-  [lmdb ^Collection out aid get-v? {:keys [check! admit-row! visit-value!]}]
+  [lmdb ^Collection out aid get-v? {:keys [check! key value-first?] :as policy}]
   (check!)
   (let [failure (volatile! nil)]
     (try
-      ;; A complete attribute uses its fixed aid prefix. Neither wildcard
-      ;; execution nor range setup needs a value codec or custom order function.
-      (visit-list-key-range
-        lmdb c/ave
-        (fn [kv]
-          (try
-            (check!)
-            (let [eid (.getLong ^ByteBuffer (lmdb/v kv) 0)]
-              (if get-v?
-                (visit-value! (lmdb/k kv) eid
-                              (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
-                (do (admit-row!) (.add out (object-array [eid])))))
-            (catch Throwable e (vreset! failure e) (throw e))))
-        [:closed-open (int aid) (unchecked-inc-int (int aid))] :int :id)
+      (controlled-key! policy key
+        (fn [{:keys [index-range admit-row! visit-value!]}]
+          (let [[key-range key-type] (or index-range
+                                          [[:closed-open (int aid) (unchecked-inc-int (int aid))] :int])]
+            (visit-list-key-range
+              lmdb c/ave
+              (fn [kv]
+                (try
+                  (check!)
+                  (let [eid (.getLong ^ByteBuffer (lmdb/v kv) 0)]
+                    (if get-v?
+                      (visit-value! (lmdb/k kv) eid
+                                    (fn [value]
+                                      (check!) (admit-row!)
+                                      (.add out (object-array (if value-first? [value eid] [eid value])))))
+                      (do (admit-row!) (.add out (object-array [eid])))))
+                  (catch Throwable e (vreset! failure e) (throw e))))
+              key-range key-type :id))))
       ;; The ordinary storage visitor adds native context to failures. Preserve
       ;; the original controlled admission/cancellation error after that scan
       ;; has unwound its cursor and transaction leases.
       (catch Throwable e (throw (or @failure e)))))
   (check!))
 
+(defn ave-value-tuples-scan-controlled
+  "Read indexed candidates once for each distinct value key. The policy owns
+  bound construction and logical matching; the shared driver owns cursors."
+  [lmdb out aid ^List values {:keys [check!] :as policy}]
+  (dotimes [i (.size values)]
+    (check!)
+    (ave-tuples-scan-controlled lmdb out aid true
+                               (assoc policy :key (.get values i) :value-first? true)))
+  (check!))
+
 (defn eav-tuples-scan-controlled
   "Read a fixed attribute for distinct entity keys through the ordinary list
   range visitor. Match every fact, including many-valued wildcard witnesses;
   never decode an ignored value or invoke a value codec to construct bounds."
-  [lmdb ^Collection out aid ^List entities get-v? {:keys [check! admit-row! visit-value!]}]
+  [lmdb ^Collection out aid ^List entities get-v? {:keys [check!] :as policy}]
   (check!)
   (let [failure (volatile! nil)
         attribute-range [:closed-open (int aid) (unchecked-inc-int (int aid))]]
     (try
       (dotimes [i (.size entities)]
         (check!)
-        (let [eid (aget ^objects (.get entities i) 0)]
-          (i/visit-list-range
-            lmdb c/eav
-            (fn [kv]
-              (try
-                (check!)
-                (if get-v?
-                  (visit-value! (lmdb/v kv) eid
-                                (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
-                  (do (admit-row!) (.add out (object-array [eid]))))
-                (catch Throwable e (vreset! failure e) (throw e))))
-            [:closed eid eid] :id attribute-range :int)))
+        (let [key (.get entities i) eid (aget ^objects key 0)]
+          (controlled-key! policy key
+            (fn [{:keys [index-range admit-row! visit-value!]}]
+              (let [[value-range value-type] (or index-range [attribute-range :int])]
+                (i/visit-list-range
+                  lmdb c/eav
+                  (fn [kv]
+                    (try
+                      (check!)
+                      (if get-v?
+                        (visit-value! (lmdb/v kv) eid
+                                      (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
+                        (do (admit-row!) (.add out (object-array [eid]))))
+                      (catch Throwable e (vreset! failure e) (throw e))))
+                  [:closed eid eid] :id value-range value-type))))))
       (catch Throwable e (throw (or @failure e)))))
   (check!))
 

@@ -311,6 +311,13 @@
     (cond-> [entity] value-variable (conj #{attribute value-variable}))
     [(cond-> #{entity} value-variable (conj value-variable))] #{} nil nil))
 
+(defn ^:no-doc value-lookup-step
+  "Emit the native equal-value link over a distinct value-key spool. The
+  caller admits keys, validates the pinned schema and owns read execution."
+  [entity attribute value-variable]
+  (mk-link-step :val-eq 0 attribute entity nil [value-variable] [value-variable entity]
+                [#{attribute value-variable} entity] [#{value-variable} #{entity}] #{}))
+
 (defn- base-plan
   ([db nodes e]
    (base-plan db nodes e false true))

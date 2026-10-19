@@ -12,9 +12,12 @@
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source-planning-test :as fixture]
             [datalevin.util :as u])
-  (:import [java.util Arrays UUID]))
+  (:import [datalevin.utl QueryKey]
+           [java.util Arrays Date UUID]))
 
 (defn- events-of [events kind] (filterv #(= kind (first %)) @events))
+(def symbol-predicate-bound "Fixture resolved through a qualified predicate argument." 'stored)
+(def ?host-predicate-value "Fixture resolved before the same-named tuple column." 0)
 (defn- error [f] (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn- with-db [schema facts f]
   (let [dir (str u/tmp-dir "spi-v2-native-plan-" (UUID/randomUUID))
@@ -29,6 +32,258 @@
 
 (defn- rows [rel variables]
   (mapv (fn [^objects row] (mapv #(aget row (int (get (:attrs rel) %))) variables)) (:tuples rel)))
+
+(defn- execute-input! [runtime database events query columns input config]
+  (let [c (capture! runtime database events query [] config (set (map :variable columns)))]
+    (native/with-views [database]
+      #(program/execute! runtime (program/compile! runtime c columns input %)))))
+
+(deftest native-value-constants-and-equality-predicates-skip-unrelated-payloads
+  (let [giant (apply str (repeat 1000000 "z"))]
+    (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}
+              :native/private {:db/valueType :db.type/string :db/cardinality :db.cardinality/many :db/noindex true}}
+      [{:db/id 1 :native/text ["wanted" giant] :native/private ["wanted" giant]}
+       {:db/id 2 :native/text ["wanted" giant]}]
+      (fn [database _]
+        (doseq [[clauses expected]
+                [[ '[[$n ?e :native/text "wanted"] [$s ?e :row/value ?v]] #{["one"] ["two"]}]
+                 [ '[[$n ?e :native/text ?text] [(= ?text "wanted")] [$s ?e :row/value ?v]] #{["one"] ["two"]}]
+                 [ '[[$n 1 :native/text "wanted"] [$s 1 :row/value ?v]] #{["one"]}]
+                 [ '[[$n 1 :native/private "wanted"] [$s 1 :row/value ?v]] #{["one"]}]
+                 [ '[[$n 1 :native/private ?text] [(= "wanted" ?text)] [$s 1 :row/value ?v]] #{["one"]}]
+                 [ '[[$n ?e :native/text 100] [$s ?e :row/value ?v]] #{}]
+                 [ '[[$n 1 :native/private 100] [$s 1 :row/value ?v]] #{}]]]
+          (let [events (atom []) saved (atom nil)]
+            (rt/with-runtime {:limits {:retained-bytes 300000}}
+              (fn [runtime]
+                (reset! saved runtime)
+                (let [query {:find ['?v] :in ['$n '$s] :where clauses}]
+                  (is (= expected (program/run! runtime (capture! runtime database events query [] {:lookup-only? true}) [] nil))
+                      (pr-str query)))))
+            (is (= 1 (count (events-of events :session-close))))
+            (is (every? zero? (vals (control/usage (:control @saved)))))))))))
+
+(deftest native-value-links-deduplicate-input-keys-and-restore-every-outer-witness
+  (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}}
+    [{:db/id 1 :native/text ["wanted" (apply str (repeat 1000000 "z"))]}
+     {:db/id 2 :native/text "wanted"}]
+    (fn [database _]
+      (let [events (atom []) saved (atom nil)]
+        (rt/with-runtime {:limits {:retained-bytes 400000}}
+          (fn [runtime]
+            (reset! saved runtime)
+            (let [result (execute-input! runtime database events
+                           '[:find ?e ?text ?tag ?v :in $n $s [[?text ?tag]] :where
+                             [$n ?e :native/text ?text] [$s ?e :row/value ?v]]
+                           [{:variable '?text :type :string :nullable? true}
+                            {:variable '?tag :type :keyword :nullable? false}]
+                           [["wanted" :a] ["wanted" :b] ["wanted" :a] ["missing" :missing] [nil :nil]]
+                           {:lookup-only? true})]
+              (is (= (frequencies [[1 "wanted" :a "one"] [2 "wanted" :a "two"]
+                                   [1 "wanted" :b "one"] [2 "wanted" :b "two"]
+                                   [1 "wanted" :a "one"] [2 "wanted" :a "two"]])
+                     (frequencies (rows result ['?e '?text '?tag '?v]))))
+              (is (= 1 (count (events-of events :open)))))))
+        (is (every? zero? (vals (control/usage (:control @saved)))))))))
+
+(deftest native-entity-value-lookups-preserve-correlated-keys-on-unindexed-attributes
+  (with-db {:native/private {:db/valueType :db.type/string :db/cardinality :db.cardinality/many :db/noindex true}}
+    [{:db/id 1 :native/private ["wanted" (apply str (repeat 1000000 "z"))]}
+     {:db/id 2 :native/private "other"}]
+    (fn [database _]
+      (rt/with-runtime {:limits {:retained-bytes 300000}}
+        (fn [runtime]
+          (let [result (execute-input! runtime database (atom [])
+                         '[:find ?e ?text ?tag :in $n $s [[?e ?text ?tag]] :where [$n ?e :native/private ?text]]
+                         [{:variable '?e :type :long :nullable? false}
+                          {:variable '?text :type :string :nullable? true}
+                          {:variable '?tag :type :keyword :nullable? false}]
+                         [[1 "wanted" :a] [1 "other" :missing] [2 "other" :b]
+                          [1 "wanted" :a] [2 "wanted" :missing] [1 nil :nil]] {})]
+            (is (= (frequencies [[1 "wanted" :a] [1 "wanted" :a] [2 "other" :b]])
+                   (frequencies (rows result ['?e '?text '?tag]))))))))))
+
+(deftest native-range-candidates-retain-shared-predicate-semantics
+  (doseq [[type values endpoints]
+          [[:long [Long/MIN_VALUE -1 0 1 2 Long/MAX_VALUE] [-1 0 1]]
+           [:double [Double/NEGATIVE_INFINITY -1.0 0.0 1.0 Double/POSITIVE_INFINITY] [-1.0 -0.0 0.0 1.0]]
+           [:float [Float/NEGATIVE_INFINITY (float -1.0) (float 0.0) (float 1.0) Float/POSITIVE_INFINITY]
+            [(float -1.0) (float -0.0) (float 0.0) (float 1.0)]]
+           [:instant [(Date. -1) (Date. 0) (Date. 1)] [(Date. -1) (Date. 0) (Date. 1)]]]]
+    (with-db {:native/value {:db/valueType (keyword "db.type" (name type)) :db/cardinality :db.cardinality/many}}
+      (mapv #(hash-map :db/id 1 :native/value %) values)
+      (fn [database _]
+        (doseq [operator ['< '<= '> '>= '=] bound endpoints first? [true false]
+                entity ['?e 1]]
+          (let [predicate [(apply list operator (if first? ['?x bound] [bound '?x]))]
+                query {:find ['?x] :in ['$n '$s]
+                       :where [['$n entity :native/value '?x] predicate ['$s 1 :row/value '_]]}
+                facts (mapv #(vector 1 :native/value %) values)]
+            (rt/with-runtime {}
+              (fn [runtime]
+                (is (= (d/q query facts [[1 :row/value "one"]])
+                       (program/run! runtime (capture! runtime database (atom []) query [] {}) [] nil))
+                    (pr-str type predicate entity))))))))))
+
+(deftest native-range-conjunctions-intersect-without-removing-logical-endpoints
+  (with-db {:native/value {:db/valueType :db.type/long :db/cardinality :db.cardinality/many}}
+    (mapv #(hash-map :db/id 1 :native/value %) (range 1000))
+    (fn [database _]
+      (doseq [predicates ['[[(>= ?x 495)] [(< ?x 500)]]
+                           '[[(< 495 ?x)] [(<= ?x 500)]]
+                           '[[(>= ?x 500)] [(< ?x 495)]]
+                           '[[(> ?x 500)] [(< ?x 500)]]
+                           '[[(= ?x 500)] [(< ?x 500)]]]
+              entity ['?e 1]]
+        (let [query {:find ['?x] :in ['$n '$s]
+                     :where (into [['$n entity :native/value '?x]]
+                                  (concat predicates [['$s 1 :row/value '_]]))}]
+          (rt/with-runtime {:limits {:retained-bytes 300000}}
+            (fn [runtime]
+              (is (= (d/q query (mapv #(vector 1 :native/value %) (range 1000)) [[1 :row/value "one"]])
+                     (program/run! runtime (capture! runtime database (atom []) query [] {}) [] nil))
+                  (pr-str predicates entity)))))))))
+
+(deftest native-equality-predicates-admit-false-and-byte-content-bounds
+  (with-db {:native/flag {:db/valueType :db.type/boolean}
+            :native/bytes {:db/valueType :db.type/bytes}}
+    [{:db/id 1 :native/flag false :native/bytes (byte-array [1 2])}
+     {:db/id 2 :native/flag true :native/bytes (byte-array [3 4])}]
+    (fn [database _]
+      (doseq [[attribute bound] [[:native/flag false] [:native/bytes (byte-array [1 2])]]
+              first? [true false]]
+        (rt/with-runtime {}
+          (fn [runtime]
+            (let [query {:find ['?e] :in ['$n '$s]
+                         :where [['$n '?e attribute '?value]
+                                 [(apply list '= (if first? ['?value bound] [bound '?value]))]
+                                 ['$s 1 :row/value '_]]}]
+              (is (= #{[1]} (program/run! runtime (capture! runtime database (atom []) query [] {}) [] nil))))))))))
+
+(deftest native-predicate-ranges-preserve-the-shared-resolvers-host-value-lookup
+  (with-db {:native/symbol {:db/valueType :db.type/symbol}
+            :native/number {:db/valueType :db.type/long}}
+    [{:db/id 1 :native/symbol 'stored :native/number 0}
+     {:db/id 2 :native/symbol 'other :native/number 1}]
+    (fn [database _]
+      (binding [*ns* (the-ns 'datalevin.query.source-native-plan-test)]
+        (doseq [[query expected]
+                [['[:find ?e :in $n $s :where
+                    [$n ?e :native/symbol ?value]
+                    [(= ?value datalevin.query.source-native-plan-test/symbol-predicate-bound)]
+                    [$s 1 :row/value _]] #{[1]}]
+                 ['[:find ?e :in $n $s :where
+                    [$n ?e :native/number ?host-predicate-value] [(= ?host-predicate-value 0)]
+                    [$s 1 :row/value _]] #{[1] [2]}]]]
+          (rt/with-runtime {}
+            (fn [runtime]
+              (is (= expected (program/run! runtime (capture! runtime database (atom []) query [] {}) [] nil))))))))))
+
+(deftest native-value-ranges-keep-complete-giant-collision-buckets
+  (let [prefix (apply str (repeat 500 "shared")) a (str prefix "a") b (str prefix "b")
+        unrelated (apply str (repeat 1000000 "z"))]
+    (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}
+              :native/private {:db/valueType :db.type/string :db/cardinality :db.cardinality/many :db/noindex true}}
+      [{:db/id 1 :native/text [a b unrelated] :native/private [a b unrelated]} {:db/id 2 :native/text a}]
+      (fn [database _]
+        (doseq [[entity attribute expected] [['?e :native/text #{[1] [2]}] [1 :native/private #{[1] [2]}]]
+                predicate? [false true]]
+          (let [query {:find ['?e] :in ['$n '$s]
+                       :where (cond-> [['$n entity attribute (if predicate? '?text a)] ['$s '?e :row/value '_]]
+                                predicate? (conj [(list '= '?text a)]))}]
+            (rt/with-runtime {:limits {:retained-bytes 800000}}
+              (fn [runtime]
+                (is (= expected (program/run! runtime (capture! runtime database (atom []) query [] {}) [] nil)))))))
+        (rt/with-runtime {:limits {:retained-bytes 800000}}
+          (fn [runtime]
+            (let [result (execute-input! runtime database (atom [])
+                           '[:find ?e ?text :in $n $s [?text ...] :where
+                             [$n ?e :native/text ?text] [$s ?e :row/value _]]
+                           [{:variable '?text :type :string :nullable? false}] [[a] [b] [a]] {})]
+              (is (= (frequencies [[1 a] [2 a] [1 b] [1 a] [2 a]])
+                     (frequencies (rows result ['?e '?text])))))))))))
+
+(deftest native-value-seeks-preserve-logical-constants-and-representation-sensitive-keys
+  (doseq [[type values wanted]
+          [[:boolean [false true] [false true]]
+           [:long [-1 0 1] [-1 0 1]]
+           [:string ["a" "é界"] ["a" "absent"]]
+           [:keyword [:a :scope/a] [:a :absent]]
+           [:symbol ['a 'scope/a] ['a 'absent]]
+           [:uuid [#uuid "00000000-0000-0000-0000-000000000000"] [#uuid "00000000-0000-0000-0000-000000000000"]]
+           [:double [-1.0 0.0 1.0] [-0.0 0.0 1.0 Double/NaN]]
+           [:float [(float -1.0) (float 0.0) (float 1.0)] [(float -0.0) (float 0.0) (float 1.0) Float/NaN]]
+           [:bytes [(byte-array [1 2]) (byte-array [3 4])] [(byte-array [1 2]) (byte-array [5 6])]]
+           [:bigdec [1.0M 1.00M 2M] [1.0M 2M]]
+           [:data [[1 (byte-array [1 2])] {:x (byte-array [3 4])} Double/NaN]
+            [[1 (byte-array [1 2])] {:x (byte-array [3 4])} Double/NaN]]]]
+    (with-db {:native/value (if (= type :data) {} {:db/valueType (keyword "db.type" (name type))})}
+      (mapv (fn [i v] {:db/id (long (inc i)) :native/value v}) (range) values)
+      (fn [database _]
+        (doseq [bound wanted literal? [true false]]
+          (let [events (atom [])
+                query {:find ['?e] :in (cond-> ['$n '$s] (not literal?) (conj '?wanted))
+                       :where [['$n '?e :native/value (if literal? bound '?wanted)] ['$s 1 :row/value '_]]}
+                ;; Floating index encoding normalizes signed zero. Compare the
+                ;; decoded facts, and pin constant and input-key equality separately.
+                facts (d/datoms database :eav)
+                expected (into #{} (keep (fn [datom]
+                                          (when (and (= :native/value (:a datom))
+                                                     (if literal? (QueryKey/equiv bound (:v datom))
+                                                         (QueryKey/equals bound (:v datom)))) [(:e datom)]))) facts)]
+            (rt/with-runtime {}
+              (fn [runtime]
+                (is (= expected
+                       (if literal? (program/run! runtime (capture! runtime database events query [] {}) [] nil)
+                           (set (rows (execute-input! runtime database events query
+                                        [{:variable '?wanted :type type :nullable? false}] [[bound]] {}) ['?e]))))
+                    (pr-str type literal? bound))))))))))
+
+(deftest native-value-links-use-pinned-index-data-through-provider-writes
+  (with-db {:native/score {:db/valueType :db.type/long}} [{:db/id 1 :native/score 100}]
+    (fn [database conn]
+      (let [events (atom [])]
+        (rt/with-runtime {}
+          (fn [runtime]
+            (let [result (execute-input! runtime database events
+                           '[:find ?e ?score ?v :in $n $s ?score :where
+                             [$n ?e :native/score ?score] [(>= ?score 100)] [$s ?e :row/value ?v]]
+                           [{:variable '?score :type :long :nullable? false}] [[100]]
+                           {:lookup-only? true
+                            :planning (fn [_]
+                                        (d/update-schema conn nil nil {:native/score :native/renamed})
+                                        (d/transact! conn [[:db/add 1 :native/renamed 999]]))})]
+              (is (= [[1 100 "one"]] (rows result ['?e '?score '?v]))))))
+        (is (= 999 (d/q '[:find ?v . :where [1 :native/renamed ?v]] @conn)))
+        (is (= 1 (count (events-of events :session-close))))))))
+
+(deftest native-bound-encoding-failure-releases-scratch-and-compilation-resources
+  (with-db {:native/text {:db/valueType :db.type/string}} [{:db/id 1 :native/text "wanted"}]
+    (fn [database _]
+      (let [events (atom []) saved (atom nil)
+            failure (error
+                      (fn []
+                        (rt/with-runtime {:limits {:retained-bytes 1000000}}
+                          (fn [runtime]
+                            (reset! saved runtime)
+                            (native/with-views [database]
+                              (fn [snapshots]
+                                (let [c (capture! runtime database events
+                                          '[:find ?v :in $n $s :where
+                                            [$n ?e :native/text "wanted"] [$s ?e :row/value ?v]] [] {:lookup-only? true})
+                                      p (program/compile! runtime c [] nil snapshots)
+                                      ;; The controlled driver fits; bound encoding must
+                                      ;; receive a separate reservation before cursor open.
+                                      remaining (- 1000000 (:retained-bytes (control/usage (:control runtime))))
+                                      held (control/reserve! (:control runtime) {:retained-bytes (- remaining 10000)})]
+                                  (rt/own! runtime #(control/release! held))
+                                  (program/execute! runtime p))))))))]
+        (is (= :query-source/limit (:error failure)))
+        (is (= :retained-bytes (:category failure)))
+        (is (= 1 (count (events-of events :plan))))
+        (is (empty? (events-of events :open)))
+        (is (= 1 (count (events-of events :session-close))))
+        (is (every? zero? (vals (control/usage (:control @saved)))))))))
 
 (deftest native-initializations-seed-dependent-access-in-the-shared-region
   (with-db {:native/score {:db/valueType :db.type/long}}
@@ -243,16 +498,23 @@
   (with-db {} []
     (fn [_ conn]
       (d/register-type conn :app/ranked {:index {:type :long :order-fn (inter/inter-fn [v] (:rank v))}})
-      (d/update-schema conn {:native/custom {:db/valueType :app/ranked :db/noindex true}})
+      (d/update-schema conn {:native/custom {:db/valueType :app/ranked :db/noindex true}
+                            :native/indexed-custom {:db/valueType :app/ranked}})
       (let [x {:rank 1 :nested [nil :value]}]
-        (d/transact! conn [{:db/id 1 :native/custom x}])
+        (d/transact! conn [{:db/id 1 :native/custom x :native/indexed-custom x}])
         (rt/with-runtime {}
           (fn [runtime]
             (is (= #{[x "one"]}
                    (program/run! runtime
                      (capture! runtime @conn (atom [])
                        '[:find ?value ?v :in $n $s :where [$n 1 :native/custom ?value] [$s 1 :row/value ?v]] [] {})
-                     [] nil)))))))))
+                     [] nil)))
+            (is (= [[x 1 "one"]]
+                   (rows (execute-input! runtime @conn (atom [])
+                           '[:find ?value ?e ?v :in $n $s ?value :where
+                             [$n ?e :native/indexed-custom ?value] [$s ?e :row/value ?v]]
+                           [{:variable '?value :type :data :nullable? false}] [[x]] {:lookup-only? true})
+                         ['?value '?e '?v])))))))))
 
 (deftest controlled-steps-read-multiple-pinned-native-stores
   (with-db {:native/score {:db/valueType :db.type/long}} [{:db/id 1 :native/score 100}]

@@ -2552,17 +2552,36 @@ Captured scalar inputs retain typed key equality; some representation-mismatched
 scalar input edges still reject as unsupported.
 
 The internal [`source.native-plan`](../src/datalevin/query/source/native_plan.clj)
-bridge now executes native fixed-attribute initializations and entity-bound
-merge scans. Entities may be variables, fixed integer constants or wildcards;
-values may be variables, constants or wildcards. Unindexed attributes require
-a bound entity. The native planner's pure emitters read no mutable store
+bridge now executes native fixed-attribute initializations, entity-bound
+merge scans and equal-value link steps. Entities may be variables, fixed integer
+constants or wildcards; values may be variables, constants or wildcards.
+Unindexed attributes require a bound entity. The native planner's pure emitters
+read no mutable store
 metadata, statistics or native caches and invoke no installed access methods.
 Their explicit controlled interfaces use shared AVE/EAV scan drivers. Entity
-keys are admitted and deduplicated before EAV reads; non-Long runtime keys open
-no ranges, while integer literals use ordinary constant equality. Shared joins
-restore all original outer witnesses. Value constants are checked after bounded
-decoding; value/range index seeks remain pending in this internal bridge.
-They admit rows before allocation, decode through the bounded raw-value visitor,
+keys are admitted and deduplicated before reads; non-Long runtime entity keys
+open no ranges, while integer literals use ordinary constant equality. Shared joins
+restore all original outer witnesses. A value column already present in the
+selected input layout supplies distinct value keys; combined entity/value
+lookups preserve complete key correlations. Bound encoding has a separate
+scratch reservation held through the shared cursor visit. Eligible scalar
+and byte equality bounds restrict AVE keys or EAV duplicate ranges before
+decoding, while logical comparisons reject complete giant-prefix collisions.
+Integer literals equivalent to native Long values can use those bounds;
+runtime inputs retain query-key equality, including signed zero and decimal
+scale. NaN never enters a native index encoder. Decimal/bigint encodings,
+tuples, generic data and custom payloads retain bounded prefix scans and
+logical filtering where an exact bound has not been established.
+
+Constant scalar predicates reuse native range lowering and intersection for
+Long/reference, floating-point and date ordering. Candidate bounds include
+complete endpoint buckets, with the shared original predicates enforcing strictness before owned
+retention and again as ordinary residuals. String and other unsupported index
+orderings remain residual. Symbol-valued constant arguments and variables
+shadowed by host Vars retain shared resolver evaluation. Incompatible literal
+types can complete without decoding a payload. Quota failures release range
+scratch and compilation state. Controlled steps admit rows before allocation,
+decode through the bounded raw-value visitor,
 own values before advancing the cursor, and join through the shared bounded
 join. Wildcards skip payload decoding. The invocation pins native snapshots
 across provider planning and execution; views cannot escape or move threads.

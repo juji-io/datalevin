@@ -411,6 +411,15 @@
 
 (defrecord LinkStep [type index attr var fidx in out cols strata seen-or-joins]
 
+  IControlledStep
+  (-execute-controlled [_ db values policy]
+    (when-not (and (= :val-eq type) (= 0 index) (nil? fidx))
+      ((:unsupported! policy)))
+    ((:check! policy))
+    (let [out (FastList.)]
+      (db/-value-tuples-controlled db out attr values policy)
+      out))
+
   IStep
   (-type [_] :link)
 

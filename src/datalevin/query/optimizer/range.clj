@@ -300,6 +300,16 @@
   (let [c (some #(when-not (qu/free-var? %) %) args)]
     (add-range m [[:closed c] [:closed c]])))
 
+(defn ^:no-doc constant-predicate-ranges
+  "Lower one admitted variable/constant predicate without metadata, reads or
+  function resolution. The caller proves index eligibility and retains any
+  logical residual required by its encoding."
+  [operator variable constant variable-first?]
+  (let [args (if variable-first? [variable constant] [constant variable])]
+    (if (= '= operator)
+      [[[:closed constant] [:closed constant]]]
+      (:range (inequality->range {} operator args variable)))))
+
 (defn- in-convert-range
   [m [_ coll] not?]
   (assert (and (coll? coll) (not (map? coll)))
