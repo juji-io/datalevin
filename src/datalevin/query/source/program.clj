@@ -4,6 +4,7 @@
   back to the original outer witnesses. No alternate Datalog interpreter."
   (:refer-clojure :exclude [run!])
   (:require [clojure.set :as set]
+            [datalevin.db :as db]
             [datalevin.join :as join]
             [datalevin.parser :as parser]
             [datalevin.query.access :as query-access]
@@ -13,6 +14,7 @@
             [datalevin.query.resolve :as resolve]
             [datalevin.query.source.access :as access]
             [datalevin.query.source.arithmetic :as arithmetic]
+            [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.input-program :as input-program]
             [datalevin.query.source.inputs :as inputs]
@@ -89,6 +91,17 @@
   (-execute-pipe [_ _ _ _] (unsupported!))
   (-sample [_ _ _] (unsupported!))
   (-explain [_ _] "Shared scoped operation"))
+
+(defn- collection-factory [runtime check! {:keys [columns relation] :as spec}]
+  (let [variables (mapv :variable columns)]
+    (->StepFactory #{} variables
+      (fn [input-cols]
+        (->MaterializedStep (set input-cols) (into input-cols (remove (set input-cols)) variables)
+          (fn [tuples]
+            (check!)
+            (collection/check! runtime (:database spec))
+            (:tuples (joined! runtime check!
+                       (relation/relation! (zipmap input-cols (range)) tuples) relation))))))))
 
 (defn- pure-spec [node schema check!]
   (let [args (:args node)
@@ -344,13 +357,35 @@
         (region! (:root-region compiled) root-columns))
       @boundaries)))
 
+(defn- prune-empty-collections! [runtime compilation specs]
+  ;; Unlike a provider estimate, a complete owned local match is an exact
+  ;; no-fact proof for every possible upstream binding. Propagate it before
+  ;; typed dependency selection, including through native rule/union scopes.
+  (let [compiled (:compiled compilation)
+        empty-ids (into #{}
+                    (keep (fn [r]
+                            (when (some (fn [{:keys [path]}]
+                                          (let [spec (get specs path)]
+                                            (and (:collection? spec)
+                                                 (.isEmpty ^List (get-in spec [:relation :tuples])))))
+                                        (:core-clauses r)) (:region-id r)))) (:regions compiled))]
+    (if (empty? empty-ids) compilation
+        (do
+          (retain! runtime (containers! runtime (count (:regions compiled)) 4))
+          (planning/refine! runtime
+            (assoc compilation :compiled
+                   (update compiled :regions
+                     #(mapv (fn [r] (cond-> r (contains? empty-ids (:region-id r)) (assoc :empty? true))) %)))
+            [])))))
+
 (defn- compile-program!
   "Compile captured regions and real typed input tuples into executable shared
   steps. This is the revised internal compiler, not a caller-supplied interface
   fixture. Scalar predicates/functions and positive rule/union/attribute sites
   use existing engine operators. Unsupported core operators reject before
-  acquisition. Native initializations use the existing planner and the explicit
-  controlled storage boundary within the caller's pinned views."
+  acquisition. Local collections use controlled shared pattern emission.
+  Native initializations use the existing planner and the explicit controlled
+  storage boundary within the caller's pinned views."
   [runtime compilation input-columns input-tuples snapshots prepared-input]
   (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
@@ -369,7 +404,12 @@
                              source (if (or (nil? source) (instance? DefaultSrc source))
                                       (:default-source r) (:symbol source))
                              database (:native (get entries source))]]
-                   [path (assoc (native-plan/spec! runtime snapshots database node literal-terms) :database database)]))
+                   [path (assoc (if (collection/owned? database)
+                                  (collection/spec! runtime database node)
+                                  (native-plan/spec! runtime snapshots database node literal-terms))
+                                :database database)]))
+        compilation (prune-empty-collections! runtime compilation native-specs)
+        compiled (:compiled compilation)
         input (or prepared-input (input! runtime check! compiled input-columns input-tuples))
         root-columns (:columns input)
         proofs (boundaries! runtime check! compiled native-specs root-columns)
@@ -400,10 +440,10 @@
                                                  (update :requires #(conj (filterv (fn [c] (not= literal-output (:variable c))) %)
                                                                            (column literal-output :data true)))
                                                  (assoc :columns [])) spec)
-                                      factory (if native?
-                                                (native-plan/factory! runtime snapshots (:database spec) node spec
-                                                  (:core-clauses r) check! #(joined! runtime check! %1 %2))
-                                                (pure-factory runtime check! node spec literal-output))]
+                                      factory (cond (:collection? spec) (collection-factory runtime check! spec)
+                                                    native? (native-plan/factory! runtime snapshots (:database spec) node spec
+                                                              (:core-clauses r) check! #(joined! runtime check! %1 %2))
+                                                    :else (pure-factory runtime check! node spec literal-output))]
                                   (add! path (:requires spec) (:columns spec) factory)))
                               (doseq [[index site] (map-indexed vector (:sites compiled))
                                       :when (= id (:parent-region site))]
@@ -540,7 +580,7 @@
   (ensure! (and (identical? (:control runtime) (get-in compilation [:runtime :control]))
                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
   (try
-    (native/with-views (keep :native (:entries compilation))
+    (native/with-views (filter db/db? (keep :native (:entries compilation)))
       (fn [snapshots]
         (result! runtime (compile! runtime compilation input-columns input-tuples snapshots))))
     (catch Throwable e (fail-program! (:runtime compilation) compilation e))))
@@ -573,7 +613,7 @@
              input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
              compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
                            (:bindings input) (set (map :variable (:columns input))) options)]
-         (native/with-views (keep :native (:entries compilation))
+         (native/with-views (filter db/db? (keep :native (:entries compilation)))
            (fn [snapshots]
              (result! child (compile-program! child compilation nil nil snapshots
                               (select-keys input [:columns :relation]))))))

@@ -4,6 +4,7 @@
   (:require [datalevin.db :as db]
             [datalevin.parser :as parser]
             [datalevin.query.source :as source]
+            [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.inputs :as inputs]
             [datalevin.query.source.runtime :as rt]
@@ -116,21 +117,6 @@
       (relation/relation! attrs rows))
     (fail! :query-source/unsupported :inputs)))
 
-(defn- columns! [check! rel]
-  ;; Only a complete owned input establishes a homogeneous type. Empty and
-  ;; heterogeneous columns remain :data; a later fact may narrow them by join.
-  (let [^List tuples (:tuples rel)]
-    (mapv (fn [[v index]]
-            (loop [i 0 type nil nullable? false]
-              (check!)
-              (if (= i (.size tuples))
-                {:variable v :type (or type :data) :nullable? nullable?}
-                (let [x (aget ^objects (.get tuples i) (int index))
-                      t (when (some? x) (value/inferred-type x))]
-                  (recur (inc i) (cond (nil? t) type (nil? type) t (= type t) type :else :data)
-                         (or nullable? (nil? x)))))))
-          (sort-by val (:attrs rel)))))
-
 (defn- window! [parsed scalars]
   (reduce (fn [parsed key]
             (let [x (get parsed key)]
@@ -145,11 +131,12 @@
   "Consume the declared number of arguments and bind scalar, tuple, collection
   and nested relation inputs. join! is the compiler's bounded shared hash join.
   Return owned actual input columns/rows, scalar constraints, parsed rules and
-  source aliases. Local collection source clauses remain a separate compiler
-  gate. No provider callback occurs here; ignored arguments/tails stay unread."
+  source aliases. No provider callback occurs here; ignored arguments and tuple
+  binding tails stay unread. Local source facts are owned completely."
   [runtime parsed arguments join!]
   (let [check! #(control/check-active! (:control runtime))
         layouts (mapv #(layout! runtime % 0) (:qin parsed))
+        sources (java.util.IdentityHashMap.)
         read! (inputs/item-reader arguments)
         initial {:entries [] :rules [] :bindings {} :scalars {}
                  :relation (singleton! runtime check! [] [])}
@@ -165,6 +152,11 @@
                   (update result :entries conj
                     (cond (db/db? input) {:symbol symbol :native input}
                           (satisfies? source/IQuerySource input) {:symbol symbol :source input}
+                          (collection/collection? input)
+                          {:symbol symbol :native
+                           (or (.get sources input)
+                               (let [captured (collection/capture! runtime input)]
+                                 (.put sources input captured) captured))}
                           :else (fail! :query-source/unsupported :inputs)))
                   :rules
                   (do (retain! runtime (rt/charge-copy! runtime input))
@@ -191,7 +183,7 @@
                               (:qwhere parsed))))
               (fail! :query-source/unsupported :inputs))
           rel (:relation prepared)
-          columns (filterv #(not (contains? plain (:variable %))) (columns! check! rel))
+          columns (filterv #(not (contains? plain (:variable %))) (collection/columns check! rel))
           ;; Dropped window parameters do not change row multiplicity.
           attrs (:attrs rel) rows (FastList.)]
       (containers! runtime (.size ^List (:tuples rel)) (count columns))

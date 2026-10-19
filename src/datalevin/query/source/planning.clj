@@ -6,6 +6,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.access :as access]
             [datalevin.query.source.binding :as binding]
+            [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.cursor :as cursor]
             [datalevin.query.source.descriptor :as descriptor]
@@ -59,7 +60,8 @@
 (defn capture!
   "Capture external descriptors once per provider object, validate all alias
   requirements, and annotate parsed clauses/rules before any acquisition.
-  entries contain :symbol and exactly one of :source (external) or :native.
+  entries contain :symbol and exactly one of :source (external) or :native
+  (DB/local collection). Local facts are owned before descriptor callbacks.
   The returned compilation owns its resources independently of other work."
   [runtime entries parsed rules bindings input-vars options]
   (let [child (assoc runtime :cleanup (atom [])) state (atom :capturing)
@@ -83,6 +85,11 @@
             rules (own-syntax! child rules)
             token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 1024 (count entries)))})
             _ (rt/own! child #(control/release! token))
+            _ (doseq [entry entries]
+                (ensure! (and (value/plain-map? entry)
+                              (= #{:symbol (if (contains? entry :source) :source :native)} (set (keys entry)))
+                              (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
+            entries (collection/capture-entries! child entries)
             seen (IdentityHashMap.)
             entries
             (mapv (fn [entry]

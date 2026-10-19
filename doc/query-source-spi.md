@@ -2589,7 +2589,7 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, collection/native-rule emission, remaining input edges
+native plan/read paths, recursive/negative rule emission, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
@@ -2606,6 +2606,28 @@ timeouts, cancellation and quotas, and all invocation resources close before
 returning independently owned results. This is an internal execution bridge:
 plain scalar function arguments, textual rules, some captured scalar type edges,
 public routing and plan-only explanation integration remain pending.
+
+Local collection sources now also enter the revised compiler. Ordinary input
+preparation and direct capture detach every local source before external
+descriptor callbacks. Aliases of one producer share a complete capture. Unlike
+a tuple binding's declared prefix, source facts have no declared row width and
+are owned completely; unbounded sources or fact tails stop at the invocation
+quota/deadline. Shared controlled collection matching preserves constant and
+repeated-variable equivalence, nullable facts, arbitrary tuple widths and
+zero-column bags. Matching emits only declared columns, admitting rows before
+allocation, and complete local results supply conservative types to dependent
+source planning. Collection/native/mapped clauses use the same bounded joins.
+Exhausted local matches establish exact no-fact proofs, propagated through
+rule/union scopes before provider planning. Authorization remains query-wide,
+and live union alternatives remain scheduled.
+Native read views pin DB inputs only.
+
+Positive acyclic native/local rules over admitted operators now use the same
+scoped completion as mapped rules, including nested calls, required inputs,
+literal values and complete rule-head set semantics. Recursive or negative
+native programs retain their existing core nodes; controlled emission remains
+pending and rejects before provider acquisition. Ordinary native `q` continues
+to select its direct execution path.
 
 Core assigns query-local nonnegative signed-64-bit `:region-id` values in a
 stable traversal of the normalized plan, independent of provider response

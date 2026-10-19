@@ -101,6 +101,27 @@
                       (or (instance? Or node) (instance? And node) (instance? Not node))
                       (some #(external? % source seen (inc depth)) (:clauses node))
                       :else false)))
+                (native-core? [node inherited stack depth]
+                  ;; Positive acyclic native calls can use the same bounded
+                  ;; scoped operators as mapped calls. Recursive/negative
+                  ;; native programs retain their existing core rule node for
+                  ;; the native evaluator's separate controlled-emission gate.
+                  (check!)
+                  (when (> depth 128) (fail! :query-source/limit :planning))
+                  (reserve-node! 256)
+                  (let [source (source-symbol node inherited)]
+                    (cond
+                      (instance? Not node) true
+                      (instance? RuleExpr node)
+                      (let [name (get-in node [:name :symbol]) key [source name]
+                            rule (rules-by-name name)]
+                        (ensure! rule)
+                        (or (contains? stack key)
+                            (some #(native-core? % source (conj stack key) (inc depth))
+                                  (mapcat :clauses (:branches rule)))))
+                      (or (instance? Or node) (instance? And node))
+                      (some #(native-core? % source stack (inc depth)) (:clauses node))
+                      :else false)))
                 (region! [path input-vars live bindings literals inherited]
                   (check!)
                   (reserve-node! (+ 2048 (* 128 (+ (count input-vars) (count live) (count bindings)))))
@@ -206,7 +227,8 @@
                           (let [name (get-in node [:name :symbol]) rule (rules-by-name name)
                                 key [source name]]
                             (ensure! rule)
-                            (if-not (external? node inherited (volatile! #{}) 0)
+                            (if (and (not (external? node inherited (volatile! #{}) 0))
+                                     (native-core? node inherited #{} 0))
                               (add-core! id node location)
                               (do
                                 (when (contains? stack key) (fail! :query-source/unsupported :planning))

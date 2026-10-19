@@ -600,6 +600,25 @@
                (u/map-fl to-array
                          (filterv #(matches-pattern? pattern %) coll))))
 
+(defn lookup-pattern-coll-controlled
+  "Match already owned collection rows with explicit cancellation and output
+  admission. Project only declared positions, keeping duplicate witnesses and
+  the ordinary collection matcher's repeated-variable/constant equality.
+  literal-values escapes parser constants that look like pattern syntax."
+  [coll pattern {:keys [check! admit-row! invalid! columns positions literal-values]}]
+  (let [rows (FastList.)]
+    (doseq [tuple coll]
+      (check!)
+      (when (and (matches-pattern? pattern tuple)
+                 (every? (fn [[index constant]]
+                           (check!)
+                           (or (>= index (count tuple))
+                               (QueryKey/equiv constant (nth tuple index)))) literal-values))
+        (when (some #(>= % (count tuple)) positions) (invalid!))
+        (admit-row!)
+        (.add rows (object-array (mapv #(nth tuple %) positions)))))
+    (r/relation! (zipmap columns (range)) rows)))
+
 (defn lookup-pattern
   [context source pattern]
   (if (db/-searchable? source)

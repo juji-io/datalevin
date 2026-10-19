@@ -61,6 +61,41 @@
             (is (every? zero? (vals (control/usage (:control runtime)))))))
         (is (= 1 (count (events-of events :session-close))))))))
 
+(deftest positive-native-only-rule-calls-emit-controlled-scoped-steps
+  (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many
+                          :db/noindex true}}
+    [{:db/id 1 :native/text ["a" "b"]} {:db/id 2 :native/text "b"}]
+    (fn [database _]
+      (let [events (atom [])
+            rules '[[(text [?id] ?text) [?id :native/text ?text]]
+                    [(named [?id] ?text) (text ?id ?text)]]
+            query '[:find ?e ?text ?tag ?name :in $n $s % [[?e ?tag]]
+                    :where ($n named ?e ?text) [$s ?e :row/value ?name]]
+            input [[1 :a] [1 :a] [2 :b]]]
+        (rt/with-runtime {}
+          (fn [runtime]
+            (is (= #{[1 "a" :a "one"] [1 "b" :a "one"] [2 "b" :b "two"]}
+                   (program/query! runtime query
+                     [database (fixture/provider events {:lookup-only? true}) rules input])))
+            (is (every? zero? (vals (control/usage (:control runtime)))))))
+        (is (= 1 (count (events-of events :session-close))))))))
+
+(deftest local-collections-native-views-and-mapped-accesses-share-one-schedule
+  (with-db {:native/text {:db/valueType :db.type/string}}
+    [{:db/id 1 :native/text "a"} {:db/id 2 :native/text "b"}]
+    (fn [database _]
+      (let [events (atom [])
+            query '[:find ?tag ?text ?name :in $rows $n $s
+                    :where [$rows ?e ?tag] [$n ?e :native/text ?text] [$s ?e :row/value ?name]]]
+        (rt/with-runtime {}
+          (fn [runtime]
+            (is (= #{[:second "b" "two"] [:first "a" "one"]}
+                   (program/query! runtime query
+                     [[[2 :second] [1 :first] [2 :second] [3 :missing]] database
+                      (fixture/provider events {:lookup-only? true})])))
+            (is (every? zero? (vals (control/usage (:control runtime)))))))
+        (is (= 1 (count (events-of events :session-close))))))))
+
 (deftest native-value-constants-and-equality-predicates-skip-unrelated-payloads
   (let [giant (apply str (repeat 1000000 "z"))]
     (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}
@@ -413,8 +448,7 @@
       (doseq [[database pattern] [[database '[[:native/identity 1] :native/score ?score]]
                                   [database '[?e ?attribute ?score]]
                                   [database '[_ :native/private ?score]]
-                                  [database '[?e :native/score ?e]]
-                                  [[[1 :native/score 100]] '[?e :native/score ?score]]]]
+                                  [database '[?e :native/score ?e]]]]
         (let [events (atom [])
               query {:find ['?v] :in ['$n '$s]
                      :where [(into ['$n] pattern) ['$s '?e :row/value '?v]]}
