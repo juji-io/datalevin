@@ -1219,6 +1219,30 @@ focused integration suite with:
 clojure -M:test -m datalevin.query.source.execution-runner
 ```
 
+The same runner includes the v2
+[mapped migration matrix](../test-src/datalevin/query/source/mapped_conformance.clj)
+and [EAV fixture](../test-src/datalevin/query/source/eav_fixture.clj). This matrix
+uses the real internal `source.driver/run` and an adapter constructor, with eager
+EAV `d/q` as its oracle; it supplies no alternate engine or resolver. It covers
+scan/entity/value paths, thirteen scalar families, absent mapped facts, ordinary
+input tuples, correlated keys/IDs and fan-out, many-valued joins, native/mapped
+rules, branch scopes, result shapes/maps, pinned versions and owned mutable
+leaves after close. Structural explanation checks reverse provider candidate
+order and separate provider metrics from optional engine counts. Failure checks
+include malformed IDs/completion, one-shot reuse and oversized single lookup
+keys. The fixture's modeled setup/page requests charge the shared backend ledger.
+These v2 checks are migration preparation. The active fake and companion local
+adapter still use the prototype public route; this matrix does not close their
+coordinated migration or the native/SQL/file/API sign-off.
+
+Within v2 compilation, an independently ready native/local caller producer can
+seed a mapped rule or union body. A charged core-only dependency walk includes
+ready scalar steps and observes cancellation before each transition. Scope
+steps then require those actual caller columns, so clause ordering cannot lose
+a legal lookup dependency. Possible mapped outputs and sibling/private scope
+exports are excluded from this proof. No provider read or estimate supplies a
+missing seed, and cyclic/self-supplied dependencies still reject before open.
+
 Run [native isolation checks](../test-src/datalevin/query/native_isolation_runner.clj)
 in separate JVMs; they deliberately install protocol extensions and check both
 public-SPI/core load orders:

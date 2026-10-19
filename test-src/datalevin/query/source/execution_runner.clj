@@ -28,6 +28,7 @@
             [datalevin.query.source-program-test]
             [datalevin.query.source-program-explain-test]
             [datalevin.query.source-driver-test]
+            [datalevin.query.source-mapped-conformance-test]
             [datalevin.query.source-input-program-test]
             [datalevin.query.source-collection-test]
             [datalevin.query.source-native-plan-test]
@@ -67,6 +68,7 @@
                                            'datalevin.query.source-program-test
                                            'datalevin.query.source-program-explain-test
                                            'datalevin.query.source-driver-test
+                                           'datalevin.query.source-mapped-conformance-test
                                            'datalevin.query.source-input-program-test
                                            'datalevin.query.source-collection-test
                                            'datalevin.query.source-native-plan-test

@@ -8,6 +8,7 @@
             [datalevin.join :as join]
             [datalevin.parser :as parser]
             [datalevin.query.access :as query-access]
+            [datalevin.query.access.dependency :as dependency]
             [datalevin.query.execute :as execute]
             [datalevin.query.execute.result :as result]
             [datalevin.query.plan :as plan]
@@ -347,6 +348,37 @@
   {:region-id id :columns (vec (vals schema))
    :constant-constraints (:constant-constraints (meta schema))})
 
+(defn- core-seeds!
+  "Prove caller columns independently of a scoped child's outputs. Ready
+  native/local producers and scalar steps can run before the scoped call;
+  possible mapped outputs and sibling scope exports cannot seed themselves."
+  [runtime check! compiled id native-specs inputs]
+  (if-not (some #(and (= id (:parent-region %)) (seq (:branches %))) (:sites compiled)) inputs
+    (let [region (nth (:regions compiled) id)
+          nodes (:core-clauses region) width (count (:available-vars region))]
+      ;; The returned column vector survives the temporary proof workspace.
+      ;; Keep its container lease with the compilation until cleanup.
+      (retain! runtime (containers! runtime 1 width))
+      (rt/with-workspace runtime
+        (fn [workspace]
+          ;; Bound all retained proof maps/queues before iterative propagation.
+          (retain! workspace (containers! workspace (inc (count nodes)) (+ width (count nodes))))
+          (loop [known (columns-map inputs) pending nodes]
+            (check!)
+            (let [[columns pending progressed?]
+                  (reduce
+                    (fn [[known pending progressed?] {:keys [node path] :as entry}]
+                      (check!)
+                      (let [spec (if (or (instance? Pattern node) (instance? RuleExpr node) (instance? Not node))
+                                   (get native-specs path) (pure-spec node known check!))
+                            extended (when (and spec (every? #(dependency/supplies? (known (:variable %)) %) (:requires spec)))
+                                       (dependency/extend-columns known (:columns spec)))]
+                        (if extended [extended pending true]
+                            [known (conj pending entry) progressed?])))
+                    [known [] false] pending)]
+              (if (and progressed? (seq pending)) (recur columns pending)
+                  (mapv columns (canonical (keys columns) check!))))))))))
+
 (defn- scope-parent-columns [site schema known-inputs child-schemas check!]
   (let [actual (columns-map known-inputs)
         required (if (= :rule (:kind site))
@@ -433,10 +465,11 @@
   (let [all-schemas (schemas compiled native-specs root-columns check!) boundaries (volatile! [])]
     (letfn [(region! [id inputs]
               (check!)
-              (let [schema (add-columns (get all-schemas id) inputs)]
+              (let [schema (add-columns (get all-schemas id) inputs)
+                    seeds (core-seeds! runtime check! compiled id native-specs inputs)]
                 (doseq [[index site] (map-indexed vector (:sites compiled))
                         :when (and (= id (:parent-region site)) (seq (:branches site)))]
-                  (let [parent (scope-parent-columns site schema inputs all-schemas check!)
+                  (let [parent (scope-parent-columns site schema seeds all-schemas check!)
                         outputs (mapv (fn [b] (branch-output (child-id b) (get all-schemas (child-id b)))) (:branches site))
                         boundary (scope/interfaces! runtime compiled index parent outputs)]
                     (vswap! boundaries conj boundary)
@@ -556,6 +589,7 @@
                             (check!)
                             (let [r (nth (:regions compiled) id)
                                   schema (add-columns (get all-schemas id) inputs)
+                                  seeds (core-seeds! runtime check! compiled id native-specs inputs)
                                   core (volatile! {}) operators (volatile! [])
                                   add! (fn [path requires columns step]
                                          (let [op-id (count @operators)
@@ -581,7 +615,7 @@
                                   (add! path (:requires spec) (:columns spec) factory)))
                               (doseq [[index site] (map-indexed vector (:sites compiled))
                                       :when (= id (:parent-region site))]
-                                (let [parent (scope-parent-columns site schema inputs all-schemas check!)
+                                (let [parent (scope-parent-columns site schema seeds all-schemas check!)
                                       branch-outputs
                                       (mapv (fn [b]
                                               (let [id (child-id b)]
