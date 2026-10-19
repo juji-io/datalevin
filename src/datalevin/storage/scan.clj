@@ -188,17 +188,42 @@
         (fn [kv]
           (try
             (check!)
-            (admit-row!)
             (let [eid (.getLong ^ByteBuffer (lmdb/v kv) 0)]
               (if get-v?
                 (visit-value! (lmdb/k kv) eid
-                              (fn [value] (check!) (.add out (object-array [eid value]))))
-                (.add out (object-array [eid]))))
+                              (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
+                (do (admit-row!) (.add out (object-array [eid])))))
             (catch Throwable e (vreset! failure e) (throw e))))
         [:closed-open (int aid) (unchecked-inc-int (int aid))] :int :id)
       ;; The ordinary storage visitor adds native context to failures. Preserve
       ;; the original controlled admission/cancellation error after that scan
       ;; has unwound its cursor and transaction leases.
+      (catch Throwable e (throw (or @failure e)))))
+  (check!))
+
+(defn eav-tuples-scan-controlled
+  "Read a fixed attribute for distinct entity keys through the ordinary list
+  range visitor. Match every fact, including many-valued wildcard witnesses;
+  never decode an ignored value or invoke a value codec to construct bounds."
+  [lmdb ^Collection out aid ^List entities get-v? {:keys [check! admit-row! visit-value!]}]
+  (check!)
+  (let [failure (volatile! nil)
+        attribute-range [:closed-open (int aid) (unchecked-inc-int (int aid))]]
+    (try
+      (dotimes [i (.size entities)]
+        (check!)
+        (let [eid (aget ^objects (.get entities i) 0)]
+          (i/visit-list-range
+            lmdb c/eav
+            (fn [kv]
+              (try
+                (check!)
+                (if get-v?
+                  (visit-value! (lmdb/v kv) eid
+                                (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
+                  (do (admit-row!) (.add out (object-array [eid]))))
+                (catch Throwable e (vreset! failure e) (throw e))))
+            [:closed eid eid] :id attribute-range :int)))
       (catch Throwable e (throw (or @failure e)))))
   (check!))
 

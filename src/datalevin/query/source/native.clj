@@ -92,8 +92,6 @@
   Nullable native tuple components use the broad logical :data envelope."
   [snapshot attribute]
   (let [t (attribute-type snapshot attribute)]
-    (when (= :native-custom-data (:kind t))
-      (fail! :query-source/unsupported :native-type))
     (if (map? t) :data t)))
 
 (defn- matches-native-type? [type x check!]

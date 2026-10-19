@@ -97,7 +97,9 @@
 
 (defprotocol IControlledTuples
   (-init-tuples-controlled [db out attr get-v? policy]
-    "Enumerate an attribute with explicit admission and bounded decoding."))
+    "Enumerate an attribute with explicit admission and bounded decoding.")
+  (-lookup-tuples-controlled [db out attr entities get-v? policy]
+    "Read one attribute for distinct entity keys in the pinned schema."))
 
 (defprotocol ITuples
   (-init-tuples [db out a v-range pred get-v?])
@@ -858,6 +860,13 @@
       (let [kv (.-lmdb ^datalevin.storage.Store store)]
         (scans/ave-tuples-scan-controlled
           kv out (:db/aid props) get-v? policy))))
+
+  (-lookup-tuples-controlled
+    [_ out attr entities get-v? policy]
+    ((:check! policy))
+    (when-let [props (get (:schema policy) attr)]
+      (scans/eav-tuples-scan-controlled
+        (.-lmdb ^datalevin.storage.Store store) out (:db/aid props) entities get-v? policy)))
 
   ITuples
   (-init-tuples

@@ -38,9 +38,11 @@
   (first (keep-indexed #(when (= kind (:kind %2)) %1) (:sites compiled))))
 
 (defn- branch-schema [compiled branch]
-  (let [id (child-id branch)]
-    {:region-id id :columns (->> (get-in compiled [:regions id :patterns])
-                                (mapcat :columns) (reduce #(assoc %1 (:variable %2) %2) {}) vals vec)}))
+  (let [id (child-id branch) region (get-in compiled [:regions id])]
+    {:region-id id :columns (->> (concat (mapcat :columns (:patterns region))
+                                       (map (fn [[v x]] (column v (value/inferred-type x) (nil? x)))
+                                            (select-keys (:bindings region) (:literal-vars region))))
+                                (reduce #(assoc %1 (:variable %2) %2) {}) vals vec)}))
 
 (defn- interfaces! [runtime compiled kind parent]
   (let [index (site-index compiled kind)]

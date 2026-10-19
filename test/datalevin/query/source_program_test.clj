@@ -82,8 +82,8 @@
               result (program/execute! runtime p)]
           (is (= [[1 2]] (rows result ['?a '?b])))
           (is (= 2 (count (events-of events :plan))))
-          (is (= #{#{"one"} #{"two"}}
-                 (set (map (comp set vals :bindings second) (events-of events :plan)))))
+          (is (= #{[:const "one"] [:const "two"]}
+                 (set (map #(get-in (second %) [:clauses 0 :terms 2]) (events-of events :plan)))))
           (is (= 2 (count (events-of events :open)))))))))
 
 (deftest typed-empty-rules-prune-the-whole-conjunction-before-provider-planning
@@ -125,17 +125,45 @@
             (is (= 1 (count (events-of events :plan))))
             (is (= 1 (count (events-of events :open))))))))))
 
-(deftest numeric-representation-mismatch-does-not-become-an-empty-proof
-  (let [events (atom [])
-        failure (error (fn []
-                         (rt/with-runtime {}
-                           (fn [runtime]
-                             (compile! runtime events
-                               '[:find ?v :in $s % :where ($s named 1N ?v)]
-                               '[[(named [?e] ?v) [?e :row/value ?v]]] [] nil {})))))]
-    (is (= :query-source/unsupported (:error failure)))
-    (is (empty? (events-of events :acquire)))
-    (is (empty? (events-of events :plan)))))
+(deftest numeric-literal-rule-arguments-match-facts-without-changing-their-representation
+  (doseq [[query rules expected]
+          [['[:find ?v :in $s % :where ($s named 1N ?v)]
+            '[[(named [?e] ?v) [?e :row/value ?v]]] #{["one"]}]
+           ['[:find ?copy ?v :in $s % :where ($s named 1N ?copy ?v)]
+            '[[(named ?e ?copy ?v) [?e :row/value ?v] [(identity ?e) ?copy]]]
+            #{[1N "one"]}]
+           ['[:find ?copy ?v :in $s % :where ($s outer 1N ?copy ?v)]
+            '[[(named ?e ?copy ?v) [?e :row/value ?v] [(identity ?e) ?copy]]
+              [(outer ?e ?copy ?v) (named ?e ?copy ?v)]] #{[1N "one"]}]
+           ['[:find ?v :in $s % :where ($s keyed 1N ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(identity ?e) ?key]]] #{["one"]}]
+           ['[:find ?v :in $s % :where ($s keyed 1N ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(ground 1) ?key]]] #{["one"] ["two"]}]
+           ['[:find ?copy ?v :in $s % :where ($s keyed 1N ?copy ?v)]
+            '[[(keyed ?key ?copy ?v) [?e :row/value ?v] [(identity ?key) ?key]
+               [(identity ?key) ?copy]]] #{[1N "one"] [1N "two"]}]
+           ['[:find ?copy ?v :in $s % :where ($s keyed 1N ?copy ?v)]
+            '[[(keyed ?key ?copy ?v)
+               (or (and [?key :row/value ?v] [(identity ?key) ?copy])
+                   (and [?key :row/value ?v] [(identity ?key) ?copy]))]] #{[1N "one"]}]
+           ['[:find ?copy ?v :in $s % :where ($s keyed 1N ?copy ?v)]
+            '[[(keyed ?key ?copy ?v) [?key ?attribute ?v] [(identity ?key) ?copy]]]
+            #{[1N "one"]}]
+           ['[:find ?v :in $s % :where ($s keyed 1N ?v)]
+            '[[(keyed ?key ?v) [?e :row/value ?v] [(ground nil) ?key]]] #{}]]]
+    (let [events (atom []) saved (atom nil)]
+      (rt/with-runtime {}
+        (fn [runtime]
+          (reset! saved runtime)
+          (let [actual (program/result! runtime (compile! runtime events query rules [] nil {}))]
+            (is (= expected actual) (pr-str query rules))
+            ;; Legacy rule expansion substitutes literals into function output
+            ;; bindings, which its parser rejects. Check these scoped semantics
+            ;; against explicit results, including the retained BigInt class.
+            (when (some #(= '?copy (:symbol %)) (:elements (:qfind (parser/parse-query query))))
+              (is (every? #(instance? clojure.lang.BigInt (first %)) actual))))))
+      (is (= 1 (count (events-of events :session-close))))
+      (is (every? zero? (vals (control/usage (:control @saved))))))))
 
 (deftest late-function-type-proofs-propagate-up-and-down-nested-regions
   (doseq [[query rules expected-plans expected]

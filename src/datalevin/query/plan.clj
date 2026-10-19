@@ -356,6 +356,18 @@
 (defrecord MergeScanStep [index attrs-v vars in out cols strata seen-or-joins
                           result sample]
 
+  IControlledStep
+  (-execute-controlled [_ db entities policy]
+    ;; A single attribute lookup over an already distinct entity-key spool.
+    ;; Multi-attribute products and predicates need separate admission paths.
+    (when (or result sample (not= 0 index) (not= 1 (count attrs-v))
+              (some #(get (second (first attrs-v)) %) [:pred :fidx]))
+      ((:unsupported! policy)))
+    ((:check! policy))
+    (let [[attr options] (first attrs-v) out (FastList.)]
+      (db/-lookup-tuples-controlled db out attr entities (not (:skip? options)) policy)
+      out))
+
   IStep
   (-type [_] :merge)
 

@@ -42,11 +42,6 @@
   (vec (sort #(access/compare-keys %1 %2 check!) variables)))
 (defn- column [v t nullable?] {:variable v :type t :nullable? nullable?})
 
-(defn- value-type [x]
-  (cond (nil? x) :data
-        (satisfies? value/IQuerySourceValue x) (value/-logical-type x)
-        :else (or (some #(when (value/matches-type? % x) %) (disj value/scalar-types :data)) :data)))
-
 (defn- merge-column [a b]
   (cond (nil? a) b
         (= (:type a) (:type b)) (update b :nullable? #(and % (:nullable? a)))
@@ -117,30 +112,42 @@
         {:requires (if (instance? Variable arg)
                      [(assoc (or (schema (:symbol arg)) (column (:symbol arg) :data true)) :nullable? true)] inputs)
          :columns [(if (instance? Constant arg)
-                     (column variable (value-type (:value arg)) false)
+                     (column variable (value/inferred-type (:value arg)) false)
                      (assoc (or (schema (:symbol arg)) (column variable :data true))
                             :variable variable :nullable? false))]})
       :else (unsupported!))))
 
-(defn- pure-factory [runtime check! node spec]
+(defn- pure-factory [runtime check! node spec literal-output]
   (let [exports (mapv :variable (:columns spec))]
     (->StepFactory (set (map :variable (:requires spec))) exports
       (fn [input-cols]
         (let [output-cols (into input-cols (remove (set input-cols)) exports)
               attrs (zipmap input-cols (range))
-              form (parser/source node)]
+              form (parser/source node)
+              temporary (when literal-output
+                          (loop []
+                            (check!)
+                            (let [v (gensym "?literal_result__")]
+                              (if (contains? attrs v) (recur) v))))
+              forms (if temporary
+                      ;; Keep function nil filtering and predicate equality in
+                      ;; the existing resolver. The temporary never crosses
+                      ;; this scalar step's public column layout.
+                      [(assoc form 1 temporary) [(list '= literal-output temporary)]]
+                      [form])]
           (->MaterializedStep (set input-cols) output-cols
             (fn [tuples]
               (check!)
               (let [^List tuples tuples
-                    token (containers! runtime (.size tuples) (count output-cols))
+                    token (containers! runtime (if temporary (*' 2 (.size tuples)) (.size tuples))
+                                       (+ (count output-cols) (if temporary 1 0)))
                     success? (volatile! false)]
                 (try
                   ;; These admitted scalar operators cannot decode a source,
                   ;; expand a collection, or allocate arithmetic workspaces.
                   (let [context {:rels [(relation/relation! attrs (checked-list check! tuples))]
                                  :sources {} :rules {}}
-                        resolved (resolve/resolve-clause context form)
+                        resolved (reduce resolve/resolve-clause context forms)
                         result (reduce #(joined! runtime check! %1 %2) (:rels resolved))
                         ^List rows (:tuples result)
                         output (FastList. (.size rows))]
@@ -216,7 +223,7 @@
             ;; Its compatibility is checked at the captured scope boundary.
             initial (reduce-kv (fn [schema v x]
                                  (if (contains? produced v) schema
-                                     (assoc schema v (column v (value-type x) (nil? x)))))
+                                     (assoc schema v (column v (value/inferred-type x) (nil? x)))))
                                initial (:bindings r))
             initial
             (reduce
@@ -241,19 +248,26 @@
                                         (boolean (some :nullable? cs))))) (canonical (:exports site) check!))]
                   (add-columns schema outputs))) initial
               (filter #(= id (:parent-region %)) (:sites compiled)))
-            [final _]
-            (reduce (fn [[schema produced] {:keys [node path]}]
+            [final _ constraints]
+            (reduce (fn [[schema produced constraints] {:keys [node path]}]
                       (check!)
                       (let [columns (:columns (if (instance? Pattern node) (get native-specs path)
                                                   (pure-spec node schema check!)))]
                         [(reduce (fn [schema column]
                                    (let [v (:variable column)]
-                                     (if (and (contains? (:bindings r) v) (not (contains? produced v)))
-                                       (assoc schema v column)
-                                       (add-columns schema [column])))) schema columns)
-                         (into produced (map :variable) columns)]))
-                    [initial produced] (:core-clauses r))]
-        (assoc schemas id final))) {} (reverse (:regions compiled))))
+                                     (cond (contains? (:literal-vars r) v) schema
+                                           (and (contains? (:bindings r) v) (not (contains? produced v)))
+                                           (assoc schema v column)
+                                           :else (add-columns schema [column])))) schema columns)
+                         (into produced (map :variable) columns)
+                         (into constraints (filter #(contains? (:literal-vars r) (:variable %))) columns)]))
+                    [initial produced (vec (mapcat #(get-in native-specs [(:path %) :constant-constraints])
+                                                  (:core-clauses r)))] (:core-clauses r))]
+        (assoc schemas id (with-meta final {:constant-constraints constraints})))) {} (reverse (:regions compiled))))
+
+(defn- branch-output [id schema]
+  {:region-id id :columns (vec (vals schema))
+   :constant-constraints (:constant-constraints (meta schema))})
 
 (defn- scope-parent-columns [site schema known-inputs child-schemas check!]
   (let [needed
@@ -292,7 +306,7 @@
   (let [root (:root-region compiled) constants (get-in compiled [:regions root :bindings])
         supplied (columns-map input-columns)
         columns (into input-columns
-                  (map (fn [v] (column v (value-type (get constants v)) (nil? (get constants v)))))
+                  (map (fn [v] (column v (value/inferred-type (get constants v)) (nil? (get constants v)))))
                   (canonical (set/difference (set (keys constants)) (set (keys supplied))) check!))
         _ (ensure! (set/subset? (set (map :variable columns))
                                (get-in compiled [:regions root :input-vars])))
@@ -320,8 +334,7 @@
                 (doseq [[index site] (map-indexed vector (:sites compiled))
                         :when (and (= id (:parent-region site)) (seq (:branches site)))]
                   (let [parent (scope-parent-columns site schema inputs all-schemas check!)
-                        outputs (mapv (fn [b] {:region-id (child-id b)
-                                              :columns (vec (vals (get all-schemas (child-id b))))}) (:branches site))
+                        outputs (mapv (fn [b] (branch-output (child-id b) (get all-schemas (child-id b)))) (:branches site))
                         boundary (scope/interfaces! runtime compiled index parent outputs)]
                     (vswap! boundaries conj boundary)
                     (doseq [branch (:branches boundary) :when (not (:empty? branch))]
@@ -349,14 +362,13 @@
         _ (terminal-query! compiled)
         entries (into {} (map (juxt :symbol identity)) (:entries compilation))
         native-specs
-        (into {} (for [r (:regions compiled) {:keys [node path]} (:core-clauses r)
+        (into {} (for [r (:regions compiled) {:keys [node path literal-terms]} (:core-clauses r)
                        :when (instance? Pattern node)
                        :let [source (:source node)
                              source (if (or (nil? source) (instance? DefaultSrc source))
                                       (:default-source r) (:symbol source))
                              database (:native (get entries source))]]
-                   [path {:database database :requires []
-                          :columns (native-plan/columns! runtime snapshots database node)}]))
+                   [path (assoc (native-plan/spec! runtime snapshots database node literal-terms) :database database)]))
         input (input! runtime check! compiled input-columns input-tuples)
         root-columns (:columns input)
         proofs (boundaries! runtime check! compiled native-specs root-columns)
@@ -380,10 +392,17 @@
                               (doseq [{:keys [node path]} (:core-clauses r)]
                                 (let [native? (instance? Pattern node)
                                       spec (if native? (get native-specs path) (pure-spec node schema check!))
+                                      output (get-in node [:binding :variable :symbol])
+                                      literal-output (when (contains? (:literal-vars r) output) output)
+                                      spec (if literal-output
+                                             (-> spec
+                                                 (update :requires #(conj (filterv (fn [c] (not= literal-output (:variable c))) %)
+                                                                           (column literal-output :data true)))
+                                                 (assoc :columns [])) spec)
                                       factory (if native?
-                                                (native-plan/factory! runtime snapshots (:database spec) node (:columns spec)
+                                                (native-plan/factory! runtime snapshots (:database spec) node spec
                                                   check! #(joined! runtime check! %1 %2))
-                                                (pure-factory runtime check! node spec))]
+                                                (pure-factory runtime check! node spec literal-output))]
                                   (add! path (:requires spec) (:columns spec) factory)))
                               (doseq [[index site] (map-indexed vector (:sites compiled))
                                       :when (= id (:parent-region site))]
@@ -391,7 +410,7 @@
                                       branch-outputs
                                       (mapv (fn [b]
                                               (let [id (child-id b)]
-                                                {:region-id id :columns (vec (vals (get all-schemas id)))})) (:branches site))
+                                                (branch-output id (get all-schemas id)))) (:branches site))
                                       boundary (scope/interfaces! runtime compiled index parent branch-outputs)]
                                   (doseq [branch (:branches boundary) :when (not (:empty? branch))]
                                     (region! (:region-id branch) (:inputs branch)))

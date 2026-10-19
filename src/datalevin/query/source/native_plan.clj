@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.query.source.native-plan
-  "Controlled execution of existing native initialization plans inside a v2
+  "Controlled execution of existing native attribute plans inside a v2
   region. The native planner and storage scan driver remain authoritative."
   (:require [datalevin.query.optimizer.plan-build :as plan-build]
             [datalevin.query.plan :as plan]
@@ -10,32 +10,54 @@
             [datalevin.relation :as relation])
   (:import [datalevin.db DB]
            [datalevin.parser Constant Placeholder Variable]
-           [datalevin.query.plan InitStep]
-           [java.util List]))
+           [datalevin.query.plan InitStep MergeScanStep]
+           [datalevin.utl QueryKey]
+           [java.util HashSet List]
+           [org.eclipse.collections.impl.list.mutable FastList]))
 
 (defn- unsupported! [] (fail! :query-source/unsupported :planning))
 (defn- ensure! [ok] (when-not ok (fail! :query-source/invalid :native-view)))
 
-(defn columns!
-  "Emit the precise interface of a native fixed-attribute initialization. No
+(defn- private-variable [prefix variables check!]
+  (loop []
+    (check!)
+    (let [v (gensym prefix)]
+      (if (contains? variables v) (recur) v))))
+
+(defn- constant-entity [x]
+  (when-not (or (nil? x) (integer? x)
+                (and (not= :data (value/inferred-type x))
+                     (value/disjoint-constant? :long x (fn [])))) (unsupported!))
+  (when (and (integer? x) (<= Long/MIN_VALUE x Long/MAX_VALUE)) (long x)))
+
+(defn spec!
+  "Emit the precise interface of a native fixed-attribute access. No
   index is scanned and no payload is decoded while deriving this interface."
-  [runtime snapshots database node]
+  [runtime snapshots database node literal-terms]
   (when-not (instance? DB database) (unsupported!))
   (native/validate! database)
   (let [snapshot (get snapshots (.-store ^DB database))
         _ (native/check-view! (:control runtime) snapshot)
         [entity attribute v :as pattern] (:pattern node)]
-    (when-not (and (= 3 (count pattern)) (instance? Variable entity)
+    (when-not (and (= 3 (count pattern))
+                   (or (instance? Variable entity) (instance? Constant entity) (instance? Placeholder entity))
                    (instance? Constant attribute) (keyword? (:value attribute))
-                   (or (instance? Variable v) (instance? Placeholder v))
-                   (not= (:symbol entity) (:symbol v))) (unsupported!))
-    (let [attribute (:value attribute) props (get-in snapshot [:schema attribute])]
-      (when (:db/noindex props) (unsupported!))
-      (cond-> [{:variable (:symbol entity) :type :long :nullable? false}]
-        (instance? Variable v)
-        (conj {:variable (:symbol v) :type (native/logical-type! snapshot attribute) :nullable? false})))))
+                   (or (instance? Variable v) (instance? Constant v) (instance? Placeholder v))
+                   (not (and (instance? Variable entity) (= (:symbol entity) (:symbol v))))) (unsupported!))
+    (let [attribute (:value attribute) props (get-in snapshot [:schema attribute])
+          _ (when (instance? Constant entity) (constant-entity (:value entity)))
+          _ (when (and (:db/noindex props) (instance? Placeholder entity)) (unsupported!))
+          type (when-not (instance? Placeholder v) (native/logical-type! snapshot attribute))]
+      {:requires (if (and (:db/noindex props) (instance? Variable entity))
+                   [{:variable (:symbol entity) :type :data :nullable? true}] [])
+       :constant-constraints (mapv (fn [[variable i]]
+                                     {:variable variable :type (case i 0 :long 1 :keyword 2 type) :nullable? false})
+                                   literal-terms)
+       :columns (cond-> []
+                  (instance? Variable entity) (conj {:variable (:symbol entity) :type :long :nullable? false})
+                  (instance? Variable v) (conj {:variable (:symbol v) :type type :nullable? false}))})))
 
-(defn- controlled! [runtime check! snapshot database step]
+(defn- controlled! [runtime check! snapshot database step entities accept?]
   (check!)
   (native/check-view! (:control runtime) snapshot)
   ;; Admission covers the output list, visitor closures, and native range/key
@@ -45,8 +67,12 @@
         _ (rt/own! runtime #(let [held @tokens]
                              (vreset! tokens [])
                              (doseq [token held] (control/release! token))))
-        visit (when (< 1 (count (:vars step)))
-                (native/value-visitor (:control runtime) snapshot (:attr step)))
+        visit (when (or (and (instance? InitStep step) (< 1 (count (:vars step))))
+                        (and (instance? MergeScanStep step) (seq (:vars step))))
+                (native/value-visitor (:control runtime) snapshot
+                                      (if (instance? InitStep step)
+                                        (:attr step)
+                                        (ffirst (:attrs-v step)))))
         policy {:schema (:schema snapshot)
                 :check! #(do (check!) (native/check-view! (:control runtime) snapshot))
                 :unsupported! unsupported!
@@ -54,9 +80,24 @@
                 :visit-value! (fn [raw eid emit]
                                 (visit raw eid
                                        (fn [x]
-                                         (own! (rt/charge-copy! runtime x))
-                                         (emit (value/owned-copy x check!)))))}]
-    (plan/-execute-controlled step database nil policy)))
+                                         (when (accept? eid x)
+                                           (own! (rt/charge-copy! runtime x))
+                                           (emit (value/owned-copy x check!))))))}]
+    (plan/-execute-controlled step database entities policy)))
+
+(defn- entity-keys! [runtime check! entity input-cols ^List tuples]
+  (let [fixed? (instance? Constant entity)
+        n (if fixed? (min 1 (.size tuples)) (.size tuples))
+        token (control/reserve! (:control runtime) {:retained-bytes (+' 2048 (*' 256 n))})
+        _ (rt/own! runtime #(control/release! token))
+        seen (HashSet.) keys (FastList.) index (.indexOf ^List input-cols (:symbol entity))]
+    (dotimes [i n]
+      (check!)
+      (let [e (if fixed? (constant-entity (:value entity)) (aget ^objects (.get tuples i) index))]
+        ;; Native IDs are Long keys. Other bound representations cannot join
+        ;; these facts under shared key equality; a literal uses constant equality.
+        (when (and (instance? Long e) (.add seen e)) (.add keys (object-array [e])))))
+    keys))
 
 (defrecord ^:private NativeStep [in cols run]
   plan/IStep
@@ -64,41 +105,46 @@
   (-execute [_ _ tuples] (run tuples))
   (-execute-pipe [_ _ _ _] (unsupported!))
   (-sample [_ _ _] (unsupported!))
-  (-explain [_ _] "Controlled native attribute initialization"))
+  (-explain [_ _] "Controlled native attribute access"))
 
 (defrecord ^:private NativeFactory [in cols build]
   plan/IStepFactory
   (-instantiate-step [_ input-cols] (build input-cols)))
 
 (defn factory!
-  "Compile a single native pattern with the existing native planner. Complete
-  unfiltered InitSteps use the controlled storage boundary. Other native plan
+  "Compile a single native pattern with the existing native planner. Native
+  InitSteps and entity-bound MergeScanSteps use controlled storage. Other plan
   shapes reject before provider acquisition until their admission paths exist."
-  [runtime snapshots database node columns check! join!]
+  [runtime snapshots database node {:keys [requires columns]} check! join!]
   (let [snapshot (get snapshots (.-store ^DB database))
         _ (native/check-view! (:control runtime) snapshot)
         token (rt/charge! runtime (mapv :variable columns) 16384 1)
         _ (rt/own! runtime #(control/release! token))
         [e attribute v] (:pattern node)
         variables (mapv :variable columns)
+        entity (if (instance? Variable e) (:symbol e)
+                   (private-variable "?native_entity__" (set variables) check!))
+        value-var (when-not (instance? Placeholder v)
+                    (if (instance? Variable v) (:symbol v)
+                        (private-variable "?native_value__" (conj (set variables) entity) check!)))
         ;; Reuse the native planner's pure single-pattern emitter. Mutable
         ;; Store metadata, global plan caches and installed access methods
         ;; cannot change this plan after its schema was captured in the view.
-        step (plan-build/initialization-step (:symbol e) (:value attribute)
-                                             (when (instance? Variable v) (:symbol v)))]
-    (when-not (and (instance? InitStep step)
-                   (not-any? #(get step %) [:result :sample :know-e? :pred :val :range])
-                   (= (set variables) (set (keys (plan/cols->attrs (:cols step))))))
-      (unsupported!))
-    (->NativeFactory #{} variables
+        init (plan-build/initialization-step entity (:value attribute) value-var)
+        lookup (plan-build/entity-lookup-step entity (:value attribute) value-var)
+        accept? (if (instance? Constant v) (fn [_ x] (QueryKey/equiv (:value v) x)) (fn [_ _] true))]
+    (->NativeFactory (set (map :variable requires)) variables
       (fn [input-cols]
-        (let [output-cols (into input-cols (remove (set input-cols)) variables)
-              attrs (plan/cols->attrs (:cols step))]
+        (let [lookup? (or (instance? Constant e) (and (instance? Variable e) (some #{entity} input-cols)))
+              step (if lookup? lookup init)
+              output-cols (into input-cols (remove (set input-cols)) variables)
+              attrs (select-keys (plan/cols->attrs (:cols step)) variables)]
           (->NativeStep (set input-cols) output-cols
             (fn [^List tuples]
               (check!)
               (native/check-view! (:control runtime) snapshot)
-              (let [rows (controlled! runtime check! snapshot database step)
+              (let [keys (when lookup? (entity-keys! runtime check! e input-cols tuples))
+                    rows (controlled! runtime check! snapshot database step keys accept?)
                     right (relation/relation! attrs rows)
                     left (relation/relation! (zipmap input-cols (range)) tuples)
                     result (join! left right)]

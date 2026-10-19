@@ -93,8 +93,10 @@
             (doseq [[term column] (map vector (:terms clause)
                                       (contract/pattern-columns source-descriptor clause check!))]
               (when (= :const (first term))
-                (ensure! (and (some? (second term))
-                              (value/matches-type? (:type column) (second term) check!))))))
+                ;; A constant is a predicate operand, not a provider output.
+                ;; Numeric/sequence representations can compare equal without
+                ;; satisfying the declared representation of returned facts.
+                (ensure! (not (value/disjoint-constant? (:type column) (second term) check!))))))
         :predicate
         (do (fields! clause #{:id :kind :operator :semantics-version :args} #{})
             (when-not (and (#{:= :not= :< :<= :> :>=} (:operator clause))

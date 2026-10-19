@@ -300,6 +300,17 @@
                      :bound [] :mpath [:free 0]}
                     true false (if value-variable #{value-variable} #{}))))
 
+(defn ^:no-doc entity-lookup-step
+  "Emit the native merge scan for a single attribute over an entity-key spool.
+  Like initialization-step this is pure; schema and read ownership stay with
+  the caller. nil value-variable means each matching entry needs no payload."
+  [entity attribute value-variable]
+  (mk-merge-scan-step
+    0 [[attribute {:skip? (nil? value-variable)}]]
+    (if value-variable [value-variable] []) [entity] [entity]
+    (cond-> [entity] value-variable (conj #{attribute value-variable}))
+    [(cond-> #{entity} value-variable (conj value-variable))] #{} nil nil))
+
 (defn- base-plan
   ([db nodes e]
    (base-plan db nodes e false true))

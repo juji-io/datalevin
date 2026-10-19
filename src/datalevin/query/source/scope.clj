@@ -59,14 +59,22 @@
                                    (:type (first columns)) :data)
                :nullable? (or (empty? columns) (boolean (some :nullable? columns)))})) variables)))
 
-(defn- rule-branch [site branch region body-columns parent check!]
+(defn- incompatible-constraints? [region constraints check!]
+  (boolean
+    (some (fn [{:keys [variable type]}]
+            (check!)
+            (ensure! (and (contains? (:literal-vars region) variable)
+                          (contains? (:bindings region) variable)))
+            (value/disjoint-constant? type (get (:bindings region) variable) check!)) constraints)))
+
+(defn- rule-branch [site branch region body-columns constraints parent check!]
   (let [head (:head-vars branch)
         arguments (:arguments branch)
         head-columns (projected body-columns head (not (:live? region)) check!)
         head-map (by-variable head-columns)
         constants (select-keys (:bindings region) head)
-        ;; Every literal call argument is already owned by the region pass.
-        ;; Known scalar arguments have the same status as literal constants.
+        ;; Literal values retain their representation through fact filters and
+        ;; pure operators. Captured scalar inputs still use typed join keys.
         inputs (reduce (fn [columns v]
                          (check!)
                          (let [[tag actual] (get arguments v)]
@@ -83,15 +91,14 @@
                 (let [column (get head-map v)]
                   (when-not (if (nil? x) (:nullable? column)
                                 (value/matches-type? (:type column) x check!))
-                    ;; A representation mismatch is not an equality proof.
-                    ;; Numeric equivalents, sequential tuples and user-defined
-                    ;; equality need a constant-filtering input edge before
-                    ;; they can be emitted by this compiler. Reject that gap
-                    ;; rather than silently eliminating a satisfiable branch.
+                    ;; Captured scalar inputs still need a representation-aware
+                    ;; key edge for overlapping types. Literal fact filters
+                    ;; have already been separated from their owned seeds.
                     (when-not (value/disjoint-constant? (:type column) x check!)
                       (unsupported!))
                     true))) constants)
-        empty? (or (not (:live? region)) (boolean incompatible-constant?))
+        empty? (or (not (:live? region)) (boolean incompatible-constant?)
+                   (incompatible-constraints? region constraints check!))
         call-columns (when-not empty?
                        (reduce (fn [m column]
                                  (check!)
@@ -109,7 +116,7 @@
      :outputs (if empty? (projected [] variables true check!)
                   (projected (vec (vals call-columns)) variables false check!))}))
 
-(defn- ordinary-branch [site region body-columns parent check!]
+(defn- ordinary-branch [site region body-columns constraints parent check!]
   (let [restore (if (= :attribute (:kind site))
                   (get-in region [:patterns 0 :restore]) {})
         variables (canonical (:exports site) check!)
@@ -128,7 +135,7 @@
                          (ensure! (#{:keyword :data} (:type before))))
                        (assoc m (:variable column) (intersect-column (get m (:variable column)) column)))
                      (by-variable body-columns) restored)
-        empty? (not (:live? region))
+        empty? (or (not (:live? region)) (incompatible-constraints? region constraints check!))
         output (projected (vec (vals body)) variables empty? check!)]
     {:region-id (:region-id region) :empty? empty? :inputs inputs
      :bindings (select-keys (:bindings region) (set (map :variable inputs)))
@@ -140,6 +147,8 @@
   parent-columns describes actual upstream bindings, never possible outputs.
   branch-outputs is a vector of {:region-id id :columns typed-columns}; it may
   arrive in any order, but must cover exactly this site's child regions.
+  Optional :constant-constraints retains producer types for captured literal
+  seeds without changing their output representation or accepting estimates.
 
   Keep every branch's precise schema and full rule-head set key. Combined
   heterogeneous outputs use :data without changing their values or identity.
@@ -164,11 +173,17 @@
         (vreset! captured-owner owner)
         (columns! parent-columns check!)
         (ensure! (set/subset? (set (map :variable parent-columns)) (:available-vars parent-region)))
-        (doseq [{:keys [region-id columns] :as output} branch-outputs]
+        (doseq [{:keys [region-id columns constant-constraints] :as output} branch-outputs]
           (check!)
-          (ensure! (and (value/plain-map? output) (= #{:region-id :columns} (set (keys output)))
+          (ensure! (and (value/plain-map? output)
+                        (contains? output :region-id) (contains? output :columns)
+                        (set/subset? (set (keys output)) #{:region-id :columns :constant-constraints})
                         (integer? region-id) (<= 0 region-id)))
-          (columns! columns check!))
+          (columns! columns check!)
+          (when constant-constraints
+            (ensure! (vector? constant-constraints))
+            ;; Several scalar producers may constrain the same literal.
+            (doseq [column constant-constraints] (columns! [column] check!))))
         (own! (control/reserve! ctl
                 {:retained-bytes (+ 4096 (* 2048 (count branch-outputs))
                                     (* 512 (count parent-columns))
@@ -176,13 +191,18 @@
         (let [branches (:branches site)
               child-id #(if (map? %) (:region-id %) %)
               expected (set (map child-id branches))
-              by-id (into {} (map (juxt :region-id (comp clean :columns))) branch-outputs)]
+              by-id (into {} (map (juxt :region-id (comp clean :columns))) branch-outputs)
+              constraints (into {} (map (juxt :region-id :constant-constraints)) branch-outputs)]
           (ensure! (and (= expected (set (keys by-id))) (= (count by-id) (count branch-outputs))))
           (doseq [[id columns] by-id]
             (check!)
             (ensure! (and (< id (count (:regions compiled)))
                           (set/subset? (set (map :variable columns))
                                        (get-in compiled [:regions id :available-vars])))))
+          (doseq [[id columns] constraints]
+            (check!)
+            (ensure! (set/subset? (set (map :variable columns))
+                                 (get-in compiled [:regions id :literal-vars]))))
           (let [parent-columns (clean parent-columns)
                 parent (by-variable parent-columns)
                 required (if (= :rule (:kind site)) #{} (:required-inputs site))
@@ -191,8 +211,8 @@
                                 (check!)
                                 (let [id (child-id branch) region (nth (:regions compiled) id)]
                                   (if (= :rule (:kind site))
-                                    (rule-branch site branch region (by-id id) parent check!)
-                                    (ordinary-branch site region (by-id id) parent check!)))) branches)
+                                    (rule-branch site branch region (by-id id) (constraints id) parent check!)
+                                    (ordinary-branch site region (by-id id) (constraints id) parent check!)))) branches)
                 variables (canonical (:exports site) check!)
                 columns (union-columns outputs variables check!)
                 call-args (when (= :rule (:kind site))

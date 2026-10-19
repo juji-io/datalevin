@@ -101,22 +101,37 @@
                       (or (instance? Or node) (instance? And node) (instance? Not node))
                       (some #(external? % source seen (inc depth)) (:clauses node))
                       :else false)))
-                (region! [path input-vars live bindings inherited]
+                (region! [path input-vars live bindings literals inherited]
                   (check!)
                   (reserve-node! (+ 2048 (* 128 (+ (count input-vars) (count live) (count bindings)))))
                   (let [id (count @regions)]
                     (swap! regions conj {:region-id id :path path :input-vars input-vars :required-vars live
-                                         :bindings (select-keys bindings input-vars) :default-source inherited
+                                         :bindings (select-keys bindings input-vars)
+                                         :literal-vars (set/intersection literals input-vars) :default-source inherited
                                          :available-vars input-vars :patterns [] :core-clauses [] :empty? false})
                     id))
                 (add-core! [id node path]
                   (reserve-node! 512)
-                  (swap! regions update-in [id :core-clauses] conj {:path path :node node}))
+                  (swap! regions update-in [id :core-clauses] conj
+                         {:path path :node node :literal-terms (::literal-terms (meta node))}))
                 (site! [site]
                   (reserve-node! 2048)
                   (swap! sites conj site))
-                (pattern! [id node path inherited outside bindings]
-                  (let [source (source-symbol node inherited)
+                (pattern! [id node path inherited outside bindings literals]
+                  (let [;; A literal argument constrains facts by ordinary
+                        ;; equality while its original value remains available
+                        ;; to scalar operators and the complete rule head.
+                        literal-terms (into {} (keep-indexed
+                                                (fn [i x]
+                                                  (when (and (instance? Variable x) (contains? literals (:symbol x)))
+                                                    [(:symbol x) i]))) (:pattern node))
+                        node (update node :pattern
+                                     (fn [terms]
+                                       (mapv (fn [x]
+                                               (if (and (instance? Variable x) (contains? literals (:symbol x)))
+                                                 (dp/->Constant (get bindings (:symbol x))) x)) terms)))
+                        node (vary-meta node assoc ::literal-terms literal-terms)
+                        source (source-symbol node inherited)
                         entry (entries-by-source source)]
                     (ensure! entry)
                     (if-let [descriptor (:descriptor entry)]
@@ -144,7 +159,7 @@
                                         (let [restored (set (keys (:restore branch)))
                                               child (region! (conj path :attribute i) outside
                                                              (set/difference (node-vars node) restored)
-                                                             bindings inherited)]
+                                                             bindings literals inherited)]
                                           (append! child (assoc-in branch [:clause :id] (next-occurrence!)))
                                           child)) (range) branches)]
                             (site! {:kind :attribute :path path :node node :parent-region id
@@ -153,11 +168,11 @@
                                                                           #{(:attribute-variable lowered)} #{})
                                     :branches child-ids :lowered lowered}))))
                       (add-core! id node path))))
-                (body! [clauses path inherited input-vars live bindings stack depth]
+                (body! [clauses path inherited input-vars live bindings literals stack depth]
                   (check!)
                   (when (> depth 128) (fail! :query-source/limit :planning))
                   (reserve-node! (+ 1024 (* 256 (count clauses))))
-                  (let [id (region! path input-vars live bindings inherited)
+                  (let [id (region! path input-vars live bindings literals inherited)
                         variables (mapv node-vars clauses)]
                     (swap! regions update-in [id :available-vars] #(reduce set/union % variables))
                     (doseq [[i node] (map-indexed vector clauses)]
@@ -167,7 +182,7 @@
                             source (source-symbol node inherited)
                             outside (reduce-kv (fn [s j vs] (if (= i j) s (set/union s vs))) input-vars variables)]
                         (cond
-                          (instance? Pattern node) (pattern! id node location inherited outside bindings)
+                          (instance? Pattern node) (pattern! id node location inherited outside bindings literals)
                           (instance? And node)
                           ;; And is grouping, so its clauses belong to this same
                           ;; conjunction. The parser only emits And under Or.
@@ -180,7 +195,8 @@
                                 (mapv (fn [j branch]
                                         (body! (if (instance? And branch) (:clauses branch) [branch])
                                                (conj location :branch j) source inputs exports
-                                               (select-keys bindings inputs) stack (inc depth)))
+                                               (select-keys bindings inputs) (set/intersection literals inputs)
+                                               stack (inc depth)))
                                       (range) (:clauses node))]
                             (site! {:kind :union :path location :node node :parent-region id :exports exports
                                     :required-inputs required :branches branch-ids :set-boundary? true})
@@ -209,8 +225,12 @@
                                                                                 (cond (= :const tag) [v x]
                                                                                       (and (= :var tag) (contains? bindings x))
                                                                                       [v (get bindings x)]))) mapping)
+                                                    literal-vars (into #{} (keep (fn [[v [tag x]]]
+                                                                                  (when (or (= :const tag)
+                                                                                            (and (= :var tag) (contains? literals x))) v))) mapping)
                                                     child (body! (:clauses branch) (conj location :rule-branch j)
-                                                                 source inputs (set head) constants (conj stack key) (inc depth))]
+                                                                 source inputs (set head) constants literal-vars
+                                                                 (conj stack key) (inc depth))]
                                                 {:region-id child :head-vars head :arguments mapping
                                                  :required-inputs required :input-vars inputs}))
                                             (range) (:branches rule))]
@@ -223,7 +243,7 @@
                           :else (add-core! id node location))))
                     id))]
           (let [live (node-vars [(:qfind parsed) (:qwith parsed)])
-                root (body! (:qwhere parsed) [] '$ input-vars live bindings #{} 0)
+                root (body! (:qwhere parsed) [] '$ input-vars live bindings #{} #{} 0)
                 _ (reserve-node! (+ 2048 (* 512 (count @regions))))
                 parents (into {} (mapcat (fn [site]
                                           (map (fn [branch]

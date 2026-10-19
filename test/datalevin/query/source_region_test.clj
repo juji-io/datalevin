@@ -161,7 +161,8 @@
         (is (= 2 (count sites)))
         (is (= {'?a :row/name} (:bindings inner-region)))
         (is (= [:const :row/name] (get-in request [:clauses 0 :terms 1])))
-        (is (= {'?a :row/name} (get-in inner-region [:patterns 0 :restore])))
+        (is (= #{'?a} (:literal-vars inner-region)))
+        (is (empty? (get-in inner-region [:patterns 0 :restore])))
         (is (= #{'?v} (:required-vars request)))
         (is (not (contains? (:bindings request) '?attribute)))))))
 

@@ -1,6 +1,7 @@
 (ns datalevin.query.source-native-plan-test
   (:require [clojure.test :refer [deftest is]]
             [datalevin.core :as d]
+            [datalevin.interpret :as inter]
             [datalevin.parser :as parser]
             [datalevin.query.access :as access]
             [datalevin.query.execute :as execute]
@@ -21,10 +22,13 @@
     (try (d/transact! conn facts) (f @conn conn)
          (finally (d/close conn) (u/delete-files dir)))))
 
-(defn- capture! [runtime database events query rules config]
+(defn- capture! [runtime database events query rules config & [input-vars]]
   (planning/capture! runtime
     [{:symbol '$n :native database} {:symbol '$s :source (fixture/provider events config)}]
-    (parser/parse-query query) (parser/parse-rules rules) {} #{} nil))
+    (parser/parse-query query) (parser/parse-rules rules) {} (or input-vars #{}) nil))
+
+(defn- rows [rel variables]
+  (mapv (fn [^objects row] (mapv #(aget row (int (get (:attrs rel) %))) variables)) (:tuples rel)))
 
 (deftest native-initializations-seed-dependent-access-in-the-shared-region
   (with-db {:native/score {:db/valueType :db.type/long}}
@@ -128,9 +132,10 @@
             :native/private {:db/valueType :db.type/long :db/noindex true}}
     [{:db/id 1 :native/score 100 :native/private 200}]
     (fn [database _]
-      (doseq [[database pattern] [[database '[1 :native/score ?score]]
+      (doseq [[database pattern] [[database '[[:native/identity 1] :native/score ?score]]
                                   [database '[?e ?attribute ?score]]
-                                  [database '[?e :native/private ?score]]
+                                  [database '[_ :native/private ?score]]
+                                  [database '[?e :native/score ?e]]
                                   [[[1 :native/score 100]] '[?e :native/score ?score]]]]
         (let [events (atom [])
               query {:find ['?v] :in ['$n '$s]
@@ -141,6 +146,113 @@
           (is (= :query-source/unsupported (:error failure)))
           (is (empty? (events-of events :acquire)))
           (is (empty? (events-of events :plan))))))))
+
+(deftest bound-native-entities-skip-unrelated-giants-and-restore-outer-witnesses
+  (with-db {:native/text {:db/valueType :db.type/string :db/cardinality :db.cardinality/many}}
+    [{:db/id 1 :native/text ["a" "b"]} {:db/id 2 :native/text (apply str (repeat 1000000 "x"))}]
+    (fn [database _]
+      (rt/with-runtime {:limits {:retained-bytes 300000}}
+        (fn [runtime]
+          (let [events (atom []) query '[:find ?e ?tag ?text ?v :in $n $s [[?e ?tag]] :where
+                                         [$n ?e :native/text ?text] [$s ?e :row/value ?v]]
+                columns [{:variable '?e :type :long :nullable? false}
+                         {:variable '?tag :type :keyword :nullable? false}]
+                c (capture! runtime database events query [] {:lookup-only? true} #{'?e '?tag})
+                result (native/with-views [database]
+                         (fn [snapshots]
+                           (program/execute! runtime
+                             (program/compile! runtime c columns [[1 :left] [1 :right] [1 :left]] snapshots))))]
+            (is (= (frequencies [[1 :left "a" "one"] [1 :left "b" "one"]
+                                 [1 :right "a" "one"] [1 :right "b" "one"]
+                                 [1 :left "a" "one"] [1 :left "b" "one"]])
+                   (frequencies (rows result ['?e '?tag '?text '?v]))))
+            (is (= 1 (count (events-of events :open))))))))))
+
+(deftest fixed-native-entities-value-constants-and-wildcards-use-ordinary-equality
+  (with-db {:native/score {:db/valueType :db.type/long}
+            :native/decimal {:db/valueType :db.type/bigdec}
+            :native/private {:db/valueType :db.type/long :db/noindex true}}
+    [{:db/id 1 :native/score 100 :native/decimal 1.0M :native/private 7}
+     {:db/id 2 :native/score 200 :native/decimal 2.0M}]
+    (fn [database _]
+      (doseq [query ['[:find ?score ?v :in $n $s :where [$n 1N :native/score ?score] [$s 1 :row/value ?v]]
+                     '[:find ?e ?v :in $n $s :where [$n ?e :native/score 100N] [$s ?e :row/value ?v]]
+                     '[:find ?e ?v :in $n $s :where [$n ?e :native/decimal 1.00M] [$s ?e :row/value ?v]]
+                     '[:find ?v :in $n $s :where [$n 1 :native/private _] [$s 1 :row/value ?v]]
+                     '[:find ?v :in $n $s :where [$n 1 :native/private 7N] [$s 1 :row/value ?v]]
+                     '[:find ?score ?v :in $n $s :where [$n _ :native/score ?score] [$s 1 :row/value ?v]]]]
+        (let [events (atom []) actual (rt/with-runtime {}
+                                     (fn [runtime]
+                                       (program/run! runtime (capture! runtime database events query [] {}) [] nil)))]
+          ;; The eager relation is the constant-equality oracle. Native index
+          ;; bounds currently differ for BigInt IDs and decimal scales.
+          (is (= (d/q query [[1 :native/score 100] [1 :native/decimal 1.0M] [1 :native/private 7]
+                            [2 :native/score 200] [2 :native/decimal 2.0M]]
+                       [[1 :row/value "one"] [2 :row/value "two"]]) actual)
+              (pr-str query)))))))
+
+(deftest unindexed-native-attributes-can-depend-on-an-external-entity-supplier
+  (with-db {:native/private {:db/valueType :db.type/string :db/noindex true}}
+    [{:db/id 1 :native/private "small"} {:db/id 2 :native/private (apply str (repeat 1000000 "x"))}]
+    (fn [database _]
+      (let [events (atom []) query '[:find ?e ?private ?v :in $n $s :where
+                                     [$n ?e :native/private ?private] [$s ?e :row/value ?v]]]
+        (rt/with-runtime {:limits {:retained-bytes 300000}}
+          (fn [runtime]
+            (is (= #{[1 "small" "one"]}
+                   (program/run! runtime
+                     (capture! runtime database events query [] {:facts [[1 :row/value "one"]]}) [] nil)))
+            (is (= 1 (count (events-of events :open))))))))))
+
+(deftest literal-rule-arguments-filter-native-facts-and-retain-their-original-values
+  (with-db {:native/score {:db/valueType :db.type/long}}
+    [{:db/id 1 :native/score 100} {:db/id 2 :native/score 200}]
+    (fn [database _]
+      (doseq [[query rules expected]
+              [['[:find ?copy ?score ?v :in $n $s % :where ($s selected 1N ?copy ?score ?v)]
+                '[[(selected [?key] ?copy ?score ?v)
+                   [$n ?key :native/score ?score] [?key :row/value ?v] [(identity ?key) ?copy]]]
+                #{[1N 100 "one"]}]
+               ['[:find ?copy ?v :in $n $s % :where ($s selected 100N ?copy ?v)]
+                '[[(selected ?score ?copy ?v)
+                   [$n ?e :native/score ?score] [?e :row/value ?v] [(identity ?score) ?copy]]]
+                #{[100N "one"]}]]]
+        (let [events (atom [])]
+          (rt/with-runtime {}
+            (fn [runtime]
+              (let [actual (program/run! runtime (capture! runtime database events query rules {:lookup-only? true}) [] nil)]
+                (is (= expected actual))
+                (is (every? #(instance? clojure.lang.BigInt (first %)) actual))))))))))
+
+(deftest entity-key-spooling-precedes-native-lookup-and-preserves-duplicate-keys
+  (with-db {:native/private {:db/valueType :db.type/string :db/noindex true}}
+    [{:db/id 1 :native/private (apply str (repeat 100000 "x"))}]
+    (fn [database _]
+      (rt/with-runtime {:limits {:retained-bytes (* 4 1024 1024)}}
+        (fn [runtime]
+          (let [query '[:find ?e ?text :in $n $s [?e ...] :where [$n ?e :native/private ?text]]
+                c (capture! runtime database (atom []) query [] {} #{'?e})
+                result (native/with-views [database]
+                         #(program/execute! runtime
+                            (program/compile! runtime c [{:variable '?e :type :data :nullable? true}]
+                              (concat (repeat 100 [1]) [[nil] [1N]]) %)))]
+            (is (= 100 (count (:tuples result))))
+            (is (every? #(= 100000 (count (second %))) (rows result ['?e '?text])))))))))
+
+(deftest portable-nippy-custom-native-values-use-the-controlled-raw-decoder
+  (with-db {} []
+    (fn [_ conn]
+      (d/register-type conn :app/ranked {:index {:type :long :order-fn (inter/inter-fn [v] (:rank v))}})
+      (d/update-schema conn {:native/custom {:db/valueType :app/ranked :db/noindex true}})
+      (let [x {:rank 1 :nested [nil :value]}]
+        (d/transact! conn [{:db/id 1 :native/custom x}])
+        (rt/with-runtime {}
+          (fn [runtime]
+            (is (= #{[x "one"]}
+                   (program/run! runtime
+                     (capture! runtime @conn (atom [])
+                       '[:find ?value ?v :in $n $s :where [$n 1 :native/custom ?value] [$s 1 :row/value ?v]] [] {})
+                     [] nil)))))))))
 
 (deftest controlled-steps-read-multiple-pinned-native-stores
   (with-db {:native/score {:db/valueType :db.type/long}} [{:db/id 1 :native/score 100}]

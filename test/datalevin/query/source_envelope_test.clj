@@ -131,6 +131,19 @@
                                     (assoc-in (request runtime true) path val)
                                     {:alternatives [(alternative true)]} consumption)))))))))
 
+(deftest fact-constants-preserve-ordinary-equality-across-numeric-representations
+  (rt/with-runtime {}
+    (fn [runtime]
+      (doseq [entity [1 1N (java.math.BigInteger/valueOf 1)]]
+        (let [r (-> (request runtime false)
+                    (assoc-in [:clauses 0 :terms 0] [:const entity])
+                    (assoc :required-vars #{'?v}))]
+          (is (identical? r (envelope/request! runtime r)))))
+      (doseq [entity [nil "one"]]
+        (is (= :query-source/invalid
+               (:error (error #(envelope/request! runtime
+                                 (assoc-in (request runtime false) [:clauses 0 :terms 0] [:const entity]))))))))))
+
 (deftest exact-predicates-and-prefilters-keep-all-required-local-columns
   (with-fixture
     (fn [runtime consumption]

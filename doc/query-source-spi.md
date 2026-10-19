@@ -2542,19 +2542,33 @@ immediately. Typed boundary no-match proofs propagate upward through all-empty
 sites and downward through empty ancestors before provider requests. Exact
 literal/scalar mismatches also eliminate impossible EAV facts; numeric/custom
 or sequential representation differences do not establish no-match proofs.
-Some equality-aware rule constant input edges still reject as unsupported.
+Literal rule arguments now constrain facts by ordinary constant equality while
+retaining their original representation in scoped seeds, scalar functions and
+the complete rule head. This includes numeric literals whose representation
+differs from the declared fact type. Function outputs constrained by literals
+use shared function evaluation and predicate equality with an admitted private
+temporary column. Their disjoint type proofs still prune whole nested regions.
+Captured scalar inputs retain typed key equality; some representation-mismatched
+scalar input edges still reject as unsupported.
 
 The internal [`source.native-plan`](../src/datalevin/query/source/native_plan.clj)
-bridge now executes native fixed-attribute initializations with variable entity
-and variable/wildcard value terms over indexed local DBs. The native planner's
-pure initialization emitter reads no mutable store metadata, statistics or
-native caches and invokes no installed access methods. Its steps use explicit
-controlled step/storage interfaces and the shared AVE scan driver.
+bridge now executes native fixed-attribute initializations and entity-bound
+merge scans. Entities may be variables, fixed integer constants or wildcards;
+values may be variables, constants or wildcards. Unindexed attributes require
+a bound entity. The native planner's pure emitters read no mutable store
+metadata, statistics or native caches and invoke no installed access methods.
+Their explicit controlled interfaces use shared AVE/EAV scan drivers. Entity
+keys are admitted and deduplicated before EAV reads; non-Long runtime keys open
+no ranges, while integer literals use ordinary constant equality. Shared joins
+restore all original outer witnesses. Value constants are checked after bounded
+decoding; value/range index seeks remain pending in this internal bridge.
 They admit rows before allocation, decode through the bounded raw-value visitor,
 own values before advancing the cursor, and join through the shared bounded
 join. Wildcards skip payload decoding. The invocation pins native snapshots
 across provider planning and execution; views cannot escape or move threads.
-Controlled reads bypass native tuple/result caches. Other compiler core work
+Portable registered Nippy payloads use the same bounded raw decoder without
+invoking custom order functions. Controlled reads bypass native tuple/result
+caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
 native plan/read paths, collection/native-rule emission, complete input parsing
 and the operator/decode audit precede activation in `q`/`explain`.

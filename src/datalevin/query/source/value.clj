@@ -17,6 +17,16 @@
   (-logical-type [value] "Return this value's complete custom type descriptor.")
   (-retained-bytes [value] "Return a conservative positive integer heap charge."))
 
+(declare matches-type?)
+
+(defn inferred-type
+  "Describe a captured value without changing its representation. Collections
+  and nil use :data; a custom value retains its complete declared identity."
+  [x]
+  (cond (nil? x) :data
+        (satisfies? IQuerySourceValue x) (-logical-type x)
+        :else (or (some #(when (matches-type? % x) %) (disj scalar-types :data)) :data)))
+
 (defn fail!
   ([category phase] (fail! category phase {}))
   ([category phase context]
