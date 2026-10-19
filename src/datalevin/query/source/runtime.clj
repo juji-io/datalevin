@@ -2,12 +2,14 @@
   "Query-scoped ownership and redacted calls across the trusted source boundary."
   (:require [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
-            [datalevin.query.source.value :as value])
+            [datalevin.query.source.value :as value]
+            [datalevin.timeout :as timeout])
   (:import [datalevin.utl QueryKey QueryKey$Budget QueryKey$Workspace]
            [java.util UUID]
            [java.util.concurrent.atomic AtomicReference]))
 
 (def ^:dynamic *runtime* nil)
+(def ^:dynamic ^:private *context-control* nil)
 (def ^:dynamic ^:private *workspace-cleanups* {})
 
 (def categories
@@ -41,6 +43,14 @@
                       (select-keys data [:category :maximum :attempted]))))]
       (swap! (:redacted-errors runtime) conj error)
       error)))
+
+(defn active-error
+  "Prefer a control failure over a new untrusted input/callback exception.
+  Already redacted primary failures retain their original context."
+  [runtime error]
+  (if (contains? @(:redacted-errors runtime) error) error
+      (try (source/check-active! (:control runtime)) error
+           (catch Throwable active active))))
 
 (declare charge-copy!)
 
@@ -80,13 +90,17 @@
     ;; Callers first attach ownership, then check active before the next operation.
     result))
 
+(declare with-runtime-context)
+
 (deftype Cleanup [^AtomicReference action]
   clojure.lang.IFn
   (invoke [_]
     ;; Taking ownership clears both the resource callback and its runtime
     ;; context, even when close throws or reenters its own close function.
     (when-let [[runtime close] (.getAndSet action nil)]
-      (try (close)
+      (try (if (identical? (:control runtime) *context-control*)
+             (binding [*runtime* runtime] (close))
+             (with-runtime-context runtime (fn [_] (close))))
            (catch Throwable e
              (throw (redacted-error runtime :close e)))))))
 
@@ -194,6 +208,27 @@
   [runtime row]
   (charge-value! runtime row value/value-charge 256 1 true))
 
+(defn with-runtime-context
+  "Bind an already owned runtime and its shared query-key budget. Nested query
+  invocations inherit this control's limits and deadline. Restore the previous
+  thread budget on every exit; the caller retains cleanup ownership."
+  [runtime f]
+  (let [ctl (:control runtime)
+        remaining (control/remaining-time-ms ctl)
+        local (when remaining (long (min Long/MAX_VALUE (+' (System/currentTimeMillis) remaining))))
+        deadlines (keep identity [timeout/*deadline* (:deadline runtime) local])
+        deadline (when (seq deadlines) (reduce min deadlines))
+        runtime (assoc runtime :deadline deadline)
+        previous (QueryKey/setBudget
+                   (reify QueryKey$Budget
+                     (check [_] (source/check-active! ctl))
+                     (reserve [_ bytes]
+                       (let [token (source/reserve! ctl {:retained-bytes bytes})]
+                         (reify QueryKey$Workspace
+                           (close [_] (source/release! token)))))))]
+    (binding [*runtime* runtime *context-control* ctl timeout/*deadline* deadline]
+      (try (f runtime) (finally (QueryKey/setBudget previous))))))
+
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))
         runtime {:control control :query-id (UUID/randomUUID) :cleanup (atom [])
@@ -205,18 +240,12 @@
         primary (atom nil)]
     (binding [*runtime* runtime]
       (try
-        (let [previous (QueryKey/setBudget
-                         (reify QueryKey$Budget
-                           (check [_] (source/check-active! control))
-                           (reserve [_ bytes]
-                             (let [token (source/reserve! control {:retained-bytes bytes})]
-                               (reify QueryKey$Workspace
-                                 (close [_] (source/release! token)))))))
-              result (try (f runtime) (finally (QueryKey/setBudget previous)))]
+        (let [result (with-runtime-context runtime f)]
           (source/check-active! control)
           result)
         (catch Throwable e
-          (let [error (redacted-error runtime (or (:phase (ex-data e)) :execution) e)]
+          (let [e (active-error runtime e)
+                error (redacted-error runtime (or (:phase (ex-data e)) :execution) e)]
             (reset! primary error)
             (control/cancel! control (select-keys (ex-data error) [:error :phase]))
             (throw error)))

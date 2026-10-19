@@ -3109,6 +3109,24 @@ cleanup as the internal v2 query bridge. `:run?` defaults to false and
 complete accesses without opening provider execution cursors or requesting
 cursor metrics. This bridge does not change public `q`/`explain` routing.
 
+The internal `datalevin.query.source.driver/run` accepts
+`[query arguments explain-options]`, matching the public executor's call shape.
+Nil explanation options execute the query; a map selects the explanation bridge.
+It uses no native parse/result cache. Both program entry points read embedded
+`:query-source` options from map or sequential query syntax and apply the query
+timeout. An explicit final source-options map overrides the embedded map;
+inherited caps and deadlines still bound the invocation.
+
+Header extraction is a charged, shallow top-level walk, without visiting nested
+query constants before local limits are known. The child control applies before
+query/input ownership. Context and declared alias overrides validate before
+argument consumption and descriptor callbacks. Shared key budgets, nested native
+and source queries, and cleanup callbacks inherit the effective child control
+and earliest deadline. Budget/deadline bindings restore on every exit; a deadline
+cannot extend when cleanup reenters the context. A timeout or cancellation takes
+precedence over a new untrusted input exception, with private exception data
+redacted. This driver remains internal until the coordinated adapter switch.
+
 Its `:sources` distinguish definition fingerprints, scope IDs, data versions
 and requested/effective/actual consistency. `:regions` retain the structural
 selection fields above and shared operator placement; `:program-id` distinguishes

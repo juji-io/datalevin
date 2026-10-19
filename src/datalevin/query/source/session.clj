@@ -71,6 +71,14 @@
      :planning {:max-alternatives (get planning :max-alternatives 32)
                 :estimate-max-age-ms (get planning :estimate-max-age-ms 300000)}}))
 
+(defn validate-options!
+  "Check already admitted invocation options against declared source aliases
+  before consuming inputs or invoking descriptor callbacks. Acquisition repeats
+  this pure check against the actual captured entries."
+  [runtime options aliases]
+  (options! (:control runtime) options aliases)
+  nil)
+
 (defn- logical-view [descriptor]
   ;; Ignore inert envelope annotations without erasing complete nominal types
   ;; or accepted scope parameters. Different logical views are kept separately.

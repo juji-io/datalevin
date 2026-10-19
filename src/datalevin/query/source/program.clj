@@ -16,6 +16,7 @@
             [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.context :as context]
             [datalevin.query.source.diagnostics :as diagnostics]
             [datalevin.query.source.input-program :as input-program]
             [datalevin.query.source.inputs :as inputs]
@@ -29,8 +30,9 @@
             [datalevin.query.source.session :as session]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation]
-            [datalevin.spill :as spill])
-  (:import [datalevin.parser Constant DefaultSrc FindColl FindRel FindScalar FindTuple Function Not Pattern Predicate RuleExpr Variable]
+            [datalevin.spill :as spill]
+            [datalevin.timeout :as timeout])
+  (:import [datalevin.parser Constant DefaultSrc FindColl FindRel FindScalar FindTuple Function Not Pattern Predicate RuleExpr SrcVar Variable]
            [datalevin.utl QueryKey QueryKey$KeySet]
            [java.util AbstractList List]
            [org.eclipse.collections.impl.list.mutable FastList]))
@@ -747,6 +749,7 @@
 (defn- invoke-query!
   [runtime query arguments options explain-options]
   (let [child (assoc runtime :cleanup (atom [])) primary (volatile! nil)
+        active (volatile! child)
         close (rt/own! runtime
                 #(let [held (reverse @(:cleanup child)) error (volatile! nil)]
                    (reset! (:cleanup child) [])
@@ -757,38 +760,48 @@
                                   (vreset! error e)))))
                    (when-let [e @error] (throw e))))]
     (try
-      (let [check! #(control/check-active! (:control child))
-            _ (retain! child (rt/charge-copy! child query))
-            parsed (input-program/parse! parser/parse-query (value/owned-copy query check!))
-            ctl (control/create {:parent (:control child) :timeout-ms (:qtimeout parsed)})
-            _ (rt/own! child #(control/close! ctl))
-            child (assoc child :control ctl)
-            _ (when (some? explain-options)
-                (retain! child (rt/charge-metadata! child explain-options :explain))
-                (when-not (value/plain-map? explain-options) (fail! :query-source/invalid :explain))
-                (when-not (every? #{:run? :intermediate-counts?} (keys explain-options))
-                  (fail! :query-source/unsupported :explain))
-                (when-not (every? boolean? (vals explain-options)) (fail! :query-source/invalid :explain)))
-            execute? (or (nil? explain-options) (get explain-options :run? false))
-            child (if (nil? explain-options) child
-                      (assoc child :diagnostics (diagnostics/start! child (get explain-options :intermediate-counts? true))))
-            check! #(control/check-active! ctl)
-            input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
-            compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
-                          (:bindings input) (set (map :variable (:columns input))) options)]
-        (native/with-views (filter db/db? (keep :native (:entries compilation)))
-          (fn [snapshots]
-            (let [program (compile-program! child compilation nil nil snapshots (select-keys input [:columns :relation]))
-                  result (when execute? (result! child program))]
-              (if (nil? explain-options) result
-                  (diagnostics/finish! child execute? (:result-rows (control/usage ctl))
-                    {:storage :memory :spill-policy :reject :replay-spools :none
-                     :empty-input? (.isEmpty ^List (get-in program [:input :tuples]))
-                     :join-indexes :bounded-hash :distinct :find-and-with
-                     :grouping (boolean (some parser/aggregate? (parser/find-elements (:qfind parsed))))
-                     :result :retained}))))))
+      (let [{:keys [runtime options deadline]} (context/open! child query options)]
+        (vreset! active runtime)
+        (binding [timeout/*deadline* deadline]
+          (rt/with-runtime-context runtime
+            (fn [child]
+              (let [check! #(control/check-active! (:control child))
+                    _ (retain! child (rt/charge-metadata! child options :context))
+                    _ (retain! child (rt/charge-copy! child options))
+                    options (value/owned-copy options check!)
+                    _ (retain! child (rt/charge-copy! child query))
+                    parsed (input-program/parse! parser/parse-query (value/owned-copy query check!))
+                    _ (session/validate-options! child options
+                        (into #{} (keep #(when (instance? SrcVar (:variable %)) (get-in % [:variable :symbol]))) (:qin parsed)))
+                    _ (when (some? explain-options)
+                        (retain! child (rt/charge-metadata! child explain-options :explain))
+                        (when-not (value/plain-map? explain-options) (fail! :query-source/invalid :explain))
+                        (when-not (every? #{:run? :intermediate-counts?} (keys explain-options))
+                          (fail! :query-source/unsupported :explain))
+                        (when-not (every? boolean? (vals explain-options)) (fail! :query-source/invalid :explain)))
+                    execute? (or (nil? explain-options) (get explain-options :run? false))
+                    child (if (nil? explain-options) child
+                              (assoc child :diagnostics (diagnostics/start! child (get explain-options :intermediate-counts? true))))]
+                ;; Nested native and source queries see this invocation's
+                ;; control, including the diagnostic owner, during callbacks.
+                (binding [rt/*runtime* child]
+                  (let [input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
+                        compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
+                                      (:bindings input) (set (map :variable (:columns input))) options)]
+                    (native/with-views (filter db/db? (keep :native (:entries compilation)))
+                      (fn [snapshots]
+                        (let [program (compile-program! child compilation nil nil snapshots (select-keys input [:columns :relation]))
+                              result (when execute? (result! child program))]
+                          (if (nil? explain-options) result
+                              (diagnostics/finish! child execute? (:result-rows (control/usage (:control child)))
+                                {:storage :memory :spill-policy :reject :replay-spools :none
+                                 :empty-input? (.isEmpty ^List (get-in program [:input :tuples]))
+                                 :join-indexes :bounded-hash :distinct :find-and-with
+                                 :grouping (boolean (some parser/aggregate? (parser/find-elements (:qfind parsed))))
+                                 :result :retained}))))))))))))
       (catch Throwable e
-        (let [error (rt/redacted-error child (or (:phase (ex-data e)) :inputs) e)]
+        (let [e (rt/active-error @active e)
+              error (rt/redacted-error @active (or (:phase (ex-data e)) :inputs) e)]
           (vreset! primary error)
           (control/cancel! (:control child) (select-keys (ex-data error) [:error :phase]))
           (throw error)))

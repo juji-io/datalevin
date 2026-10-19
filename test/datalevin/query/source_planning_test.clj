@@ -56,7 +56,9 @@
                                                            :else (assoc row variable value))))
                                                      inputs (map vector (:terms clause) fact))]
                                     {:row (mapv #(get row (:variable %)) columns) :binding-id binding-id})) facts)))) bindings)
-                  tokens (atom [])]
+                  tokens (atom [])
+                  metrics (atom {:batches 0 :rows 0 :charged-bytes 0 :read-rows nil
+                                 :read-bytes nil :external-requests 0 :elapsed-ns nil})]
               (reify source/IQuerySourceCursor
                 (-next-batch! [_ fetch]
                   (swap! events conj [:fetch open])
@@ -64,10 +66,12 @@
                         bytes (if ids (source/batch-charge-bytes columns rows ids) (source/batch-charge-bytes columns rows))
                         token (source/reserve! (:control fetch) {:retained-bytes bytes :in-flight-batches 1})]
                     (swap! tokens conj token)
+                    (swap! metrics #(-> % (update :batches inc) (update :rows + (count rows))
+                                        (update :charged-bytes + bytes)))
                     (cond-> {:columns columns :rows rows :row-count (count rows) :byte-count bytes
                              :exhausted? true :reservation token}
                       ids (assoc :binding-ids ids))))
-                (-cursor-metrics [_] {})
+                (-cursor-metrics [_] @metrics)
                 (-close-cursor! [_]
                   (doseq [token @tokens] (source/release! token))
                   (swap! events conj [:cursor-close])))))

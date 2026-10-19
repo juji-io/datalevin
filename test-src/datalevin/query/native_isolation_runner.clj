@@ -20,7 +20,8 @@
     datalevin.query.source.program datalevin.query.source.native-plan
     datalevin.query.source.input-program datalevin.query.source.collection
     datalevin.query.source.recursion datalevin.query.source.native-rules
-    datalevin.query.source.diagnostics])
+    datalevin.query.source.diagnostics datalevin.query.source.context
+    datalevin.query.source.driver])
 
 (defn- unloaded! []
   (is (empty? (filter find-ns execution-namespaces))))
