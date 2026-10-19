@@ -74,3 +74,33 @@
     (is (= :query-source/cancelled (:error failure)))
     (is (empty? @active))
     (is (empty? @retained))))
+
+(deftest workspace-quota-rejects-before-hashing-any-key
+  (let [hashes (atom 0) key (reify Object (hashCode [_] (swap! hashes inc) 1))
+        {:keys [hooks active retained]} (budget 4000 (fn []))
+        failure (try (join/hash-join-bounded (rel ['?key] (repeat 10 [key]))
+                                            (rel ['?key] [[key]]) hooks) nil
+                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+    (is (= :query-source/limit (:error failure)))
+    (is (zero? @hashes))
+    (is (empty? @active))
+    (is (empty? @retained))))
+
+(deftest key-cancellation-and-failed-probes-release-shared-join-workspace
+  (doseq [cancel? [false true]]
+    (let [hashes (atom 0)
+          key (reify Object
+                (hashCode [_]
+                  (when (or (not cancel?) (= 3 (swap! hashes inc)))
+                    (throw (ex-info "key failure" {:error (if cancel? :query-source/cancelled :query-source/provider)})))
+                  1))
+          {:keys [hooks active retained]} (budget 1000000 (fn []))
+          ;; Hash the one-row right side, then probe the larger left side.
+          right (rel ['?key] (if cancel? [[key]] [[1]]))
+          left (rel ['?key] (repeat 10 [key]))
+          failure (try (join/hash-join-bounded left right hooks) nil
+                       (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+      (is (= (if cancel? :query-source/cancelled :query-source/provider) (:error failure)))
+      (when cancel? (is (= 3 @hashes)))
+      (is (empty? @active))
+      (is (empty? @retained)))))

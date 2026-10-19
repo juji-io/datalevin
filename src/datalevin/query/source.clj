@@ -7,6 +7,7 @@
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.permissions :as permissions]
+            [datalevin.query.source.schema :as schema]
             [datalevin.query.source.value :as value])
   (:import [java.lang ClassValue]))
 
@@ -42,7 +43,8 @@
   (-session-info [session] "Return the acquired read-view metadata.")
   (-open-cursor [session request]
     "Open a selected plan in this session's view. Request is common context
-    plus :alternative-id, :plan, :source-symbol and :definition-fingerprint;
+    plus :alternative-id, :plan, :source-symbol, :definition-fingerprint,
+    :scope-id and :region-id; dependent opens also contain :bindings;
     planning inputs remain in the session-owned plan handle.")
   (-cancel-session! [session reason] "Signal cancellation promptly; return nil.")
   (-close-session! [session] "Release this session and its cursors; return nil."))
@@ -55,7 +57,7 @@
 (defn validate-source-info!
   "Validate a descriptor without acquisition; return it unchanged."
   [info]
-  (contract/source-info! info))
+  (schema/source-info! info))
 
 (defn validate-type!
   "Validate a logical type descriptor; return it unchanged."

@@ -3,7 +3,7 @@
             [datalevin.built-ins :as built-ins]
             [datalevin.core :as d]
             [datalevin.query.source.fake :as fake]
-            [datalevin.query.source-test :refer [tuple-info]]
+            [datalevin.query.source-test :refer [row-info]]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]
@@ -111,9 +111,9 @@
     (is (= 42 (QueryKey/hash left)))
     (is (= (Objects/hashCode [left]) (QueryKey/hash [left])))
     (let [rows [[1 left]]
-          source (fake/source (assoc-in tuple-info [:pattern-contract :columns 1 :type] type) rows)
-          q '[:find ?id :in $s ?value :where [$s ?id ?value]]]
-      (is (= #{[1]} (d/q q rows right) (d/q q source right))))
+          source (fake/source (assoc-in row-info [:pattern-contract :attributes :row/value :value-type] type) (fake/row-facts rows))
+          q '[:find ?id :in $s ?value :where [$s ?id :row/value ?value]]]
+      (is (= #{[1]} (d/q q (fake/row-facts rows) right) (d/q q source right))))
     (let [index (QueryKey$KeyMap.)]
       (.put index left :found)
       (is (= :found (.get index right))))))

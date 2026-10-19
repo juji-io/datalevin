@@ -1,9 +1,9 @@
 (ns datalevin.query.source-mapped-conformance-test
   (:require [clojure.test :refer [deftest is]]
+            [datalevin.core :as d]
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
-            [datalevin.query.source.driver :as driver]
-            [datalevin.query.source.eav-fixture :as fixture]
+            [datalevin.query.source.fake :as fixture]
             [datalevin.query.source.mapped-conformance :as conformance]))
 
 (deftest mapped-values-and-result-shapes
@@ -42,8 +42,8 @@
       (let [captured (atom nil)
             p (fixture/source info facts {:setup-request? true :page-requests? true
                                            :hooks {:acquire #(reset! captured (:control %))}})
-            result (try (driver/run (assoc-in query [:query-source :limits :external-requests] maximum)
-                          [p] {:run? true})
+            result (try (d/explain {:run? true}
+                          (assoc-in query [:query-source :limits :external-requests] maximum) p)
                         (catch clojure.lang.ExceptionInfo e (ex-data e)))
             requests (filter #(= :request (first %)) @(:events p))]
         (if (= maximum 4)

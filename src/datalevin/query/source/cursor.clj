@@ -262,8 +262,9 @@
             (lookup! runtime group plan ids outers save!)
             (if outer-input?
               (let [owned (into [] outers)]
-                (scan! runtime group plan
-                       (fn [row] (doseq [outer owned] (save! outer row)))))
+                (when (seq owned)
+                  (scan! runtime group plan
+                         (fn [row] (doseq [outer owned] (save! outer row))))))
               (scan! runtime group plan #(save! {} %))))
           (check!)
           (let [held @tokens]

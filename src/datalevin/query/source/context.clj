@@ -52,18 +52,25 @@
           (nil? timeout/*deadline*) local
           :else (min (long timeout/*deadline*) local))))
 
-(defn open!
-  "Create the invocation's child control before copying query values. Explicit
-  source options take precedence over the embedded :query-source map. All
-  later work, including parsing and shared key workspaces, uses this control."
+(defn read!
+  "Read a bounded invocation header without copying query constants or input
+  values. The caller still owns this syntax; limits are validated on control
+  creation and complete context validation precedes provider callbacks."
   [runtime query options]
   (let [header (header! runtime query)
         options (or (if (nil? options) (:query-source header) options) {})
         _ (when-not (value/plain-map? options) (fail! :query-source/invalid :context))
         millis (timeout! runtime (:timeout header))
         inherited (timeout/time-left)
-        duration (cond (nil? millis) inherited (nil? inherited) millis :else (min millis inherited))
-        ctl (control/create {:parent (:control runtime) :limits (:limits options) :timeout-ms duration})
-        deadline (deadline millis)]
+        duration (cond (nil? millis) inherited (nil? inherited) millis :else (min millis inherited))]
+    {:options options :timeout-ms duration :deadline (deadline millis)}))
+
+(defn open!
+  "Create the invocation's child control before copying query values. Explicit
+  source options take precedence over the embedded :query-source map. All
+  later work, including parsing and shared key workspaces, uses this control."
+  [runtime query options]
+  (let [{:keys [options timeout-ms deadline]} (read! runtime query options)
+        ctl (control/create {:parent (:control runtime) :limits (:limits options) :timeout-ms timeout-ms})]
     (rt/own! runtime #(control/close! ctl))
     {:runtime (assoc runtime :control ctl :deadline deadline) :options options :deadline deadline}))

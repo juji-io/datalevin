@@ -75,7 +75,7 @@
     false))
 
 (defonce ^:private source-executor
-  (delay (requiring-resolve 'datalevin.query.source.execute/run)))
+  (delay (requiring-resolve 'datalevin.query.source.driver/run)))
 
 (defn- run-source [query inputs options]
   ;; Source execution is JVM-only. Reject before lazy resolution, since a

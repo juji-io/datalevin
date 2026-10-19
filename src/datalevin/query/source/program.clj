@@ -847,10 +847,10 @@
                  (throw (rt/redacted-error child :close e)))))))))
 
 (defn query!
-  "Execute ordinary query syntax and :in arguments through the internal v2
+  "Execute ordinary query syntax and :in arguments through the v2
   compiler. Inputs are owned before descriptor callbacks, and all preparation,
   compilation and session resources close before the owned result returns.
-  This entry point does not activate v2 in public q/explain."
+  The public driver supplies invocation options and deadlines."
   ([runtime query arguments] (query! runtime query arguments nil))
   ([runtime query arguments options] (invoke-query! runtime query arguments options nil)))
 
@@ -858,7 +858,7 @@
   "Compile a v2 query and return an owned, redacted explanation after cleanup.
   Plan-only mode acquires authorized sessions and selects complete accesses
   without opening execution cursors. Executed mode keeps metrics separate from
-  optional intermediate counts. Public q/explain routing remains unchanged."
+  optional intermediate counts; public explain uses this same boundary."
   ([runtime query arguments explain-options] (explain! runtime query arguments explain-options nil))
   ([runtime query arguments explain-options options]
    (invoke-query! runtime query arguments options (if (nil? explain-options) {} explain-options))))

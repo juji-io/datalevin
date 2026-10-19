@@ -1,6 +1,12 @@
 # Query-source SPI
 
-Status: earlier F0/F1 baseline implemented; SPI v2 revision specified, implementation pending
+Status: v2 public core and local adapter active; remaining F1 conformance/performance gates open
+
+Public `q`/`explain` and the companion mapping compiler/local adapter now use the
+v2 contract in §10, with no version fallback. The earlier envelopes in §§2–9
+are historical. See [current migration status](../spi-v2-cleanup.md#implementation-status)
+for completed work and remaining gates; later preparation notes record the
+stages preceding activation.
 
 Release placement: [roadmap source milestones](../roadmap.md#source-milestones); embedded JVM execution  
 Public namespace: `datalevin.query.source`  
@@ -422,7 +428,7 @@ The earlier executable v1 baseline supports two pattern contracts:
 
 The revised federation interface requires `:eav` under
 [Section 10.1](#101-revision-and-descriptor). V1's positional source
-contract is retained here to document existing code and tests. Ordinary Datalog
+contract is retained here as historical design evidence. Ordinary Datalog
 tuple inputs and the binding tuples exchanged during execution keep their own
 roles under the revised contract.
 
@@ -1211,7 +1217,7 @@ clojure -M:test -m datalevin.query.source.runner
 ```
 
 The F0 driver eagerly retains small fixtures. The separate
-[F1 executor](../src/datalevin/query/source/execute.clj) now accepts explicit
+[public source driver](../src/datalevin/query/source/driver.clj) now accepts explicit
 source inputs in `d/q` and `d/explain`, bypassing native result caches. Run its
 focused integration suite with:
 
@@ -1221,7 +1227,7 @@ clojure -M:test -m datalevin.query.source.execution-runner
 
 The same runner includes the v2
 [mapped migration matrix](../test-src/datalevin/query/source/mapped_conformance.clj)
-and [EAV fixture](../test-src/datalevin/query/source/eav_fixture.clj). This matrix
+and [EAV fixture](../test-src/datalevin/query/source/fake.clj). This matrix
 uses the real internal `source.driver/run` and an adapter constructor, with eager
 EAV `d/q` as its oracle; it supplies no alternate engine or resolver. It covers
 scan/entity/value paths, thirteen scalar families, absent mapped facts, ordinary
@@ -1748,8 +1754,8 @@ implementation details.
 
 ## 10. SPI v2: revised four-shape contract
 
-Status: specified implementation target, not implemented by this documentation
-change. This section defines SPI revision `2`, replacing the unreleased
+Status: active public core/local contract, with remaining conformance and
+performance gates tracked in the roadmap. This section defines SPI revision `2`, replacing the unreleased
 prototype documented in Sections 2–9. It reuses the protocol method signatures,
 logical values, clause coverage, ownership, authorization, cancellation, quota ledger, and
 error/redaction rules unless explicitly replaced below. Unknown unqualified

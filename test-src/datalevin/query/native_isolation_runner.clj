@@ -9,9 +9,8 @@
 (deftype ExtendedSource [delegate])
 
 (def ^:private execution-namespaces
-  '[datalevin.query.source.execute datalevin.query.source.plan
-    datalevin.query.source.runtime datalevin.query.source.native
-    datalevin.query.source.inputs datalevin.query.source.join
+  '[datalevin.query.source.runtime datalevin.query.source.native
+    datalevin.query.source.inputs
     datalevin.query.source.binding datalevin.query.source.access
     datalevin.query.source.session datalevin.query.source.cursor
     datalevin.query.source.lowering datalevin.query.source.region
@@ -66,20 +65,17 @@
         open (resolve 'datalevin.query.source/-open-session)
         plan (resolve 'datalevin.query.source/-plan-source)
         make (resolve 'datalevin.query.source.fake/source)
-        descriptor {:spi-versions #{1} :source-instance-id :isolation :compute-context-id :local
-                    :definition-id :rows :definition-fingerprint "isolation:v1"
-                    :features #{} :required-features #{}
-                    :pattern-contract {:kind :tuple :columns [{:type :long :nullable? false}
-                                                               {:type :string :nullable? false}]}}
-        provider (make descriptor [[1 "one"] [2 "two"]])]
+        row-info (resolve 'datalevin.query.source.fake/row-info)
+        descriptor (row-info)
+        provider (make descriptor [[1 :row/value "one"] [2 :row/value "two"]])]
     ;; Exercise the execution-mode check before optional resolution. This JVM
     ;; check does not certify a native-image build or provider support there.
     (let [key "org.graalvm.nativeimage.kind"
           previous (System/getProperty key)]
       (try
         (System/setProperty key "runtime")
-        (doseq [call [#(d/q '[:find ?id :in $s :where [$s ?id _]] provider)
-                      #(d/explain {} '[:find ?id :in $s :where [$s ?id _]] provider)]]
+        (doseq [call [#(d/q '[:find ?id :in $s :where [$s ?id :row/value _]] provider)
+                      #(d/explain {} '[:find ?id :in $s :where [$s ?id :row/value _]] provider)]]
           (let [data (try (call) nil (catch clojure.lang.ExceptionInfo e (ex-data e)))]
             (is (= {:error :query-source/unsupported :phase :execution-mode}
                    (select-keys data [:error :phase])))
@@ -107,24 +103,24 @@
     (doseq [source [provider (ExtendedSource. provider)]]
       (testing (str "source implementation " (class source))
         (is (= #{[1 "one"] [2 "two"]}
-               (d/q '[:find ?id ?label :in $s :where [$s ?id ?label]] source)))
+               (d/q '[:find ?id ?label :in $s :where [$s ?id :row/value ?label]] source)))
         (doseq [inputs [(list nil source) (map identity [nil source])
                         (next (seq (object-array [:unused nil source])))]]
           (is (= #{[1 "one"] [2 "two"]}
                  (apply d/q '[:find ?id ?label :in ?unused $s
-                              :where [$s ?id ?label]] inputs))))
+                              :where [$s ?id :row/value ?label]] inputs))))
         (doseq [[q inputs]
-                [['[:find ?label :in $ $s :where [?id :value 20] [$s ?id ?label]] [@conn source]]
-                 ['[:find ?label :in $s $ :where [?id :value 20] [$s ?id ?label]] [source @conn]]]]
+                [['[:find ?label :in $ $s :where [?id :value 20] [$s ?id :row/value ?label]] [@conn source]]
+                 ['[:find ?label :in $s $ :where [?id :value 20] [$s ?id :row/value ?label]] [source @conn]]]]
           (is (= #{["two"]} (apply d/q q inputs)))
           (is (= 1 (:result-rows (apply d/explain {:run? true} q inputs))))
           (is (false? (:executed? (apply d/explain nil q inputs)))))
-        (doseq [f [#(query/count-plan '[:find ?id :in $s :where [$s ?id _]] source)
+        (doseq [f [#(query/count-plan '[:find ?id :in $s :where [$s ?id :row/value _]] source)
                    #((d/prepare-q @conn '[:find ?v :in $ ?v]) [source])
                    #((query/query-reader '[:find ?v :in $ ?v]) @conn [@conn source] false)]]
           (is (= :query-source/unsupported
                  (try (f) nil (catch clojure.lang.ExceptionInfo e (:error (ex-data e)))))))))
-    (is (find-ns 'datalevin.query.source.execute))
+    (is (find-ns 'datalevin.query.source.driver))
     ;; Native work remains independent after a previous source invocation and
     ;; even inside a cancelled source budget. A new source ledger would fail.
     (let [create (resolve 'datalevin.query.source.control/create)

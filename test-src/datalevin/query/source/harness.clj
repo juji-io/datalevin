@@ -1,87 +1,64 @@
 (ns datalevin.query.source.harness
-  "Isolated F0 conformance driver. Eager small fixtures only; not d/q execution."
+  "Small v2 provider lifecycle checks without an alternate query evaluator."
   (:refer-clojure :exclude [run!])
   (:require [datalevin.query.source :as source]
             [datalevin.query.source.contract :as contract]
-            [datalevin.query.source.control :as control]))
-
-(defn- invoke [phase f]
-  (try (f)
-       (catch Throwable e
-         (let [data (ex-data e)
-               category (:error data)]
-           (throw (ex-info "Query-source operation failed"
-                           (merge {:error (if (or (= category :query/timeout)
-                                                  (and (keyword? category)
-                                                       (= "query-source" (namespace category))))
-                                           category :query-source/provider)
-                                   :phase phase}
-                                  (select-keys data [:category :maximum :attempted :state]))))))))
+            [datalevin.query.source.control :as control]
+            [datalevin.query.source.descriptor :as descriptor]
+            [datalevin.query.source.envelope :as envelope]
+            [datalevin.query.source.permissions :as permissions]
+            [datalevin.query.source.runtime :as rt]
+            [datalevin.query.source.session :as session]
+            [datalevin.query.source.value :as value :refer [fail!]])
+  (:import [java.io Closeable]))
 
 (defn run!
-  ([source clauses] (run! source clauses {}))
-  ([source clauses {:keys [consume limits timeout-ms bindings required-vars]
-                    :or {bindings {} consume (fn [_] nil)}}]
-   (let [control (control/create {:limits limits :timeout-ms timeout-ms})
-         resources (atom [])
-         acquired-session (atom nil)
-         primary (atom nil)]
-     (try
-       (let [descriptor (invoke :descriptor #(source/-source-info source))
-             negotiated (contract/negotiate descriptor)
-             _ (contract/clauses! descriptor clauses)
-             request (merge negotiated {:query-id :f0 :authorization {:principal-id :test}
-                                        :consistency :snapshot :control control
-                                        :limits (control/limits control)
-                                        :source-descriptors [descriptor]})
-             session (invoke :acquisition #(source/-open-session source request))
-             _ (when-not (satisfies? source/IQuerySourceSession session)
-                 (throw (ex-info "Invalid source session" {:error :query-source/invalid :phase :session})))
-             _ (reset! acquired-session session)
-             _ (swap! resources conj #(source/-close-session! session))
-             _ (contract/session-info! request (source/-session-info session))
-             plan-request (merge request {:source-symbol '$test :source-descriptor descriptor
-                                          :clauses clauses :bindings bindings
-                                          :required-vars (or required-vars
-                                                             (into #{} (mapcat contract/variables) clauses))
-                                          :demand {:quality :exact :ordering [] :offset 0 :limit nil}
-                                          :max-alternatives 32})
-             response (invoke :planning #(source/-plan-source source session plan-request))
-             [alternative] (contract/selection! plan-request response [:scan])
-             cursor (invoke :open #(source/-open-cursor
-                                    session (contract/cursor-request request '$test
-                                              (:definition-fingerprint descriptor) alternative)))
-             _ (when-not (satisfies? source/IQuerySourceCursor cursor)
-                 (throw (ex-info "Invalid source cursor" {:error :query-source/invalid :phase :open})))
-             _ (swap! resources conj #(source/-close-cursor! cursor))
-             batch-request {:control control :max-rows (:batch-rows (:limits request))
-                            :max-bytes (:batch-bytes (:limits request))}]
-         (loop [rows []]
-           (source/check-active! control)
-           (let [batch (invoke :fetch #(source/-next-batch! cursor batch-request))]
-             (contract/batch! (:columns alternative) batch-request batch)
-             (try (consume batch)
-                  (finally (when-let [token (:reservation batch)] (source/release! token))))
-             (let [rows (into rows (:rows batch))]
-               (if (:exhausted? batch)
-                 {:rows rows :columns (:columns alternative) :metrics (source/-cursor-metrics cursor)}
-                 (recur rows))))))
-       (catch Throwable e
-         (reset! primary e)
-         (let [reason {:error (or (:error (ex-data e)) :query-source/provider)
-                       :phase (or (:phase (ex-data e)) :execution)}]
-           (control/cancel! control reason)
-           (when-let [session @acquired-session]
-             (try (invoke :cancel #(source/-cancel-session! session reason))
-                  (catch Throwable cleanup (.addSuppressed e cleanup)))))
-         (throw e))
-       (finally
-         (doseq [close (reverse @resources)]
-           (try (invoke :close close)
-                (catch Throwable e
-                  (if-let [original @primary] (.addSuppressed ^Throwable original e)
-                          (reset! primary e)))))
-         (control/close! control)
-         ;; A cleanup failure on an otherwise successful query is still failure.
-         (when (and @primary (= :close (:phase (ex-data @primary))))
-           (throw @primary)))))))
+  ([provider clauses] (run! provider clauses {}))
+  ([provider clauses {:keys [consume limits timeout-ms bindings required-vars]
+                      :or {bindings {} consume (fn [_])}}]
+   (rt/with-runtime {:limits limits :timeout-ms timeout-ms}
+     (fn [runtime]
+       (let [ctl (:control runtime)
+             info (descriptor/capture! runtime provider)
+             prepared (session/prepare! runtime [{:symbol '$test :source provider :descriptor info}] {})
+             request (merge (select-keys (:request (first (:groups prepared)))
+                                        [:spi-version :features :query-id :authorization :consistency :control :limits])
+                       {:source-symbol '$test :source-descriptor info :region-id 0 :scope-id (get-in info [:scope :id])
+                        :clauses clauses :bindings bindings :available-inputs []
+                        :required-vars (or required-vars (into #{} (mapcat contract/variables) clauses))
+                        :demand {:quality :exact :ordering [] :offset 0 :limit nil} :max-alternatives 32})
+             _ (envelope/request! runtime request)
+             [group] (session/acquire! runtime prepared)
+             captured (envelope/capture-response! runtime request
+                        (rt/invoke runtime :planning #(source/-plan-source provider (:session group) request))
+                        (:consumption group))
+             [alternative :as choices] (envelope/alternatives runtime captured)]
+         (when-not (and (= 1 (count choices)) (empty? (:requires alternative))
+                        (= (set (map :id clauses)) (:covers alternative)))
+           (fail! :query-source/unsupported :planning))
+         (envelope/select! runtime captured [(:id alternative)])
+         (let [permission (permissions/reserve-open! (:consumption group) alternative request)
+               close-permission (rt/own! runtime #(.close ^Closeable permission))
+               cursor (rt/invoke runtime :open #(source/-open-cursor (:session group)
+                                                  (contract/cursor-request request '$test (:definition-fingerprint info) alternative)))
+               _ (when-not (satisfies? source/IQuerySourceCursor cursor) (fail! :query-source/invalid :open))
+               close (rt/own! runtime #(try (source/-close-cursor! cursor) (finally (close-permission))))
+               fetch {:control ctl :max-rows (:batch-rows (control/limits ctl))
+                      :max-bytes (:batch-bytes (control/limits ctl))}]
+           (loop [rows []]
+             (source/check-active! ctl)
+             (let [batch (rt/invoke runtime :fetch #(source/-next-batch! cursor fetch))]
+               (contract/batch! (:columns alternative) fetch batch)
+               (let [owned (try
+                             (let [token (rt/charge-copy! runtime (:rows batch))]
+                               (rt/own! runtime #(source/release! token))
+                               (let [owned (value/owned-copy (:rows batch))]
+                                 (consume batch)
+                                 owned))
+                             (finally (when-let [token (:reservation batch)] (source/release! token))))
+                     rows (into rows owned)]
+                 (if (:exhausted? batch)
+                   (let [metrics (source/-cursor-metrics cursor)]
+                     (close)
+                     {:rows rows :columns (:columns alternative) :metrics metrics})
+                   (recur rows)))))))))))

@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.query.source.envelope
   "Revised flat EAV planning envelopes. Only explicit :plan handles are opaque.
-  This boundary is internal until the compiler and adapters switch together."
+  Public source execution admits captured envelopes through this boundary."
   (:require [clojure.set :as set]
             [datalevin.query.access.dependency :as dependency]
             [datalevin.query.source.contract :as contract]

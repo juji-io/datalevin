@@ -1,14 +1,12 @@
 (ns datalevin.query.source.mapped-conformance
-  "Shared v2 migration checks against the real compiler. Constructors receive
-  a v2 EAV descriptor, facts and fixture options. The public routing gate stays
-  open until the companion and public fixtures use this same contract."
+  "Shared v2 checks through public q/explain and the real compiler.
+  Constructors receive a v2 EAV descriptor, facts and explicit fixture options."
   (:require [clojure.test :refer [is testing]]
             [datalevin.core :as d]
             [datalevin.parser :as parser]
             [datalevin.query.source :as spi]
             [datalevin.query.source.control :as control]
-            [datalevin.query.source.driver :as driver]
-            [datalevin.query.source.eav-fixture :as fixture])
+            [datalevin.query.source.fake :as fixture])
   (:import [datalevin.parser FindScalar FindTuple]
            [datalevin.utl QueryKey QueryKey$KeyMap]
            [java.time Duration Instant]
@@ -16,6 +14,10 @@
 
 (defn- error-data [f]
   (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
+
+(defn- invoke! [query arguments options]
+  (if (nil? options) (apply d/q query arguments)
+      (apply d/explain options query arguments)))
 
 (defn- events-of [observed kind]
   (filterv #(= kind (first %)) @(:events observed)))
@@ -81,7 +83,7 @@
 
 (defn- compare! [query eager arguments observed]
   (try
-    (is (same-result? query (apply d/q (dissoc query :query-source) eager) (driver/run query arguments nil))
+    (is (same-result? query (apply d/q (dissoc query :query-source) eager) (invoke! query arguments nil))
         (pr-str query))
     (finally (run! closed! observed))))
 
@@ -168,7 +170,7 @@
       (is (every? #(not (contains? (second %) :binding-ids)) (events-of o :batch))))
     (doseq [mode [:lookup :value]]
       (let [o (observe (make-source info facts {:mode mode}))
-            failure (error-data #(driver/run '{:find [?id] :in [$s] :where [[$s ?id :row/value _]]}
+            failure (error-data #(invoke! '{:find [?id] :in [$s] :where [[$s ?id :row/value _]]}
                                   [(:source o)] nil))]
         (is (= :query-source/unsupported (:error failure)))
         (is (empty? (events-of o :open)))
@@ -217,7 +219,7 @@
     (doseq [reverse? [false true] execute? [false true] counts? [false true]]
       (let [provider (make-source info facts {:mode :both :actual-consistency :snapshot})
             o (observe provider {:plan (fn [response] (cond-> response reverse? (update :alternatives #(vec (reverse %)))))})
-            result (driver/run query [(:source o) (:source o) [1 2]] {:run? execute? :intermediate-counts? counts?})
+            result (invoke! query [(:source o) (:source o) [1 2]] {:run? execute? :intermediate-counts? counts?})
             steps (mapcat :steps (:regions result))]
         (is (= 2 (:spi-version result)))
         (is (= execute? (:executed? result)))
@@ -293,7 +295,7 @@
                ($s named ?id ?value)]]]
       (let [o (observe (make-source info facts {:mode :lookup}))
             query (assoc base :find '[?value] :where where)
-            failure (error-data #(driver/run query [inputs (:source o) rules] nil))]
+            failure (error-data #(invoke! query [inputs (:source o) rules] nil))]
         (is (= :query-source/unsupported (:error failure)))
         (is (empty? (events-of o :open)))
         (closed! o)))))
@@ -311,16 +313,16 @@
                                     response)})
         query '{:find [?id ?value] :in [$a $b]
                 :where [[$a ?id :row/value ?value] [$b ?id :row/value ?value]]}]
-    (is (= #{[1 "old"]} (driver/run query [(:source o) (:source o)] nil)))
+    (is (= #{[1 "old"]} (invoke! query [(:source o) (:source o)] nil)))
     (closed! o)
     (is (= 1 (count (events-of o :acquire))))
-    (let [first (driver/run query [provider provider] {:run? true})]
+    (let [first (invoke! query [provider provider] {:run? true})]
       (is (= 1 (:result-rows first)))
       (replace-facts! provider [[3 :row/value "newer"]])
-      (let [second (driver/run query [provider provider] {:run? true})]
+      (let [second (invoke! query [provider provider] {:run? true})]
         (is (= 1 (:result-rows second)))
         (is (not= (get-in first [:sources 0 :data-version]) (get-in second [:sources 0 :data-version])))))
-    (is (= #{[3 "newer"]} (driver/run query [provider provider] nil)))))
+    (is (= #{[3 "newer"]} (invoke! query [provider provider] nil)))))
 
 (defn ownership!
   "Caller data, batches and returned mutable leaves have independent ownership
@@ -334,7 +336,7 @@
         query '{:find [?value] :in [$s] :where [[$s _ :row/value ?value]]}]
     (aset-byte bytes 0 (byte 99))
     (.setTime date 999)
-    (let [result (driver/run query [(:source o)] nil)
+    (let [result (invoke! query [(:source o)] nil)
           returned (ffirst result)
           batch-value (get-in (second (first (events-of o :batch))) [:rows 0 0])]
       (is (= [1 2] (vec (:bytes returned))))
@@ -345,7 +347,7 @@
       (is (= 42 (.getTime ^Date (:date returned))))
       (aset-byte ^bytes (:bytes returned) 0 (byte 77))
       (.setTime ^Date (:date returned) 777)
-      (let [again (ffirst (driver/run query [provider] nil))]
+      (let [again (ffirst (invoke! query [provider] nil))]
         (is (= [1 2] (vec (:bytes again))))
         (is (= 42 (.getTime ^Date (:date again))))))
     (closed! o)))
@@ -363,19 +365,19 @@
              [#(assoc % :binding-ids [999999]) :query-source/invalid]
              [#(assoc % :exhausted? nil) :query-source/invalid]]]
       (let [o (observe (make-source info facts {:mode :lookup}) {:batch transform})
-            failure (error-data #(driver/run query [(:source o) [1]] nil))]
+            failure (error-data #(invoke! query [(:source o) [1]] nil))]
         (is (= expected (:error failure)))
         (is (not (.contains (pr-str failure) "one")))
         (closed! o)))
     (doseq [mode [:scan :lookup] limits [{:result-rows 0} {:batch-bytes 1} {:retained-bytes 1}]]
       (let [o (observe (make-source info facts {:mode mode}))
-            failure (error-data #(driver/run (assoc query :query-source {:limits limits}) [(:source o) [1]] nil))]
+            failure (error-data #(invoke! (assoc query :query-source {:limits limits}) [(:source o) [1]] nil))]
         (is (= :query-source/limit (:error failure)))
         (closed! o)))
     (let [o (observe (make-source info facts {:mode :value}))
           query '{:find [?id] :in [$s [?value ...]] :where [[$s ?id :row/value ?value]]
                   :query-source {:limits {:binding-bytes 2048}}}
-          failure (error-data #(driver/run query [(:source o) [(.repeat "x" 8192)]] nil))]
+          failure (error-data #(invoke! query [(:source o) [(.repeat "x" 8192)]] nil))]
       (is (= :query-source/limit (:error failure)))
       (is (= :binding-bytes (:category failure)))
       (is (empty? (events-of o :open)))
@@ -383,7 +385,7 @@
     (doseq [execute? [false true]]
       (let [o (observe (make-source info facts {:mode :scan :replay :unstable
                                                :consumption {:opens :once :max-open-cursors 1}}))
-            failure (error-data #(driver/run '{:find [?id] :in [$s]
+            failure (error-data #(invoke! '{:find [?id] :in [$s]
                                               :where [[$s ?id :row/value _] [$s ?other :row/value _]]}
                                   [(:source o)] {:run? execute?}))]
         (is (= :query-source/unsupported (:error failure)))

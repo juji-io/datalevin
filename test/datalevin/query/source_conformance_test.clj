@@ -4,16 +4,17 @@
             [datalevin.query.source.fake :as fake]))
 
 (deftest tuple-execution-matrix
-  (conformance/tuple-semantics! fake/source))
+  (conformance/tuple-semantics! (conformance/source-constructor fake/source)))
 
 (deftest eav-execution-matrix
-  (conformance/eav-semantics! fake/source))
+  (conformance/eav-semantics! (conformance/source-constructor fake/source)))
 
 (deftest native-execution-matrix
-  (conformance/native-semantics! fake/source))
+  (conformance/native-semantics! (conformance/source-constructor fake/source)))
 
 (deftest lifecycle-execution-matrix
-  (conformance/lifecycle! fake/source #(reset! (:rows %1) %2)))
+  (conformance/lifecycle! (conformance/source-constructor fake/source)
+                          #(conformance/replace-rows fake/replace-facts! %1 %2)))
 
 (deftest key-execution-matrix
-  (conformance/key-semantics! fake/source))
+  (conformance/key-semantics! (conformance/source-constructor fake/source)))

@@ -8,16 +8,9 @@
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]))
 
-(def tuple-info
-  {:spi-versions #{1} :source-instance-id :fixture :compute-context-id :local
-   :definition-id :pairs :definition-fingerprint "fake-definition:v1:pairs-long-string"
-   :features #{} :required-features #{}
-   :pattern-contract {:kind :tuple :columns [{:type :long :nullable? false}
-                                            {:type :string :nullable? true}]}})
-
-(def patterns [{:id 0 :kind :pattern :terms [[:var '?id] [:var '?name]]}])
-(defn error-data [f]
-  (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
+(def row-info (fake/row-info))
+(def patterns [{:id 0 :kind :pattern :terms [[:var '?id] [:const :row/value] [:var '?name]]}])
+(defn error-data [f] (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-data e))))
 (defn category [f] (:error (error-data f)))
 
 (deftest nested-type-validation-preserves-cancellation
@@ -81,12 +74,12 @@
     (is (false? (value/portable? (with-meta x {:hidden mutable}))))
     (is (false? (value/portable? {:nested [(with-meta x {:hidden mutable})]}))))
   (let [metadata {:source (with-meta 'declared {:revision [1 :stable]})}
-        descriptor (with-meta tuple-info metadata)]
+        descriptor (with-meta row-info metadata)]
     (is (true? (value/portable? descriptor)))
     (is (identical? descriptor (source/validate-source-info! descriptor))))
   (is (= :query-source/invalid
          (category #(source/validate-source-info!
-                      (with-meta tuple-info {:hidden (atom :mutable)}))))))
+                      (with-meta row-info {:hidden (atom :mutable)}))))))
 
 (deftest diagnostic-identifiers-drop-metadata-and-detach-backing
   (let [private {:private "private identifier annotation"}
@@ -106,122 +99,6 @@
     (is (= :query-source/cancelled
            (category #(value/diagnostic-copy (vec (range 100)) active!))))
     (is (= 5 @checks))))
-
-(deftest descriptor-contract
-  (is (= tuple-info (source/validate-source-info! tuple-info)))
-  (is (= {:spi-version 1 :features #{}}
-         (contract/negotiate (assoc tuple-info :features #{:unknown/optional}))))
-  (is (= :query-source/version
-         (category #(contract/negotiate (assoc tuple-info :spi-versions #{9999})))))
-  (is (= :query-source/unsupported
-         (category #(contract/negotiate
-                      (assoc tuple-info :features #{:unknown/required}
-                             :required-features #{:unknown/required})))))
-  (doseq [bad [(dissoc tuple-info :definition-fingerprint)
-               (assoc tuple-info :definition-fingerprint "")
-               (assoc tuple-info :runtime (Object.))
-               (assoc-in tuple-info [:pattern-contract :columns 0 :type] :int)
-               (assoc-in tuple-info [:pattern-contract :columns 0 :nullable?] :yes)
-               (assoc tuple-info :pattern-contract {:kind :eav :attributes {}})
-               (assoc tuple-info :pattern-contract {:kind :eav :attributes []})
-               (assoc tuple-info :pattern-contract {:kind :eav :attributes {"bad" {}}})]]
-    (is (= :query-source/invalid (category #(source/validate-source-info! bad)))))
-  (let [custom {:kind :custom :name :test/ref :version 1 :fingerprint "type:v1:test"
-                :parameters {:domain [:physical :order 0] :key-types [:long :string]}}
-        info (assoc tuple-info :pattern-contract
-                    {:kind :eav :attributes {:order/id {:entity-type custom
-                                                       :value-type {:kind :tuple :elements [:long :string]}}
-                                             :order/customer {:entity-type custom
-                                                              :value-type (assoc-in custom [:parameters :domain]
-                                                                                    [:physical :customer 0])}}})]
-    (is (= info (source/validate-source-info! info)))
-    (doseq [attribute [[:var '?a] [:ignore] [:const :unknown]]]
-      (is (= :query-source/unsupported
-             (category #(contract/clauses! info [{:id 0 :kind :pattern
-                                                 :terms [[:var '?e] attribute [:ignore]]}])))))))
-
-(deftest f0-cursor-open-uses-only-common-context-and-selection
-  (let [inner (fake/source tuple-info [[1 "Ada"] [2 "Bea"]])
-        acquired (atom nil)
-        planned (atom nil)
-        opened (atom nil)
-        delegate (atom nil)
-        provider
-        (reify source/IQuerySource
-          (-source-info [_] tuple-info)
-          (-open-session [_ request]
-            (reset! acquired request)
-            (let [session (source/-open-session inner request)]
-              (reset! delegate session)
-              (reify source/IQuerySourceSession
-                (-session-info [_] (source/-session-info session))
-                (-open-cursor [_ request]
-                  (reset! opened request)
-                  (source/-open-cursor session request))
-                (-cancel-session! [_ reason] (source/-cancel-session! session reason))
-                (-close-session! [_] (source/-close-session! session)))))
-          (-plan-source [_ _ request]
-            (let [response (source/-plan-source inner @delegate request)]
-              (reset! planned {:request request :alternative (first (:alternatives response))})
-              response)))
-        result (harness/run! provider patterns {:bindings {'?name "Ada"}})
-        common [:spi-version :features :query-id :authorization :consistency :control :limits]]
-    (is (= [[1 "Ada"]] (:rows result)))
-    (is (= (into (set common) [:alternative-id :plan :source-symbol :definition-fingerprint])
-           (set (keys @opened))))
-    (is (= (select-keys @acquired common) (select-keys @opened common)))
-    (is (identical? (:control @acquired) (:control @opened)))
-    (is (= '$test (:source-symbol @opened)))
-    (is (= (:definition-fingerprint tuple-info) (:definition-fingerprint @opened)))
-    (is (= (get-in @planned [:alternative :id]) (:alternative-id @opened)))
-    (is (identical? (get-in @planned [:alternative :plan]) (:plan @opened)))
-    (is (= {'?name "Ada"} (get-in @planned [:request :bindings])))
-    (is (= :close-session (last @(:events inner))))))
-
-(deftest owned-batches-snapshots-and-duplicates
-  (let [input [[1 "Ada"] [2 nil] [3 "Ada"] [3 "Ada"]]
-        fake (fake/source tuple-info input)
-        retained (atom [])
-        result (harness/run! fake patterns
-                             {:limits {:batch-rows 1}
-                              :consume #(do (swap! retained conj (:rows %))
-                                            (reset! (:rows fake) [[99 "new"]]))})]
-    (is (= input (:rows result)))
-    (is (= input (vec (mapcat identity @retained))))
-    (is (= 4 (get-in result [:metrics :batches])))
-    (is (= [:open-session :plan :open-cursor :fetch :fetch :fetch :fetch
-            :close-cursor :close-session] @(:events fake)))
-    (is (= [[99 "new"]] (:rows (harness/run! fake patterns)))))
-  (is (= [] (:rows (harness/run! (fake/source tuple-info []) patterns)))))
-
-(deftest malformed-constant-is-rejected-before-acquisition
-  (let [fake (fake/source tuple-info [[1 "a"]])]
-    (is (= :query-source/invalid
-           (category #(harness/run! fake [{:id 0 :kind :pattern
-                                          :terms [[:const "wrong-type"] [:ignore]]}]))))
-    (is (empty? @(:events fake)))))
-
-(deftest eav-missing-is-absent-including-wildcards
-  (let [info (assoc tuple-info :pattern-contract
-                    {:kind :eav :attributes {:name {:entity-type :long :value-type :string}}})
-        fake (fake/source info [[1 :name "Ada"] [2 :name nil] [3 :name "Grace"]])]
-    (doseq [value [[:var '?name] [:ignore]]]
-      (is (= #{1 3}
-             (set (map first (:rows (harness/run! fake [{:id 0 :kind :pattern
-                                                       :terms [[:var '?id] [:const :name] value]}])))))))
-    (reset! (:events fake) [])
-    (is (= :query-source/unsupported
-           (category #(harness/run! fake [{:id 0 :kind :pattern
-                                          :terms [[:var '?id] [:const :missing] [:ignore]]}]))))
-    (is (empty? @(:events fake)))))
-
-(deftest scalar-predicates-and-repeated-variables
-  (let [info (assoc-in tuple-info [:pattern-contract :columns 1] {:type :long :nullable? false})
-        fake (fake/source info [[1 1] [1 2] [2 2] [3 3]])]
-    (is (= [[2] [3]] (:rows (harness/run!
-                             fake [{:id 0 :kind :pattern :terms [[:var '?n] [:var '?n]]}
-                                   {:id 1 :kind :predicate :operator :> :semantics-version 1
-                                    :args [[:var '?n] [:const 1]]}]))))))
 
 (deftest resource-reservations-are-atomic-query-scoped-and-transfer-once
   (let [c (control/create {:limits {:retained-bytes 10 :external-requests 2}})
@@ -302,9 +179,9 @@
 
 (deftest owned-byte-values-survive-advance-and-close
   (let [bytes (byte-array [1 2 3])
-        info (assoc tuple-info :pattern-contract {:kind :tuple :columns [{:type :bytes :nullable? false}]})
-        clauses [{:id 0 :kind :pattern :terms [[:var '?bytes]]}]
-        fake (fake/source info (vec (repeat 5 [bytes])))
+        info (fake/row-info :bytes)
+        clauses [{:id 0 :kind :pattern :terms [[:ignore] [:const :row/value] [:var '?bytes]]}]
+        fake (fake/source info (vec (repeat 5 [1 :row/value bytes])))
         batches (atom [])
         result (harness/run! fake clauses {:limits {:batch-rows 2}
                                            :consume (fn [batch]
@@ -317,17 +194,16 @@
     ;; Ownership holds between rows in one batch as well as across advances.
     (aset-byte ^bytes (first values) 0 (byte 7))
     (is (= (repeat 4 [1 2 3]) (mapv vec (next values))))
-    (is (= :close-session (last @(:events fake))))))
+    (is (= :close-session (first (last @(:events fake)))))))
 
 (deftest owned-metadata-survives-advance-and-close
   (doseq [x [[1] {:a 1} #{1} '(1) 'value (sorted-map :a 1) (sorted-set 1 2)]]
     (let [bytes (byte-array [1 2])
           date (java.util.Date. 1000)
           x (with-meta x {:bytes bytes :nested (with-meta 'leaf {:date date})})
-          info (assoc tuple-info :pattern-contract
-                      {:kind :tuple :columns [{:type :data :nullable? false}]})
-          clauses [{:id 0 :kind :pattern :terms [[:var '?value]]}]
-          s (fake/source info (vec (repeat 5 [x])))
+          info (fake/row-info :data)
+          clauses [{:id 0 :kind :pattern :terms [[:ignore] [:const :row/value] [:var '?value]]}]
+          s (fake/source info (vec (repeat 5 [1 :row/value x])))
           result (harness/run! s clauses
                               {:limits {:batch-rows 2}
                                :consume (fn [_] (aset-byte bytes 0 (byte 9)) (.setTime date 9000))})
@@ -343,98 +219,7 @@
       (doseq [v (next values)]
         (is (= [1 2] (vec (:bytes (meta v)))))
         (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
-      (is (= :close-session (last @(:events s)))))))
-
-(deftest custom-comparators-require-the-custom-value-contract
-  (doseq [x [(sorted-map-by #(compare %2 %1) :a 1 :b 2)
-             (sorted-set-by #(compare %2 %1) 1 2)]]
-    (is (not (value/portable? x)))
-    (is (= :query-source/unsupported (category #(value/value-charge x))))
-    (is (= :query-source/unsupported (category #(value/owned-copy x))))
-    (let [info (assoc tuple-info :pattern-contract
-                      {:kind :tuple :columns [{:type :data :nullable? false}]})
-          s (fake/source info [[x]])]
-      (is (= :query-source/invalid
-             (category #(harness/run! s [{:id 0 :kind :pattern :terms [[:const x]]}]))))
-      (is (empty? @(:events s))))))
-
-(deftest acquisition-and-planning-failures-clean-up-only-acquired-resources
-  (doseq [[phase category expected]
-          [[:acquisition :query-source/unauthorized []]
-           [:planning :query-source/stale-definition [:open-session :cancel-session :close-session]]
-           [:open-cursor :query-source/snapshot-lost [:open-session :plan :cancel-session :close-session]]]]
-    (let [fake (fake/source tuple-info [[1 "a"]]
-                            {phase #(throw (ex-info "sensitive detail" {:error category}))})]
-      (is (= category (:error (error-data #(harness/run! fake patterns)))))
-      (is (= expected @(:events fake))))))
-
-(deftest unsupported-values-and-overflow-do-not-escape-as-partial-results
-  (is (= :query-source/unsupported
-         (category #(source/batch-charge-bytes [{:type :data :nullable? false}]
-                                              [[(Object.)]]))))
-  (let [fake (fake/source tuple-info [[1 "small"] [2 (apply str (repeat 10000 "x"))]])]
-    (is (= :query-source/limit
-           (category #(harness/run! fake patterns {:limits {:batch-rows 1 :batch-bytes 4096}}))))
-    (is (= [:cancel-session :close-cursor :close-session] (take-last 3 @(:events fake))))))
-
-(deftest primary-failure-survives-cleanup-and-provider-details-are-redacted
-  (let [fake (fake/source tuple-info [[1 "a"]]
-                          {:fetch #(throw (Exception. "secret SQL"))
-                           :close-cursor #(throw (Exception. "secret cleanup"))})
-        error (try (harness/run! fake patterns) nil (catch Exception e e))]
-    (is (= :query-source/provider (:error (ex-data error))))
-    (is (= :fetch (:phase (ex-data error))))
-    (is (nil? (.getCause error)))
-    (is (= 1 (count (.getSuppressed error))))
-    (is (not (.contains (str error) "secret")))
-    (is (= :close-session (last @(:events fake))))))
-
-(deftest stale-cursor-open-and-idempotent-close
-  (let [c (control/create)
-        fake (fake/source tuple-info [[1 "a"]])
-        context {:spi-version 1 :features #{} :consistency :snapshot :control c}
-        session (source/-open-session fake context)]
-    (is (= :query-source/stale-definition
-           (category #(source/-open-cursor session {:definition-fingerprint "changed"}))))
-    (source/-close-session! session)
-    (source/-close-session! session)
-    (is (= :closed (:state (error-data #(source/-open-cursor session {})))))
-    (is (= :snapshot (:consistency (source/-session-info session))))
-    (control/close! c)))
-
-(deftest plan-and-batch-structural-validation
-  (let [c (control/create)
-        fake (fake/source tuple-info [[1 "a"]])
-        context {:spi-version 1 :features #{} :consistency :snapshot :control c}
-        session (source/-open-session fake context)
-        request (merge context {:source-symbol '$test :source-descriptor tuple-info :clauses patterns
-                                :bindings {} :required-vars #{'?id '?name}
-                                :demand {:quality :exact :ordering [] :offset 0 :limit nil}
-                                :max-alternatives 32})
-        response (source/-plan-source fake session request)]
-    (try
-      (is (= response (contract/alternatives! request response)))
-      (let [handle (Object.)
-            opaque (assoc-in response [:alternatives 0 :plan] handle)]
-        (is (identical? handle
-                       (get-in (contract/alternatives! request opaque)
-                               [:alternatives 0 :plan]))))
-      (doseq [bad [(assoc-in response [:alternatives 0 :covers] #{99})
-                   (assoc-in response [:alternatives 0 :prefilters] #{0})
-                   (update-in response [:alternatives 0 :columns] pop)
-                   (assoc-in response [:alternatives 0 :estimate :rows] Double/NaN)
-                   (assoc-in response [:alternatives 0 :estimate :rows] (bigdec "-1E-1000"))]]
-        (is (= :query-source/invalid (category #(contract/alternatives! request bad)))))
-      (is (= :query-source/unsupported
-             (category #(contract/alternatives! request
-                                                (assoc-in response [:alternatives 0 :requires] ['?id])))))
-      (is (= :query-source/unsupported (category #(contract/selection! request {:alternatives []} []))))
-      (doseq [bad [{:columns [] :rows [] :row-count 0 :byte-count 0 :exhausted? false}
-                   {:columns [] :rows [[]] :row-count 1 :byte-count 0 :exhausted? true}
-                   nil]]
-        (is (= :query-source/invalid
-               (category #(contract/batch! [] {:control c :max-rows 10 :max-bytes 1000} bad)))))
-      (finally (source/-close-session! session) (control/close! c)))))
+      (is (= :close-session (first (last @(:events s))))))))
 
 (deftest batch-accounting-validates-each-custom-value-once
   (let [calls (atom 0)
@@ -510,14 +295,3 @@
         (source/release! token)
         (is (every? zero? (vals (control/usage ctl)))))
       (finally (control/close! ctl)))))
-
-(deftest copied-fake-batches-report-the-detached-charge
-  (let [view (subvec [(byte-array 1024) 2] 1 2)
-        info (assoc-in tuple-info [:pattern-contract :columns 1 :type] :data)
-        result (harness/run! (fake/source info [[1 [2]]]) patterns
-                             {:bindings {'?name view}})]
-    (is (= [[1 [2]]] (:rows result)))
-    (is (not (instance? clojure.lang.APersistentVector$SubVector
-                        (get-in result [:rows 0 1]))))
-    (is (= (source/batch-charge-bytes (:columns result) (:rows result))
-           (get-in result [:metrics :charged-bytes])))))

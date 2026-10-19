@@ -438,7 +438,7 @@
           (is (= 1 (count (events-of events :open))))
           (is (false? (realized? ids))))))))
 
-(deftest input-free-keeps-zero-column-outer-multiplicity-and-still-exhausts-on-empty-input
+(deftest input-free-keeps-zero-column-outer-multiplicity-and-skips-empty-input
   (doseq [outers [nil [] [[]] [[] [] []]]]
     (let [events (atom [])]
       (rt/with-runtime {}
@@ -448,8 +448,8 @@
                 witnesses (if (nil? outers) 1 (count outers))]
             (is (= (frequencies (mapcat (fn [_] [[1 "one"] [2 "two"]]) (range witnesses)))
                    (frequencies (map vec output))))
-            (is (= 1 (count (events-of events :open))))
-            (is (= 1 (count (events-of events :fetch))))
+            (is (= (if (zero? witnesses) 0 1) (count (events-of events :open))))
+            (is (= (if (zero? witnesses) 0 1) (count (events-of events :fetch))))
             (is (false? (realized? ids)))))))))
 
 (deftest shared-pipe-execution-uses-the-same-batched-path

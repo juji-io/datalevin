@@ -12,7 +12,6 @@
             [datalevin.query.source-optional-rules-test]
             [datalevin.query.source-execution-test]
             [datalevin.query.source-conformance-test]
-            [datalevin.query.source-join-index-test]
             [datalevin.query.source-permissions-test]
             [datalevin.query.source-binding-test]
             [datalevin.query.source-binding-execution-test]
@@ -52,7 +51,6 @@
                                            'datalevin.query.source-optional-rules-test
                                            'datalevin.query.source-execution-test
                                            'datalevin.query.source-conformance-test
-                                           'datalevin.query.source-join-index-test
                                            'datalevin.query.source-permissions-test
                                            'datalevin.query.source-binding-test
                                            'datalevin.query.source-binding-execution-test

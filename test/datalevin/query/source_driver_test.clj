@@ -84,6 +84,20 @@
       (is (zero? @reads))
       (is (empty? @events)))))
 
+(deftest public-root-limits-can-exceed-defaults-and-nested-limits-remain-capped
+  (let [events (atom []) observations (atom [])
+        limits {:retained-bytes 134217728 :batch-rows 32768 :binding-rows 32768}
+        p (observed events observations {})
+        query (assoc pairs :query-source {:limits limits})]
+    (is (= #{[1 "one"] [2 "two"]} (d/q query p)))
+    (is (every? #(= limits (select-keys (:limits %) (keys limits))) @observations))
+    (reset! observations [])
+    (rt/with-runtime {:limits {:retained-bytes 2000000 :batch-rows 7 :binding-rows 3}}
+      (fn [_]
+        (is (= #{[1 "one"] [2 "two"]} (d/q query p)))))
+    (is (every? #(= {:retained-bytes 2000000 :batch-rows 7 :binding-rows 3}
+                   (select-keys (:limits %) (keys limits))) @observations))))
+
 (deftest tiny-embedded-caps-reject-before-copying-other-query-values
   (let [events (atom []) visits (atom 0)
         huge (reify value/IQuerySourceValue

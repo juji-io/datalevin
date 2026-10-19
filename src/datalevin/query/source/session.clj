@@ -1,7 +1,7 @@
 (ns ^:no-doc datalevin.query.source.session
   "Captured alias requirements and grouped acquisition for the revised contract.
-  This internal lifecycle validates captured descriptors; the prototype query
-  entry point does not call it. Native read contexts remain engine-owned."
+  Public source execution validates captured descriptors before acquisition.
+  Native read contexts remain engine-owned."
   (:require [clojure.set :as set]
             [datalevin.query.source :as source]
             [datalevin.query.source.control :as control]
