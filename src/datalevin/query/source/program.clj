@@ -109,15 +109,18 @@
   (let [variables (mapv :variable (:columns spec))]
     (->StepFactory (set (map :variable (:requires spec))) variables
       (fn [input-cols]
-        (let [output-cols (into input-cols (remove (set input-cols)) variables)]
+        (let [_ (retain! runtime (containers! runtime 0 (+ (count input-cols) (count (:args node)))))
+              positions (native-rules/select-inputs spec node input-cols)
+              _ (reset! (:selected-inputs spec) positions)
+              output-cols (into input-cols (remove (set input-cols)) variables)]
           (->MaterializedStep (set input-cols) output-cols
             (fn [^List tuples]
               (check!)
               (if (.isEmpty tuples) (FastList.)
                   (let [table (if-let [id (:rule-reference spec)]
-                                (native-rules/reference! runtime id node input-cols tuples)
-                                ((:solve! spec) input-cols tuples))
-                        result (native-rules/call! runtime check! node table (:input-positions spec))
+                                (native-rules/reference! runtime (conj id positions) node input-cols tuples)
+                                ((:solve! spec) positions input-cols tuples))
+                        result (native-rules/call! runtime check! node table positions)
                         result (joined! runtime check!
                                  (relation/relation! (zipmap input-cols (range)) tuples) result)]
                     (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))
@@ -341,18 +344,24 @@
    :constant-constraints (:constant-constraints (meta schema))})
 
 (defn- scope-parent-columns [site schema known-inputs child-schemas check!]
-  (let [needed
+  (let [actual (columns-map known-inputs)
+        required (if (= :rule (:kind site))
+                   (into #{} (mapcat (fn [branch]
+                                      (keep (fn [v]
+                                              (let [[tag name] (get (:arguments branch) v)]
+                                                (when (= :var tag) name))) (:required-inputs branch)))) (:branches site))
+                   (:required-inputs site))
+        needed
         (if (= :rule (:kind site))
-          (into (set/intersection (:exports site) (set (map :variable known-inputs)))
-                (mapcat (fn [branch]
-                          (keep (fn [v]
-                                  (let [[tag actual] (get (:arguments branch) v)]
-                                    (when (= :var tag) actual))) (:required-inputs branch)))) (:branches site))
-          (set/union (:required-inputs site)
+          (set/union required (set/intersection (:exports site) (set (keys actual))))
+          (set/union required
                      (set/intersection (:exports site) (set (map :variable known-inputs)))
                      (into #{} (mapcat #(set/difference (:exports site) (set (keys (get child-schemas (child-id %))))))
                            (:branches site))))]
-    (mapv #(or (schema %) (column % :data true)) (canonical needed check!))))
+    ;; Required inputs may wait for a preceding fact or explicit null filter.
+    ;; An optional caller seed cannot require its own future body output type.
+    (mapv #(or (when (contains? required %) (schema %)) (actual %) (schema %) (column % :data true))
+      (canonical needed check!))))
 
 (defrecord ^:private Program [runtime compilation planned root input regions state runner])
 
@@ -496,7 +505,8 @@
                                   (if (collection/owned? database)
                                     (collection/spec! runtime database node)
                                     (native-plan/spec! runtime snapshots database node literal-terms)))
-                                :database database)]))
+                                :database database
+                                :selected-inputs (when (instance? RuleExpr node) (atom nil)))]))
         compilation (prune-empty-collections! runtime compilation native-specs)
         compiled (:compiled compilation)
         input (or prepared-input (input! runtime check! compiled input-columns input-tuples))
@@ -582,7 +592,10 @@
               (relation/relation! (zipmap cols (range)) tuples)))))
       (reset! state :ready)
       (assoc (->Program runtime compilation planned root (:relation input) executable state runner)
-             :core-specs native-specs)))
+             :core-specs (into {} (map (fn [[path spec]]
+                                        [path (if-let [selected (:selected-inputs spec)]
+                                                (-> spec (dissoc :selected-inputs)
+                                                    (assoc :selected-input-positions @selected)) spec)])) native-specs))))
 
 (defn compile!
   "Compile a captured region graph and typed input rows into shared steps.

@@ -2589,7 +2589,7 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, unbound observable-head enumeration, remaining input edges
+native plan/read paths, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
@@ -2679,19 +2679,31 @@ Required literals and repeated required positions select their exact demand
 partition after ordinary argument matching; repeated arguments retain their
 required input position for the subsequent typed join. Variable-argument
 identity/ground functions admit required head inputs and locally produced values.
-A scope-aware observability analysis promotes optional head inputs that can
-affect such functions, including functions inside negation, into explicit input
-positions. These positions need not form a contiguous prefix. Missing head
-bindings propagate through call dependencies; a positive local producer can
-satisfy a callee without requiring that caller head as an input. Private union
+A scope-aware observability analysis identifies optional head positions that can
+affect such functions, including functions inside negation. These positions need
+not form a contiguous prefix. Minimum required bindings propagate through call
+dependencies and public union exports; a positive local producer can satisfy a
+callee without requiring that caller head as an input. Private union
 and not-join names do not observe caller heads outside their declared interface.
-The shared typed scheduler requires every selected input before the call runs.
+The shared typed scheduler requires the minimum inputs before the call runs.
+The step's actual input columns and constant arguments select additional bound
+observable positions from the already compiled variants; wildcards stay unbound.
 Body seeds, demand keys and call matching use the same ordered positions, so
 sparse correlations, renamed heads, typed caller representations and repeated
 argument partitions survive recursion. Inference uses short-lived workspaces.
 After whole-graph validation, each body context captures only its direct
 reference headers and definitions. Reference bodies compile separately; native
 reference classification does not walk those definitions again from negation.
+Each source/rule/input-position adornment has independent demand and full-head
+answer relations. Unbound observable heads enumerate through compiled positive
+producers, including mutual/nonlinear recursion and lower negative strata.
+Functions without those producers still require caller seeds. All adornments
+compile before provider acquisition. Expansion reserves storage before growing
+and stops at 4096 variants per prepared graph or the invocation quota. Compiled
+references publish their selected positions for dependency and type analysis.
+Optional scope inputs retain actual caller types instead of requiring a future
+body output type; required inputs may wait for preceding facts or explicit null
+filters. Exported types merge conservatively across possible adornments.
 Literal numeric comparisons against other producers require a representation-safe
 proof; seed-only values retain their original numeric representation. Existing
 captured scalar key semantics and their remaining representation edges apply.
@@ -2721,10 +2733,8 @@ when that bound is exceeded.
 
 Negative facts participate in representation-safety constraints but never
 establish outer producer types or nullability. Comparison constraints also flow
-back through identity/ground copies. An observable head with no incoming value
-still needs a separate enumeration adornment, including cases where its body
-could otherwise enumerate it. Those calls reject before acquisition. Mapped
-negative bodies and mapped recursion remain unsupported. This internal compiler
+back through identity/ground copies. Mapped negative bodies and mapped recursion
+remain unsupported. This internal compiler
 extension does not activate v2 in public
 `q`/`explain`.
 

@@ -141,17 +141,13 @@
              (query! '[:find ?e :in $rows $seed $domain % :where ($rows known ?e)]
                [[] seed [[1] [2]] rules]))))))
 
-(deftest negative-functions-require-their-observable-caller-inputs
+(deftest negative-functions-can-observe-enumerated-head-values
   (let [rules '[[(copied ?x ?y) [?x ?y] (not-join [?x] [(identity ?x) ?out])]]
-        events (atom []) saved (atom nil)
-        failure (error (fn [] (rt/with-runtime {}
-                               (fn [runtime]
-                                 (reset! saved runtime)
-                                 (program/query! runtime '[:find ?x ?y :in $rows $s % :where ($rows copied ?x ?y)]
-                                   [[[1 2]] (fixture/provider events {}) rules])))))]
-    (is (= :query-source/unsupported (:error failure)))
-    (is (empty? (events-of events :acquire)))
-    (is (every? zero? (vals (control/usage (:control @saved)))))))
+        events (atom [])]
+    (is (= #{[nil :nil]}
+           (query! '[:find ?x ?y :in $rows $s % :where ($rows copied ?x ?y)]
+             [[[1 :one] [nil :nil]] (fixture/provider events {}) rules])))
+    (is (= 1 (count (events-of events :acquire))))))
 
 (deftest negative-cycles-and-missing-join-inputs-reject-before-acquisition
   (doseq [[rules call]

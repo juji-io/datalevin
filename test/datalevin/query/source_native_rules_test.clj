@@ -187,10 +187,7 @@
             '(reach ?a ?b) []]
            ['[[(reach ?x ?y) [$s ?x :row/value ?y]]
               [(reach ?x ?y) [$rows ?x ?mid] (reach ?mid ?y)]]
-            '(reach ?a ?b) []]
-           ['[[(reach ?x ?y) [?x ?y]] [(reach ?x ?y) [?x ?mid] (reach ?mid ?y)]
-              [(copied ?x ?y) (reach ?x _) [(identity ?x) ?y]]]
-            '(copied ?a ?b) []]]]
+            '(reach ?a ?b) []]]]
     (let [events (atom []) saved (atom nil)
           query {:find ['?a '?b] :in ['$rows '$s '%]
                  :where [(apply list '$rows call)]}

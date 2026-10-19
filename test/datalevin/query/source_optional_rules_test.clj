@@ -152,7 +152,7 @@
                  [[] copy-rules 1N])]
     (is (= #{[clojure.lang.BigInt clojure.lang.BigInt]} (set (map #(mapv class %) result))))))
 
-(deftest unbound-observable-enumeration-and-ambiguous-literals-remain-gated
+(deftest missing-observable-producers-and-ambiguous-literals-reject-before-acquisition
   (doseq [[rules call]
           [[copy-rules '(copied ?out ?input)] [copy-rules '(copied ?out _)]
            ['[[(copied ?out ?input) [?input _] [(identity ?input) ?out]]
@@ -178,6 +178,104 @@
            (query! '[:find ?key ?value :in $rows $seed % :where ($rows selected ?key ?value)]
              [[[1 :inner]] [[1 :outer]] rules])))))
 
+(deftest observable-heads-enumerate-local-facts-through-mutual-recursion
+  (let [rules '[[(left ?copy ?value) [?value _] [(identity ?value) ?copy]]
+                [(left ?copy ?value) (right ?value ?copy)]
+                [(right ?input ?out) (left ?out ?input)]]
+        rows [[1 :one] [2 :two] [1 :duplicate] [nil :absent]]]
+    (is (= #{[1 1] [2 2]}
+           (query! '[:find ?copy ?value :in $rows % :where ($rows left ?copy ?value)] [rows rules])))
+    (is (= #{[1] [2]}
+           (query! '[:find ?copy :in $rows % :where ($rows left ?copy _)] [rows rules])))
+    (is (= #{} (query! '[:find ?copy :in $rows % :where ($rows left ?copy _)] [[] rules])))))
+
+(deftest partial-observable-inputs-select-independent-enumeration-variants
+  (let [rules '[[(copies ?a ?b ?left ?right) [?a ?b] [(identity ?a) ?left] [(identity ?b) ?right]]
+                [(copies ?a ?b ?left ?right) (copies ?a ?b ?left ?right)]]
+        rows [[1 2] [1 3N] [1N 3N] [4N 2] [4N 3N]]
+        typed (fn [result] (set (map #(mapv (juxt class identity) %) result)))
+        classes (fn [result] (set (map #(mapv class %) result)))]
+    (is (= (typed (map #(into % %) rows))
+           (typed (query! '[:find ?a ?b ?left ?right :in $rows % :where ($rows copies ?a ?b ?left ?right)] [rows rules]))))
+    (is (= #{[Long Long Long Long] [Long clojure.lang.BigInt Long clojure.lang.BigInt]}
+           (classes (query! '[:find ?a ?b ?left ?right :in $rows % ?a :where ($rows copies ?a ?b ?left ?right)]
+                      [rows rules 1]))))
+    (is (= #{[Long Long Long Long] [clojure.lang.BigInt Long clojure.lang.BigInt Long]}
+           (classes (query! '[:find ?a ?b ?left ?right :in $rows % ?b :where ($rows copies ?a ?b ?left ?right)]
+                      [rows rules 2]))))))
+
+(deftest enumeration-and-bound-demands-do-not-share-their-answers
+  (let [rules '[[(copied ?out ?value) [?value _] [(identity ?value) ?out]]
+                [(copied ?out ?value) (copied ?out ?value)]
+                [(selected [?seed] ?tag ?out) (copied ?out _) [(ground :enumerated) ?tag]]
+                [(selected [?seed] ?tag ?out) [$inputs ?value ?tag] (copied ?out ?value)]]
+        result (query! '[:find ?tag ?out :in $rows $inputs % ?seed :where ($rows selected ?seed ?tag ?out)]
+                 [[[1 :one] [2N :two] [3.00M :three]] [[2N :bigint] [3.00M :decimal]] rules :seed])
+        by-tag (into {} (remove #(= :enumerated (first %))) result)]
+    (is (= #{:bigint :decimal} (set (keys by-tag))))
+    (is (= #{Long clojure.lang.BigInt java.math.BigDecimal}
+           (set (map (comp class second) (filter #(= :enumerated (first %)) result)))))
+    (is (instance? clojure.lang.BigInt (:bigint by-tag)))
+    (is (= 2 (.scale ^java.math.BigDecimal (:decimal by-tag))))))
+
+(deftest nonlinear-observable-recursion-enumerates-a-complete-closure
+  (let [random (Random. 99173)
+        rules '[[(path ?x ?y ?copy) [?x ?y] [(identity ?y) ?copy]]
+                [(path ?x ?y ?copy) (path ?x ?mid _) (path ?mid ?y ?copy)]]]
+    (dotimes [_ 12]
+      (let [edges (vec (repeatedly (.nextInt random 15) #(vector (.nextInt random 5) (.nextInt random 5))))]
+        (is (= (set (map (fn [[a b]] [a b b]) (closure edges)))
+               (query! '[:find ?a ?b ?copy :in $rows % :where ($rows path ?a ?b ?copy)] [edges rules])))))))
+
+(deftest union-interfaces-distinguish-enumerated-and-required-observable-heads
+  (let [rules '[[(copied ?out ?input)
+                 (or-join [?out ?input]
+                   (and [?input :left] [(identity ?input) ?out])
+                   (and [?input :right] [(identity ?input) ?out]))]
+                [(copied ?out ?input) (copied ?out ?input)]]]
+    (is (= #{[1] [2]}
+           (query! '[:find ?out :in $rows % :where ($rows copied ?out _)]
+             [[[1 :left] [2 :right]] rules]))))
+  (let [rules '[[(copied ?out ?input)
+                 (or-join [?out ?input] [(identity ?input) ?out] [(ground ?input) ?out])]
+                [(copied ?out ?input) (copied ?out ?input)]]]
+    (is (instance? clojure.lang.BigInt
+          (query! '[:find ?out . :in $rows % ?input :where ($rows copied ?out ?input)] [[] rules 1N])))
+    (let [events (atom [])
+          failure (error (fn [] (rt/with-runtime {}
+                                 (fn [runtime]
+                                   (program/query! runtime '[:find ?out :in $rows $s % :where ($rows copied ?out _)]
+                                     [[] (fixture/provider events {}) rules])))))]
+      (is (= :query-source/unsupported (:error failure)))
+      (is (empty? (events-of events :acquire))))))
+
+(deftest observable-enumeration-completes-lower-negative-strata
+  (let [rules '[[(blocked ?x ?copy) [$blocked ?x] [(identity ?x) ?copy]]
+                [(blocked ?x ?copy) (blocked ?x ?copy)]
+                [(kept ?x ?copy) [?x _] [(identity ?x) ?copy]
+                 (not-join [?x] (blocked ?x _))]]]
+    (is (= #{[1 1] [3 3]}
+           (query! '[:find ?x ?copy :in $rows $blocked % :where ($rows kept ?x ?copy)]
+             [[[1 :one] [2 :two] [3 :three]] [[2]] rules])))))
+
+(deftest adornment-expansion-is-bounded-before-provider-acquisition
+  (let [inputs (mapv #(symbol (str "?input" %)) (range 13))
+        outputs (mapv #(symbol (str "?output" %)) (range 13))
+        head (apply list 'wide (concat inputs outputs))
+        rules [(into [head inputs] (map (fn [input output] [(list 'identity input) output]) inputs outputs))
+               [head head]]
+        events (atom []) saved (atom nil)
+        failure (error (fn [] (rt/with-runtime {}
+                               (fn [runtime]
+                                 (reset! saved runtime)
+                                 (program/query! runtime
+                                   {:find [(first outputs)] :in ['$rows '$s '%] :where [(apply list '$rows head)]}
+                                   [[(vec (range 13))] (fixture/provider events {}) rules])))))]
+    (is (= :query-source/limit (:error failure)))
+    (is (= :planning (:phase failure)))
+    (is (empty? (events-of events :acquire)))
+    (is (every? zero? (vals (control/usage (:control @saved)))))))
+
 (deftest optional-function-inputs-work-inside-negative-bodies
   (let [rules '[[(kept ?x) (not-join [?x] [(identity ?x) ?copy])]]]
     (is (= #{[nil]}
@@ -198,6 +296,27 @@
         conn (d/get-conn dir {:edge {:db/valueType :db.type/ref :db/cardinality :db.cardinality/many}})]
     (try (d/transact! conn [{:db/id 1 :edge 2} {:db/id 2 :edge 3}]) (f conn)
          (finally (d/close conn) (u/delete-files dir)))))
+
+(deftest native-observable-enumeration-keeps-typed-exports-and-pinned-views
+  (with-db
+    (fn [conn]
+      (let [events (atom []) delegate (fixture/provider events {:lookup-only? true})
+            provider (reify source/IQuerySource
+                       (-source-info [_] (source/-source-info delegate))
+                       (-open-session [_ request] (source/-open-session delegate request))
+                       (-plan-source [_ session request]
+                         (d/transact! conn [{:db/id 1 :edge 1}])
+                         (source/-plan-source delegate session request)))
+            rules '[[(reach ?x ?y) [?x :edge ?y]]
+                    [(reach ?x ?y) [?x :edge ?mid] (reach ?mid ?y)]
+                    [(copied ?x ?to ?copy) (reach ?x ?to) [(identity ?x) ?copy]]]]
+        (is (= #{[1 2 1 "two"]}
+               (query! '[:find ?x ?to ?copy ?name :in $n $s %
+                         :where ($n copied ?x ?to ?copy) [$s ?to :row/value ?name]]
+                 [@conn provider rules])))
+        (is (= [{:variable '?to :type :long :nullable? false}]
+               (filterv #(= '?to (:variable %)) (:available-inputs (second (first (events-of events :plan)))))))
+        (is (= #{[1]} (d/q '[:find ?e :where [?e :edge 1]] @conn)))))))
 
 (deftest sparse-optional-inputs-preserve-pinned-native-exports
   (with-db
