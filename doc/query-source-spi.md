@@ -2605,7 +2605,7 @@ parameters resolve before provider callbacks. Input preparation observes query
 timeouts, cancellation and quotas, and all invocation resources close before
 returning independently owned results. This is an internal execution bridge:
 plain scalar function arguments, textual rules, some captured scalar type edges,
-public routing and plan-only explanation integration remain pending.
+public routing and the coordinated adapter switch remain pending.
 
 Local collection sources now also enter the revised compiler. Ordinary input
 preparation and direct capture detach every local source before external
@@ -3100,6 +3100,37 @@ not claim to have compared costs. Report known binding/batch caps and
 `:planning-time-ms` without computing unavailable cardinality estimates.
 These policy markers describe the implemented planner; they add no caller mode
 flag or provider protocol negotiation.
+
+The internal `datalevin.query.source.program/explain!` entry point accepts
+`[runtime query arguments explain-options]`, with an optional final source
+options map. It uses the same input ownership, compilation, selection and
+cleanup as the internal v2 query bridge. `:run?` defaults to false and
+`:intermediate-counts?` to true. Plan-only calls authorize sessions and select
+complete accesses without opening provider execution cursors or requesting
+cursor metrics. This bridge does not change public `q`/`explain` routing.
+
+Its `:sources` distinguish definition fingerprints, scope IDs, data versions
+and requested/effective/actual consistency. `:regions` retain the structural
+selection fields above and shared operator placement; `:program-id` distinguishes
+separately compiled native rule/negative bodies with their own region IDs.
+Selected steps include coverage, prefilters, required/output variables, replay,
+blocking state, binding caps and query batch caps. Provider labels, plan handles,
+authorization, query/binding values and envelope annotations stay private.
+
+Executed output adds `:result-rows` and attributable `:cursors`, qualified by
+source, region and alternative. Each cursor retains validated provider
+`:metrics`, including unknown nil values. Optional `:actual` counters report
+validated batch rows/bytes and engine operator input/output rows, calls and
+inclusive elapsed time. Nested operator times are not additive. Disabling
+intermediate counts omits those counters and actual cursor input counts while
+preserving final result size and provider metrics. Plan-only output invents no
+execution counts. Diagnostic storage remains admitted under the invocation
+ledger across recursive workspaces and is detached before cleanup.
+
+An ordinary invocation's complete owned empty input is a semantic empty proof:
+its regions are pruned before typed access selection even when an empty column
+has no narrow type. Descriptors and source authorization still run. Compiled
+body templates use placeholder inputs and are excluded from this proof.
 
 The cost follow-up records each access decision's `:policy :eav-access-v1`, `:access`,
 `:selection` (`:estimated` or `:structural-fallback`), `:estimated-access-ns`

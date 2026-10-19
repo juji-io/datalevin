@@ -440,8 +440,12 @@
                         (rt/diagnostic-copy! runtime
                           (cond-> {:source (:source-symbol o) :region-id (:region-id o)
                            :alternative-id (:alternative-id o) :covers (:covers o) :access (:access o)
+                           :prefilters (:prefilters alternative)
                            :requires (mapv :variable (:requires o))
+                           :columns (mapv :variable (:columns o))
                            :replay (get-in alternative [:properties :replay])
+                           :blocking-state (get-in alternative [:properties :blocking-state])
+                           :batch-limits (select-keys (control/limits ctl) [:batch-rows :batch-bytes])
                            :constraints (select-keys (:constraints alternative)
                                                      [:max-binding-rows :max-binding-bytes :max-request-binding-rows])
                            :estimate (assoc (select-keys estimate (conj numeric :confidence))

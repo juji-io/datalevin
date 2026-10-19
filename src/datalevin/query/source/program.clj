@@ -16,6 +16,7 @@
             [datalevin.query.source.arithmetic :as arithmetic]
             [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.diagnostics :as diagnostics]
             [datalevin.query.source.input-program :as input-program]
             [datalevin.query.source.inputs :as inputs]
             [datalevin.query.source.native :as native]
@@ -25,6 +26,7 @@
             [datalevin.query.source.region :as region]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.scope :as scope]
+            [datalevin.query.source.session :as session]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation]
             [datalevin.spill :as spill])
@@ -365,6 +367,25 @@
 
 (defrecord ^:private Program [runtime compilation planned root input regions state runner])
 
+(defn- operator-description [compiled native-specs region-id paths index {:keys [kind value]} inputs outputs]
+  (let [path (get paths (:id value))
+        node (:node (some #(when (= path (:path %)) %) (get-in compiled [:regions region-id :core-clauses])))
+        site (some #(when (= path (:path %)) %) (:sites compiled))
+        options (get-in value [:path :options])]
+    (cond-> {:operator-id index :kind (if (= :access kind) :access
+                                       (cond (:collection? (get native-specs path)) :collection
+                                             (instance? Pattern node) :native
+                                             (instance? RuleExpr node) :rule
+                                             (instance? Not node) :negation
+                                             (instance? Function node) :function
+                                             (instance? Predicate node) :predicate
+                                             :else (:kind site)))
+             :inputs inputs :outputs outputs}
+      (= :core kind) (assoc :core-id (:id value) :path path)
+      (= :access kind) (assoc :source (:source-symbol options) :alternative-id (:alternative-id options)
+                             :covers (:covers options))
+      (or (instance? Function node) (instance? Predicate node)) (assoc :function (get-in node [:fn :symbol])))))
+
 (defn- terminal-query! [compiled]
   (let [parsed (:parsed compiled) constants (get-in compiled [:regions (:root-region compiled) :bindings])]
     (when (or (seq (:qorder parsed)) (seq (:qhaving parsed))) (unsupported!))
@@ -458,6 +479,7 @@
                 (= (:query-id runtime) (get-in compilation [:runtime :query-id]))))
   (let [runtime (:runtime compilation) compiled (:compiled compilation)
         root (:root-region compiled) runner (atom nil) state (atom :compiling)
+        program-id (diagnostics/program! runtime)
         check! #(do (control/check-active! (:control runtime))
                     (ensure! (not= :closed @state)))
         run-region (fn [id input] (check!) (ensure! @runner) (@runner id input))
@@ -510,6 +532,14 @@
         compilation (prune-empty-collections! runtime compilation native-specs)
         compiled (:compiled compilation)
         input (or prepared-input (input! runtime check! compiled input-columns input-tuples))
+        ;; An ordinary invocation's complete owned input is an exact empty
+        ;; proof, even when an empty column has no narrow type. Body templates
+        ;; use placeholder rows during compilation and receive real seeds later.
+        compilation (if (and prepared-input (.isEmpty ^List (get-in input [:relation :tuples])))
+                      (planning/refine! runtime
+                        (update-in compilation [:compiled :regions root] assoc :empty? true) [])
+                      compilation)
+        compiled (:compiled compilation)
         root-columns (:columns input)
         proofs (boundaries! runtime check! compiled native-specs root-columns)
         compilation (planning/refine! runtime compilation proofs)
@@ -564,12 +594,23 @@
                     (vreset! tables @interfaces)
                     @interfaces))))
           schedules (planning/schedules runtime planned)
+          _ (when (:diagnostics runtime)
+              (let [groups (:groups planned)
+                    descriptions (session/explain! runtime groups)
+                    entries (into {} (map (juxt :symbol identity)) (:entries compilation))]
+                (diagnostics/sources! runtime
+                  (mapv (fn [description]
+                          (let [descriptor (:descriptor (entries (:source description)))]
+                            (assoc description :definition-id (:definition-id descriptor)
+                              :definition-fingerprint (:definition-fingerprint descriptor)
+                              :scope-id (get-in descriptor [:scope :id])))) descriptions))))
           executable
           (into {}
                 (map (fn [schedule]
                        (let [id (:region-id schedule) inputs (get-in @tables [id :inputs])
-                             [cols steps]
-                             (reduce (fn [[cols steps] {:keys [kind value]}]
+                             paths (when (:diagnostics runtime) (into {} (map (fn [[path id]] [id path])) (get-in @tables [id :core])))
+                             [cols steps descriptions]
+                             (reduce (fn [[cols steps descriptions] [index {:keys [kind value] :as operator}]]
                                        (let [step (if (= :access kind)
                                                     (plan/access-step (:expr value) (:path value)
                                                       (query-access/complete-demand :exact nil)
@@ -577,21 +618,33 @@
                                                     (let [step (:step value)]
                                                       (if (satisfies? plan/IStepFactory step)
                                                         (plan/-instantiate-step step cols) step)))]
-                                         [(:cols step) (conj steps step)]))
-                                     [(mapv :variable inputs) []] (:operators schedule))]
+                                         [(:cols step) (conj steps step)
+                                          (cond-> descriptions (:diagnostics runtime)
+                                            (conj (operator-description compiled native-specs id paths index operator cols (:cols step))))]))
+                                     [(mapv :variable inputs) [] []] (map-indexed vector (:operators schedule)))
+                             _ (when (:diagnostics runtime)
+                                 (diagnostics/region! runtime (assoc (access/explain! runtime schedule)
+                                                               :program-id program-id :operators descriptions)))]
                          [id {:inputs (mapv :variable inputs) :cols cols :steps steps}]))) schedules)]
       (reset! runner
         (fn [id input]
           (check!)
           (let [{:keys [inputs cols steps]} (get executable id)]
             (ensure! (and inputs (= inputs (mapv key (sort-by val (:attrs input))))))
-            (let [tuples (reduce (fn [tuples step]
-                                   (check!)
-                                   (let [result (plan/-execute step nil tuples)] (check!) result))
-                                 (:tuples input) steps)]
+            (let [tuples (loop [tuples (:tuples input) index 0]
+                           (check!)
+                           (if (= index (count steps)) tuples
+                               (let [started (when (get-in runtime [:diagnostics :intermediate?]) (System/nanoTime))
+                                     result (plan/-execute (nth steps index) nil tuples)]
+                                 (check!)
+                                 (when started
+                                   (diagnostics/operator! runtime program-id id index
+                                     (.size ^List tuples) (.size ^List result) (- (System/nanoTime) started)))
+                                 (recur result (inc index)))))]
               (relation/relation! (zipmap cols (range)) tuples)))))
       (reset! state :ready)
       (assoc (->Program runtime compilation planned root (:relation input) executable state runner)
+             :program-id program-id
              :core-specs (into {} (map (fn [[path spec]]
                                         [path (if-let [selected (:selected-inputs spec)]
                                                 (-> spec (dissoc :selected-inputs)
@@ -691,46 +744,74 @@
         (result! runtime (compile! runtime compilation input-columns input-tuples snapshots))))
     (catch Throwable e (fail-program! (:runtime compilation) compilation e))))
 
+(defn- invoke-query!
+  [runtime query arguments options explain-options]
+  (let [child (assoc runtime :cleanup (atom [])) primary (volatile! nil)
+        close (rt/own! runtime
+                #(let [held (reverse @(:cleanup child)) error (volatile! nil)]
+                   (reset! (:cleanup child) [])
+                   (doseq [f held]
+                     (try (f) (catch Throwable e
+                                (if-let [first-error @error]
+                                  (.addSuppressed ^Throwable first-error e)
+                                  (vreset! error e)))))
+                   (when-let [e @error] (throw e))))]
+    (try
+      (let [check! #(control/check-active! (:control child))
+            _ (retain! child (rt/charge-copy! child query))
+            parsed (input-program/parse! parser/parse-query (value/owned-copy query check!))
+            ctl (control/create {:parent (:control child) :timeout-ms (:qtimeout parsed)})
+            _ (rt/own! child #(control/close! ctl))
+            child (assoc child :control ctl)
+            _ (when (some? explain-options)
+                (retain! child (rt/charge-metadata! child explain-options :explain))
+                (when-not (value/plain-map? explain-options) (fail! :query-source/invalid :explain))
+                (when-not (every? #{:run? :intermediate-counts?} (keys explain-options))
+                  (fail! :query-source/unsupported :explain))
+                (when-not (every? boolean? (vals explain-options)) (fail! :query-source/invalid :explain)))
+            execute? (or (nil? explain-options) (get explain-options :run? false))
+            child (if (nil? explain-options) child
+                      (assoc child :diagnostics (diagnostics/start! child (get explain-options :intermediate-counts? true))))
+            check! #(control/check-active! ctl)
+            input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
+            compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
+                          (:bindings input) (set (map :variable (:columns input))) options)]
+        (native/with-views (filter db/db? (keep :native (:entries compilation)))
+          (fn [snapshots]
+            (let [program (compile-program! child compilation nil nil snapshots (select-keys input [:columns :relation]))
+                  result (when execute? (result! child program))]
+              (if (nil? explain-options) result
+                  (diagnostics/finish! child execute? (:result-rows (control/usage ctl))
+                    {:storage :memory :spill-policy :reject :replay-spools :none
+                     :empty-input? (.isEmpty ^List (get-in program [:input :tuples]))
+                     :join-indexes :bounded-hash :distinct :find-and-with
+                     :grouping (boolean (some parser/aggregate? (parser/find-elements (:qfind parsed))))
+                     :result :retained}))))))
+      (catch Throwable e
+        (let [error (rt/redacted-error child (or (:phase (ex-data e)) :inputs) e)]
+          (vreset! primary error)
+          (control/cancel! (:control child) (select-keys (ex-data error) [:error :phase]))
+          (throw error)))
+      (finally
+        (try (close)
+             (catch Throwable e
+               (if-let [error @primary]
+                 (.addSuppressed ^Throwable error e)
+                 (throw (rt/redacted-error child :close e)))))))))
+
 (defn query!
   "Execute ordinary query syntax and :in arguments through the internal v2
   compiler. Inputs are owned before descriptor callbacks, and all preparation,
   compilation and session resources close before the owned result returns.
   This entry point does not activate v2 in public q/explain."
   ([runtime query arguments] (query! runtime query arguments nil))
-  ([runtime query arguments options]
-   (let [child (assoc runtime :cleanup (atom [])) primary (volatile! nil)
-         close (rt/own! runtime
-                 #(let [held (reverse @(:cleanup child)) error (volatile! nil)]
-                    (reset! (:cleanup child) [])
-                    (doseq [f held]
-                      (try (f) (catch Throwable e
-                                 (if-let [first-error @error]
-                                   (.addSuppressed ^Throwable first-error e)
-                                   (vreset! error e)))))
-                    (when-let [e @error] (throw e))))]
-     (try
-       (let [check! #(control/check-active! (:control child))
-             _ (retain! child (rt/charge-copy! child query))
-             parsed (input-program/parse! parser/parse-query (value/owned-copy query check!))
-             ctl (control/create {:parent (:control child) :timeout-ms (:qtimeout parsed)})
-             _ (rt/own! child #(control/close! ctl))
-             child (assoc child :control ctl)
-             check! #(control/check-active! ctl)
-             input (input-program/prepare! child parsed arguments #(joined! child check! %1 %2))
-             compilation (planning/capture! child (:entries input) (:parsed input) (:rules input)
-                           (:bindings input) (set (map :variable (:columns input))) options)]
-         (native/with-views (filter db/db? (keep :native (:entries compilation)))
-           (fn [snapshots]
-             (result! child (compile-program! child compilation nil nil snapshots
-                              (select-keys input [:columns :relation]))))))
-       (catch Throwable e
-         (let [error (rt/redacted-error child (or (:phase (ex-data e)) :inputs) e)]
-           (vreset! primary error)
-           (control/cancel! (:control child) (select-keys (ex-data error) [:error :phase]))
-           (throw error)))
-       (finally
-         (try (close)
-              (catch Throwable e
-                (if-let [error @primary]
-                  (.addSuppressed ^Throwable error e)
-                  (throw (rt/redacted-error child :close e))))))))))
+  ([runtime query arguments options] (invoke-query! runtime query arguments options nil)))
+
+(defn explain!
+  "Compile a v2 query and return an owned, redacted explanation after cleanup.
+  Plan-only mode acquires authorized sessions and selects complete accesses
+  without opening execution cursors. Executed mode keeps metrics separate from
+  optional intermediate counts. Public q/explain routing remains unchanged."
+  ([runtime query arguments explain-options] (explain! runtime query arguments explain-options nil))
+  ([runtime query arguments explain-options options]
+   (invoke-query! runtime query arguments options (if (nil? explain-options) {} explain-options))))

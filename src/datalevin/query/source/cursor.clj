@@ -6,6 +6,7 @@
             [datalevin.query.source :as source]
             [datalevin.query.source.binding :as binding]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.diagnostics :as diagnostics]
             [datalevin.query.source.permissions :as permissions]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]])
@@ -125,6 +126,7 @@
 (defn- read-open!
   [runtime group alternative request dependent? deliver!]
   (let [ctl (:control runtime)
+        trace (diagnostics/cursor! runtime request dependent?)
         permission (permissions/reserve-open! (:consumption group) alternative request)
         close-permission (rt/own! runtime #(.close ^Closeable permission))
         close (volatile! close-permission)
@@ -142,7 +144,10 @@
           (loop []
             (let [batch (rt/invoke runtime :fetch #(source/-next-batch! cursor fetch))]
               (deliver-batch! runtime (:columns alternative) dependent? fetch batch deliver!)
-              (when-not (:exhausted? batch) (recur))))))
+              (diagnostics/batch! runtime trace (:row-count batch) (:byte-count batch))
+              (when-not (:exhausted? batch) (recur))))
+        (when (:diagnostics runtime)
+          (diagnostics/metrics! runtime trace (rt/invoke runtime :metrics #(source/-cursor-metrics cursor))))))
       (catch Throwable e
         (let [error (rt/redacted-error runtime (or (:phase (ex-data e)) :execution) e)]
           (vreset! primary error)
