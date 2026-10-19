@@ -232,11 +232,7 @@
 (defn with-runtime [options f]
   (let [control (control/create (assoc options :parent (:control *runtime*)))
         runtime {:control control :query-id (UUID/randomUUID) :cleanup (atom [])
-                 :redacted-errors (atom #{})
-                 :explain? (boolean (:explain? options))
-                 :intermediate-counts? (boolean (:intermediate-counts? options))
-                 :explain (atom (cond-> {:sources [] :native-scans 0}
-                                  (:intermediate-counts? options) (assoc :streamed-rows 0)))}
+                 :redacted-errors (atom #{})}
         primary (atom nil)]
     (binding [*runtime* runtime]
       (try

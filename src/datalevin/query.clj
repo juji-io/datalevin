@@ -4,7 +4,6 @@
    [datalevin.db :as db]
    [datalevin.prepared :as prepared]
    [datalevin.query.cache :as qcache]
-   [datalevin.query.dispatch :as dispatch]
    [datalevin.query.execute :as qexec]
    [datalevin.query.execute.ordered-range :as ordered-range]
    [datalevin.query.execute.point-lookup :as point]
@@ -13,7 +12,7 @@
    [datalevin.interface :as i]
    [datalevin.util :as u :refer [raise]])
   (:import
-   [clojure.lang ArraySeq Indexed]
+   [datalevin.utl QuerySourceDispatch]
    [datalevin.db DB]
    [datalevin.parser BindScalar SrcVar]))
 
@@ -34,45 +33,16 @@
 
 (defmacro ^:private with-query-runtime
   [& body]
-  `(binding [qcache/*cache?*      (and qcache/*cache?* *cache?*)
-             qcache/*query-cache* *query-cache*
-             qo/*plan-cache*      *plan-cache*]
-     ~@body))
-
-(defn- source-input? [source? input]
-  ;; Native DB values retain native dispatch even if an extension mistakenly
-  ;; extends the public source protocol to the DB class.
-  (and (not (instance? DB input)) (source? input)))
+  ;; binding builds a hash map even for three entries. An array-map literal
+  ;; keeps the same binding frame and restoration without that temporary trie.
+  `(do
+     (push-thread-bindings {#'qcache/*cache?* (and qcache/*cache?* *cache?*)
+                            #'qcache/*query-cache* *query-cache*
+                            #'qo/*plan-cache* *plan-cache*})
+     (try ~@body (finally (pop-thread-bindings)))))
 
 (defn- source-inputs? [inputs]
-  (if-let [source? (dispatch/source-predicate-fn)]
-    (cond
-      ;; Varargs and prepared vectors must not allocate sequence tails just to
-      ;; detect external inputs. Preserve ArraySeq offsets used by apply.
-      (instance? ArraySeq inputs)
-      (let [^objects values (.-array ^ArraySeq inputs)
-            end (alength values)]
-        (loop [idx (.index ^ArraySeq inputs)]
-          (cond
-            (= idx end) false
-            (source-input? source? (aget values idx)) true
-            :else (recur (inc idx)))))
-
-      (instance? Indexed inputs)
-      (let [end (count inputs)]
-        (loop [idx 0]
-          (cond
-            (= idx end) false
-            (source-input? source? (.nth ^Indexed inputs idx)) true
-            :else (recur (inc idx)))))
-
-      :else
-      (loop [inputs (seq inputs)]
-        (cond
-          (nil? inputs) false
-          (source-input? source? (first inputs)) true
-          :else (recur (next inputs)))))
-    false))
+  (QuerySourceDispatch/hasSource inputs DB))
 
 (defonce ^:private source-executor
   (delay (requiring-resolve 'datalevin.query.source.driver/run)))
@@ -137,8 +107,8 @@
           ;; A local source, or a second DB source, rules out remote execution.
           ;; The usual embedded call exits at its first argument.
           (when (and (nil? remote-db)
-                     (not (db/pending-tx-cache? input))
-                     (db/remote-store? (.-store ^DB input)))
+                     (db/remote-store? (.-store ^DB input))
+                     (not (db/pending-tx-cache? input)))
             (recur (next remaining) (inc idx) input idx))
           (recur (next remaining) (inc idx) remote-db remote-idx)))
       (when (and remote-db (db/db? remote-db))
@@ -162,12 +132,17 @@
              {:error :prepared/query-inputs}))
     parsed-q))
 
-(defn- check-query-inputs! [inputs expected]
-  (when-not (and (vector? inputs) (= expected (count inputs)))
+(defn- check-query-input-count! [inputs ^long expected]
+  (when-not (and (vector? inputs) (== expected (long (count inputs))))
     (raise "Prepared query inputs must be a vector with " expected " values"
            {:error :prepared/query-inputs :expected expected})))
 
-(defn- result-reader [parsed-q check-sources?]
+(defn- check-query-inputs! [inputs ^long expected]
+  (check-query-input-count! inputs expected)
+  (when (source-inputs? inputs)
+    (raise "Prepared query sources are unsupported" {:error :query-source/unsupported})))
+
+(defn- result-reader [parsed-q]
   (let [execute (qcache/prepare-result-reader parsed-q)
         encoded-point (point/prepared-executor
                         parsed-q (point/point-lookup-projection-shape parsed-q) true)
@@ -175,8 +150,6 @@
         expected (count (:qin parsed-q))]
     (fn [db inputs encoded?]
       (check-query-inputs! inputs expected)
-      (when (and check-sources? (source-inputs? inputs))
-        (raise "Prepared query sources are unsupported" {:error :query-source/unsupported}))
       (let [inputs (if (identical? db (nth inputs 0)) inputs (assoc inputs 0 db))
             result (if encoded?
                      (if encoded-range
@@ -197,7 +170,7 @@
   "Compile reusable result processing and eligible access paths. Sources,
   inputs, cache tokens, deadlines and general plans stay execution-local."
   [query]
-  (result-reader (prepared-query query) true))
+  (result-reader (prepared-query query)))
 
 (defn prepare-q
   "Prepare a query bound to a local or remote DB view. Its first :in binding
@@ -210,20 +183,20 @@
         remote (when (and (db/remote-prepared-store? store)
                           (not (db/pending-tx-cache? db)))
                  (i/prepare-remote-read store :q [query nil]))
-        ;; Prepared invocations check their supplied inputs below; their bound
-        ;; DB already has native precedence. Do not scan the same inputs twice.
-        reader (when-not remote (result-reader parsed-q false))]
-    (prepared/prepared-read
-      (fn [inputs]
-        (check-query-inputs! inputs expected)
-        (when (source-inputs? inputs)
-          (raise "Prepared query sources are unsupported" {:error :query-source/unsupported}))
-        (if remote
-          (do
-            (when (some db/-searchable? inputs)
-              (raise "Prepared remote queries require exactly one database source"
-                     {:error :prepared/query-sources}))
-            (remote (into [:remote-db-placeholder] inputs)))
+        ;; The local reader checks the assembled inputs before using caches;
+        ;; remote preparations check their supplied inputs before the RPC.
+        reader (when-not remote (result-reader parsed-q))]
+    (if remote
+      (prepared/prepared-read
+        (fn [inputs]
+          (check-query-inputs! inputs expected)
+          (when (some db/-searchable? inputs)
+            (raise "Prepared remote queries require exactly one database source"
+                   {:error :prepared/query-sources}))
+          (remote (into [:remote-db-placeholder] inputs))))
+      (prepared/prepared-read
+        (fn [inputs]
+          (check-query-input-count! inputs expected)
           (reader db (into [db] inputs) false))))))
 
 (defn ^:no-doc q-nested

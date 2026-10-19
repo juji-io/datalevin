@@ -269,8 +269,14 @@
                   (set/subset? ids (set (keys by-id)))))
     (let [before @state
           selected (mapv by-id selected-ids)
-          after {:phase :selected :alternatives selected :container (:container before)
+          container (if (= (count selected) (count candidates)) (:container before)
+                        (do (control/release! (:container before))
+                            (control/reserve! (:control runtime)
+                              {:retained-bytes (+ 1024 (* 128 (count selected)))})))
+          after {:phase :selected :alternatives selected :container container
                  :charges (select-keys (:charges before) ids)}]
-      (ensure! (and (= :captured (:phase before)) (compare-and-set! state before after)))
+      (try
+        (ensure! (and (= :captured (:phase before)) (compare-and-set! state before after)))
+        (catch Throwable e (control/release! container) (throw e)))
       (doseq [[id token] (:charges before) :when (not (contains? ids id))] (control/release! token))
       selected)))

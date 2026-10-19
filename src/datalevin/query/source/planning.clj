@@ -1,7 +1,6 @@
 (ns ^:no-doc datalevin.query.source.planning
   "Owned capture and planning lifecycle for the revised contract. The shared
-  compiler supplies actual typed region interfaces before acquisition. This
-  internal entry point is not yet selected by q/explain."
+  compiler supplies actual typed region interfaces before acquisition."
   (:require [datalevin.parser :as parser]
             [datalevin.query.source :as source]
             [datalevin.query.source.access :as access]
@@ -196,6 +195,7 @@
                                                   (rt/invoke runtime :planning
                                                     #(source/-plan-source (:source entry) (:session group) request))
                                                   (:consumption group))})))) requests))) regions)
+            all-candidates (volatile! [])
             schedules
             (mapv (fn [{:keys [region inputs operators requests responses]}]
                     (let [candidates
@@ -203,8 +203,13 @@
                                             (let [method (cursor/method runtime group ids)]
                                               (mapv #(access/candidate! runtime request % (:consumption group) method)
                                                     (envelope/alternatives runtime response))))) responses)]
+                      (vswap! all-candidates into candidates)
                       (access/schedule! runtime (:region-id region) inputs requests candidates operators))) responses)]
         (access/validate-query! runtime schedules)
+        (let [identity-key #(select-keys (get-in % [:path :options]) [:source-symbol :region-id :alternative-id])
+              selected (into #{} (map identity-key) (mapcat :plans schedules))]
+          (doseq [candidate @all-candidates :when (not (contains? selected (identity-key candidate)))]
+            (access/release-discarded! candidate)))
         (doseq [[{:keys [responses]} schedule] (map vector responses schedules)
                 {:keys [request response]} responses]
           (envelope/select! runtime response

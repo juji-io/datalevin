@@ -8,7 +8,8 @@
             [datalevin.query.source.binding :as binding]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.runtime :as rt]
-            [datalevin.query.source.session :as session])
+            [datalevin.query.source.session :as session]
+            [datalevin.query.source.value :as value])
   (:import [java.util ArrayList Date Iterator Random]
            [java.util.concurrent CountDownLatch TimeUnit]))
 
@@ -600,3 +601,35 @@
             (is (= (set (range 1 41)) (set (map #(aget ^bytes (aget ^objects % 1) 0) output))))
             (is (= 40 (count output)))
             (is (= 1 (count (events-of events :open))))))))))
+
+(def ^:private probe-type
+  {:kind :custom :name :cursor/probe :version 1 :fingerprint "probe:v1"})
+(deftype ProbeKey [^long n comparisons]
+  value/IQuerySourceValue
+  (-logical-type [_] probe-type)
+  (-retained-bytes [_] 64)
+  Object
+  (hashCode [_] (int n))
+  (equals [_ other]
+    (swap! comparisons inc)
+    (and (instance? ProbeKey other) (= n (.-n ^ProbeKey other)))))
+
+(deftest input-free-overlapping-keys-use-the-shared-hash-index
+  (let [n 256 comparisons (atom 0) events (atom [])
+        schema (-> descriptor
+                   (assoc-in [:pattern-contract :attributes :row/value :entity-type] probe-type)
+                   (assoc-in [:logical-schema :domains :row :entity-type] probe-type))
+        columns (assoc-in columns [0 :type] probe-type)
+        rows (mapv #(vector (ProbeKey. % comparisons) "match") (range n))
+        outers (mapv #(vector (ProbeKey. (quot % 2) comparisons) %) (range (* 2 n)))]
+    (rt/with-runtime {}
+      (fn [runtime]
+        (let [{:keys [plan ids]} (fixture runtime events
+                                 {:descriptor schema :columns columns
+                                  :fetch (fn [_ fetch _] (batch! fetch columns rows nil true))})
+              output (plan/-execute (step (plan false) ['?e '?tag]) nil outers)]
+          (is (= (* 2 n) (count output)))
+          (is (= (set (range (* 2 n))) (into #{} (map #(aget ^objects % 1)) output)))
+          (is (< 0 @comparisons (* 10 n)))
+          (is (= 1 (count (events-of events :open))))
+          (is (false? (realized? ids))))))))

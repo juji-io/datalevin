@@ -141,7 +141,22 @@
              (run {} (fn [runtime]
                        (execute runtime '[:find ?v :in $native [?id ...]
                                           :where [$native ?id :value ?v]]
-                                [@conn [1 2]]))))))))
+                                [@conn [1 2]]))))))
+    ;; Exercise the dispatcher's larger extension set and nil extension in
+    ;; this isolated JVM. These protocol changes must never leak to unit tests.
+    (let [methods {:-source-info (fn [_] (info provider))
+                   :-open-session (fn [_ request] (open provider request))
+                   :-plan-source (fn [_ session request] (plan provider session request))}
+          query '[:find ?id :in $s :where [$s ?id :row/value _]]]
+      (extend nil protocol methods)
+      (is (= #{[1] [2]} (d/q query nil)))
+      (doseq [type [StringBuilder StringBuffer java.util.Date]]
+        (extend type protocol methods))
+      (is (= #{[1] [2]} (d/q query (StringBuilder.))))
+      (is (= 10 (d/q '[:find ?v . :in $ :where [1 :value ?v]] @conn)))
+      (is (= #{[1] [2]} (d/q query nil)))
+      (is (= 10 ((query/query-reader '[:find ?v . :in $ :where [1 :value ?v]])
+                    @conn [@conn] false))))))
 
 (defn -main [& _]
   (binding [test/*report-counters* (ref test/*initial-report-counters*)]

@@ -452,11 +452,11 @@
         (is (= #{[1 small]}
                (d/q (assoc bounded :in '[$ $s [?e ...]]) @conn
                     (pair-source row-info [[1 "anchor"]]) [1 1])))
-        ;; Without an upstream entity key, the native read is a complete scan
-        ;; and must reject the selected giant before decoding it.
+        ;; A mapped scan supplies entity keys too. Selecting the giant must
+        ;; still reject before decoding, without an ordinary :in entity key.
         (is (= :query-source/limit
                (category #(d/q (assoc bounded :in '[$ $s]) @conn
-                                (pair-source row-info [[1 "anchor"]]))))))
+                                (pair-source row-info [[2 "anchor"]]))))))
       (finally (d/close conn) (u/delete-files dir)))))
 
 (deftest decimal-aggregate-alignment-reserves-before-arithmetic

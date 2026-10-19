@@ -859,9 +859,8 @@
     [_ out attr get-v? policy]
     ((:check! policy))
     (when-let [props (get (:schema policy) attr)]
-      (when (:db/noindex props) ((:unsupported! policy)))
       (let [kv (.-lmdb ^datalevin.storage.Store store)]
-        (scans/ave-tuples-scan-controlled
+        ((if (:db/noindex props) scans/eav-attribute-tuples-scan-controlled scans/ave-tuples-scan-controlled)
           kv out (:db/aid props) get-v? policy))))
 
   (-lookup-tuples-controlled
@@ -875,9 +874,13 @@
     [_ out attr values policy]
     ((:check! policy))
     (when-let [props (get (:schema policy) attr)]
-      (when (:db/noindex props) ((:unsupported! policy)))
-      (scans/ave-value-tuples-scan-controlled
-        (.-lmdb ^datalevin.storage.Store store) out (:db/aid props) values policy)))
+      (let [kv (.-lmdb ^datalevin.storage.Store store)]
+        (if (:db/noindex props)
+          (dotimes [n (.size ^java.util.List values)]
+            ((:check! policy))
+            (scans/eav-attribute-tuples-scan-controlled kv out (:db/aid props) true
+              (assoc policy :key (.get ^java.util.List values n) :value-first? true)))
+          (scans/ave-value-tuples-scan-controlled kv out (:db/aid props) values policy)))))
 
   ITuples
   (-init-tuples

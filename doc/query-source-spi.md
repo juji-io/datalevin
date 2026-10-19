@@ -1,6 +1,6 @@
 # Query-source SPI
 
-Status: v2 public core and local adapter active; remaining F1 conformance/performance gates open
+Status: v2 public core/local conformance and native routing gate validated (2026-10-19)
 
 Public `q`/`explain` and the companion mapping compiler/local adapter now use the
 v2 contract in §10, with no version fallback. The earlier envelopes in §§2–9
@@ -107,13 +107,11 @@ they are not automatically wrapped or reinterpreted as companion adapters.
 
 ### 1.1 Four-shape revision target
 
-This section records planned changes to the unreleased prototype.
-Sections 2–9 describe the earlier executable external baseline,
-which requires unparameterized external alternatives, uses one query-wide
-consistency request, and restricts one-shot replay at session scope. These
-rules have not yet been replaced in code. Exact new envelopes and negotiation
-rules are specified in [Section 10](#10-spi-v2-revised-four-shape-contract) as
-SPI v2 and must be implemented and tested before they become usable.
+This section records the scope of the revision implemented in SPI v2.
+Sections 2–9 preserve the earlier unreleased prototype for historical context.
+Its unparameterized alternatives, query-wide consistency request and replay-based
+one-shot restrictions have been replaced. The active envelopes and negotiation
+rules are specified in [Section 10](#10-spi-v2-revised-four-shape-contract).
 
 The federation interface is mapped entities and attributes, queried through
 source-qualified EAV patterns. Native Datalevin supplies its existing entities
@@ -1237,9 +1235,10 @@ leaves after close. Structural explanation checks reverse provider candidate
 order and separate provider metrics from optional engine counts. Failure checks
 include malformed IDs/completion, one-shot reuse and oversized single lookup
 keys. The fixture's modeled setup/page requests charge the shared backend ledger.
-These v2 checks are migration preparation. The active fake and companion local
-adapter still use the prototype public route; this matrix does not close their
-coordinated migration or the native/SQL/file/API sign-off.
+The active fake, companion local adapter and public route use these v2 checks.
+The companion also runs the deterministic SQLite/file/HTTP transport matrix in
+[`transport-conformance`](../test-src/datalevin/query/source/transport_conformance.clj).
+Production provider gates and native performance sign-off remain separate.
 
 Within v2 compilation, an independently ready native/local caller producer can
 seed a mapped rule or union body. A charged core-only dependency walk includes
@@ -1754,8 +1753,10 @@ implementation details.
 
 ## 10. SPI v2: revised four-shape contract
 
-Status: active public core/local contract, with remaining conformance and
-performance gates tracked in the roadmap. This section defines SPI revision `2`, replacing the unreleased
+Status: active public core/local contract. The [cleanup status](../spi-v2-cleanup.md#implementation-status)
+and [resource audit](query-source-resource-audit.md) record implementation and
+regression evidence; the roadmap owns performance sign-off. This section defines
+SPI revision `2`, replacing the unreleased
 prototype documented in Sections 2–9. It reuses the protocol method signatures,
 logical values, clause coverage, ownership, authorization, cancellation, quota ledger, and
 error/redaction rules unless explicitly replaced below. Unknown unqualified
@@ -2058,9 +2059,7 @@ snapshots before rethrowing. Its explanation copies distinguish alias minimums,
 group minimums, and actual guarantees without authorization or provider-private
 metadata. Providers still admit setup I/O through their session-wide request
 limiter; core validation creates no duplicate limiter or synthetic request
-charge. Native read contexts remain owned by the existing engine. These helpers
-are not yet called by `q`/`explain`; the coordinated descriptor/adapter/runtime
-switch remains pending.
+charge. Native read contexts remain owned by the existing engine. The public v2 driver uses these helpers for both `q` and `explain`.
 
 ### 10.4 Consumption groups and replay
 
@@ -2159,7 +2158,7 @@ these alongside query concurrency limits and any limits shared across queries.
 Every page, retry, and split request charges the cumulative request ledger;
 waiting for a permit is cancellable and observes the query deadline.
 
-The preparatory public helpers `datalevin.query.source/request-limiter` and
+The public helpers `datalevin.query.source/request-limiter` and
 `datalevin.query.source/acquire-request!` implement shared request admission.
 Create one Closeable limiter during session setup with the invocation's control
 and the session's request-constraints map, and share it across all aliases,
@@ -2182,9 +2181,8 @@ provider-owned.
 
 Core's internal consumption helper separately implements default/explicit open
 permissions, reserving attempts before provider calls and retaining spent
-one-shot attempts after failures. These helpers are preparation for the
-coordinated migration; the prototype session validator and executor have not
-yet switched to these v2 declarations.
+one-shot attempts after failures. The public session lifecycle enforces these
+v2 declarations independently of replay guarantees.
 
 ### 10.5 Dependent access and binding batches
 
@@ -2331,16 +2329,14 @@ retained memory until their users release them; returned
 `:byte-count`/`:reservation` cover the extended batch. Headers, dedup indexes,
 and outer associations remain accounted for even when zero rows are returned.
 
-The public accounting helpers and binding limits are implemented as preparation
-for the runtime switch. The dependent helper validates required columns, IDs,
+The public v2 execution path uses the accounting helpers and binding limits. The dependent helper validates required columns, IDs,
 typed input tuples, and duplicate keys under query-key equality. Both output
 charge shapes include metadata and retained backing; an empty dependent final
 batch still charges its ID vector. The two-argument input-free path keeps its
-existing charge and allocates no ID state. Their availability does not admit
-dependent cursors under the still-active prototype descriptor/session contract.
+existing charge and allocates no ID state. Dependent cursors use the revised descriptor and session contract.
 
 The internal [`source.binding`](../src/datalevin/query/source/binding.clj)
-primitive is also implemented as preparation. Its caller creates one ID space
+primitive supplies the public dependent execution path. Its caller creates one ID space
 for the invocation's dependent accesses and collects all outer associations for
 each chosen logical access before admitting any of its input batches. It owns
 keys and witnesses, applies query/provider row and byte caps, and rejects a
@@ -2352,8 +2348,8 @@ and temporary sizing state are quota-accounted and cleared on failure/close.
 Batch assembly sizes each key once and matches `binding-charge-bytes` exactly
 for its generated vectors. The cursor adapter still owns envelope admission,
 permission reservation, and cursor/batch lifetime; downstream shared operators
-must own and charge values they retain. The prototype executor does not yet
-call this primitive, and input-free paths allocate none of its state.
+must own and charge values they retain. Input-free paths allocate none of this
+association state.
 
 The internal [`source.cursor`](../src/datalevin/query/source/cursor.clj) adapter
 now admits both shapes for captured v2 session/access plans. It validates the
@@ -2372,10 +2368,10 @@ dependent open, evaluates each distinct key once for that logical access, and
 preserves returned multiplicity during fan-out. Overlapping variables use
 `QueryKey.equals`; retained output is copied and charged separately from borrowed
 provider batches through invocation cleanup. Input-free execution creates no ID
-space or binding index. These hooks do not activate revised descriptors or
-replace the current query entry point's prototype executor. Compiler-driven
-regions and the full shared-operator resource audit are still required for the
-coordinated runtime switch.
+space or binding index. Input-free accesses with upstream keys use the shared
+bounded hash join. These hooks execute public v2 compiler regions; the
+[resource audit](query-source-resource-audit.md) records their admission and
+ownership boundaries.
 
 <a id="106-conditioned-planning-and-deterministic-selection"></a>
 
@@ -2454,7 +2450,7 @@ all branches. A partial attribute spool is not a complete observation of the
 other attributes.
 
 The internal [`source.lowering`](../src/datalevin/query/source/lowering.clj)
-preparation implements fixed specialization, canonical attribute branches,
+implements fixed specialization, canonical attribute branches,
 runtime dispatch metadata, branch-specific types/guarantees, restored attribute
 bindings and repeated-term unification. It retains caller multiplicity while
 visiting compatible branches, observes cancellation and reentrant closure, and
@@ -2464,8 +2460,8 @@ whose value domains may overlap, including `:data`, cannot establish that proof;
 an unsupported repeated-variable type contract is rejected rather than erased.
 Internal acquired-session/shared-step tests compare its lowered reads with eager
 EAV facts, including heterogeneous attributes, wildcard and repeated terms,
-zero-column reads, self-joins, aggregates and `:with`. The active prototype
-query compiler does not yet select this pass.
+zero-column reads, self-joins, aggregates and `:with`. The public v2 compiler
+selects this pass.
 
 Each branch keeps its declared entity/value types, reference domains, and
 non-null fact terms; the restored attribute binding has type `:keyword` and is
@@ -2516,8 +2512,8 @@ lowered occurrences; core residuals and private/enclosing/sibling nodes remain
 private. Statically empty ancestors eliminate descendant access work while
 leaving query-wide validation/authorization requirements intact. Planning
 reservations unwind on failure, and closed or foreign captures cannot form new
-requests. Wiring typed export derivation and these annotations into the active
-shared planner/rule/union execution paths remains part of the coordinated switch.
+requests. The active shared planner derives typed exports and emits these
+annotations through its rule/union execution paths.
 
 The internal [`source.planning`](../src/datalevin/query/source/planning.clj)
 lifecycle now connects owned v2 descriptor capture, grouped acquisition,
@@ -2618,9 +2614,12 @@ across provider planning and execution; views cannot escape or move threads.
 Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
-currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, remaining input edges
-and the operator/decode audit precede activation in `q`/`explain`.
+includes scalar predicates and identity/ground bindings. Controlled unindexed
+attribute enumeration and repeated entity/value terms are also admitted. Native
+reference producers can bound later payload reads, including when the provider
+offers both scans and dependent lookups. The
+[operator/decode audit](query-source-resource-audit.md) covers the admitted paths;
+unsupported shapes fail before execution cursors open.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
 `:in` arguments into that compiler. Source aliases and `%` rules are extracted
@@ -2633,9 +2632,9 @@ the producer advances. Ignored inputs and unused tuple tails remain unread;
 arity validation pulls at most one extra argument. Direct scalar limit/offset
 parameters resolve before provider callbacks. Input preparation observes query
 timeouts, cancellation and quotas, and all invocation resources close before
-returning independently owned results. This is an internal execution bridge:
-plain scalar function arguments, textual rules, some captured scalar type edges,
-public routing and the coordinated adapter switch remain pending.
+returning independently owned results. Public `q`/`explain` select this compiler.
+Unsupported resolver/input shapes still reject explicitly rather than bypassing
+the controlled execution boundary.
 
 Local collection sources now also enter the revised compiler. Ordinary input
 preparation and direct capture detach every local source before external
@@ -2764,9 +2763,8 @@ when that bound is exceeded.
 Negative facts participate in representation-safety constraints but never
 establish outer producer types or nullability. Comparison constraints also flow
 back through identity/ground copies. Mapped negative bodies and mapped recursion
-remain unsupported. This internal compiler
-extension does not activate v2 in public
-`q`/`explain`.
+remain unsupported in the initial mapped workflow. Public v2 execution retains
+these capability gates.
 
 Internal logical value walkers bound nesting at 128, including metadata,
 retained vector backing and nested logical tuples. Structural envelopes count
@@ -3055,12 +3053,11 @@ keeping body variables private. The search remains bounded at 4096 states and
 uses an explicit stack. Its query-wide validation checks selected regions together
 for one-shot resource reuse. It performs no provider callbacks and admits no
 implicit replay/spool. The shared sampling hook enforces the path's
-`:none`/`:execution` policy before opening a cursor. These are internal
-primitives; `q`/`explain` still use the prototype planner. Full revised
-descriptor/session/envelope validation and an internal planning lifecycle are
-available. Active scoped-interface emission, compiler activation, native planner
-participation and the complete shared-operator resource audit still require the
-coordinated runtime switch.
+`:none`/`:execution` policy before opening a cursor. Public `q`/`explain` use this
+planner with revised descriptor/session/envelope validation, scoped interfaces
+and controlled native participation. Discarded envelope and bridge reservations
+release after complete-query validation. The
+[resource audit](query-source-resource-audit.md) records the active operators.
 
 The initial policy is `:eav-structural-v1`. Among legal, dependency-ready choices
 for the same work, prefer bound-entity lookup, then bound-value lookup, then
@@ -3137,7 +3134,7 @@ options map. It uses the same input ownership, compilation, selection and
 cleanup as the internal v2 query bridge. `:run?` defaults to false and
 `:intermediate-counts?` to true. Plan-only calls authorize sessions and select
 complete accesses without opening provider execution cursors or requesting
-cursor metrics. This bridge does not change public `q`/`explain` routing.
+cursor metrics. Public `q`/`explain` route through this bridge.
 
 The internal `datalevin.query.source.driver/run` accepts
 `[query arguments explain-options]`, matching the public executor's call shape.
@@ -3155,7 +3152,7 @@ and source queries, and cleanup callbacks inherit the effective child control
 and earliest deadline. Budget/deadline bindings restore on every exit; a deadline
 cannot extend when cleanup reenters the context. A timeout or cancellation takes
 precedence over a new untrusted input exception, with private exception data
-redacted. This driver remains internal until the coordinated adapter switch.
+redacted. Public `q`/`explain` select this driver lazily only for external inputs.
 
 Its `:sources` distinguish definition fingerprints, scope IDs, data versions
 and requested/effective/actual consistency. `:regions` retain the structural

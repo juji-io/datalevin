@@ -7,6 +7,7 @@
             [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.inputs :as inputs]
+            [datalevin.query.source.native :as native]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation])
@@ -150,7 +151,10 @@
                 (case kind
                   :source
                   (update result :entries conj
-                    (cond (db/db? input) {:symbol symbol :native input}
+                    (cond (db/db? input)
+                          (do (rt/with-context runtime {:source-symbol symbol}
+                                (fn [_] (native/validate! input)))
+                              {:symbol symbol :native input})
                           (satisfies? source/IQuerySource input) {:symbol symbol :source input}
                           (collection/collection? input)
                           {:symbol symbol :native

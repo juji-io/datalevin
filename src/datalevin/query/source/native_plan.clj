@@ -45,21 +45,19 @@
     (when-not (and (= 3 (count pattern))
                    (or (instance? Variable entity) (instance? Constant entity) (instance? Placeholder entity))
                    (instance? Constant attribute) (keyword? (:value attribute))
-                   (or (instance? Variable v) (instance? Constant v) (instance? Placeholder v))
-                   (not (and (instance? Variable entity) (= (:symbol entity) (:symbol v))))) (unsupported!))
-    (let [attribute (:value attribute) props (get-in snapshot [:schema attribute])
+                   (or (instance? Variable v) (instance? Constant v) (instance? Placeholder v))) (unsupported!))
+    (let [attribute (:value attribute)
           _ (when (instance? Constant entity) (constant-entity (:value entity)))
-          _ (when (and (:db/noindex props) (instance? Placeholder entity)) (unsupported!))
           type (when-not (instance? Placeholder v) (native/logical-type! snapshot attribute))]
-      {:requires (if (and (:db/noindex props) (instance? Variable entity))
-                   [{:variable (:symbol entity) :type :data :nullable? true}] [])
+      {:requires []
        :value-type type
        :constant-constraints (mapv (fn [[variable i]]
                                      {:variable variable :type (case i 0 :long 1 :keyword 2 type) :nullable? false})
                                    literal-terms)
        :columns (cond-> []
                   (instance? Variable entity) (conj {:variable (:symbol entity) :type :long :nullable? false})
-                  (instance? Variable v) (conj {:variable (:symbol v) :type type :nullable? false}))})))
+                  (and (instance? Variable v) (not= (:symbol entity) (:symbol v)))
+                  (conj {:variable (:symbol v) :type type :nullable? false}))})))
 
 (defn- bound-value [props x literal?]
   (let [type (:db/valueType props)
@@ -199,17 +197,18 @@
   "Compile a single native pattern with the existing native planner. Native
   InitSteps and entity-bound MergeScanSteps use controlled storage. Other plan
   shapes reject before provider acquisition until their admission paths exist."
-  [runtime snapshots database node {:keys [requires columns value-type]} core-clauses check! join!]
+  [runtime snapshots database node {:keys [requires columns value-type source-symbol region-id]} core-clauses check! join!]
   (let [snapshot (get snapshots (.-store ^DB database))
         _ (native/check-view! (:control runtime) snapshot)
         token (rt/charge! runtime (mapv :variable columns) (+ 16384 (* 1024 (count core-clauses))) 1)
         _ (rt/own! runtime #(control/release! token))
         [e attribute v] (:pattern node)
+        repeated? (and (instance? Variable e) (instance? Variable v) (= (:symbol e) (:symbol v)))
         variables (mapv :variable columns)
         entity (if (instance? Variable e) (:symbol e)
                    (private-variable "?native_entity__" (set variables) check!))
         value-var (when-not (instance? Placeholder v)
-                    (if (instance? Variable v) (:symbol v)
+                    (if (and (instance? Variable v) (not repeated?)) (:symbol v)
                         (private-variable "?native_value__" (conj (set variables) entity) check!)))
         ;; Reuse the native planner's pure single-pattern emitter. Mutable
         ;; Store metadata, global plan caches and installed access methods
@@ -218,22 +217,42 @@
         lookup (plan-build/entity-lookup-step entity (:value attribute) value-var)
         value-lookup (when value-var (plan-build/value-lookup-step entity (:value attribute) value-var))
         constraints (predicate-constraints node core-clauses (get-in snapshot [:schema (:value attribute)]) check!)]
-    (->NativeFactory (set (map :variable requires)) variables
+    (assoc (->NativeFactory (set (map :variable requires)) variables
       (fn [input-cols]
         (let [lookup? (or (instance? Constant e) (and (instance? Variable e) (some #{entity} input-cols)))
-              value-bound? (and (instance? Variable v) (some #{value-var} input-cols))
+              value-bound? (and (instance? Variable v) (not repeated?) (some #{value-var} input-cols))
               mode (cond (and lookup? value-bound?) :entity-value lookup? :entity value-bound? :value)
               step (case mode :value value-lookup (:entity :entity-value) lookup init)
               output-cols (into input-cols (remove (set input-cols)) variables)
               attrs (select-keys (plan/cols->attrs (:cols step)) variables)]
           (->NativeStep (set input-cols) output-cols
             (fn [^List tuples]
-              (check!)
-              (native/check-view! (:control runtime) snapshot)
-              (let [keys (when mode (binding-keys! runtime check! e v mode input-cols tuples))
-                    rows (controlled! runtime check! snapshot database step keys mode v value-type constraints)
-                    right (relation/relation! attrs rows)
-                    left (relation/relation! (zipmap input-cols (range)) tuples)
-                    result (join! left right)]
-                (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))
-                (:tuples result)))))))))
+              (rt/with-context runtime (cond-> {} source-symbol (assoc :source-symbol source-symbol)
+                                             (some? region-id) (assoc :region-id region-id))
+                (fn [runtime]
+                  (check!)
+                  (native/check-view! (:control runtime) snapshot)
+                  (let [keys (when mode (binding-keys! runtime check! e v mode input-cols tuples))
+                        scanned (controlled! runtime check! snapshot database step keys mode v value-type constraints)
+                        rows (if repeated?
+                               (let [result (FastList.)
+                                     attrs (plan/cols->attrs (:cols step))
+                                     ei (int (get attrs entity)) vi (int (get attrs value-var))]
+                                 (doseq [^objects row scanned]
+                                   (check!)
+                                   (when (QueryKey/equals (aget row ei) (aget row vi))
+                                     (.add result row)))
+                                 result) scanned)
+                        right (relation/relation! attrs rows)
+                        left (relation/relation! (zipmap input-cols (range)) tuples)
+                        result (join! left right)]
+                    (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))
+                    (:tuples result)))))))))
+      ;; An independent mapped producer can bound this read before decoding.
+      ;; These are optional keys, never invented required inputs or seeds.
+      :binding-bound? (or (instance? Constant e) (instance? Constant v) (seq constraints))
+      :binding-enumerate? (get-in snapshot [:schema (:value attribute) :db/noindex])
+      :binding-inputs (when (get-in snapshot [:schema (:value attribute)])
+                        (cond-> #{}
+                          (instance? Variable e) (conj (:symbol e))
+                          (instance? Variable v) (conj (:symbol v)))))))

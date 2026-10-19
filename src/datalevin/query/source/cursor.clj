@@ -1,7 +1,8 @@
 (ns ^:no-doc datalevin.query.source.cursor
   "Exhaustive execution of captured v2 access plans. Provider batches are
   borrowed only during delivery; a retaining operator must own its output."
-  (:require [datalevin.parser]
+  (:require [datalevin.join :as join]
+            [datalevin.parser]
             [datalevin.query.access :as access]
             [datalevin.query.source :as source]
             [datalevin.query.source.binding :as binding]
@@ -9,7 +10,8 @@
             [datalevin.query.source.diagnostics :as diagnostics]
             [datalevin.query.source.permissions :as permissions]
             [datalevin.query.source.runtime :as rt]
-            [datalevin.query.source.value :as value :refer [fail!]])
+            [datalevin.query.source.value :as value :refer [fail!]]
+            [datalevin.relation :as relation])
   (:import [datalevin.utl QueryKey]
            [java.io Closeable]
            [org.eclipse.collections.impl.list.mutable FastList]))
@@ -119,7 +121,11 @@
        (catch Throwable e
          (if primary
            (.addSuppressed ^Throwable primary (rt/redacted-error runtime :close e))
-           (let [error (rt/redacted-error runtime :close e)]
+           (let [error (rt/redacted-error runtime :close e)
+                 cancelled (try (control/check-active! (:control runtime)) nil
+                                (catch Throwable active
+                                  (rt/redacted-error runtime (or (:phase (ex-data active)) :execution) active)))
+                 error (if cancelled (doto ^Throwable cancelled (.addSuppressed error)) error)]
              (control/cancel! (:control runtime) (select-keys (ex-data error) [:error :phase]))
              (throw error))))))
 
@@ -258,21 +264,47 @@
                               (.add output (object-array (value/owned-copy values check!))))))
                         (finally (control/release! scratch)))))]
         (try
-          (if dependent?
-            (lookup! runtime group plan ids outers save!)
-            (if outer-input?
-              (let [owned (into [] outers)]
-                (when (seq owned)
-                  (scan! runtime group plan
-                         (fn [row] (doseq [outer owned] (save! outer row))))))
-              (scan! runtime group plan #(save! {} %))))
-          (check!)
-          (let [held @tokens]
-            ;; Shared operators may retain these tuples after cursor/session
-            ;; close. Their independent reservations last through invocation.
-            (rt/own! runtime #(doseq [token held] (control/release! token))))
-          (vreset! success? true)
-          output
+          (let [result
+                (cond
+                  dependent? (do (lookup! runtime group plan ids outers save!) output)
+                  outer-input?
+                  (let [owned (into [] outers)]
+                    (if (empty? owned) output
+                      (let [left-rows (FastList.) right-rows (FastList.)
+                            right-cols (mapv :variable columns)]
+                        (own! (control/reserve! ctl
+                                {:retained-bytes (+' 2048 (*' (count owned) (+ 128 (* 16 (count input-cols)))))}))
+                        (doseq [outer owned]
+                          (check!)
+                          (.add left-rows (object-array (mapv outer input-cols))))
+                        ;; The shared join borrows these detached values. Keep
+                        ;; their reservations through the invocation, including
+                        ;; after the provider releases its final batch.
+                        (doseq [token @input-tokens] (own! token))
+                        (vreset! input-tokens [])
+                        (scan! runtime group plan
+                          (fn [row]
+                            (own! (rt/charge-copy! runtime row))
+                            (.add right-rows (object-array (value/owned-copy row check!)))))
+                        (let [joined (join/hash-join-bounded
+                                       (relation/relation! (zipmap input-cols (range)) left-rows)
+                                       (relation/relation! (zipmap right-cols (range)) right-rows)
+                                       {:check! check!
+                                        :reserve! (fn [rows bytes]
+                                                    (when (> rows Integer/MAX_VALUE)
+                                                      (fail! :query-source/limit :reserve))
+                                                    (control/reserve! ctl {:retained-bytes bytes}))
+                                        :retain! own! :release! control/release!})]
+                          (ensure! (= output-cols (mapv key (sort-by val (:attrs joined)))) :execution)
+                          (:tuples joined)))))
+                  :else (do (scan! runtime group plan #(save! {} %)) output))]
+            (check!)
+            (let [held @tokens]
+              ;; Shared operators may retain these tuples after cursor/session
+              ;; close. Their independent reservations last through invocation.
+              (rt/own! runtime #(doseq [token held] (control/release! token))))
+            (vreset! success? true)
+            result)
           (finally (doseq [token @input-tokens] (control/release! token)))))
       (finally (when-not @success? (doseq [token @tokens] (control/release! token)))))))
 

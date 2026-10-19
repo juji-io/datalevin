@@ -17,18 +17,28 @@
   (-plan-source [source session request] "Plan all eligible clauses without reads."))
 
 (defn- source-predicate [protocol]
-  (if-not (seq (:impls protocol))
-    (fn [input] (instance? datalevin.query.source.IQuerySource input))
-    ;; Negative satisfies? walks the class hierarchy. Cache both outcomes;
-    ;; ClassValue keeps arbitrary caller classes from being retained forever.
-    (let [checks (proxy [ClassValue] [] (computeValue [_] (volatile! nil)))
-          nil-source? (satisfies? protocol nil)]
-      (fn [input]
-        (or (instance? datalevin.query.source.IQuerySource input)
-            (if (nil? input) nil-source?
-                (let [result (.get ^ClassValue checks (class input))]
-                  (if-some [known @result] known
-                           (vreset! result (satisfies? protocol input))))))))))
+  (let [classes (vec (keep (fn [[type methods]] (when (and type methods) type)) (:impls protocol)))
+        nil-source? (boolean (get-in protocol [:impls nil]))]
+    (cond
+      (and (empty? classes) (not nil-source?))
+      (fn [input] (instance? datalevin.query.source.IQuerySource input))
+      (= 1 (count classes))
+      ;; A single class extension is common for an adapter. Class.isInstance
+      ;; avoids a ClassValue lookup for every unrelated scalar native input.
+      (let [^Class type (first classes)]
+        (fn [input]
+          (or (instance? datalevin.query.source.IQuerySource input)
+              (.isInstance type input) (and nil-source? (nil? input)))))
+      :else
+      ;; Negative satisfies? walks the class hierarchy. Cache both outcomes;
+      ;; ClassValue keeps arbitrary caller classes from being retained forever.
+      (let [checks (proxy [ClassValue] [] (computeValue [_] (volatile! nil)))]
+        (fn [input]
+          (or (instance? datalevin.query.source.IQuerySource input)
+              (if (nil? input) nil-source?
+                  (let [result (.get ^ClassValue checks (class input))]
+                    (if-some [known @result] known
+                             (vreset! result (satisfies? protocol input)))))))))))
 
 ;; extend/extend-type updates the protocol Var. Publish a fresh predicate on
 ;; those rare updates, so native calls need no protocol-map lookup or cache
@@ -36,8 +46,8 @@
 (locking #'IQuerySource
   (add-watch #'IQuerySource ::source-routing
              (fn [_ _ _ protocol]
-               (dispatch/install-source-predicate! (source-predicate protocol))))
-  (dispatch/install-source-predicate! (source-predicate IQuerySource)))
+               (dispatch/install-source-predicate! (source-predicate protocol) protocol)))
+  (dispatch/install-source-predicate! (source-predicate IQuerySource) IQuerySource))
 
 (defprotocol IQuerySourceSession
   (-session-info [session] "Return the acquired read-view metadata.")

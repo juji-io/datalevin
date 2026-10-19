@@ -6,6 +6,7 @@
             [datalevin.query.access :as access]
             [datalevin.query.execute :as execute]
             [datalevin.query.source.control :as control]
+            [datalevin.query.source.fake :as fake]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.planning :as planning]
             [datalevin.query.source.program :as program]
@@ -446,9 +447,7 @@
     [{:db/id 1 :native/score 100 :native/private 200}]
     (fn [database _]
       (doseq [[database pattern] [[database '[[:native/identity 1] :native/score ?score]]
-                                  [database '[?e ?attribute ?score]]
-                                  [database '[_ :native/private ?score]]
-                                  [database '[?e :native/score ?e]]]]
+                                  [database '[?e ?attribute ?score]]]]
         (let [events (atom [])
               query {:find ['?v] :in ['$n '$s]
                      :where [(into ['$n] pattern) ['$s '?e :row/value '?v]]}
@@ -669,3 +668,62 @@
                            (is (empty? (events-of events :open)))
                            (is (= 1 (count (events-of events :session-close)))))))))]
         (is (= :query-source/invalid (:error failure)))))))
+
+(deftest independent-mapped-scans-bound-native-entity-and-value-reads
+  (with-db {:native/body {:db/valueType :db.type/string}}
+    [{:db/id 1 :native/body (.repeat "x" 2097152)} {:db/id 2 :native/body "wanted"}]
+    (fn [database _]
+      (doseq [[facts pattern] [[[[2 :row/value "anchor"]] '[$s ?e :row/value _]]
+                               [[[2 :row/value "wanted"]] '[$s _ :row/value ?body]]]]
+        (let [provider (fake/source (fake/row-info) facts {:mode :scan})
+              query {:find '[?body] :in '[$n $s]
+                     :where ['[$n ?e :native/body ?body] pattern]
+                     :query-source {:limits {:retained-bytes 524288}}}
+              explanation (d/explain {:run? true} query database provider)]
+          (is (= #{["wanted"]} (d/q query database provider)))
+          (is (= [:access :native] (mapv :kind (mapcat :operators (:regions explanation)))))
+          (is (= 1 (:result-rows explanation))))))))
+
+(deftest unsupported-native-views-reject-before-any-provider-descriptor
+  (with-db {:native/body {:db/valueType :db.type/string}}
+    [{:db/id 1 :native/body "committed"}]
+    (fn [database _]
+      (let [pending (:db-after (d/tx-data->simulated-report database [[:db/add 1 :native/body "pending"]]))]
+        (doseq [source-first? [false true]]
+          (let [provider (fake/source (fake/row-info) [[1 :row/value "anchor"]])
+                query (cond-> '{:find [?body] :in [$n $s]
+                                :where [[$n ?e :native/body ?body] [$s ?e :row/value _]]}
+                        source-first? (assoc :in '[$s $n]))
+                failure (error #(apply d/q query (if source-first? [provider pending] [pending provider])))]
+            (is (= {:error :query-source/unsupported :phase :native-view :source-symbol '$n}
+                   (select-keys failure [:error :phase :source-symbol])))
+            (is (empty? @(:events provider)))))))))
+
+(deftest mapped-keys-follow-native-references-before-decoding-payloads
+  (with-db {:native/next {:db/valueType :db.type/ref}
+            :native/body {:db/valueType :db.type/string}}
+    [{:db/id 1 :native/body (.repeat "x" 2097152)}
+     {:db/id 2 :native/next 3} {:db/id 3 :native/body "wanted"}]
+    (fn [database _]
+      (doseq [mode [:scan :both]
+              clauses ['[[$n ?target :native/body ?body] [$n ?start :native/next ?target]
+                        [$s ?start :row/value _]]
+                       '[[$s ?start :row/value _] [$n ?start :native/next ?target]
+                         [$n ?target :native/body ?body]]]]
+        (let [provider (fake/source (fake/row-info) [[2 :row/value "anchor"]] {:mode mode})
+              query {:find '[?body] :in '[$n $s] :where clauses
+                     :query-source {:limits {:retained-bytes 524288}}}]
+          (is (= #{["wanted"]} (d/q query database provider))))))))
+
+(deftest unindexed-value-bounds-and-repeated-variables-use-controlled-eav-reads
+  (with-db {:native/body {:db/valueType :db.type/string :db/noindex true}
+            :native/self {:db/valueType :db.type/ref}}
+    [{:db/id 1 :native/body (.repeat "x" 2097152) :native/self 2}
+     {:db/id 2 :native/body "wanted" :native/self 2}]
+    (fn [database _]
+      (doseq [[clauses expected] [['[[$n ?e :native/body "wanted"] [$s ?e :row/value _]] #{[2]}]
+                                  ['[[$n ?e :native/self ?e] [$s ?e :row/value _]] #{[2]}]]]
+        (let [provider (fake/source (fake/row-info) [[2 :row/value "anchor"]] {:mode :scan})
+              query {:find '[?e] :in '[$n $s] :where clauses
+                     :query-source {:limits {:retained-bytes 524288}}}]
+          (is (= expected (d/q query database provider))))))))

@@ -184,13 +184,20 @@
                                            options (access/access-policy :none :execution))
                   plan (assoc (access/->AccessPlan expr path (access/source-bounds)
                                                   (access/access-work) nil)
-                              :advisory-estimate (:estimate alternative))]
+                              :advisory-estimate (:estimate alternative)
+                              ::reservation token)]
               (rt/own! runtime #(control/release! token))
               plan)
             (catch Throwable e (control/release! token) (throw e)))))
       (finally (control/release! metadata)))))
 
 (defn- options [plan] (get-in plan [:path :options]))
+
+(defn release-discarded!
+  "Release the bridge reservation after whole-query selection has discarded
+  a captured candidate. Envelope ownership is released separately."
+  [plan]
+  (control/release! (::reservation plan)))
 (defn- work-key [plan]
   (let [{:keys [source-symbol region-id covers]} (options plan)]
     [source-symbol region-id (first covers)]))
@@ -350,17 +357,49 @@
              required (set/union required local-work)
              _ (doseq [operator operators]
                  (ensure! (set/subset? (:after operator) required)))
-             choices (into (mapv (fn [operator]
+             seeded (set (map :variable input-columns))
+             early? (fn [operator]
+                      (let [keys (:binding-inputs (:step operator))
+                            outputs (set (map :variable (:columns operator)))]
+                        (or (empty? keys) (:binding-bound? (:step operator))
+                            (seq (set/intersection keys seeded))
+                            ;; Keep producers ahead of scans when they can
+                            ;; enable a provider's preferred dependent path.
+                            (and (not (:binding-enumerate? (:step operator)))
+                                 (some (fn [plan]
+                                         (some #(contains? outputs (:variable %)) (:requires (options plan))))
+                                       candidates)))))
+             ;; Optional native keys only affect preference. Propagate the
+             ;; preference through native producers, so a reference read can
+             ;; bind a later payload read. The typed scheduler still proves
+             ;; every actual dependency and never treats these keys as seeds.
+             preferred (into seeded (mapcat #(map :variable (:columns %))) (filter early? operators))
+             ranks (loop [known (into preferred
+                                      (mapcat #(when (empty? (:requires (options %)))
+                                                 (map :variable (:columns (options %))))) candidates)
+                          pending (vec (remove early? operators)) rank 1 result {}]
+                     (check!)
+                     (let [ready (filterv #(do (check!)
+                                              (seq (set/intersection known (:binding-inputs (:step %))))) pending)
+                           ready-ids (into #{} (map :id) ready)]
+                       (if (empty? ready) result
+                         (recur (into known (mapcat #(map :variable (:columns %))) ready)
+                                (filterv #(do (check!) (not (contains? ready-ids (:id %)))) pending)
+                                (inc rank) (into result (map #(vector (:id %) rank)) ready)))))
+             deferred? #(contains? ranks (:id %))
+             core-choice (fn [operator]
                                   {:kind :core :value operator :covers #{[:core region-id (:id operator)]}
                                    :requires (:requires operator) :columns (:columns operator)
                                    :after (:after operator) :resources #{}})
-                                (sort-by :id operators))
-                           (map (fn [plan]
+             ordered-core (sort-by :id operators)
+             choices (into (mapv core-choice (remove deferred? ordered-core))
+                           (concat (map (fn [plan]
                                   (let [o (options plan) p (:permission o)]
                                     {:kind :access :value plan :covers #{(work-key plan)}
                                      :requires (:requires o) :columns (:columns o) :after #{}
                                      :resources (if (= :once (:opens p)) #{(:resource p)} #{})
-                                     :unavailable? (and (= :once (:opens p)) (:spent? p))}))) candidates)
+                                     :unavailable? (and (= :once (:opens p)) (:spent? p))})) candidates)
+                                   (map core-choice (sort-by #(get ranks (:id %)) (filter deferred? ordered-core)))))
              result (dependency/schedule {:inputs input-columns :required-work required
                                           :required-vars live-vars :choices choices
                                           :check! check! :reserve! own-work! :max-states search-bound})]

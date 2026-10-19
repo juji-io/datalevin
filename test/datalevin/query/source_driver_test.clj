@@ -229,3 +229,37 @@
 
 (deftest maximum-query-timeout-does-not-overflow-a-wall-clock-deadline
   (is (= #{[1]} (driver/run (assoc '{:find [?value] :in [?value]} :timeout Long/MAX_VALUE) [1] nil))))
+
+(deftest cancellation-during-a-failing-close-remains-primary
+  (doseq [stage [:cursor :session]]
+    (let [events (atom []) delegate (fixture/provider events {})
+          fail-close! (fn [ctl]
+                        (control/cancel! ctl {:error :query-source/cancelled :phase :execution})
+                        (throw (Exception. "private cleanup details")))
+          provider
+          (reify source/IQuerySource
+            (-source-info [_] (source/-source-info delegate))
+            (-plan-source [_ session request] (source/-plan-source delegate session request))
+            (-open-session [_ request]
+              (let [session (source/-open-session delegate request)]
+                (reify source/IQuerySourceSession
+                  (-session-info [_] (source/-session-info session))
+                  (-open-cursor [_ open]
+                    (let [cursor (source/-open-cursor session open)]
+                      (if (= :session stage) cursor
+                        (reify source/IQuerySourceCursor
+                          (-next-batch! [_ fetch] (source/-next-batch! cursor fetch))
+                          (-cursor-metrics [_] (source/-cursor-metrics cursor))
+                          (-close-cursor! [_]
+                            (source/-close-cursor! cursor)
+                            (fail-close! (:control request)))))))
+                  (-cancel-session! [_ reason] (source/-cancel-session! session reason))
+                  (-close-session! [_]
+                    (source/-close-session! session)
+                    (when (= :session stage) (fail-close! (:control request))))))))
+          failure (caught #(driver/run pairs [provider] nil))]
+      (is (= :query-source/cancelled (:error (ex-data failure))))
+      (is (= 1 (count (.getSuppressed ^Throwable failure))))
+      (is (= :query-source/provider (:error (ex-data (first (.getSuppressed ^Throwable failure))))))
+      (is (not (.contains (str failure) "private cleanup details")))
+      (is (= 1 (count (events-of events :session-close)))))))

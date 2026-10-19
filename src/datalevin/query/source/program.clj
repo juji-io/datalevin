@@ -562,7 +562,7 @@
                                   (if (collection/owned? database)
                                     (collection/spec! runtime database node)
                                     (native-plan/spec! runtime snapshots database node literal-terms)))
-                                :database database
+                                :database database :source-symbol source :region-id (:region-id r)
                                 :selected-inputs (when (instance? RuleExpr node) (atom nil)))]))
         compilation (prune-empty-collections! runtime compilation native-specs)
         compiled (:compiled compilation)
@@ -844,7 +844,11 @@
              (catch Throwable e
                (if-let [error @primary]
                  (.addSuppressed ^Throwable error e)
-                 (throw (rt/redacted-error child :close e)))))))))
+                 (let [error (rt/redacted-error child :close e)
+                       cancelled (try (control/check-active! (:control child)) nil
+                                      (catch Throwable active
+                                        (rt/redacted-error child (or (:phase (ex-data active)) :execution) active)))]
+                   (throw (if cancelled (doto ^Throwable cancelled (.addSuppressed error)) error))))))))))
 
 (defn query!
   "Execute ordinary query syntax and :in arguments through the v2

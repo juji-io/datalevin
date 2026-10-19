@@ -235,7 +235,7 @@
       (dotimes [i (.size entities)]
         (check!)
         (let [key (.get entities i) eid (aget ^objects key 0)]
-          (controlled-key! policy key
+          (controlled-key! policy (or (:key policy) key)
             (fn [{:keys [index-range admit-row! visit-value!]}]
               (let [[value-range value-type] (or index-range [attribute-range :int])]
                 (i/visit-list-range
@@ -245,10 +245,31 @@
                       (check!)
                       (if get-v?
                         (visit-value! (lmdb/v kv) eid
-                                      (fn [value] (check!) (admit-row!) (.add out (object-array [eid value]))))
+                                      (fn [value]
+                                        (check!) (admit-row!)
+                                        (.add out (object-array (if (:value-first? policy) [value eid] [eid value])))))
                         (do (admit-row!) (.add out (object-array [eid]))))
                       (catch Throwable e (vreset! failure e) (throw e))))
                   [:closed eid eid] :id value-range value-type))))))
+      (catch Throwable e (throw (or @failure e)))))
+  (check!))
+
+(defn eav-attribute-tuples-scan-controlled
+  "Enumerate entity keys for an unindexed attribute, then use the shared
+  controlled EAV visitor. Entity keys and payloads are borrowed synchronously;
+  no unbounded entity collection or ignored payload decoding is needed."
+  [lmdb out aid get-v? {:keys [check!] :as policy}]
+  (check!)
+  (let [failure (volatile! nil)]
+    (try
+      (i/visit-key-range lmdb c/eav
+        (fn [^ByteBuffer key]
+          (try
+            (check!)
+            (eav-tuples-scan-controlled lmdb out aid
+              [(object-array [(.getLong key 0)])] get-v? policy)
+            (catch Throwable e (vreset! failure e) (throw e))))
+        [:all] :id true)
       (catch Throwable e (throw (or @failure e)))))
   (check!))
 
