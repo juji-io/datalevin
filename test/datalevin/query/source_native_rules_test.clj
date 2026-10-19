@@ -177,10 +177,10 @@
                          :where ($n reach ?a ?b) [$s ?a :row/value ?v]] [@conn provider rules])))
         (is (= #{[3 4]} (d/q '[:find ?a ?b :where [?a :edge ?b] [(= ?b 4)]] @conn)))))))
 
-(deftest unsupported-negative-required-and-mapped-recursion-reject-before-acquisition
+(deftest unsupported-negative-cycles-missing-required-and-mapped-recursion-reject-before-acquisition
   (doseq [[rules call extra]
           [['[[(reach ?x ?y) [?x ?y]]
-              [(reach ?x ?y) [?x ?mid] (reach ?mid ?y) (not [?x :blocked])]]
+              [(reach ?x ?y) [?x ?mid] (reach ?mid ?y) (not-join [?x ?y] (reach ?x ?y))]]
             '(reach ?a ?b) []]
            ['[[(reach [?x] ?y) [?x ?y]]
               [(reach [?x] ?y) [?x ?mid] (reach ?mid ?y)]]

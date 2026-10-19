@@ -805,3 +805,25 @@
                            (when (nil? (.get hash (key-fn-a t)))
                              (.add res t))))
                        res))))
+
+(defn subtract-rel-bounded
+  "Run shared relation subtraction with admitted index/output containers.
+  Inputs and surviving rows remain borrowed. The output keeps every surviving
+  left witness, including duplicates; right multiplicity only affects index
+  workspace. Hook ownership follows hash-join-bounded."
+  [left right {:keys [check! reserve! retain! release!]}]
+  (check!)
+  (let [n (.size ^List (:tuples left)) m (.size ^List (:tuples right))
+        width (+ (count (:attrs left)) (count (:attrs right)))
+        workspace (reserve! 0 (+' 4096 (*' 128 width) (*' m (+' 512 (*' 32 width)))))
+        retained (volatile! nil) success? (volatile! false)]
+    (try
+      (vreset! retained (reserve! n (+' 2048 (*' 128 width) (*' 16 n))))
+      (let [result (subtract-rel (checked-relation left check!) (checked-relation right check!))]
+        (check!)
+        (retain! @retained)
+        (vreset! success? true)
+        result)
+      (finally
+        (release! workspace)
+        (when (and @retained (not @success?)) (release! @retained))))))

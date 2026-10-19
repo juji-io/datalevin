@@ -2589,7 +2589,7 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, negative/seeded recursive rule emission, remaining input edges
+native plan/read paths, optional-input recursive rule emission, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
@@ -2665,11 +2665,55 @@ compilation resources remain invocation-owned. Long-chain quota regressions
 cover both local joins and repeated native scans, including decoded values.
 Native body execution stays within the invocation's pinned views.
 
-Negative native programs, required heads and variable-argument functions in
-recursive programs still reject before acquisition. They require stratified or
-seeded interfaces that preserve input correlation and observable caller-value
-representations. Mapped recursion remains unsupported. This internal compiler
-extension does not activate v2 in public `q`/`explain`.
+Declared required-head prefixes now add correlated demand predicates to that
+same fixpoint. The outer relation contributes complete required tuples, never
+independent per-column value sets. Compiled rule-reference steps register further
+demands before reading the current answer tables. Demand and answer predicates
+converge together, including mutual recursion, calls from free rules and empty
+required prefixes. Newly discovered demand keys are owned before their body
+workspace closes; staging releases immediately after solving, while the kernel
+owns completed answer keys through invocation cleanup. Both demand and answer
+keys use shared typed equality.
+
+Required literals and repeated required positions select their exact demand
+partition after ordinary argument matching; repeated arguments retain their
+required input position for the subsequent typed join. Variable-argument
+identity/ground functions admit required head inputs and locally produced values.
+A conservative observability analysis rejects programs whose optional head
+inputs can affect such functions, including functions inside negation.
+Literal numeric comparisons against other producers require a representation-safe
+proof; seed-only values retain their original numeric representation. Existing
+captured scalar key semantics and their remaining representation edges apply.
+Missing required inputs and local self-supply cycles reject before provider
+acquisition, even when a provider could otherwise be planned.
+
+Native/local `not` and `not-join` bodies now compile through this region compiler.
+An implicit `not` correlates with positively supplied outer variables; explicit
+`not-join` requires all declared inputs and keeps other names local, even when
+they share spellings with outer columns. A complete distinct input relation
+seeds the compiled child once. Shared bounded relation subtraction removes its
+matching outer witnesses, preserving all surviving duplicates and typed keys.
+The child and subtraction index release before the output container's lease
+transfers to the enclosing workspace. Empty negative children retain every
+outer witness and do not create parent no-match proofs.
+
+The owned source-qualified rule graph tracks dependency polarity through nested
+negations. A finite level computation rejects cycles through negative edges
+before acquisition. Same-level positive dependencies use the bounded demand
+fixpoint. A lower-level reference completes its own kernel for the supplied
+required tuples before returning any answer relation. Upper negation therefore
+never decides absence from an incomplete lower relation or an undrained demand.
+Temporary lower kernels release with the caller's body workspace; native reads
+stay in the invocation's pinned views. This synchronous implementation caps
+stratum descent at 32 and reports `:query-source/limit` before body compilation
+when that bound is exceeded.
+
+Negative facts participate in representation-safety constraints but never
+establish outer producer types or nullability. Comparison constraints also flow
+back through identity/ground copies. Observable optional inputs still need
+adorned interfaces; mapped negative bodies and mapped recursion remain
+unsupported. This internal compiler extension does not activate v2 in public
+`q`/`explain`.
 
 Internal logical value walkers bound nesting at 128, including metadata,
 retained vector backing and nested logical tuples. Structural envelopes count

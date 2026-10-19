@@ -604,8 +604,10 @@
   "Match already owned collection rows with explicit cancellation and output
   admission. Project only declared positions, keeping duplicate witnesses and
   the ordinary collection matcher's repeated-variable/constant equality.
-  literal-values escapes parser constants that look like pattern syntax."
-  [coll pattern {:keys [check! admit-row! invalid! columns positions literal-values]}]
+  literal-values escapes parser constants that look like pattern syntax.
+  key-values and key-equalities select exact required-input partitions of a
+  rule relation after ordinary predicate matching."
+  [coll pattern {:keys [check! admit-row! invalid! columns positions literal-values key-values key-equalities]}]
   (let [rows (FastList.)]
     (doseq [tuple coll]
       (check!)
@@ -613,7 +615,14 @@
                  (every? (fn [[index constant]]
                            (check!)
                            (or (>= index (count tuple))
-                               (QueryKey/equiv constant (nth tuple index)))) literal-values))
+                               (QueryKey/equiv constant (nth tuple index)))) literal-values)
+                 (every? (fn [[index constant]]
+                           (check!)
+                           (and (< index (count tuple)) (QueryKey/equals constant (nth tuple index)))) key-values)
+                 (every? (fn [[a b]]
+                           (check!)
+                           (and (< a (count tuple)) (< b (count tuple))
+                                (QueryKey/equals (nth tuple a) (nth tuple b)))) key-equalities))
         (when (some #(>= % (count tuple)) positions) (invalid!))
         (admit-row!)
         (.add rows (object-array (mapv #(nth tuple %) positions)))))

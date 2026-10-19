@@ -94,33 +94,36 @@
 
 (defn match!
   "Match owned tuples against parsed terms using the shared controlled matcher.
-  Values remain borrowed from the caller's live relation."
-  [runtime terms rows check!]
-  (check!)
-  (let [_ (containers! runtime 1 (count terms))
-        _ (when-not (every? #(or (instance? Constant %) (instance? Variable %)
-                                (instance? Placeholder %)) terms)
-            (fail! :query-source/unsupported :planning))
-        variables (vec (distinct (keep #(when (instance? Variable %) (:symbol %)) terms)))
-        positions (into {} (keep-indexed #(when (instance? Variable %2) [(:symbol %2) %1])) terms)
-        literals (into {} (keep-indexed #(when (and (instance? Constant %2)
-                                                    (or (= '_ (:value %2))
-                                                        (and (symbol? (:value %2))
-                                                             (.startsWith (name (:value %2)) "?"))))
-                                            [%1 (:value %2)])) terms)
-        raw (mapv (fn [i x]
-                    (cond (contains? literals i) '_
-                          (instance? Constant x) (:value x)
-                          (instance? Variable x) (:symbol x)
-                          :else '_)) (range) terms)
-        emitted (volatile! 0)
-        rel (pattern/lookup-pattern-coll-controlled rows raw
-              {:check! check! :columns variables :positions (mapv positions variables)
-               :literal-values literals :invalid! #(fail! :query-source/invalid :inputs)
-               :admit-row! #(do (vswap! emitted inc)
-                                (when (> @emitted Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
-                                (containers! runtime 1 (count variables)))})]
-    (check!) rel))
+  Values remain borrowed from the caller's live relation. Internal rule calls
+  can select required argument positions and exact demand keys."
+  ([runtime terms rows check!] (match! runtime terms rows check! nil))
+  ([runtime terms rows check! {:keys [positions key-values key-equalities]}]
+   (check!)
+   (let [_ (containers! runtime 1 (count terms))
+         _ (when-not (every? #(or (instance? Constant %) (instance? Variable %)
+                                 (instance? Placeholder %)) terms)
+             (fail! :query-source/unsupported :planning))
+         variables (vec (distinct (keep #(when (instance? Variable %) (:symbol %)) terms)))
+         positions (merge (into {} (keep-indexed #(when (instance? Variable %2) [(:symbol %2) %1])) terms) positions)
+         literals (into {} (keep-indexed #(when (and (instance? Constant %2)
+                                                     (or (= '_ (:value %2))
+                                                         (and (symbol? (:value %2))
+                                                              (.startsWith (name (:value %2)) "?"))))
+                                             [%1 (:value %2)])) terms)
+         raw (mapv (fn [i x]
+                     (cond (contains? literals i) '_
+                           (instance? Constant x) (:value x)
+                           (instance? Variable x) (:symbol x)
+                           :else '_)) (range) terms)
+         emitted (volatile! 0)
+         rel (pattern/lookup-pattern-coll-controlled rows raw
+               {:check! check! :columns variables :positions (mapv positions variables)
+                :literal-values literals :key-values key-values :key-equalities key-equalities
+                :invalid! #(fail! :query-source/invalid :inputs)
+                :admit-row! #(do (vswap! emitted inc)
+                                 (when (> @emitted Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
+                                 (containers! runtime 1 (count variables)))})]
+     (check!) rel)))
 
 (defn spec!
   "Build a local pattern's actual typed output through the shared matcher.

@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.query.source.native-rules
-  "Compile positive native rule bodies with the existing region compiler.
+  "Compile stratified native rule bodies with the existing region compiler.
   Rule references read completed invocation-owned relations; the shared
   fixpoint kernel supplies iteration, ownership and set semantics."
   (:require [datalevin.parser :as parser]
@@ -12,10 +12,11 @@
             [datalevin.relation :as relation]
             [datalevin.rules.relation :as rule-relation])
   (:import [datalevin.parser And Constant DefaultSrc Function Not Or Pattern RuleExpr Variable]
-           [java.util AbstractList List]
+           [java.util AbstractList HashSet List]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic ^:private *iteration* nil)
+(def ^:private max-stratum-depth 32)
 
 (defn source-symbol [node inherited]
   (let [source (:source node)]
@@ -42,32 +43,55 @@
                          (size [] (check!) (.size tuples))
                          (get [i] (check!) (.get tuples i))))))
 
+(defn- requirements [node n]
+  (mapv (fn [arg]
+          (when-not (instance? Variable arg) (fail! :query-source/unsupported :planning))
+          {:variable (:symbol arg) :type :data :nullable? true})
+        (distinct (remove #(instance? Constant %) (take n (:args node))))))
+
 (defn reference-spec
   "Emit a relation-reference interface only in an explicit body compiler context."
   [compiled node source]
   (let [key [source (get-in node [:name :symbol])]]
-    (when-let [head (get (:rule-relations compiled) key)]
-      (when-not (= (count head) (count (:args node))) (fail! :query-source/invalid :planning))
-      {:requires [] :columns (mapv #(hash-map :variable % :type :data :nullable? true) (variables node))
-       :rule-reference key :head-vars head})))
+    (when-let [{:keys [head-vars required-count]} (get (:rule-relations compiled) key)]
+      (when-not (= (count head-vars) (count (:args node))) (fail! :query-source/invalid :planning))
+      {:requires (requirements node required-count)
+       :columns (mapv #(hash-map :variable % :type :data :nullable? true) (variables node))
+       :rule-reference key :head-vars head-vars :required-count required-count})))
 
 (defn reference!
   "Borrow the current complete relation on the serial iteration's owning thread."
-  [runtime key]
+  [runtime key node input-cols tuples]
   (control/check-active! (:control runtime))
   (when-not (and (identical? (:control runtime) (:control *iteration*))
                  (= (:query-id runtime) (:query-id *iteration*))
-                 (contains? (:tables *iteration*) key))
+                 (or (contains? (:tables *iteration*) key) (:complete! *iteration*)))
     (fail! :query-source/invalid :execution))
-  (get (:tables *iteration*) key))
+  (if (contains? (:tables *iteration*) key)
+    (do (when-let [request! (:request! *iteration*)] (request! key node input-cols tuples))
+        (get (:tables *iteration*) key))
+    ((:complete! *iteration*) key node input-cols tuples)))
 
 (defn call!
   "Apply constants, repeated arguments and wildcards to a complete head set.
   Shared matching preserves predicate equivalence; shared distinct projection
   retains rule-call set semantics after ignored head positions disappear."
-  [runtime check! node rel]
+  [runtime check! node rel required-count]
   (check!)
-  (let [mapped (collection/match! runtime (:args node) (:tuples rel) check!)
+  (containers! runtime 0 (count (:args node)))
+  (let [required (take (or required-count 0) (:args node))
+        positions (reduce (fn [positions [i arg]]
+                            (if (and (instance? Variable arg) (not (contains? positions (:symbol arg))))
+                              (assoc positions (:symbol arg) i) positions)) {} (map-indexed vector required))
+        key-equalities (into [] (keep-indexed (fn [i arg]
+                                                (when (instance? Variable arg)
+                                                  (let [first-position (get positions (:symbol arg))]
+                                                    (when (not= i first-position) [first-position i]))))) required)
+        ;; Predicate-equivalent arguments can belong to different demand keys.
+        ;; Constrain every required position before projecting away duplicates.
+        key-values (into {} (keep-indexed #(when (instance? Constant %2) [%1 (:value %2)])) required)
+        mapped (collection/match! runtime (:args node) (:tuples rel) check!
+                 {:positions positions :key-values key-values :key-equalities key-equalities})
         vars (variables node)]
     (containers! runtime (.size ^List (:tuples mapped)) (count vars))
     (let [view (checked check! mapped)
@@ -82,27 +106,26 @@
         entries (into {} (map (juxt :symbol identity)) entries)
         rules (into {} (map #(vector (get-in % [:name :symbol]) %)) rules)
         graph (atom {})]
-    (letfn [(visit-node! [node inherited depth calls]
+    (letfn [(visit-node! [node inherited depth calls negatives negative?]
               (check!)
               (when (> depth 128) (fail! :query-source/limit :planning))
               (containers! runtime 0 1)
               (let [source (source-symbol node inherited)]
                 (cond
-                  (instance? Not node) (fail! :query-source/unsupported :planning)
-                  (and (instance? Function node) (some #(instance? Variable %) (:args node)))
-                  ;; A caller's literal/required representation must survive
-                  ;; observable scalar production. That needs seeded bodies,
-                  ;; rather than filtering an unbound global relation later.
-                  (fail! :query-source/unsupported :planning)
+                  (instance? Not node)
+                  (doseq [clause (:clauses node)]
+                    (visit-node! clause source (inc depth) calls negatives (not negative?)))
                   (instance? Pattern node)
                   (when-not (and (contains? entries source) (:native (get entries source)))
                     (fail! :query-source/unsupported :planning))
                   (instance? RuleExpr node)
                   (let [key [source (get-in node [:name :symbol])]]
                     (vswap! calls conj key)
+                    (when negative? (vswap! negatives conj key))
                     (visit-rule! node source (inc depth)))
                   (or (instance? Or node) (instance? And node))
-                  (doseq [clause (:clauses node)] (visit-node! clause source (inc depth) calls)))))
+                  (doseq [clause (:clauses node)]
+                    (visit-node! clause source (inc depth) calls negatives negative?)))))
             (visit-rule! [node source depth]
               (check!)
               (when (> depth 128) (fail! :query-source/limit :planning))
@@ -113,77 +136,276 @@
                 (when-not (contains? @graph key)
                   (containers! runtime (count (:branches rule)) (count head))
                   (doseq [branch (:branches rule)]
-                    ;; Demand-seeded required heads need a separate correlated
-                    ;; input interface. Never evaluate them as unbound globals.
-                    (when (or (seq (get-in branch [:vars :required]))
-                              (not= (count (head-vars branch)) (count (set (head-vars branch)))))
+                    (when (not= (count (head-vars branch)) (count (set (head-vars branch))))
                       (fail! :query-source/unsupported :planning)))
                   (swap! graph assoc key {:head-vars head})
-                  (let [calls (volatile! #{})]
+                  (let [calls (volatile! #{}) negatives (volatile! #{})]
                     (doseq [branch (:branches rule) clause (:clauses branch)]
-                      (visit-node! clause source (inc depth) calls))
+                      (visit-node! clause source (inc depth) calls negatives false))
                     (swap! graph assoc key {:head-vars head :source source
-                                            :branches (:branches rule) :dependencies @calls})))))]
+                                            :required-count (count (get-in (first (:branches rule)) [:vars :required]))
+                                            :branches (:branches rule) :dependencies @calls
+                                            :negative-dependencies @negatives})))))]
       (visit-rule! root source 0)
       @graph)))
 
-(defn- head-columns!
-  "Propagate an upper bound of possible producer types through positive heads.
-  Missing producers are bottom; an actual :data producer is top. Predicate
-  filters never invent a narrower type. This analysis executes no rule body."
-  [runtime ids heads programs]
+(defn- strata!
+  "Solve caller >= callee (+ 1 for a negative dependency). A finite graph
+  needs at most N rounds; further growth proves a cycle through negation."
+  [runtime ids graph]
+  (containers! runtime (* 2 (count ids)) 2)
+  (let [check! #(control/check-active! (:control runtime))]
+    (loop [levels (zipmap ids (repeat 0)) round 0]
+      (check!)
+      (let [next (reduce (fn [levels id]
+                           (reduce (fn [levels dependency]
+                                     (check!)
+                                     (update levels id max
+                                       (+ (get levels dependency)
+                                          (if (contains? (:negative-dependencies (get graph id)) dependency) 1 0))))
+                             levels (:dependencies (get graph id)))) levels ids)]
+        (cond (= levels next)
+              (do
+                ;; Lower strata complete synchronously inside compiled steps.
+                ;; Bound that descent before allocating body programs or using
+                ;; the JVM stack; clause nesting has its separate logical cap.
+                (when (some #(> % max-stratum-depth) (vals levels)) (fail! :query-source/limit :planning))
+                levels)
+              (>= round (count ids)) (fail! :query-source/unsupported :planning)
+              :else (recur next (inc round)))))))
+
+(defn- program-clauses [program]
+  (mapcat (fn [r]
+            (mapcat (fn [clause]
+                      (let [spec (get (:core-specs program) (:path clause))]
+                        (cons (assoc clause :default-source (:default-source r))
+                              (when (:negation? spec) (program-clauses (:program spec))))))
+              (:core-clauses r))) (get-in program [:compiled :regions])))
+
+(defn- analyze-heads!
+  "Conservative producer, comparison and caller-observability propagation.
+  Required inputs are producers; comparison proofs also follow negative facts
+  and copied values without claiming that those facts produce outer values."
+  [runtime ids headers programs]
   (let [check! #(control/check-active! (:control runtime))
-        seeds (volatile! {}) edges (volatile! [])
+        seeds (volatile! {}) inputs (volatile! {}) observed (volatile! {}) constraints (volatile! {})
+        edges (volatile! []) observation-edges (volatile! []) constraint-edges (volatile! [])
         union-column (fn [a b]
                        (cond (nil? a) b (nil? b) a
                              :else {:type (if (= (:type a) (:type b)) (:type a) :data)
                                     :nullable? (or (:nullable? a) (:nullable? b))}))
-        seed! (fn [v column]
+        seed! (fn [target v column]
                 (containers! runtime 1 2)
-                (vswap! seeds update v union-column (select-keys column [:type :nullable?])))
-        edge! (fn [from to] (containers! runtime 1 2) (vswap! edges conj [from to]))]
+                (vswap! target update v union-column (select-keys column [:type :nullable?])))
+        edge! (fn [from to observation?]
+                (containers! runtime 1 2)
+                (vswap! edges conj [from to])
+                (if observation?
+                  (do (vswap! observation-edges conj [from to])
+                      (vswap! constraint-edges conj [from to]))
+                  ;; A comparison on a copied value also constrains its input.
+                  (vswap! constraint-edges conj [to from])))
+        observe-negative!
+        (fn observe! [program local prefix]
+          (doseq [r (get-in program [:compiled :regions]) {:keys [node path]} (:core-clauses r)]
+            (check!)
+            (let [spec (get (:core-specs program) path)]
+              (cond
+                (instance? Pattern node)
+                (doseq [column (:columns spec)] (seed! constraints (local (:variable column)) column))
+                (instance? RuleExpr node)
+                (doseq [[i arg] (map-indexed vector (:args node)) :when (instance? Variable arg)]
+                  (containers! runtime 1 2)
+                  (let [edge [[(:rule-reference spec) :head i] (local (:symbol arg))]]
+                    (vswap! observation-edges conj edge)
+                    (vswap! constraint-edges conj edge)))
+                (instance? Function node)
+                (let [arg (first (:args node)) output (get-in node [:binding :variable :symbol])]
+                  (cond (instance? Variable arg)
+                        (do (seed! observed (local (:symbol arg)) {:type :data :nullable? true})
+                            (containers! runtime 1 2)
+                            (vswap! constraint-edges conj [(local output) (local (:symbol arg))]))
+                        (instance? Constant arg)
+                        (seed! constraints (local output) {:type (value/inferred-type (:value arg))
+                                                          :nullable? (nil? (:value arg))})))
+                (instance? Not node)
+                (let [inputs (set (map :variable (:requires spec))) child (conj prefix path)]
+                  (observe! (:program spec) #(if (inputs %) (local %) [child %]) child))))))
+        propagate (fn [types edges]
+                    (loop [types types]
+                      (check!)
+                      (let [next (reduce (fn [types [from to]]
+                                           (check!)
+                                           (if-let [column (get types from)]
+                                             (update types to union-column column) types)) types edges)]
+                        (if (= types next) types (recur next)))))
+        columns (fn [types]
+                  (into {} (map (fn [id]
+                                  [id (mapv (fn [i v] (some-> (get types [id :head i]) (assoc :variable v)))
+                                            (range) (:head-vars (get headers id)))])) ids))]
     (doseq [id ids [branch-index {:keys [head-vars program]}] (map-indexed vector (get programs id))]
       (let [local #(vector id branch-index %)]
+        (doseq [v (take (:required-count (get headers id)) head-vars)]
+          (seed! inputs (local v) {:type :data :nullable? true}))
         (doseq [r (get-in program [:compiled :regions]) {:keys [node path]} (:core-clauses r)]
           (check!)
           (cond
             (instance? Pattern node)
             (doseq [column (:columns (get (:core-specs program) path))]
-              (seed! (local (:variable column)) column))
+              (seed! seeds (local (:variable column)) column)
+              (seed! constraints (local (:variable column)) column))
             (instance? RuleExpr node)
             (let [key (:rule-reference (get (:core-specs program) path))]
               (doseq [[i arg] (map-indexed vector (:args node)) :when (instance? Variable arg)]
-                (edge! [key :head i] (local (:symbol arg)))))
+                (edge! [key :head i] (local (:symbol arg)) true)))
+            (instance? Not node)
+            (let [spec (get (:core-specs program) path) inputs (set (map :variable (:requires spec)))
+                  prefix [id branch-index :negative path]]
+              ;; Negative bodies constrain existing values; their facts and
+              ;; outputs must never become positive head-type producers.
+              (observe-negative! (:program spec) #(if (inputs %) (local %) [prefix %]) prefix))
             (instance? Function node)
             (let [arg (first (:args node)) output (get-in node [:binding :variable :symbol])]
-              (when (instance? Constant arg)
-                (seed! (local output) {:type (value/inferred-type (:value arg))
-                                       :nullable? (nil? (:value arg))})))))
-        (doseq [[i v] (map-indexed vector head-vars)] (edge! (local v) [id :head i]))))
-    (let [types (loop [types @seeds]
-                  (check!)
-                  (let [next (reduce (fn [types [from to]]
-                                       (check!)
-                                       (if-let [column (get types from)]
-                                         (update types to union-column column) types)) types @edges)]
-                    (if (= types next) types (recur next))))]
-      (into {} (map (fn [id]
-                      [id (mapv (fn [i v]
-                                  (assoc (or (get types [id :head i]) {:type :data :nullable? true}) :variable v))
-                                (range) (get heads id))])) ids))))
+              (cond
+                (instance? Constant arg)
+                (let [column {:type (value/inferred-type (:value arg)) :nullable? (nil? (:value arg))}]
+                  (seed! seeds (local output) column)
+                  (seed! constraints (local output) column))
+                (instance? Variable arg)
+                (do (edge! (local (:symbol arg)) (local output) false)
+                    (seed! observed (local (:symbol arg)) {:type :data :nullable? true}))))))
+        (doseq [[i v] (map-indexed vector head-vars)] (edge! (local v) [id :head i] true))))
+    (let [observed (columns (propagate @observed @observation-edges))]
+      (doseq [id ids [i column] (map-indexed vector (get observed id))
+              :when (and column (>= i (:required-count (get headers id))))]
+        ;; Optional incoming bindings still need their own adorned interfaces.
+        ;; Never silently replace observable caller values with global answers.
+        (fail! :query-source/unsupported :planning))
+      {:producers (columns (propagate @seeds @edges))
+       :comparisons (columns (propagate @constraints @constraint-edges))
+       :columns (columns (propagate (merge-with union-column @seeds @inputs) @edges))})))
+
+(defn- literal-key-safe?
+  [x check!]
+  (check!)
+  (cond
+    (number? x) false
+    (satisfies? value/IQuerySourceValue x) false
+    (map? x) (every? (fn [[k v]] (and (literal-key-safe? k check!) (literal-key-safe? v check!))) x)
+    (or (vector? x) (list? x) (set? x)) (every? #(literal-key-safe? % check!) x)
+    :else true))
+
+(defn- check-literal-seeds! [runtime headers producers node source]
+  (let [check! #(control/check-active! (:control runtime))
+        id [source (get-in node [:name :symbol])]]
+    (doseq [[i arg] (map-indexed vector (take (:required-count (get headers id)) (:args node)))
+            :when (instance? Constant arg)]
+      (let [x (:value arg) column (get-in producers [id i])]
+        (value/execution-value! x check!)
+        (when-not (or (nil? column) (literal-key-safe? x check!)
+                      (and (= :long (:type column)) (instance? Long x)))
+          (fail! :query-source/unsupported :planning))))))
+
+(defn- requests!
+  "Own distinct correlated demand tuples before a body workspace closes.
+  The solver copies these into its demand predicates; this staging owner is
+  released immediately when solving ends, including on partial failure."
+  [runtime headers]
+  (let [ctl (:control runtime) check! #(control/check-active! ctl)
+        tokens (volatile! []) tables (volatile! {}) closed? (atom false)
+        hold! #(do (vswap! tokens conj %) %)
+        close (fn []
+                (when (compare-and-set! closed? false true)
+                  (doseq [{:keys [^List rows ^HashSet seen]} (vals @tables)] (.clear rows) (.clear seen))
+                  (vreset! tables {})
+                  (doseq [token @tokens] (control/release! token))
+                  (vreset! tokens [])))]
+    (try
+      (hold! (control/reserve! ctl {:retained-bytes (+' 4096 (*' 4096 (count headers))
+                                                         (*' 1024 (reduce +' 0 (map :required-count (vals headers)))))}))
+      (vreset! tables (into {} (map (fn [[id header]]
+                                     [id {:rows (FastList.) :seen (HashSet.)
+                                          :variables (vec (take (:required-count header) (:head-vars header)))}])) headers))
+      {:close close
+       :relation! (fn [id]
+                    (check!)
+                    (when @closed? (fail! :query-source/invalid :execution))
+                    (let [{:keys [variables rows]} (get @tables id)]
+                      (relation/relation! (zipmap variables (range)) rows)))
+       :request!
+       (fn [id node input-cols ^List tuples]
+         (check!)
+         (when @closed? (fail! :query-source/invalid :execution))
+         (let [{:keys [^List rows ^HashSet seen variables]} (get @tables id)
+               width (count variables)
+               workspace (control/reserve! ctl {:retained-bytes (+' 1024 (*' 128 (+ width (count input-cols))))})]
+           (try
+             (let [attrs (zipmap input-cols (range)) args (take width (:args node))
+                   scratch (object-array width) lookup (relation/array-lookup)]
+               (dotimes [i (.size tuples)]
+                 (check!)
+                 (let [^objects tuple (.get tuples i)]
+                   (doseq [[j arg] (map-indexed vector args)]
+                     (aset scratch j (if (instance? Constant arg) (:value arg)
+                                         (let [index (get attrs (:symbol arg))]
+                                           (when-not (and (integer? index) (< -1 index (alength tuple)))
+                                             (fail! :query-source/invalid :execution))
+                                           (aget tuple (int index))))))
+                   (doseq [x scratch] (value/execution-value! x check!))
+                   (when-not (.contains seen (relation/reset-array-lookup! lookup scratch))
+                     (when (= Integer/MAX_VALUE (.size rows)) (fail! :query-source/limit :reserve))
+                     (hold! (control/reserve! ctl {:retained-bytes (+' 512 (*' 64 width))}))
+                     (let [row (vec scratch) _ (hold! (rt/charge-copy! runtime row))
+                           owned (object-array (value/owned-copy row check!))]
+                       (.add seen (relation/wrap-array owned))
+                       (.add rows owned))))))
+             (finally (control/release! workspace)))))}
+      (catch Throwable e (close) (throw e)))))
+
+(defn- solve-seeded!
+  [runtime headers ids empty-tables dependencies owners run-rule! root node input-cols tuples complete!]
+  (let [pending (requests! runtime headers)]
+    (try
+      (let [demand-id #(vector ::demand %)
+            demand-ids (mapv demand-id ids) all-ids (into ids demand-ids)
+            ;; A body can discover new demands without producing any answers.
+            ;; Drain all requests after each active round, including that case.
+            all-dependencies (set all-ids)
+            demand-rules (zipmap demand-ids ids)
+            schemas (into empty-tables
+                          (map (fn [id]
+                                 [(demand-id id) (relation/relation!
+                                                   (zipmap (take (:required-count (get headers id)) (:head-vars (get headers id)))
+                                                           (range)) (FastList.))])) ids)
+            dependencies (into (into {} (map (fn [[id deps]] [id (conj deps (demand-id id))])) dependencies)
+                               (map #(vector % all-dependencies)) demand-ids)]
+        ((:request! pending) root node input-cols tuples)
+        (let [handle (recursion/evaluate! runtime schemas all-ids dependencies
+                       (fn [workspace totals _ id]
+                         (if-let [rule (get demand-rules id)]
+                           ((:relation! pending) rule)
+                           (let [seeds (get totals (demand-id id))]
+                             (if (.isEmpty ^List (:tuples seeds)) (get empty-tables id)
+                                 (run-rule! workspace totals id seeds (:request! pending) complete!)))))
+                       {:owners owners
+                        :initialize! (fn [_ id]
+                                       (if-let [rule (get demand-rules id)] ((:relation! pending) rule)
+                                           (get empty-tables id)))})]
+          (get ((:relations handle)) root)))
+      (finally ((:close pending))))))
 
 (defn prepare!
-  "Compile every reachable positive native body before provider acquisition.
-  compile-body! supplies the existing region compiler, returning a captured
-  runtime and a reusable shared-step runner. No body executes during preparation.
-  Required heads, variable-argument functions and negation reject until their
-  seeded/stratified emitter is available. Full totals make nonlinear positive
-  recursion complete."
+  "Compile stratified native bodies before provider acquisition. Required head
+  prefixes use correlated demand predicates in the shared bounded fixpoint.
+  Caller-observable optional inputs retain their emission gate."
   [runtime entries rules node source compile-body!]
   (let [check! #(control/check-active! (:control runtime))
         graph (graph! runtime entries rules node source)
         ids (vec (sort #(access/compare-keys %1 %2 check!) (keys graph)))
-        heads (into {} (map (fn [[id rule]] [id (:head-vars rule)])) graph)
+        levels (strata! runtime ids graph)
+        headers (into {} (map (fn [[id rule]] [id (select-keys rule [:head-vars :required-count])])) graph)
+        heads (into {} (map (fn [[id header]] [id (:head-vars header)])) headers)
+        root [source (get-in node [:name :symbol])]
         names (into #{} (map second) ids)
         body-rules (filterv #(contains? names (get-in % [:name :symbol])) rules)
         empty-tables (into {} (map (fn [[id head]] [id (relation/relation! (zipmap head (range)) (FastList.))])) heads)
@@ -193,43 +415,78 @@
                           [id (mapv (fn [branch]
                                       (check!)
                                       (let [head (head-vars branch)
+                                            columns (mapv #(hash-map :variable % :type :data :nullable? true)
+                                                          (take (:required-count rule) head))
                                             query (parser/map->Query
                                                     {:qfind (parser/->FindRel (mapv parser/->Variable head))
                                                      :qin [] :qwhere (:clauses branch)})]
-                                        {:head-vars head
+                                        {:head-vars head :inputs (mapv :variable columns)
                                          :program (compile-body! query
-                                                    {:rule-relations heads :default-source (:source rule)} body-rules)}))
+                                                    {:rule-relations headers :default-source (:source rule)} body-rules columns)}))
                                     (:branches rule))]))) ids)
         owners (vec (mapcat (fn [id] (map #(get-in % [:program :runtime]) (get programs id))) ids))
-        head-columns (head-columns! runtime ids heads programs)
+        analysis (analyze-heads! runtime ids headers programs)
+        head-columns (:columns analysis)
+        _ (check-literal-seeds! runtime headers (:comparisons analysis) node source)
+        _ (doseq [id ids {:keys [program]} (get programs id)
+                  {:keys [node default-source]} (program-clauses program)
+                  :when (instance? RuleExpr node)]
+            (check-literal-seeds! runtime headers (:comparisons analysis) node (source-symbol node default-source)))
         call-columns
         (reduce (fn [columns [arg column]]
                   (if (instance? Variable arg)
-                    (let [v (:symbol arg) before (get columns v)]
+                    (let [v (:symbol arg) before (get columns v)
+                          column (or column {:type :data :nullable? true})]
                       (assoc columns v {:variable v :type (if (or (nil? before) (= (:type before) (:type column)))
                                                            (:type column) :data)
                                         :nullable? (or (:nullable? before) (:nullable? column))})) columns))
-                {} (map vector (:args node) (get head-columns [source (get-in node [:name :symbol])])))
+                {} (map vector (:args node) (get head-columns root)))
         dependencies (into {} (map (fn [[id rule]] [id (:dependencies rule)])) graph)
         run-rule!
-        (fn [workspace tables id]
-          (binding [*iteration* {:control (:control runtime) :query-id (:query-id runtime) :tables tables}]
+        (fn [workspace tables id seeds request! complete!]
+          (binding [*iteration* {:control (:control runtime) :query-id (:query-id runtime)
+                                :tables tables :request! request! :complete! complete!}]
             (reduce
-              (fn [acc {:keys [head-vars program]}]
+              (fn [acc {:keys [head-vars inputs program]}]
                 (check!)
-                (let [body ((:run! program)) width (count head-vars)]
+                (let [input (when seeds (assoc seeds :attrs (zipmap inputs (range))))
+                      body ((:run! program) input) width (count head-vars)]
                   (containers! workspace (.size ^List (:tuples body)) width)
                   (let [projected (rule-relation/project-rule-result (checked check! body) head-vars)
                         projected (rule-relation/rename-rel-attrs projected (get heads id))
                         n (+' (.size ^List (:tuples acc)) (.size ^List (:tuples projected)))]
                     (containers! workspace n width)
                     (relation/sum-rel acc projected))))
-              (get empty-tables id) (get programs id))))]
-    {:requires [] :columns (mapv call-columns (variables node))
-     :native-rule-program true
-     :solve! (fn []
+              (get empty-tables id) (get programs id))))
+        seeded? (some #(pos? (:required-count %)) (vals headers))
+        stratified? (some #(seq (:negative-dependencies %)) (vals graph))
+        strata (when stratified?
+                 (into {} (map (fn [[level members]]
+                                 (let [members (vec members) included (set members)]
+                                   [level {:ids members :headers (select-keys headers members)
+                                           :empty (select-keys empty-tables members)
+                                           :dependencies (into {} (map (fn [id]
+                                                                        [id (into #{} (filter included) (get dependencies id))])) members)
+                                           :owners (vec (mapcat (fn [id] (map #(get-in % [:program :runtime]) (get programs id))) members))}]))
+                       (group-by levels ids))))]
+    {:requires (requirements node (:required-count (get headers root)))
+     :required-count (:required-count (get headers root))
+     :columns (mapv call-columns (variables node)) :native-rule-program true
+     :solve! (fn [input-cols tuples]
                (check!)
-               (let [handle (recursion/evaluate! runtime empty-tables ids dependencies
-                              (fn [workspace totals _ id] (run-rule! workspace totals id))
-                              {:owners owners :initialize! (fn [workspace id] (run-rule! workspace empty-tables id))})]
-                 (get ((:relations handle)) [source (get-in node [:name :symbol])])))}))
+               (if stratified?
+                 (letfn [(solve! [root node input-cols tuples]
+                           (check!)
+                           (let [level (get levels root) stratum (get strata level)]
+                             (solve-seeded! runtime (:headers stratum) (:ids stratum) (:empty stratum)
+                               (:dependencies stratum) (:owners stratum) run-rule! root node input-cols tuples
+                               (fn [key node input-cols tuples]
+                                 (when-not (< (get levels key) level) (fail! :query-source/invalid :execution))
+                                 (solve! key node input-cols tuples)))))]
+                   (solve! root node input-cols tuples))
+                 (if seeded?
+                   (solve-seeded! runtime headers ids empty-tables dependencies owners run-rule! root node input-cols tuples nil)
+                   (let [handle (recursion/evaluate! runtime empty-tables ids dependencies
+                                  (fn [workspace totals _ id] (run-rule! workspace totals id nil nil nil))
+                                  {:owners owners :initialize! (fn [workspace id] (run-rule! workspace empty-tables id nil nil nil))})]
+                     (get ((:relations handle)) root)))))}))

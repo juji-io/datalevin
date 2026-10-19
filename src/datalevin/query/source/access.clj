@@ -246,7 +246,25 @@
       (vreset! workspace
         (control/reserve! ctl {:retained-bytes (+ 1024 (* 512 (+ (count input-columns)
                                                               (reduce + 0 (map (comp count :columns) (:patterns region)))
+                                                              (count operators)
                                                               (reduce + 0 (map (comp count :columns) operators)))))}))
+      ;; Mapped facts are optimistic potential producers in this necessary
+      ;; preflight. They do not become execution seeds. Even with all of those
+      ;; variables, an unseeded local dependency cannot be repaired by a provider
+      ;; response, so reject it before acquiring any provider session. This is
+      ;; only a variable-availability proof: private outputs need not share a
+      ;; type or be exported. The typed scheduler checks actual interfaces.
+      (loop [known (into (set (map :variable input-columns))
+                        (mapcat #(map :variable (:columns %))) (:patterns region))
+             pending operators]
+        (check!)
+        (when (seq pending)
+          (if-let [operator (some (fn [operator]
+                                    (check!)
+                                    (when (every? #(contains? known (:variable %)) (:requires operator)) operator)) pending)]
+            (recur (into known (map :variable (:columns operator)))
+                   (filterv #(not= (:id operator) (:id %)) pending))
+            (fail! :query-source/unsupported :planning))))
       (let [possible (concat input-columns (mapcat :columns (:patterns region)) (mapcat :columns operators))
             known (reduce (fn [known column]
                             (check!)

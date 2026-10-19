@@ -9,7 +9,7 @@
             [datalevin.query.source.lowering :as lowering]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value :refer [fail!]])
-  (:import [datalevin.parser And Constant DefaultSrc Not Or Pattern Rule RuleExpr Variable]))
+  (:import [datalevin.parser And Constant DefaultSrc Function Not Or Pattern Rule RuleExpr Variable]))
 
 (defn- ensure! [ok]
   (when-not ok (fail! :query-source/invalid :planning)))
@@ -84,15 +84,26 @@
                         (= (count rules-by-name) (count rules))))
           (when compiler-context
             (ensure! (and (value/plain-map? compiler-context)
-                          (= #{:default-source :rule-relations} (set (keys compiler-context)))
-                          (:native (entries-by-source (:default-source compiler-context)))
-                          (value/plain-map? (:rule-relations compiler-context))))
-            (doseq [[key head] (:rule-relations compiler-context)]
+                          (set/subset? #{:default-source :rule-relations} (set (keys compiler-context)))
+                          (set/subset? (set (keys compiler-context)) #{:default-source :rule-relations :literal-vars})
+                          (symbol? (:default-source compiler-context))
+                          (.startsWith (name (:default-source compiler-context)) "$")
+                          (or (nil? (entries-by-source (:default-source compiler-context)))
+                              (:native (entries-by-source (:default-source compiler-context))))
+                          (value/plain-map? (:rule-relations compiler-context))
+                          (or (nil? (:literal-vars compiler-context))
+                              (and (set? (:literal-vars compiler-context))
+                                   (set/subset? (:literal-vars compiler-context) (set (keys bindings)))))))
+            (doseq [[key {head :head-vars :keys [required-count] :as header}] (:rule-relations compiler-context)
+                    :let [branch (first (:branches (rules-by-name (second key))))]]
               (check!)
               (ensure! (and (vector? key) (= 2 (count key))
                             (:native (entries-by-source (first key)))
-                            (rules-by-name (second key)) (vector? head)
-                            (= head (head-vars (first (:branches (rules-by-name (second key))))))))))
+                            (rules-by-name (second key))
+                            (= #{:head-vars :required-count} (set (keys header)))
+                            (vector? head) (integer? required-count)
+                            (= head (head-vars branch))
+                            (= required-count (count (get-in branch [:vars :required])))))))
           (doseq [entry entries]
             (own! (rt/charge-metadata! runtime (:symbol entry) :inputs))
             (ensure! (and (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
@@ -207,7 +218,12 @@
                     (when (> depth 128) (fail! :query-source/limit :planning))
                     (reserve-node! (+ 1024 (* 256 (count clauses))))
                     (let [id (region! path input-vars live bindings literals inherited)
-                          variables (mapv node-vars clauses)]
+                          variables (mapv node-vars clauses)
+                          producers (mapv (fn [node vs]
+                                            (cond (or (instance? Pattern node) (instance? RuleExpr node)
+                                                      (instance? Or node)) vs
+                                                  (instance? Function node) (node-vars (:binding node))
+                                                  :else #{})) clauses variables)]
                       (swap! regions update-in [id :available-vars] #(reduce set/union % variables))
                       (doseq [[i node] (map-indexed vector clauses)]
                         (check!)
@@ -274,13 +290,23 @@
                                             :exports (node-vars node) :branches branches :set-boundary? true})
                                     (when (every? #(:empty? (nth @regions (:region-id %))) branches)
                                       (swap! regions assoc-in [id :empty?] true))))))
-                            (and (instance? Not node) (external? node inherited (volatile! #{}) 0))
-                            (fail! :query-source/unsupported :clauses)
+                            (instance? Not node)
+                            (do
+                              (when (external? node inherited (volatile! #{}) 0)
+                                (fail! :query-source/unsupported :clauses))
+                              (let [form (dp/source node)
+                                    form (if (instance? DefaultSrc (:source node)) form (rest form))
+                                    explicit? (= "not-join" (some-> (first form) name))
+                                    positive (reduce-kv (fn [s j vs] (if (= i j) s (set/union s vs))) input-vars producers)
+                                    inputs (if explicit? (node-vars node) (set/intersection positive (node-vars node)))]
+                                (when (empty? inputs) (fail! :query-source/unsupported :planning))
+                                (add-core! id (vary-meta node assoc ::negation-inputs inputs
+                                                           ::negation-literals (set/intersection literals inputs)) location)))
                             :else (add-core! id node location))))
                       id))]
             (let [live (node-vars [(:qfind parsed) (:qwith parsed)])
                   root (body! (:qwhere parsed) [] (or (:default-source compiler-context) '$)
-                              input-vars live bindings #{} #{} 0)
+                              input-vars live bindings (or (:literal-vars compiler-context) #{}) #{} 0)
                   _ (reserve-node! (+ 2048 (* 512 (count @regions))))
                   parents (into {} (mapcat (fn [site]
                                             (map (fn [branch]
