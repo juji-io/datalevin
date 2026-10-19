@@ -141,7 +141,7 @@
              (query! '[:find ?e :in $rows $seed $domain % :where ($rows known ?e)]
                [[] seed [[1] [2]] rules]))))))
 
-(deftest negative-functions-retain-the-optional-observability-gate
+(deftest negative-functions-require-their-observable-caller-inputs
   (let [rules '[[(copied ?x ?y) [?x ?y] (not-join [?x] [(identity ?x) ?out])]]
         events (atom []) saved (atom nil)
         failure (error (fn [] (rt/with-runtime {}

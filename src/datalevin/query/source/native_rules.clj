@@ -2,7 +2,8 @@
   "Compile stratified native rule bodies with the existing region compiler.
   Rule references read completed invocation-owned relations; the shared
   fixpoint kernel supplies iteration, ownership and set semantics."
-  (:require [datalevin.parser :as parser]
+  (:require [clojure.set :as set]
+            [datalevin.parser :as parser]
             [datalevin.query.source.access :as access]
             [datalevin.query.source.collection :as collection]
             [datalevin.query.source.control :as control]
@@ -11,7 +12,7 @@
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation]
             [datalevin.rules.relation :as rule-relation])
-  (:import [datalevin.parser And Constant DefaultSrc Function Not Or Pattern RuleExpr Variable]
+  (:import [datalevin.parser And Constant DefaultSrc Function Not Or Pattern Predicate RuleExpr Variable]
            [java.util AbstractList HashSet List]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
@@ -43,21 +44,21 @@
                          (size [] (check!) (.size tuples))
                          (get [i] (check!) (.get tuples i))))))
 
-(defn- requirements [node n]
+(defn- requirements [node positions]
   (mapv (fn [arg]
           (when-not (instance? Variable arg) (fail! :query-source/unsupported :planning))
           {:variable (:symbol arg) :type :data :nullable? true})
-        (distinct (remove #(instance? Constant %) (take n (:args node))))))
+        (distinct (remove #(instance? Constant %) (map #(nth (:args node) %) positions)))))
 
 (defn reference-spec
   "Emit a relation-reference interface only in an explicit body compiler context."
   [compiled node source]
   (let [key [source (get-in node [:name :symbol])]]
-    (when-let [{:keys [head-vars required-count]} (get (:rule-relations compiled) key)]
+    (when-let [{:keys [head-vars input-positions]} (get (:rule-relations compiled) key)]
       (when-not (= (count head-vars) (count (:args node))) (fail! :query-source/invalid :planning))
-      {:requires (requirements node required-count)
+      {:requires (requirements node input-positions)
        :columns (mapv #(hash-map :variable % :type :data :nullable? true) (variables node))
-       :rule-reference key :head-vars head-vars :required-count required-count})))
+       :rule-reference key :head-vars head-vars :input-positions input-positions})))
 
 (defn reference!
   "Borrow the current complete relation on the serial iteration's owning thread."
@@ -76,20 +77,20 @@
   "Apply constants, repeated arguments and wildcards to a complete head set.
   Shared matching preserves predicate equivalence; shared distinct projection
   retains rule-call set semantics after ignored head positions disappear."
-  [runtime check! node rel required-count]
+  [runtime check! node rel input-positions]
   (check!)
   (containers! runtime 0 (count (:args node)))
-  (let [required (take (or required-count 0) (:args node))
+  (let [required (mapv #(vector % (nth (:args node) %)) input-positions)
         positions (reduce (fn [positions [i arg]]
                             (if (and (instance? Variable arg) (not (contains? positions (:symbol arg))))
-                              (assoc positions (:symbol arg) i) positions)) {} (map-indexed vector required))
-        key-equalities (into [] (keep-indexed (fn [i arg]
-                                                (when (instance? Variable arg)
-                                                  (let [first-position (get positions (:symbol arg))]
-                                                    (when (not= i first-position) [first-position i]))))) required)
+                              (assoc positions (:symbol arg) i) positions)) {} required)
+        key-equalities (into [] (keep (fn [[i arg]]
+                                       (when (instance? Variable arg)
+                                         (let [first-position (get positions (:symbol arg))]
+                                           (when (not= i first-position) [first-position i]))))) required)
         ;; Predicate-equivalent arguments can belong to different demand keys.
         ;; Constrain every required position before projecting away duplicates.
-        key-values (into {} (keep-indexed #(when (instance? Constant %2) [%1 (:value %2)])) required)
+        key-values (into {} (keep (fn [[i arg]] (when (instance? Constant arg) [i (:value arg)]))) required)
         mapped (collection/match! runtime (:args node) (:tuples rel) check!
                  {:positions positions :key-values key-values :key-equalities key-equalities})
         vars (variables node)]
@@ -149,6 +150,110 @@
       (visit-rule! root source 0)
       @graph)))
 
+(defn- input-positions!
+  "Promote caller-observable head positions into explicit binding dependencies.
+  Observe only names crossing each parsed scope's public variable interface.
+  Calls without these inputs need a separate enumeration adornment."
+  [runtime ids graph]
+  (let [check! #(control/check-active! (:control runtime))
+        observed (volatile! #{}) edges (volatile! [])
+        edge! (fn [from to]
+                (containers! runtime 1 2)
+                (vswap! edges conj [from to]))]
+    (letfn [(visit! [node inherited local path depth]
+              (check!)
+              (when (> depth 128) (fail! :query-source/limit :planning))
+              (containers! runtime 0 2)
+              (let [source (source-symbol node inherited)]
+                (cond
+                  (instance? Function node)
+                  (doseq [arg (:args node) :when (instance? Variable arg)]
+                    (containers! runtime 1 1)
+                    (vswap! observed conj (local (:symbol arg))))
+                  (instance? RuleExpr node)
+                  (doseq [[i arg] (map-indexed vector (:args node)) :when (instance? Variable arg)]
+                    (edge! [[source (get-in node [:name :symbol])] :head i] (local (:symbol arg))))
+                  (or (instance? Or node) (instance? Not node))
+                  (let [exports (if (instance? Not node) (:vars node)
+                                    (concat (get-in node [:rule-vars :required]) (get-in node [:rule-vars :free])))
+                        exports (set (map :symbol exports))]
+                    (doseq [[i clause] (map-indexed vector (:clauses node))]
+                      (let [child (conj path i)]
+                        (visit! clause source #(if (exports %) (local %) [child %]) child (inc depth)))))
+                  (instance? And node)
+                  (doseq [[i clause] (map-indexed vector (:clauses node))]
+                    (visit! clause source local (conj path i) (inc depth))))))]
+      (doseq [id ids [j branch] (map-indexed vector (:branches (get graph id)))]
+        (let [local #(vector id j %)]
+          (doseq [[i v] (map-indexed vector (head-vars branch))] (edge! (local v) [id :head i]))
+          (doseq [[i clause] (map-indexed vector (:clauses branch))]
+            (visit! clause (:source (get graph id)) local [id j i] 0))))
+      (loop [known @observed]
+        (check!)
+        (let [next (reduce (fn [known [from to]]
+                             (check!)
+                             (if (contains? known from) (conj known to) known)) known @edges)]
+          (if (= known next)
+            (into {} (map (fn [id]
+                            [id (into [] (filter #(or (< % (:required-count (get graph id)))
+                                                     (contains? known [id :head %])))
+                                  (range (count (:head-vars (get graph id)))))])) ids)
+            (recur next)))))))
+
+(defn- dependency-inputs!
+  "Forward missing head bindings through call dependencies. Local positive
+  producers can satisfy a callee input without requiring that caller head.
+  This is interface analysis only; it never executes clauses or reads facts."
+  [runtime ids graph initial]
+  (let [check! #(control/check-active! (:control runtime))
+        vars (fn [args] (into #{} (keep #(when (instance? Variable %) (:symbol %))) args))]
+    (containers! runtime (reduce + 0 (map #(count (:head-vars %)) (vals graph))) 2)
+    (loop [positions initial]
+      (let [next
+            (reduce
+              (fn [positions id]
+                (reduce
+                  (fn [positions branch]
+                    (rt/with-workspace runtime
+                      (fn [workspace]
+                        (let [width (reduce +' (count (head-vars branch))
+                                      (map (fn [node]
+                                             (count (or (:pattern node) (:args node) (:vars node)
+                                                        (concat (get-in node [:rule-vars :required])
+                                                                (get-in node [:rule-vars :free]))))) (:clauses branch)))]
+                          (containers! workspace (+ 2 (count (:clauses branch))) (+ 2 width)))
+                        (let [head (head-vars branch) head-set (set head)
+                              operations
+                              (mapv (fn [node]
+                                      (check!)
+                                      (cond
+                                        (instance? Pattern node) {:requires #{} :columns (vars (:pattern node))}
+                                        (instance? RuleExpr node)
+                                        (let [key [(source-symbol node (:source (get graph id))) (get-in node [:name :symbol])]]
+                                          {:requires (vars (map #(nth (:args node) %) (get positions key)))
+                                           :columns (vars (:args node))})
+                                        (instance? Function node)
+                                        {:requires (vars (:args node)) :columns #{(get-in node [:binding :variable :symbol])}}
+                                        (instance? Predicate node) {:requires (vars (:args node)) :columns #{}}
+                                        (instance? Or node)
+                                        {:requires (vars (get-in node [:rule-vars :required]))
+                                         :columns (vars (concat (get-in node [:rule-vars :required]) (get-in node [:rule-vars :free])))}
+                                        (instance? Not node) {:negative (vars (:vars node)) :columns #{}}
+                                        :else {:requires #{} :columns #{}})) (:clauses branch))
+                              available (into head-set (mapcat :columns) operations)
+                              operations (mapv #(if (:negative %) (assoc % :requires (set/intersection available (:negative %))) %) operations)
+                              missing
+                              (loop [known (into #{} (map #(nth head %)) (get positions id)) pending operations]
+                                (check!)
+                                (if-let [ready (some #(when (set/subset? (:requires %) known) %) pending)]
+                                  (recur (into known (:columns ready)) (filterv #(not (identical? ready %)) pending))
+                                  (set/difference (into #{} (mapcat :requires) pending) known)))
+                              promoted (into (set (get positions id))
+                                         (keep-indexed #(when (contains? missing %2) %1)) head)]
+                          (assoc positions id (vec (sort promoted))))))) positions (:branches (get graph id))))
+              positions ids)]
+        (if (= positions next) positions (recur next))))))
+
 (defn- strata!
   "Solve caller >= callee (+ 1 for a negative dependency). A finite graph
   needs at most N rounds; further growth proves a cycle through negation."
@@ -183,13 +288,13 @@
               (:core-clauses r))) (get-in program [:compiled :regions])))
 
 (defn- analyze-heads!
-  "Conservative producer, comparison and caller-observability propagation.
+  "Conservative producer and comparison propagation.
   Required inputs are producers; comparison proofs also follow negative facts
   and copied values without claiming that those facts produce outer values."
   [runtime ids headers programs]
   (let [check! #(control/check-active! (:control runtime))
-        seeds (volatile! {}) inputs (volatile! {}) observed (volatile! {}) constraints (volatile! {})
-        edges (volatile! []) observation-edges (volatile! []) constraint-edges (volatile! [])
+        seeds (volatile! {}) inputs (volatile! {}) constraints (volatile! {})
+        edges (volatile! []) constraint-edges (volatile! [])
         union-column (fn [a b]
                        (cond (nil? a) b (nil? b) a
                              :else {:type (if (= (:type a) (:type b)) (:type a) :data)
@@ -197,16 +302,15 @@
         seed! (fn [target v column]
                 (containers! runtime 1 2)
                 (vswap! target update v union-column (select-keys column [:type :nullable?])))
-        edge! (fn [from to observation?]
+        edge! (fn [from to direct?]
                 (containers! runtime 1 2)
                 (vswap! edges conj [from to])
-                (if observation?
-                  (do (vswap! observation-edges conj [from to])
-                      (vswap! constraint-edges conj [from to]))
+                (if direct?
+                  (vswap! constraint-edges conj [from to])
                   ;; A comparison on a copied value also constrains its input.
                   (vswap! constraint-edges conj [to from])))
-        observe-negative!
-        (fn observe! [program local prefix]
+        constrain-negative!
+        (fn constrain! [program local prefix]
           (doseq [r (get-in program [:compiled :regions]) {:keys [node path]} (:core-clauses r)]
             (check!)
             (let [spec (get (:core-specs program) path)]
@@ -217,20 +321,18 @@
                 (doseq [[i arg] (map-indexed vector (:args node)) :when (instance? Variable arg)]
                   (containers! runtime 1 2)
                   (let [edge [[(:rule-reference spec) :head i] (local (:symbol arg))]]
-                    (vswap! observation-edges conj edge)
                     (vswap! constraint-edges conj edge)))
                 (instance? Function node)
                 (let [arg (first (:args node)) output (get-in node [:binding :variable :symbol])]
                   (cond (instance? Variable arg)
-                        (do (seed! observed (local (:symbol arg)) {:type :data :nullable? true})
-                            (containers! runtime 1 2)
+                        (do (containers! runtime 1 2)
                             (vswap! constraint-edges conj [(local output) (local (:symbol arg))]))
                         (instance? Constant arg)
                         (seed! constraints (local output) {:type (value/inferred-type (:value arg))
                                                           :nullable? (nil? (:value arg))})))
                 (instance? Not node)
                 (let [inputs (set (map :variable (:requires spec))) child (conj prefix path)]
-                  (observe! (:program spec) #(if (inputs %) (local %) [child %]) child))))))
+                  (constrain! (:program spec) #(if (inputs %) (local %) [child %]) child))))))
         propagate (fn [types edges]
                     (loop [types types]
                       (check!)
@@ -245,7 +347,7 @@
                                             (range) (:head-vars (get headers id)))])) ids))]
     (doseq [id ids [branch-index {:keys [head-vars program]}] (map-indexed vector (get programs id))]
       (let [local #(vector id branch-index %)]
-        (doseq [v (take (:required-count (get headers id)) head-vars)]
+        (doseq [v (map #(nth head-vars %) (:input-positions (get headers id)))]
           (seed! inputs (local v) {:type :data :nullable? true}))
         (doseq [r (get-in program [:compiled :regions]) {:keys [node path]} (:core-clauses r)]
           (check!)
@@ -263,7 +365,7 @@
                   prefix [id branch-index :negative path]]
               ;; Negative bodies constrain existing values; their facts and
               ;; outputs must never become positive head-type producers.
-              (observe-negative! (:program spec) #(if (inputs %) (local %) [prefix %]) prefix))
+              (constrain-negative! (:program spec) #(if (inputs %) (local %) [prefix %]) prefix))
             (instance? Function node)
             (let [arg (first (:args node)) output (get-in node [:binding :variable :symbol])]
               (cond
@@ -272,18 +374,11 @@
                   (seed! seeds (local output) column)
                   (seed! constraints (local output) column))
                 (instance? Variable arg)
-                (do (edge! (local (:symbol arg)) (local output) false)
-                    (seed! observed (local (:symbol arg)) {:type :data :nullable? true}))))))
+                (edge! (local (:symbol arg)) (local output) false)))))
         (doseq [[i v] (map-indexed vector head-vars)] (edge! (local v) [id :head i] true))))
-    (let [observed (columns (propagate @observed @observation-edges))]
-      (doseq [id ids [i column] (map-indexed vector (get observed id))
-              :when (and column (>= i (:required-count (get headers id))))]
-        ;; Optional incoming bindings still need their own adorned interfaces.
-        ;; Never silently replace observable caller values with global answers.
-        (fail! :query-source/unsupported :planning))
-      {:producers (columns (propagate @seeds @edges))
-       :comparisons (columns (propagate @constraints @constraint-edges))
-       :columns (columns (propagate (merge-with union-column @seeds @inputs) @edges))})))
+    {:producers (columns (propagate @seeds @edges))
+     :comparisons (columns (propagate @constraints @constraint-edges))
+     :columns (columns (propagate (merge-with union-column @seeds @inputs) @edges))}))
 
 (defn- literal-key-safe?
   [x check!]
@@ -298,7 +393,7 @@
 (defn- check-literal-seeds! [runtime headers producers node source]
   (let [check! #(control/check-active! (:control runtime))
         id [source (get-in node [:name :symbol])]]
-    (doseq [[i arg] (map-indexed vector (take (:required-count (get headers id)) (:args node)))
+    (doseq [i (:input-positions (get headers id)) :let [arg (nth (:args node) i)]
             :when (instance? Constant arg)]
       (let [x (:value arg) column (get-in producers [id i])]
         (value/execution-value! x check!)
@@ -322,10 +417,11 @@
                   (vreset! tokens [])))]
     (try
       (hold! (control/reserve! ctl {:retained-bytes (+' 4096 (*' 4096 (count headers))
-                                                         (*' 1024 (reduce +' 0 (map :required-count (vals headers)))))}))
+                                                         (*' 1024 (reduce +' 0 (map (comp count :input-positions) (vals headers)))))}))
       (vreset! tables (into {} (map (fn [[id header]]
                                      [id {:rows (FastList.) :seen (HashSet.)
-                                          :variables (vec (take (:required-count header) (:head-vars header)))}])) headers))
+                                          :positions (:input-positions header)
+                                          :variables (mapv #(nth (:head-vars header) %) (:input-positions header))}])) headers))
       {:close close
        :relation! (fn [id]
                     (check!)
@@ -336,11 +432,11 @@
        (fn [id node input-cols ^List tuples]
          (check!)
          (when @closed? (fail! :query-source/invalid :execution))
-         (let [{:keys [^List rows ^HashSet seen variables]} (get @tables id)
+         (let [{:keys [^List rows ^HashSet seen variables positions]} (get @tables id)
                width (count variables)
                workspace (control/reserve! ctl {:retained-bytes (+' 1024 (*' 128 (+ width (count input-cols))))})]
            (try
-             (let [attrs (zipmap input-cols (range)) args (take width (:args node))
+             (let [attrs (zipmap input-cols (range)) args (map #(nth (:args node) %) positions)
                    scratch (object-array width) lookup (relation/array-lookup)]
                (dotimes [i (.size tuples)]
                  (check!)
@@ -375,7 +471,7 @@
             schemas (into empty-tables
                           (map (fn [id]
                                  [(demand-id id) (relation/relation!
-                                                   (zipmap (take (:required-count (get headers id)) (:head-vars (get headers id)))
+                                                   (zipmap (map #(nth (:head-vars (get headers id)) %) (:input-positions (get headers id)))
                                                            (range)) (FastList.))])) ids)
             dependencies (into (into {} (map (fn [[id deps]] [id (conj deps (demand-id id))])) dependencies)
                                (map #(vector % all-dependencies)) demand-ids)]
@@ -395,34 +491,38 @@
       (finally ((:close pending))))))
 
 (defn prepare!
-  "Compile stratified native bodies before provider acquisition. Required head
-  prefixes use correlated demand predicates in the shared bounded fixpoint.
-  Caller-observable optional inputs retain their emission gate."
+  "Compile stratified native bodies before provider acquisition. Declared and
+  caller-observable inputs use correlated demands with explicit head positions.
+  Unbound observable head enumeration needs separate adorned bodies."
   [runtime entries rules node source compile-body!]
   (let [check! #(control/check-active! (:control runtime))
         graph (graph! runtime entries rules node source)
         ids (vec (sort #(access/compare-keys %1 %2 check!) (keys graph)))
         levels (strata! runtime ids graph)
-        headers (into {} (map (fn [[id rule]] [id (select-keys rule [:head-vars :required-count])])) graph)
+        input-positions (dependency-inputs! runtime ids graph (input-positions! runtime ids graph))
+        headers (into {} (map (fn [[id rule]] [id (assoc (select-keys rule [:head-vars :required-count])
+                                                       :input-positions (get input-positions id))])) graph)
         heads (into {} (map (fn [[id header]] [id (:head-vars header)])) headers)
         root [source (get-in node [:name :symbol])]
-        names (into #{} (map second) ids)
-        body-rules (filterv #(contains? names (get-in % [:name :symbol])) rules)
+        rules-by-name (into {} (map #(vector (get-in % [:name :symbol]) %)) rules)
         empty-tables (into {} (map (fn [[id head]] [id (relation/relation! (zipmap head (range)) (FastList.))])) heads)
         programs
         (into {} (map (fn [id]
-                        (let [rule (get graph id)]
+                        (let [rule (get graph id)
+                              body-ids (vec (sort #(access/compare-keys %1 %2 check!) (:dependencies rule)))
+                              body-headers (select-keys headers body-ids)
+                              body-rules (mapv rules-by-name (distinct (map second body-ids)))]
                           [id (mapv (fn [branch]
                                       (check!)
                                       (let [head (head-vars branch)
                                             columns (mapv #(hash-map :variable % :type :data :nullable? true)
-                                                          (take (:required-count rule) head))
+                                                          (map #(nth head %) (get input-positions id)))
                                             query (parser/map->Query
                                                     {:qfind (parser/->FindRel (mapv parser/->Variable head))
                                                      :qin [] :qwhere (:clauses branch)})]
                                         {:head-vars head :inputs (mapv :variable columns)
                                          :program (compile-body! query
-                                                    {:rule-relations headers :default-source (:source rule)} body-rules columns)}))
+                                                    {:rule-relations body-headers :default-source (:source rule)} body-rules columns)}))
                                     (:branches rule))]))) ids)
         owners (vec (mapcat (fn [id] (map #(get-in % [:program :runtime]) (get programs id))) ids))
         analysis (analyze-heads! runtime ids headers programs)
@@ -458,7 +558,7 @@
                     (containers! workspace n width)
                     (relation/sum-rel acc projected))))
               (get empty-tables id) (get programs id))))
-        seeded? (some #(pos? (:required-count %)) (vals headers))
+        seeded? (some #(seq (:input-positions %)) (vals headers))
         stratified? (some #(seq (:negative-dependencies %)) (vals graph))
         strata (when stratified?
                  (into {} (map (fn [[level members]]
@@ -469,8 +569,8 @@
                                                                         [id (into #{} (filter included) (get dependencies id))])) members)
                                            :owners (vec (mapcat (fn [id] (map #(get-in % [:program :runtime]) (get programs id))) members))}]))
                        (group-by levels ids))))]
-    {:requires (requirements node (:required-count (get headers root)))
-     :required-count (:required-count (get headers root))
+    {:requires (requirements node (:input-positions (get headers root)))
+     :input-positions (:input-positions (get headers root))
      :columns (mapv call-columns (variables node)) :native-rule-program true
      :solve! (fn [input-cols tuples]
                (check!)

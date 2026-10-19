@@ -94,16 +94,20 @@
                           (or (nil? (:literal-vars compiler-context))
                               (and (set? (:literal-vars compiler-context))
                                    (set/subset? (:literal-vars compiler-context) (set (keys bindings)))))))
-            (doseq [[key {head :head-vars :keys [required-count] :as header}] (:rule-relations compiler-context)
+            (doseq [[key {head :head-vars :keys [required-count input-positions] :as header}] (:rule-relations compiler-context)
                     :let [branch (first (:branches (rules-by-name (second key))))]]
               (check!)
               (ensure! (and (vector? key) (= 2 (count key))
                             (:native (entries-by-source (first key)))
                             (rules-by-name (second key))
-                            (= #{:head-vars :required-count} (set (keys header)))
+                            (= #{:head-vars :required-count :input-positions} (set (keys header)))
                             (vector? head) (integer? required-count)
                             (= head (head-vars branch))
-                            (= required-count (count (get-in branch [:vars :required])))))))
+                            (= required-count (count (get-in branch [:vars :required])))
+                            (vector? input-positions)
+                            (every? #(and (integer? %) (<= 0 %) (< % (count head))) input-positions)
+                            (= input-positions (vec (sort (set input-positions))))
+                            (set/subset? (set (range required-count)) (set input-positions))))))
           (doseq [entry entries]
             (own! (rt/charge-metadata! runtime (:symbol entry) :inputs))
             (ensure! (and (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
@@ -118,7 +122,10 @@
                         (instance? RuleExpr node)
                         (let [name (get-in node [:name :symbol]) key [source name]]
                           (ensure! (rules-by-name name))
-                          (when-not (contains? @seen key)
+                          ;; Explicit body references already belong to the
+                          ;; caller's validated native graph. Their definitions
+                          ;; supply headers here; bodies compile separately.
+                          (when-not (or (contains? (:rule-relations compiler-context) key) (contains? @seen key))
                             (vswap! seen conj key)
                             (some #(external? % source seen (inc depth))
                                   (mapcat :clauses (:branches (rules-by-name name))))))

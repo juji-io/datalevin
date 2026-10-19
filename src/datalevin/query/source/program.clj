@@ -117,7 +117,7 @@
                   (let [table (if-let [id (:rule-reference spec)]
                                 (native-rules/reference! runtime id node input-cols tuples)
                                 ((:solve! spec) input-cols tuples))
-                        result (native-rules/call! runtime check! node table (:required-count spec))
+                        result (native-rules/call! runtime check! node table (:input-positions spec))
                         result (joined! runtime check!
                                  (relation/relation! (zipmap input-cols (range)) tuples) result)]
                     (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))

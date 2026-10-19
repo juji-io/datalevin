@@ -2589,7 +2589,7 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, optional-input recursive rule emission, remaining input edges
+native plan/read paths, unbound observable-head enumeration, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
@@ -2679,8 +2679,19 @@ Required literals and repeated required positions select their exact demand
 partition after ordinary argument matching; repeated arguments retain their
 required input position for the subsequent typed join. Variable-argument
 identity/ground functions admit required head inputs and locally produced values.
-A conservative observability analysis rejects programs whose optional head
-inputs can affect such functions, including functions inside negation.
+A scope-aware observability analysis promotes optional head inputs that can
+affect such functions, including functions inside negation, into explicit input
+positions. These positions need not form a contiguous prefix. Missing head
+bindings propagate through call dependencies; a positive local producer can
+satisfy a callee without requiring that caller head as an input. Private union
+and not-join names do not observe caller heads outside their declared interface.
+The shared typed scheduler requires every selected input before the call runs.
+Body seeds, demand keys and call matching use the same ordered positions, so
+sparse correlations, renamed heads, typed caller representations and repeated
+argument partitions survive recursion. Inference uses short-lived workspaces.
+After whole-graph validation, each body context captures only its direct
+reference headers and definitions. Reference bodies compile separately; native
+reference classification does not walk those definitions again from negation.
 Literal numeric comparisons against other producers require a representation-safe
 proof; seed-only values retain their original numeric representation. Existing
 captured scalar key semantics and their remaining representation edges apply.
@@ -2710,9 +2721,11 @@ when that bound is exceeded.
 
 Negative facts participate in representation-safety constraints but never
 establish outer producer types or nullability. Comparison constraints also flow
-back through identity/ground copies. Observable optional inputs still need
-adorned interfaces; mapped negative bodies and mapped recursion remain
-unsupported. This internal compiler extension does not activate v2 in public
+back through identity/ground copies. An observable head with no incoming value
+still needs a separate enumeration adornment, including cases where its body
+could otherwise enumerate it. Those calls reject before acquisition. Mapped
+negative bodies and mapped recursion remain unsupported. This internal compiler
+extension does not activate v2 in public
 `q`/`explain`.
 
 Internal logical value walkers bound nesting at 128, including metadata,
