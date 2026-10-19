@@ -92,14 +92,12 @@
                          (or nullable? (nil? x)))))))
           (sort-by val (:attrs rel)))))
 
-(defn spec!
-  "Build a local pattern's actual typed output through the shared matcher.
-  Matching reads owned input only and completes before provider planning."
-  [runtime source node]
-  (check! runtime source)
-  (let [check! #(check! runtime source)
-        terms (:pattern node)
-        _ (containers! runtime 1 (count terms))
+(defn match!
+  "Match owned tuples against parsed terms using the shared controlled matcher.
+  Values remain borrowed from the caller's live relation."
+  [runtime terms rows check!]
+  (check!)
+  (let [_ (containers! runtime 1 (count terms))
         _ (when-not (every? #(or (instance? Constant %) (instance? Variable %)
                                 (instance? Placeholder %)) terms)
             (fail! :query-source/unsupported :planning))
@@ -116,10 +114,19 @@
                           (instance? Variable x) (:symbol x)
                           :else '_)) (range) terms)
         emitted (volatile! 0)
-        rel (pattern/lookup-pattern-coll-controlled (:rows source) raw
+        rel (pattern/lookup-pattern-coll-controlled rows raw
               {:check! check! :columns variables :positions (mapv positions variables)
                :literal-values literals :invalid! #(fail! :query-source/invalid :inputs)
                :admit-row! #(do (vswap! emitted inc)
                                 (when (> @emitted Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
                                 (containers! runtime 1 (count variables)))})]
+    (check!) rel))
+
+(defn spec!
+  "Build a local pattern's actual typed output through the shared matcher.
+  Matching reads owned input only and completes before provider planning."
+  [runtime source node]
+  (check! runtime source)
+  (let [check! #(check! runtime source)
+        rel (match! runtime (:pattern node) (:rows source) check!)]
     {:requires [] :columns (columns check! rel) :relation rel :collection? true}))

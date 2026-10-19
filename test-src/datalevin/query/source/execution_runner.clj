@@ -6,6 +6,7 @@
             [datalevin.query.source-runtime-test]
             [datalevin.query.source-value-limits-test]
             [datalevin.query.source-recursion-test]
+            [datalevin.query.source-native-rules-test]
             [datalevin.query.source-execution-test]
             [datalevin.query.source-conformance-test]
             [datalevin.query.source-join-index-test]
@@ -39,6 +40,7 @@
                                            'datalevin.query.source-runtime-test
                                            'datalevin.query.source-value-limits-test
                                            'datalevin.query.source-recursion-test
+                                           'datalevin.query.source-native-rules-test
                                            'datalevin.query.source-execution-test
                                            'datalevin.query.source-conformance-test
                                            'datalevin.query.source-join-index-test

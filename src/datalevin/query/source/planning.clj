@@ -63,53 +63,60 @@
   entries contain :symbol and exactly one of :source (external) or :native
   (DB/local collection). Local facts are owned before descriptor callbacks.
   The returned compilation owns its resources independently of other work."
-  [runtime entries parsed rules bindings input-vars options]
-  (let [child (assoc runtime :cleanup (atom [])) state (atom :capturing)
-        close (rt/own! runtime #(do (when (= :planning @state)
-                                     (control/cancel! (:control child)
-                                       {:error :query-source/cancelled :phase :planning}))
-                                   (reset! state :closed)
-                                   (let [primary (volatile! nil)]
-                                     (doseq [cleanup (reverse @(:cleanup child))]
-                                       (try (cleanup)
-                                            (catch Throwable e
-                                              (if-let [error @primary]
-                                                (.addSuppressed ^Throwable error e)
-                                                (vreset! primary e)))))
-                                     (reset! (:cleanup child) [])
-                                     (when-let [error @primary] (throw error)))))]
-    (try
-      (control/check-active! (:control runtime))
-      (ensure! (vector? entries))
-      (let [parsed (own-syntax! child parsed)
-            rules (own-syntax! child rules)
-            token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 1024 (count entries)))})
-            _ (rt/own! child #(control/release! token))
-            _ (doseq [entry entries]
-                (ensure! (and (value/plain-map? entry)
-                              (= #{:symbol (if (contains? entry :source) :source :native)} (set (keys entry)))
-                              (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
-            entries (collection/capture-entries! child entries)
-            seen (IdentityHashMap.)
-            entries
-            (mapv (fn [entry]
-                    (ensure! (and (value/plain-map? entry)
-                                  (= #{:symbol (if (contains? entry :source) :source :native)} (set (keys entry)))
-                                  (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$")))
-                    (rt/with-context child {:source-symbol (:symbol entry)}
-                      (fn [runtime]
-                        (if (contains? entry :source)
-                          (let [provider (:source entry)
-                                info (or (.get seen provider)
-                                         (let [info (descriptor/capture! runtime provider)]
-                                           (.put seen provider info) info))]
-                            (assoc entry :descriptor info))
-                          (do (ensure! (some? (:native entry))) entry))))) entries)
-            prepared (session/prepare! child entries options)
-            compiled (region/annotate! child parsed entries rules bindings input-vars)]
-        (reset! state :captured)
-        (->Compilation child entries compiled prepared state close))
-      (catch Throwable e (close-after-error! child close e)))))
+  ([runtime entries parsed rules bindings input-vars options]
+   (capture! runtime entries parsed rules bindings input-vars options nil))
+  ([runtime entries parsed rules bindings input-vars options compiler-context]
+    (let [child (assoc runtime :cleanup (atom [])) state (atom :capturing)
+          close (rt/own! runtime #(do (when (= :planning @state)
+                                       (control/cancel! (:control child)
+                                         {:error :query-source/cancelled :phase :planning}))
+                                     (reset! state :closed)
+                                     (let [primary (volatile! nil)]
+                                       (doseq [cleanup (reverse @(:cleanup child))]
+                                         (try (cleanup)
+                                              (catch Throwable e
+                                                (if-let [error @primary]
+                                                  (.addSuppressed ^Throwable error e)
+                                                  (vreset! primary e)))))
+                                       (reset! (:cleanup child) [])
+                                       (when-let [error @primary] (throw error)))))]
+      (try
+        (control/check-active! (:control runtime))
+        (ensure! (vector? entries))
+        (let [parsed (own-syntax! child parsed)
+              rules (own-syntax! child rules)
+              compiler-context
+              (when compiler-context
+                (let [token (rt/charge-metadata! child compiler-context :planning)]
+                  (rt/own! child #(control/release! token))
+                  (value/owned-copy compiler-context #(control/check-active! (:control child)))))
+              token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 1024 (count entries)))})
+              _ (rt/own! child #(control/release! token))
+              _ (doseq [entry entries]
+                  (ensure! (and (value/plain-map? entry)
+                                (= #{:symbol (if (contains? entry :source) :source :native)} (set (keys entry)))
+                                (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
+              entries (collection/capture-entries! child entries)
+              seen (IdentityHashMap.)
+              entries
+              (mapv (fn [entry]
+                      (ensure! (and (value/plain-map? entry)
+                                    (= #{:symbol (if (contains? entry :source) :source :native)} (set (keys entry)))
+                                    (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$")))
+                      (rt/with-context child {:source-symbol (:symbol entry)}
+                        (fn [runtime]
+                          (if (contains? entry :source)
+                            (let [provider (:source entry)
+                                  info (or (.get seen provider)
+                                           (let [info (descriptor/capture! runtime provider)]
+                                             (.put seen provider info) info))]
+                              (assoc entry :descriptor info))
+                            (do (ensure! (some? (:native entry))) entry))))) entries)
+              prepared (session/prepare! child entries options)
+              compiled (region/annotate! child parsed entries rules bindings input-vars compiler-context)]
+          (reset! state :captured)
+          (->Compilation child entries compiled prepared state close))
+        (catch Throwable e (close-after-error! child close e))))))
 
 (defn refine!
   "Apply engine-owned typed boundary proofs while capture is still pure. The

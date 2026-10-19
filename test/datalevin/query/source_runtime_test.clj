@@ -212,3 +212,21 @@
     (is (= [:query-source/provider] (mapv #(-> % ex-data :error) (.getSuppressed ^Throwable error))))
     (is (not (.contains (pr-str error) "private")))
     (is (every? zero? (vals (control/usage @captured))))))
+
+(deftest workspace-owns-new-resources-from-captured-operator-runtimes
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [owner (assoc runtime :cleanup (atom [])) closed (atom 0)]
+        (dotimes [_ 100]
+          (rt/with-workspace runtime [owner]
+            (fn [_]
+              (let [token (source/reserve! (:control owner) {:retained-bytes 4096})]
+                (rt/own! owner #(do (swap! closed inc) (source/release! token))))))
+          (is (empty? @(:cleanup owner)))
+          (is (empty? @(:cleanup runtime)))
+          (is (every? zero? (vals (control/usage (:control runtime))))))
+        (is (= 100 @closed))
+        (let [foreign (assoc owner :query-id :foreign)
+              error (try (rt/with-workspace runtime [foreign] (fn [_])) (catch Throwable e e))]
+          (is (= :query-source/invalid (:error (ex-data error))))
+          (is (every? zero? (vals (control/usage (:control runtime))))))))))

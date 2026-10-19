@@ -36,6 +36,8 @@
   relations define full head schemas; body relations may carry extra columns.
   evaluate! takes (iteration, rule-id, consume!) and must synchronously pass one
   completed body relation to consume! while its workspace is still live.
+  Optional initialize! takes (rule-id, consume!) at the same handoff boundary;
+  initial then defines schemas without retaining the producer's body storage.
 
   Hooks admit containers before allocation and own each unseen projected row
   before the next borrowed tuple is read. validate-row! bounds logical values
@@ -43,7 +45,7 @@
   the caller's lease; the returned close releases this kernel's seen/index/list
   reservations and clears its lists. Superseded lists release immediately."
   [initial rule-ids dependencies evaluate!
-   {:keys [check! reserve! release! validate-row! own-row! invalid!]}]
+   {:keys [check! reserve! release! validate-row! own-row! invalid! initialize!]}]
   (check!)
   (let [release-token! release!
         tokens (IdentityHashMap.) seen (atom {}) lists (IdentityHashMap.) closed? (atom false)
@@ -141,25 +143,30 @@
       (doseq [id rule-ids]
         (reserve! 0 (+' 2048 (*' 256 (count (get @schemas id)))))
         (swap! seen assoc id (HashSet.)))
-      (let [initial (into {} (map (fn [id] [id (delta! id (get initial id))])) rule-ids)
+      (let [consume-one!
+            (fn [id produce!]
+              (let [accepting? (volatile! true) consumed? (volatile! false) result (volatile! nil)]
+                (try
+                  (produce! (fn [body]
+                              (active!)
+                              (when-not (and @accepting? (not @consumed?)) (invalid!))
+                              (vreset! consumed? true)
+                              (vreset! result (delta! id body))))
+                  (when-not @consumed? (invalid!))
+                  @result
+                  (finally (vreset! accepting? false)))))
+            initial (into {} (map (fn [id]
+                                    [id (if initialize!
+                                          (consume-one! id #(initialize! id %))
+                                          (delta! id (get initial id)))])) rule-ids)
             result
             (run! initial rule-ids
               {:dependencies dependencies :check! active! :parallel? false
                :prepare! (fn [totals deltas] {:totals totals :deltas deltas})
                :evaluate!
                (fn [iteration id]
-                 (let [accepting? (volatile! true) consumed? (volatile! false) result (volatile! nil)]
-                   (try
-                     (evaluate! iteration id
-                       (fn [body]
-                         (active!)
-                         (when-not (and @accepting? (not @consumed?)) (invalid!))
-                         (vreset! consumed? true)
-                         (let [rel (delta! id body)]
-                           (if (relation/rel-not-empty rel) (vreset! result rel) (release-list! rel)))))
-                     (when-not @consumed? (invalid!))
-                     @result
-                     (finally (vreset! accepting? false)))))
+                 (let [rel (consume-one! id #(evaluate! iteration id %))]
+                   (if (relation/rel-not-empty rel) rel (do (release-list! rel) nil))))
                :merge! merge! :after! after!})]
         {:relations result :check! active! :close close})
       (catch Throwable e

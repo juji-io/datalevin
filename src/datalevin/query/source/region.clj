@@ -57,241 +57,256 @@
   The returned parsed query/rules remain private engine nodes. Provider request
   construction uses request!, not serialization of these annotations. Typed
   upstream exports are supplied by the shared planner when forming requests."
-  [runtime parsed entries rules bindings input-vars]
-  (let [ctl (:control runtime) check! #(control/check-active! ctl)
-        tokens (volatile! []) children (volatile! []) success? (volatile! false)
-        own! #(do (vswap! tokens conj %) %)
-        regions (atom []) sites (atom []) occurrence (volatile! 0)
-        next-occurrence! (fn [] (check!)
-                           (let [id @occurrence]
-                             (when (= Long/MAX_VALUE id) (fail! :query-source/limit :planning))
-                             (vswap! occurrence inc) id))
-        reserve-node! #(own! (control/reserve! ctl {:retained-bytes %}))]
-    (try
-      (ensure! (and (instance? datalevin.parser.Query parsed) (vector? entries) (vector? rules)
-                    (every? #(instance? Rule %) rules) (value/plain-map? bindings) (set? input-vars)
-                    (every? variable? input-vars)
-                    (set/subset? (set (keys bindings)) input-vars)))
-      (own! (rt/charge-copy! runtime [bindings input-vars]))
-      (reserve-node! (+ 4096 (* 1024 (count entries)) (* 1024 (count rules))))
-      (let [entries-by-source (into {} (map (juxt :symbol identity)) entries)
-            rules-by-name (into {} (map #(vector (get-in % [:name :symbol]) %)) rules)
-            bindings (value/owned-copy bindings check!)
-            node-vars #(vars % check! reserve-node!)]
-        (ensure! (and (= (count entries-by-source) (count entries))
-                      (= (count rules-by-name) (count rules))))
-        (doseq [entry entries]
-          (own! (rt/charge-metadata! runtime (:symbol entry) :inputs))
-          (ensure! (and (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
-        (letfn [(external? [node inherited seen depth]
-                  (check!)
-                  (when (> depth 128) (fail! :query-source/limit :planning))
-                  (reserve-node! 256)
-                  (let [source (source-symbol node inherited)]
-                    (cond
-                      (instance? Pattern node)
-                      (do (ensure! (entries-by-source source)) (boolean (:descriptor (entries-by-source source))))
-                      (instance? RuleExpr node)
-                      (let [name (get-in node [:name :symbol]) key [source name]]
-                        (ensure! (rules-by-name name))
-                        (when-not (contains? @seen key)
-                          (vswap! seen conj key)
-                          (some #(external? % source seen (inc depth))
-                                (mapcat :clauses (:branches (rules-by-name name))))))
-                      (or (instance? Or node) (instance? And node) (instance? Not node))
-                      (some #(external? % source seen (inc depth)) (:clauses node))
-                      :else false)))
-                (native-core? [node inherited stack depth]
-                  ;; Positive acyclic native calls can use the same bounded
-                  ;; scoped operators as mapped calls. Recursive/negative
-                  ;; native programs retain their existing core rule node for
-                  ;; the native evaluator's separate controlled-emission gate.
-                  (check!)
-                  (when (> depth 128) (fail! :query-source/limit :planning))
-                  (reserve-node! 256)
-                  (let [source (source-symbol node inherited)]
-                    (cond
-                      (instance? Not node) true
-                      (instance? RuleExpr node)
-                      (let [name (get-in node [:name :symbol]) key [source name]
-                            rule (rules-by-name name)]
-                        (ensure! rule)
-                        (or (contains? stack key)
-                            (some #(native-core? % source (conj stack key) (inc depth))
-                                  (mapcat :clauses (:branches rule)))))
-                      (or (instance? Or node) (instance? And node))
-                      (some #(native-core? % source stack (inc depth)) (:clauses node))
-                      :else false)))
-                (region! [path input-vars live bindings literals inherited]
-                  (check!)
-                  (reserve-node! (+ 2048 (* 128 (+ (count input-vars) (count live) (count bindings)))))
-                  (let [id (count @regions)]
-                    (swap! regions conj {:region-id id :path path :input-vars input-vars :required-vars live
-                                         :bindings (select-keys bindings input-vars)
-                                         :literal-vars (set/intersection literals input-vars) :default-source inherited
-                                         :available-vars input-vars :patterns [] :core-clauses [] :empty? false})
-                    id))
-                (add-core! [id node path]
-                  (reserve-node! 512)
-                  (swap! regions update-in [id :core-clauses] conj
-                         {:path path :node node :literal-terms (::literal-terms (meta node))}))
-                (site! [site]
-                  (reserve-node! 2048)
-                  (swap! sites conj site))
-                (pattern! [id node path inherited outside bindings literals]
-                  (let [;; A literal argument constrains facts by ordinary
-                        ;; equality while its original value remains available
-                        ;; to scalar operators and the complete rule head.
-                        literal-terms (into {} (keep-indexed
-                                                (fn [i x]
-                                                  (when (and (instance? Variable x) (contains? literals (:symbol x)))
-                                                    [(:symbol x) i]))) (:pattern node))
-                        node (update node :pattern
-                                     (fn [terms]
-                                       (mapv (fn [x]
-                                               (if (and (instance? Variable x) (contains? literals (:symbol x)))
-                                                 (dp/->Constant (get bindings (:symbol x))) x)) terms)))
-                        node (vary-meta node assoc ::literal-terms literal-terms)
-                        source (source-symbol node inherited)
-                        entry (entries-by-source source)]
-                    (ensure! entry)
-                    (if-let [descriptor (:descriptor entry)]
-                      (let [terms (mapv term (:pattern node))
-                            clause {:id (next-occurrence!) :kind :pattern :terms terms}
-                            lowered (lowering/lower! runtime descriptor clause bindings outside)
-                            _ (vswap! children conj (:close lowered))
-                            branches (:branches lowered)
-                            append! (fn [region branch]
-                                      (reserve-node! 1024)
-                                      (swap! regions update-in [region :available-vars]
-                                             into (contract/variables (:clause branch)))
-                                      (swap! regions update-in [region :patterns] conj
-                                             (assoc branch :source-symbol source :origin path
-                                                           :original-clause-id (:id clause))))]
-                        (cond
-                          (:empty-proof lowered)
-                          (do (swap! regions assoc-in [id :empty?] true)
-                              (site! {:kind :empty :path path :parent-region id :proof (:empty-proof lowered)}))
-                          (= :fixed (:mode lowered)) (append! id (first branches))
-                          :else
-                          (let [child-ids
-                                (mapv (fn [i branch]
-                                        (check!)
-                                        (let [restored (set (keys (:restore branch)))
-                                              child (region! (conj path :attribute i) outside
-                                                             (set/difference (node-vars node) restored)
-                                                             bindings literals inherited)]
-                                          (append! child (assoc-in branch [:clause :id] (next-occurrence!)))
-                                          child)) (range) branches)]
-                            (site! {:kind :attribute :path path :node node :parent-region id
-                                    :mode (:mode lowered) :attribute-variable (:attribute-variable lowered)
-                                    :exports (node-vars node) :required-inputs (if (= :dispatch (:mode lowered))
-                                                                          #{(:attribute-variable lowered)} #{})
-                                    :branches child-ids :lowered lowered}))))
-                      (add-core! id node path))))
-                (body! [clauses path inherited input-vars live bindings literals stack depth]
-                  (check!)
-                  (when (> depth 128) (fail! :query-source/limit :planning))
-                  (reserve-node! (+ 1024 (* 256 (count clauses))))
-                  (let [id (region! path input-vars live bindings literals inherited)
-                        variables (mapv node-vars clauses)]
-                    (swap! regions update-in [id :available-vars] #(reduce set/union % variables))
-                    (doseq [[i node] (map-indexed vector clauses)]
-                      (check!)
-                      (reserve-node! 1024)
-                      (let [location (conj path i)
-                            source (source-symbol node inherited)
-                            outside (reduce-kv (fn [s j vs] (if (= i j) s (set/union s vs))) input-vars variables)]
-                        (cond
-                          (instance? Pattern node) (pattern! id node location inherited outside bindings literals)
-                          (instance? And node)
-                          ;; And is grouping, so its clauses belong to this same
-                          ;; conjunction. The parser only emits And under Or.
-                          (fail! :query-source/unsupported :clauses)
-                          (instance? Or node)
-                          (let [exports (node-vars node)
-                                required (into #{} (map :symbol) (get-in node [:rule-vars :required]))
-                                inputs (set/intersection outside exports)
-                                branch-ids
-                                (mapv (fn [j branch]
-                                        (body! (if (instance? And branch) (:clauses branch) [branch])
-                                               (conj location :branch j) source inputs exports
-                                               (select-keys bindings inputs) (set/intersection literals inputs)
-                                               stack (inc depth)))
-                                      (range) (:clauses node))]
-                            (site! {:kind :union :path location :node node :parent-region id :exports exports
-                                    :required-inputs required :branches branch-ids :set-boundary? true})
-                            (when (every? #(:empty? (nth @regions %)) branch-ids)
-                              (swap! regions assoc-in [id :empty?] true)))
-                          (instance? RuleExpr node)
-                          (let [name (get-in node [:name :symbol]) rule (rules-by-name name)
-                                key [source name]]
-                            (ensure! rule)
-                            (if (and (not (external? node inherited (volatile! #{}) 0))
-                                     (native-core? node inherited #{} 0))
-                              (add-core! id node location)
-                              (do
-                                (when (contains? stack key) (fail! :query-source/unsupported :planning))
-                                (let [args (mapv term (:args node))
-                                      branches
-                                      (mapv (fn [j branch]
-                                              (let [head (head-vars branch)
-                                                    _ (ensure! (= (count head) (count args)))
-                                                    mapping (zipmap head args)
-                                                    inputs (into #{} (keep (fn [[v [tag x]]]
-                                                                           (when (or (= :const tag)
-                                                                                     (and (= :var tag)
-                                                                                          (contains? outside x))) v))) mapping)
-                                                    required (into #{} (map :symbol) (get-in branch [:vars :required]))
-                                                    constants (into {} (keep (fn [[v [tag x]]]
-                                                                                (cond (= :const tag) [v x]
-                                                                                      (and (= :var tag) (contains? bindings x))
-                                                                                      [v (get bindings x)]))) mapping)
-                                                    literal-vars (into #{} (keep (fn [[v [tag x]]]
-                                                                                  (when (or (= :const tag)
-                                                                                            (and (= :var tag) (contains? literals x))) v))) mapping)
-                                                    child (body! (:clauses branch) (conj location :rule-branch j)
-                                                                 source inputs (set head) constants literal-vars
-                                                                 (conj stack key) (inc depth))]
-                                                {:region-id child :head-vars head :arguments mapping
-                                                 :required-inputs required :input-vars inputs}))
-                                            (range) (:branches rule))]
-                                  (site! {:kind :rule :path location :node node :rule rule :parent-region id
-                                          :exports (node-vars node) :branches branches :set-boundary? true})
-                                  (when (every? #(:empty? (nth @regions (:region-id %))) branches)
-                                    (swap! regions assoc-in [id :empty?] true))))))
-                          (and (instance? Not node) (external? node inherited (volatile! #{}) 0))
-                          (fail! :query-source/unsupported :clauses)
-                          :else (add-core! id node location))))
-                    id))]
-          (let [live (node-vars [(:qfind parsed) (:qwith parsed)])
-                root (body! (:qwhere parsed) [] '$ input-vars live bindings #{} #{} 0)
-                _ (reserve-node! (+ 2048 (* 512 (count @regions))))
-                parents (into {} (mapcat (fn [site]
-                                          (map (fn [branch]
-                                                 [(if (map? branch) (:region-id branch) branch)
-                                                  (:parent-region site)]) (:branches site)))) @sites)
-                resolved (reduce (fn [result r]
-                                   (check!)
-                                   (let [parent (get parents (:region-id r))]
-                                     (conj result (assoc r :parent-region parent
-                                                         :live? (and (not (:empty? r))
-                                                                     (or (nil? parent)
-                                                                         (:live? (nth result parent))))))))
-                                 [] @regions)
-                held @tokens closes @children closed? (atom false)
-                owner {:control ctl :query-id (:query-id runtime) :closed? closed?
-                       :descriptors (into {} (map (juxt :symbol :descriptor)) entries)}
-                close (rt/own! runtime #(do (reset! closed? true)
-                                           (doseq [f (reverse closes)] (f))
-                                           (doseq [token held] (control/release! token))))]
-            (vreset! success? true)
-            {:parsed parsed :root-region root :regions (mapv #(assoc % :owner owner) resolved)
-             :sites @sites :close close})))
-      (finally
-        (when-not @success?
-          (doseq [f (reverse @children)] (f))
-          (doseq [token @tokens] (control/release! token)))))))
+  ([runtime parsed entries rules bindings input-vars]
+   (annotate! runtime parsed entries rules bindings input-vars nil))
+  ([runtime parsed entries rules bindings input-vars compiler-context]
+    (let [ctl (:control runtime) check! #(control/check-active! ctl)
+          tokens (volatile! []) children (volatile! []) success? (volatile! false)
+          own! #(do (vswap! tokens conj %) %)
+          regions (atom []) sites (atom []) occurrence (volatile! 0)
+          next-occurrence! (fn [] (check!)
+                             (let [id @occurrence]
+                               (when (= Long/MAX_VALUE id) (fail! :query-source/limit :planning))
+                               (vswap! occurrence inc) id))
+          reserve-node! #(own! (control/reserve! ctl {:retained-bytes %}))]
+      (try
+        (ensure! (and (instance? datalevin.parser.Query parsed) (vector? entries) (vector? rules)
+                      (every? #(instance? Rule %) rules) (value/plain-map? bindings) (set? input-vars)
+                      (every? variable? input-vars)
+                      (set/subset? (set (keys bindings)) input-vars)))
+        (own! (rt/charge-copy! runtime [bindings input-vars]))
+        (reserve-node! (+ 4096 (* 1024 (count entries)) (* 1024 (count rules))))
+        (let [entries-by-source (into {} (map (juxt :symbol identity)) entries)
+              rules-by-name (into {} (map #(vector (get-in % [:name :symbol]) %)) rules)
+              bindings (value/owned-copy bindings check!)
+              node-vars #(vars % check! reserve-node!)]
+          (ensure! (and (= (count entries-by-source) (count entries))
+                        (= (count rules-by-name) (count rules))))
+          (when compiler-context
+            (ensure! (and (value/plain-map? compiler-context)
+                          (= #{:default-source :rule-relations} (set (keys compiler-context)))
+                          (:native (entries-by-source (:default-source compiler-context)))
+                          (value/plain-map? (:rule-relations compiler-context))))
+            (doseq [[key head] (:rule-relations compiler-context)]
+              (check!)
+              (ensure! (and (vector? key) (= 2 (count key))
+                            (:native (entries-by-source (first key)))
+                            (rules-by-name (second key)) (vector? head)
+                            (= head (head-vars (first (:branches (rules-by-name (second key))))))))))
+          (doseq [entry entries]
+            (own! (rt/charge-metadata! runtime (:symbol entry) :inputs))
+            (ensure! (and (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
+          (letfn [(external? [node inherited seen depth]
+                    (check!)
+                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (reserve-node! 256)
+                    (let [source (source-symbol node inherited)]
+                      (cond
+                        (instance? Pattern node)
+                        (do (ensure! (entries-by-source source)) (boolean (:descriptor (entries-by-source source))))
+                        (instance? RuleExpr node)
+                        (let [name (get-in node [:name :symbol]) key [source name]]
+                          (ensure! (rules-by-name name))
+                          (when-not (contains? @seen key)
+                            (vswap! seen conj key)
+                            (some #(external? % source seen (inc depth))
+                                  (mapcat :clauses (:branches (rules-by-name name))))))
+                        (or (instance? Or node) (instance? And node) (instance? Not node))
+                        (some #(external? % source seen (inc depth)) (:clauses node))
+                        :else false)))
+                  (native-core? [node inherited stack depth]
+                    ;; Positive acyclic native calls can use the same bounded
+                    ;; scoped operators as mapped calls. Recursive/negative
+                    ;; native programs retain their existing core rule node for
+                    ;; the native evaluator's separate controlled-emission gate.
+                    (check!)
+                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (reserve-node! 256)
+                    (let [source (source-symbol node inherited)]
+                      (cond
+                        (instance? Not node) true
+                        (instance? RuleExpr node)
+                        (let [name (get-in node [:name :symbol]) key [source name]
+                              rule (rules-by-name name)]
+                          (ensure! rule)
+                          (or (contains? stack key)
+                              (some #(native-core? % source (conj stack key) (inc depth))
+                                    (mapcat :clauses (:branches rule)))))
+                        (or (instance? Or node) (instance? And node))
+                        (some #(native-core? % source stack (inc depth)) (:clauses node))
+                        :else false)))
+                  (region! [path input-vars live bindings literals inherited]
+                    (check!)
+                    (reserve-node! (+ 2048 (* 128 (+ (count input-vars) (count live) (count bindings)))))
+                    (let [id (count @regions)]
+                      (swap! regions conj {:region-id id :path path :input-vars input-vars :required-vars live
+                                           :bindings (select-keys bindings input-vars)
+                                           :literal-vars (set/intersection literals input-vars) :default-source inherited
+                                           :available-vars input-vars :patterns [] :core-clauses [] :empty? false})
+                      id))
+                  (add-core! [id node path]
+                    (reserve-node! 512)
+                    (swap! regions update-in [id :core-clauses] conj
+                           {:path path :node node :literal-terms (::literal-terms (meta node))}))
+                  (site! [site]
+                    (reserve-node! 2048)
+                    (swap! sites conj site))
+                  (pattern! [id node path inherited outside bindings literals]
+                    (let [;; A literal argument constrains facts by ordinary
+                          ;; equality while its original value remains available
+                          ;; to scalar operators and the complete rule head.
+                          literal-terms (into {} (keep-indexed
+                                                  (fn [i x]
+                                                    (when (and (instance? Variable x) (contains? literals (:symbol x)))
+                                                      [(:symbol x) i]))) (:pattern node))
+                          node (update node :pattern
+                                       (fn [terms]
+                                         (mapv (fn [x]
+                                                 (if (and (instance? Variable x) (contains? literals (:symbol x)))
+                                                   (dp/->Constant (get bindings (:symbol x))) x)) terms)))
+                          node (vary-meta node assoc ::literal-terms literal-terms)
+                          source (source-symbol node inherited)
+                          entry (entries-by-source source)]
+                      (ensure! entry)
+                      (if-let [descriptor (:descriptor entry)]
+                        (let [terms (mapv term (:pattern node))
+                              clause {:id (next-occurrence!) :kind :pattern :terms terms}
+                              lowered (lowering/lower! runtime descriptor clause bindings outside)
+                              _ (vswap! children conj (:close lowered))
+                              branches (:branches lowered)
+                              append! (fn [region branch]
+                                        (reserve-node! 1024)
+                                        (swap! regions update-in [region :available-vars]
+                                               into (contract/variables (:clause branch)))
+                                        (swap! regions update-in [region :patterns] conj
+                                               (assoc branch :source-symbol source :origin path
+                                                             :original-clause-id (:id clause))))]
+                          (cond
+                            (:empty-proof lowered)
+                            (do (swap! regions assoc-in [id :empty?] true)
+                                (site! {:kind :empty :path path :parent-region id :proof (:empty-proof lowered)}))
+                            (= :fixed (:mode lowered)) (append! id (first branches))
+                            :else
+                            (let [child-ids
+                                  (mapv (fn [i branch]
+                                          (check!)
+                                          (let [restored (set (keys (:restore branch)))
+                                                child (region! (conj path :attribute i) outside
+                                                               (set/difference (node-vars node) restored)
+                                                               bindings literals inherited)]
+                                            (append! child (assoc-in branch [:clause :id] (next-occurrence!)))
+                                            child)) (range) branches)]
+                              (site! {:kind :attribute :path path :node node :parent-region id
+                                      :mode (:mode lowered) :attribute-variable (:attribute-variable lowered)
+                                      :exports (node-vars node) :required-inputs (if (= :dispatch (:mode lowered))
+                                                                            #{(:attribute-variable lowered)} #{})
+                                      :branches child-ids :lowered lowered}))))
+                        (add-core! id node path))))
+                  (body! [clauses path inherited input-vars live bindings literals stack depth]
+                    (check!)
+                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (reserve-node! (+ 1024 (* 256 (count clauses))))
+                    (let [id (region! path input-vars live bindings literals inherited)
+                          variables (mapv node-vars clauses)]
+                      (swap! regions update-in [id :available-vars] #(reduce set/union % variables))
+                      (doseq [[i node] (map-indexed vector clauses)]
+                        (check!)
+                        (reserve-node! 1024)
+                        (let [location (conj path i)
+                              source (source-symbol node inherited)
+                              outside (reduce-kv (fn [s j vs] (if (= i j) s (set/union s vs))) input-vars variables)]
+                          (cond
+                            (instance? Pattern node) (pattern! id node location inherited outside bindings literals)
+                            (instance? And node)
+                            ;; And is grouping, so its clauses belong to this same
+                            ;; conjunction. The parser only emits And under Or.
+                            (fail! :query-source/unsupported :clauses)
+                            (instance? Or node)
+                            (let [exports (node-vars node)
+                                  required (into #{} (map :symbol) (get-in node [:rule-vars :required]))
+                                  inputs (set/intersection outside exports)
+                                  branch-ids
+                                  (mapv (fn [j branch]
+                                          (body! (if (instance? And branch) (:clauses branch) [branch])
+                                                 (conj location :branch j) source inputs exports
+                                                 (select-keys bindings inputs) (set/intersection literals inputs)
+                                                 stack (inc depth)))
+                                        (range) (:clauses node))]
+                              (site! {:kind :union :path location :node node :parent-region id :exports exports
+                                      :required-inputs required :branches branch-ids :set-boundary? true})
+                              (when (every? #(:empty? (nth @regions %)) branch-ids)
+                                (swap! regions assoc-in [id :empty?] true)))
+                            (instance? RuleExpr node)
+                            (let [name (get-in node [:name :symbol]) rule (rules-by-name name)
+                                  key [source name]]
+                              (ensure! rule)
+                              (if (or (contains? (:rule-relations compiler-context) key)
+                                      (and (not (external? node inherited (volatile! #{}) 0))
+                                           (native-core? node inherited #{} 0)))
+                                (add-core! id node location)
+                                (do
+                                  (when (contains? stack key) (fail! :query-source/unsupported :planning))
+                                  (let [args (mapv term (:args node))
+                                        branches
+                                        (mapv (fn [j branch]
+                                                (let [head (head-vars branch)
+                                                      _ (ensure! (= (count head) (count args)))
+                                                      mapping (zipmap head args)
+                                                      inputs (into #{} (keep (fn [[v [tag x]]]
+                                                                             (when (or (= :const tag)
+                                                                                       (and (= :var tag)
+                                                                                            (contains? outside x))) v))) mapping)
+                                                      required (into #{} (map :symbol) (get-in branch [:vars :required]))
+                                                      constants (into {} (keep (fn [[v [tag x]]]
+                                                                                  (cond (= :const tag) [v x]
+                                                                                        (and (= :var tag) (contains? bindings x))
+                                                                                        [v (get bindings x)]))) mapping)
+                                                      literal-vars (into #{} (keep (fn [[v [tag x]]]
+                                                                                    (when (or (= :const tag)
+                                                                                              (and (= :var tag) (contains? literals x))) v))) mapping)
+                                                      child (body! (:clauses branch) (conj location :rule-branch j)
+                                                                   source inputs (set head) constants literal-vars
+                                                                   (conj stack key) (inc depth))]
+                                                  {:region-id child :head-vars head :arguments mapping
+                                                   :required-inputs required :input-vars inputs}))
+                                              (range) (:branches rule))]
+                                    (site! {:kind :rule :path location :node node :rule rule :parent-region id
+                                            :exports (node-vars node) :branches branches :set-boundary? true})
+                                    (when (every? #(:empty? (nth @regions (:region-id %))) branches)
+                                      (swap! regions assoc-in [id :empty?] true))))))
+                            (and (instance? Not node) (external? node inherited (volatile! #{}) 0))
+                            (fail! :query-source/unsupported :clauses)
+                            :else (add-core! id node location))))
+                      id))]
+            (let [live (node-vars [(:qfind parsed) (:qwith parsed)])
+                  root (body! (:qwhere parsed) [] (or (:default-source compiler-context) '$)
+                              input-vars live bindings #{} #{} 0)
+                  _ (reserve-node! (+ 2048 (* 512 (count @regions))))
+                  parents (into {} (mapcat (fn [site]
+                                            (map (fn [branch]
+                                                   [(if (map? branch) (:region-id branch) branch)
+                                                    (:parent-region site)]) (:branches site)))) @sites)
+                  resolved (reduce (fn [result r]
+                                     (check!)
+                                     (let [parent (get parents (:region-id r))]
+                                       (conj result (assoc r :parent-region parent
+                                                           :live? (and (not (:empty? r))
+                                                                       (or (nil? parent)
+                                                                           (:live? (nth result parent))))))))
+                                   [] @regions)
+                  held @tokens closes @children closed? (atom false)
+                  owner {:control ctl :query-id (:query-id runtime) :closed? closed?
+                         :descriptors (into {} (map (juxt :symbol :descriptor)) entries)}
+                  close (rt/own! runtime #(do (reset! closed? true)
+                                             (doseq [f (reverse closes)] (f))
+                                             (doseq [token held] (control/release! token))))]
+              (vreset! success? true)
+              {:parsed parsed :root-region root :regions (mapv #(assoc % :owner owner) resolved)
+               :sites @sites :rules rules :rule-relations (:rule-relations compiler-context) :close close})))
+        (finally
+          (when-not @success?
+            (doseq [f (reverse @children)] (f))
+            (doseq [token @tokens] (control/release! token))))))))
 
 (defn request!
   "Build one source's flat planning envelope from a region annotation and

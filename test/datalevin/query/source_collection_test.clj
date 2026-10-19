@@ -148,14 +148,15 @@
            (query! '[:find ?e :in $rows % :where ($rows pair ?e nil)] [facts rules])))
     (is (= #{[nil]} (query! '[:find ?e :in $rows % :where ($rows pair ?e ?e)] [facts rules])))))
 
-(deftest recursive-local-rule-programs-retain-the-controlled-emission-gate
+(deftest recursive-local-rule-programs-use-the-controlled-fixpoint
   (let [events (atom [])
         rules '[[(reachable ?e) [?e _]] [(reachable ?e) [?e ?next] (reachable ?next)]]]
-    (is (= :query-source/unsupported
-           (:error (error (fn [] (query! '[:find ?v :in $rows $s % :where
-                                           ($rows reachable ?e) [$s ?e :row/value ?v]]
-                                  [[[1 2] [2 3]] (fixture/provider events {}) rules]))))))
-    (is (empty? (events-of events :acquire)))))
+    (is (= #{["one"] ["two"]}
+           (query! '[:find ?v :in $rows $s % :where
+                     ($rows reachable ?e) [$s ?e :row/value ?v]]
+             [[[1 2] [2 3]] (fixture/provider events {:lookup-only? true}) rules])))
+    (is (= 1 (count (events-of events :acquire))))
+    (is (= 1 (count (events-of events :open))))))
 
 (deftest local-nullable-and-heterogeneous-keys-do-not-falsify-readiness
   (let [facts [[nil :null] [1 :a] ["other" :other] [2 :b]] events (atom [])

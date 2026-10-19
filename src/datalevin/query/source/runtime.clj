@@ -8,6 +8,7 @@
            [java.util.concurrent.atomic AtomicReference]))
 
 (def ^:dynamic *runtime* nil)
+(def ^:dynamic ^:private *workspace-cleanups* {})
 
 (def categories
   #{:query-source/version :query-source/unsupported :query-source/invalid
@@ -94,39 +95,49 @@
   cleanup entries release their captured resource and runtime references."
   [runtime close]
   (let [cleanup (Cleanup. (AtomicReference. [runtime close]))]
-    (swap! (:cleanup runtime) conj cleanup)
+    (swap! (get *workspace-cleanups* (:cleanup runtime) (:cleanup runtime)) conj cleanup)
     (fn [] (cleanup))))
 
 (defn with-workspace
   "Run synchronous work with an isolated cleanup stack on the same control.
   Consume or copy borrowed results before returning. Completed workspaces do
-  not leave one cleanup entry per iteration in the parent invocation."
-  [runtime f]
-  (let [token (source/reserve! (:control runtime) {:retained-bytes 1024})
-        workspace (assoc runtime :cleanup (atom []))
-        primary (volatile! nil)]
-    (binding [*runtime* workspace]
-      (try
-        (invoke workspace :execution #(f workspace))
-        (catch Throwable e (vreset! primary e) (throw e))
-        (finally
-          (let [failure (volatile! nil)]
-            (doseq [close (reverse @(:cleanup workspace))]
-              (try (close)
-                   (catch Throwable e
-                     (let [error (redacted-error workspace :close e)]
-                       (if-let [original (or @primary @failure)]
-                         (.addSuppressed ^Throwable original error)
-                         (vreset! failure error))))))
-            (reset! (:cleanup workspace) [])
-            (source/release! token)
-            (when-let [error @failure]
-              ;; A deadline first observed during cleanup precedes a close
-              ;; failure, just as it does at the outer invocation boundary.
-              (let [cancelled (try (source/check-active! (:control workspace)) nil
-                                   (catch Throwable e
-                                     (redacted-error workspace :execution e)))]
-                (throw (if cancelled (doto ^Throwable cancelled (.addSuppressed error)) error))))))))))
+  not leave one cleanup entry per iteration in the parent invocation. Optional
+  owners are captured operator runtimes whose new resources belong here."
+  ([runtime f] (with-workspace runtime [] f))
+  ([runtime owners f]
+    (let [_ (source/check-active! (:control runtime))
+          _ (when-not (and (vector? owners)
+                           (every? #(and (identical? (:control runtime) (:control %))
+                                         (= (:query-id runtime) (:query-id %))) owners))
+              (value/fail! :query-source/invalid :execution))
+          token (source/reserve! (:control runtime) {:retained-bytes (+' 1024 (*' 128 (count owners)))})
+          workspace (assoc runtime :cleanup (atom []))
+          primary (volatile! nil)]
+      (binding [*runtime* workspace
+                *workspace-cleanups* (reduce (fn [targets owner]
+                                               (assoc targets (:cleanup owner) (:cleanup workspace)))
+                                             (assoc *workspace-cleanups* (:cleanup runtime) (:cleanup workspace)) owners)]
+        (try
+          (invoke workspace :execution #(f workspace))
+          (catch Throwable e (vreset! primary e) (throw e))
+          (finally
+            (let [failure (volatile! nil)]
+              (doseq [close (reverse @(:cleanup workspace))]
+                (try (close)
+                     (catch Throwable e
+                       (let [error (redacted-error workspace :close e)]
+                         (if-let [original (or @primary @failure)]
+                           (.addSuppressed ^Throwable original error)
+                           (vreset! failure error))))))
+              (reset! (:cleanup workspace) [])
+              (source/release! token)
+              (when-let [error @failure]
+                ;; A deadline first observed during cleanup precedes a close
+                ;; failure, just as it does at the outer invocation boundary.
+                (let [cancelled (try (source/check-active! (:control workspace)) nil
+                                     (catch Throwable e
+                                       (redacted-error workspace :execution e)))]
+                  (throw (if cancelled (doto ^Throwable cancelled (.addSuppressed error)) error)))))))))))
 
 (defn- charge-value! [runtime x size! overhead multiplier result?]
   (let [control (:control runtime)

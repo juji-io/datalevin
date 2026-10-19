@@ -20,13 +20,14 @@
             [datalevin.query.source.inputs :as inputs]
             [datalevin.query.source.native :as native]
             [datalevin.query.source.native-plan :as native-plan]
+            [datalevin.query.source.native-rules :as native-rules]
             [datalevin.query.source.planning :as planning]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.scope :as scope]
             [datalevin.query.source.value :as value :refer [fail!]]
             [datalevin.relation :as relation]
             [datalevin.spill :as spill])
-  (:import [datalevin.parser Constant DefaultSrc FindColl FindRel FindScalar FindTuple Function Pattern Predicate Variable]
+  (:import [datalevin.parser Constant DefaultSrc FindColl FindRel FindScalar FindTuple Function Pattern Predicate RuleExpr Variable]
            [datalevin.utl QueryKey QueryKey$KeySet]
            [java.util AbstractList List]
            [org.eclipse.collections.impl.list.mutable FastList]))
@@ -102,6 +103,23 @@
             (collection/check! runtime (:database spec))
             (:tuples (joined! runtime check!
                        (relation/relation! (zipmap input-cols (range)) tuples) relation))))))))
+
+(defn- rule-factory [runtime check! node spec]
+  (let [variables (mapv :variable (:columns spec))]
+    (->StepFactory #{} variables
+      (fn [input-cols]
+        (let [output-cols (into input-cols (remove (set input-cols)) variables)]
+          (->MaterializedStep (set input-cols) output-cols
+            (fn [^List tuples]
+              (check!)
+              (if (.isEmpty tuples) (FastList.)
+                  (let [table (if-let [id (:rule-reference spec)]
+                                (native-rules/reference! runtime id) ((:solve! spec)))
+                        result (native-rules/call! runtime check! node table)
+                        result (joined! runtime check!
+                                 (relation/relation! (zipmap input-cols (range)) tuples) result)]
+                    (ensure! (= output-cols (mapv key (sort-by val (:attrs result)))))
+                    (:tuples result))))))))))
 
 (defn- pure-spec [node schema check!]
   (let [args (:args node)
@@ -265,7 +283,7 @@
             [final _ constraints]
             (reduce (fn [[schema produced constraints] {:keys [node path]}]
                       (check!)
-                      (let [columns (:columns (if (instance? Pattern node) (get native-specs path)
+                      (let [columns (:columns (if (or (instance? Pattern node) (instance? RuleExpr node)) (get native-specs path)
                                                   (pure-spec node schema check!)))]
                         [(reduce (fn [schema column]
                                    (let [v (:variable column)]
@@ -399,14 +417,31 @@
         entries (into {} (map (juxt :symbol identity)) (:entries compilation))
         native-specs
         (into {} (for [r (:regions compiled) {:keys [node path literal-terms]} (:core-clauses r)
-                       :when (instance? Pattern node)
+                       :when (or (instance? Pattern node) (instance? RuleExpr node))
                        :let [source (:source node)
                              source (if (or (nil? source) (instance? DefaultSrc source))
                                       (:default-source r) (:symbol source))
                              database (:native (get entries source))]]
-                   [path (assoc (if (collection/owned? database)
-                                  (collection/spec! runtime database node)
-                                  (native-plan/spec! runtime snapshots database node literal-terms))
+                   [path (assoc (if (instance? RuleExpr node)
+                                  (or (native-rules/reference-spec compiled node source)
+                                      (native-rules/prepare! runtime (:entries compilation) (:rules compiled) node source
+                                        (fn [parsed context body-rules]
+                                          (let [body (planning/capture! runtime
+                                                       (filterv :native (:entries compilation)) parsed body-rules
+                                                       {} #{} nil context)
+                                                program (compile-program! runtime body [] nil snapshots nil)]
+                                            {:runtime (:runtime program)
+                                             :compiled (get-in program [:compilation :compiled])
+                                             :core-specs (:core-specs program)
+                                             :run! (fn []
+                                                     (check!)
+                                                     (ensure! (= :ready @(:state program)))
+                                                     (if (get (:regions program) (:root program))
+                                                       (@(:runner program) (:root program) (:input program))
+                                                       (relation/relation! {} (FastList.))))}))))
+                                  (if (collection/owned? database)
+                                    (collection/spec! runtime database node)
+                                    (native-plan/spec! runtime snapshots database node literal-terms)))
                                 :database database)]))
         compilation (prune-empty-collections! runtime compilation native-specs)
         compiled (:compiled compilation)
@@ -431,7 +466,7 @@
                                                op (access/core-operator! runtime id op-id requires columns #{} step)]
                                            (vswap! core assoc path op-id) (vswap! operators conj op)))]
                               (doseq [{:keys [node path]} (:core-clauses r)]
-                                (let [native? (instance? Pattern node)
+                                (let [native? (or (instance? Pattern node) (instance? RuleExpr node))
                                       spec (if native? (get native-specs path) (pure-spec node schema check!))
                                       output (get-in node [:binding :variable :symbol])
                                       literal-output (when (contains? (:literal-vars r) output) output)
@@ -441,6 +476,8 @@
                                                                            (column literal-output :data true)))
                                                  (assoc :columns [])) spec)
                                       factory (cond (:collection? spec) (collection-factory runtime check! spec)
+                                                    (or (:rule-reference spec) (:native-rule-program spec))
+                                                    (rule-factory runtime check! node spec)
                                                     native? (native-plan/factory! runtime snapshots (:database spec) node spec
                                                               (:core-clauses r) check! #(joined! runtime check! %1 %2))
                                                     :else (pure-factory runtime check! node spec literal-output))]
@@ -489,7 +526,8 @@
                                  (:tuples input) steps)]
               (relation/relation! (zipmap cols (range)) tuples)))))
       (reset! state :ready)
-      (->Program runtime compilation planned root (:relation input) executable state runner)))
+      (assoc (->Program runtime compilation planned root (:relation input) executable state runner)
+             :core-specs native-specs)))
 
 (defn compile!
   "Compile a captured region graph and typed input rows into shared steps.

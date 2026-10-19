@@ -2589,7 +2589,7 @@ Portable registered Nippy payloads use the same bounded raw decoder without
 invoking custom order functions. Controlled reads bypass native tuple/result
 caches. Other compiler core work
 currently includes scalar predicates and identity/ground bindings. Remaining
-native plan/read paths, recursive/negative rule emission, remaining input edges
+native plan/read paths, negative/seeded recursive rule emission, remaining input edges
 and the operator/decode audit precede activation in `q`/`explain`.
 
 The internal `source.program/query!` bridge now parses ordinary query syntax and
@@ -2624,9 +2624,8 @@ Native read views pin DB inputs only.
 
 Positive acyclic native/local rules over admitted operators now use the same
 scoped completion as mapped rules, including nested calls, required inputs,
-literal values and complete rule-head set semantics. Recursive or negative
-native programs retain their existing core nodes; controlled emission remains
-pending and rejects before provider acquisition. Ordinary native `q` continues
+literal values and complete rule-head set semantics. Recursive native programs
+retain core nodes for controlled body emission. Ordinary native `q` continues
 to select its direct execution path.
 
 The native evaluator and internal controlled recursion adapter now share the
@@ -2638,10 +2637,39 @@ containers and owned payloads before retaining answers. Body workspaces release
 after synchronous result consumption; superseded total/delta lists release
 after each iteration. Seen keys and their values remain owned until the result
 handle closes. Cleanup does not accumulate one parent entry per iteration.
-This is an internal operator boundary, not a clause interpreter: recursive
-query syntax, stratification and call/body interface emission remain pending.
+This is an internal operator boundary, not a clause interpreter.
 Native public routing and clause evaluation continue through the existing
 engine, using its native operations with the shared iteration driver.
+
+The revised compiler now emits positive native/local recursive programs through
+that boundary. It captures a finite source-qualified rule graph and compiles
+each reachable body with the existing region compiler. Private body contexts
+are owned and validated; they replace eligible rule calls with shared relation
+steps, not source descriptors. Patterns, native read steps, predicates, constant
+functions and scoped unions retain their existing operators. Initial bodies
+run with empty rule tables and synchronously hand off their answers before
+cleanup. Subsequent affected bodies read complete current totals, so nonlinear
+and mutually recursive positive programs converge to complete head sets.
+Call matching and shared distinct projection preserve literal, repeated and
+wildcard argument semantics; shared joins restore outer witness multiplicity.
+
+Producer-type propagation starts with native schemas, complete owned local fact
+types and constant producers, then follows rule-head/argument edges to a fixed
+point. Missing producers are unknown, while a real `:data` producer remains
+`:data`; filters never invent narrower types. The resulting conservative types
+and nullability can seed dependent mapped accesses before any recursive body
+executes. Every body compiles before provider acquisition. No native index scan
+or external cursor is opened to derive these interfaces. Captured operator
+runtimes attach new execution resources to the iteration workspace; static
+compilation resources remain invocation-owned. Long-chain quota regressions
+cover both local joins and repeated native scans, including decoded values.
+Native body execution stays within the invocation's pinned views.
+
+Negative native programs, required heads and variable-argument functions in
+recursive programs still reject before acquisition. They require stratified or
+seeded interfaces that preserve input correlation and observable caller-value
+representations. Mapped recursion remains unsupported. This internal compiler
+extension does not activate v2 in public `q`/`explain`.
 
 Internal logical value walkers bound nesting at 128, including metadata,
 retained vector backing and nested logical tuples. Structural envelopes count
