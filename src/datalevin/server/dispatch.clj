@@ -427,15 +427,17 @@
         (loop []
           (when (and (.isOpen ch) (not (.isInterrupted (Thread/currentThread))))
             (let [^ByteBuffer read-bf (:read-bf @state)]
-              (if (p/extract-message read-bf read-message! handle-message!)
+              (if (p/extract-message read-bf read-message! handle-message! (:wire-opts @state))
                 ;; Copy-in may have grown the shared buffer. Fetch it afresh.
                 (recur)
                 (let [^ByteBuffer read-bf
                       (if (.hasRemaining read-bf)
                         read-bf
                         (let [buffer (bf/allocate-buffer
-                                       (* (long c/+buffer-grow-factor+)
-                                          (.capacity read-bf)))]
+                                       (min (+ (p/message-size-limit (:wire-opts @state))
+                                               c/message-header-size)
+                                            (* (long c/+buffer-grow-factor+)
+                                               (.capacity read-bf))))]
                           (.flip read-bf)
                           (bf/buffer-transfer read-bf buffer)
                           (vswap! state assoc :read-bf buffer)

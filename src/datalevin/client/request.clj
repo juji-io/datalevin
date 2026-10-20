@@ -107,8 +107,27 @@
 (defn expired? []
   (when-let [b (current)] (>= (System/nanoTime) (budget-deadline b))))
 
+(defn interrupted?
+  "Recognize cancellation even when an interruptible wait cleared the flag."
+  [^Throwable error]
+  (or (.isInterrupted (Thread/currentThread))
+      (loop [^Throwable cause error]
+        (when cause
+          (if (instance? InterruptedException cause)
+            true
+            (recur (.getCause cause)))))))
+
+(defn rethrow-interrupted!
+  "Restore cancellation and prevent recovery from retrying a failed attempt."
+  [^Throwable error]
+  (when (interrupted? error)
+    (.interrupt (Thread/currentThread))
+    (throw error)))
+
 (defn- check-budget! [^Budget b phase]
   (when b
+    (when (.isInterrupted (Thread/currentThread))
+      (throw (InterruptedException. "Request interrupted")))
     (when-let [^AtomicBoolean closed (.-closed b)]
       (when (.get closed)
         (throw (ex-info "This client is closed"
@@ -198,6 +217,8 @@
 (defn failure
   "Keep uncertainty across attempts, including when a later attempt never sent."
   [^Throwable error]
+  (when (interrupted? error)
+    (.interrupt (Thread/currentThread)))
   (let [^Budget b (current)]
     (if (and b (.get ^AtomicBoolean (.-uncertain? b)))
       (let [req (.get ^AtomicReference (.-request b))
@@ -211,6 +232,7 @@
                          :termination-reason
                          (cond (closed?) :client-disconnected
                                (expired?) :deadline-exceeded
+                               (interrupted? error) :request-interrupted
                                :else (or (:termination-reason (ex-data error))
                                          :recovery-failed))})]
         (ex-info "Write outcome is unknown; a fresh invocation is not a safe retry"

@@ -199,9 +199,13 @@
 
 (defmacro ^:private with-connection-io [[lock closed released context timeout] & body]
   `(let [^ReentrantLock lock# ~lock]
-     (when-not (.tryLock lock# (cr/remaining-ms ~timeout)
-                         TimeUnit/MILLISECONDS)
-       (raise "Timeout waiting for connection I/O" {:error :socket/timeout}))
+     (try
+       (when-not (.tryLock lock# (cr/remaining-ms ~timeout)
+                           TimeUnit/MILLISECONDS)
+         (raise "Timeout waiting for connection I/O" {:error :socket/timeout}))
+       (catch InterruptedException error#
+         (.interrupt (Thread/currentThread))
+         (throw error#)))
      (try
        (when (.get ^AtomicBoolean ~closed)
          (raise "Socket channel is closed." {}))
@@ -679,7 +683,8 @@
 
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
-  Always close the temporary connection. Return a client id on success."
+  Retry transient hashing admission within one deadline, closing each temporary
+  connection before backoff. Return a client id on success."
   ([host port username password time-out]
    ;; Initial authentication may include cold password-hashing startup. Renewing
    ;; an existing client must instead respect that request's remaining budget.
@@ -688,21 +693,33 @@
                    (if budget time-out
                        (max (long time-out) (long c/default-connection-timeout))))))
   ([host port username password connect-time-out receive-time-out]
-   (let [conn (new-connection host port connect-time-out receive-time-out)
-         client-id
-         (try
-           (let [{:keys [type client-id message err-data]}
-                 (send-n-receive conn {:type     :authentication
-                                       :username username
-                                       :password password})]
-             (if (= type :authentication-ok)
-               client-id
-               (raise "Authentication failure: " message (or err-data {}))))
-           (catch Throwable t
-             (cleanup-after-failure! t #(close conn))
-             (throw t)))]
-     (close conn)
-     client-id)))
+   (cr/with-budget (cr/budget receive-time-out 0 nil nil)
+     (loop [delay-ms 25]
+       (cr/check! :authentication)
+       (let [conn (new-connection host port connect-time-out receive-time-out)
+             {:keys [type client-id]}
+             (try
+               (let [{:keys [type message err-data] :as response}
+                     (send-n-receive conn {:type     :authentication
+                                           :username username
+                                           :password password})]
+                 (if (or (= type :authentication-ok)
+                         (and (= type :error-response)
+                              (= :server/busy (:error err-data))
+                              (= :password-hashing-capacity (:reason err-data))
+                              (true? (:retryable? err-data))))
+                   response
+                   (raise "Authentication failure: " message (or err-data {}))))
+               (catch Throwable t
+                 (cleanup-after-failure! t #(close conn))
+                 (throw t)))]
+         (close conn)
+         (if (= type :authentication-ok)
+           client-id
+           (do
+             (cr/check! :authentication)
+             (Thread/sleep (min delay-ms (cr/remaining-ms receive-time-out)))
+             (recur (min 200 (* 2 delay-ms))))))))))
 
 (defn- new-connectionpool
   ([host port client-id pool-size time-out]
@@ -866,6 +883,7 @@
 
 (defn- reject-unsafe-transport-replay!
   [req endpoint e]
+  (cr/rethrow-interrupted! e)
   (when (or (nv/decoding-error? e) (write-indeterminate? e))
     (throw e))
   (when-not (transport-replay-safe? req)
@@ -925,6 +943,7 @@
                                        (borrow-connection pool' false)
                                        (get-connection pool'))
                                      (catch Exception e
+                                       (cr/rethrow-interrupted! e)
                                        ;; A concurrent renewal can retire the
                                        ;; observed pool while checkout waits.
                                        ;; No request was sent; use the new pool.
@@ -937,7 +956,8 @@
                                        (catch Exception e
                                          (cr/failed-exchange! req)
                                          (cleanup-after-failure! e #(close conn))
-                                         (when (or (nv/decoding-error? e)
+                                         (when (or (cr/interrupted? e)
+                                                   (nv/decoding-error? e)
                                                    (write-indeterminate? e)
                                                    (not (transport-replay-safe? req)))
                                            (release-connection pool' conn)
@@ -1010,6 +1030,7 @@
                              (let [pool' (.-pool ^Client client)
                                    conn (try (get-connection pool')
                                              (catch Exception e
+                                               (cr/rethrow-interrupted! e)
                                                (when (identical? (.-pool ^Client client) pool') (throw e))
                                                nil))
                                    result
@@ -1358,6 +1379,8 @@
   * `:wire-compression` selects `:none` (default) or `:zstd`, in both directions.
   * `:wire-compression-threshold` sets the minimum serialized payload bytes.
   * `:wire-compression-level` sets the Zstd level (default 3).
+  * `:max-message-size` limits received payloads before and after decompression
+  (default 64 MiB, excluding the five-byte frame header).
   These settings are captured at creation and retained when connections reconnect.
   * `:ha-write-retry-timeout-ms` bounds extra HA failover retry time after a
   retryable write rejection. By default it is derived from HA lease/promotion
@@ -1388,10 +1411,12 @@
   "Connection policy expressed as client options, for derived clients."
   [client]
   (when (instance? Client client)
-    (let [opts (pool-wire-options (get-pool client))]
-      {:wire-compression (or (:compression opts) :none)
-       :wire-compression-threshold (:compression-threshold opts)
-       :wire-compression-level (:compression-level opts)})))
+    (let [opts (pool-wire-options (get-pool client))
+          maximum (p/message-size-limit opts)]
+      (cond-> {:wire-compression (or (:compression opts) :none)
+               :wire-compression-threshold (:compression-threshold opts)
+               :wire-compression-level (:compression-level opts)}
+        (not= maximum (p/message-size-limit nil)) (assoc :max-message-size maximum)))))
 
 (defn close-client
   "Close a remote client and release its connection pool. Safe to call more
@@ -2043,6 +2068,7 @@
           (when-not cached?
             (safe-disconnect-retry-client! client disconnect-fn)))))
     (catch Exception e
+      (cr/rethrow-interrupted! e)
       (when (or (nv/decoding-error? e) (write-indeterminate? e)) (throw e))
       {:kind :exception
        :exception e})))
@@ -2494,6 +2520,7 @@
                  (clear-preferred-ha-endpoint! client))
                result)))
          (catch Exception e
+           (cr/rethrow-interrupted! e)
            (if (or (not read-route?) (nv/decoding-error? e))
              (throw e)
              (or (retry-ha-read-request

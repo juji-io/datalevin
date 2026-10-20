@@ -35,6 +35,7 @@
     (let [settings (update settings :max-unauthenticated-connections
                            #(min (long %) (long (:max-connections settings))))]
       (assoc settings
+             :wire-opts (p/default-wire-opts opts)
              :slots (Semaphore. (int (:max-connections settings)))
              :unauthenticated-slots
              (Semaphore. (int (:max-unauthenticated-connections settings)))))))
@@ -256,7 +257,7 @@
                              (str "datalevin-connection-" id))]
                  (.attach key (volatile! {:read-bf (bf/allocate-buffer c/+buffer-size+)
                                           :write-bf (bf/allocate-buffer c/+buffer-size+)
-                                          :wire-opts (p/default-wire-opts)
+                                          :wire-opts (:wire-opts limits)
                                           :request-decoder (p/request-decoder)
                                           :context context
                                           :codec-context (create-codec)

@@ -256,6 +256,11 @@
     :default c/default-server-max-unauthenticated-connections
     :parse-fn #(Integer/parseInt %)
     :validate [pos-int? "Must be positive"]]
+   [nil "--max-message-size BYTES" "Maximum received payload bytes before and after decompression"
+    :default datalevin.io.WireCompression/DEFAULT_MAX_MESSAGE_SIZE
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(<= 1 (long %) (- Integer/MAX_VALUE c/message-header-size))
+               "Must be positive and leave room for the frame header"]]
    [nil "--authentication-timeout-ms MS" "Deadline from socket acceptance to authentication"
     :default c/default-server-authentication-timeout-ms
     :parse-fn #(Integer/parseInt %)

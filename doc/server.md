@@ -633,6 +633,10 @@ authentication is renewed, or transaction and HA clients are created.
   sent when its output, including the four-byte original-length prefix, is
   smaller than the original payload.
 * `:wire-compression-level`: Zstd level; default `3`.
+* `:max-message-size`: local receive limit in payload bytes, excluding the
+  five-byte frame header; default `67108864` (64 MiB). It bounds both the
+  transmitted payload and its decompressed size. This limit is retained by
+  replacement and derived clients and cannot be increased by a peer.
 
 These options can also be passed directly to `datalevin.client/new-client`.
 Different clients connecting to the same server can use different settings.
@@ -645,6 +649,12 @@ the client's settings for both directions. Older servers honor the on/off
 negotiation but use their own
 threshold and level for responses; peers without compression support exchange
 uncompressed messages.
+
+Compression is enabled only after registration with a live authenticated
+session. Expired or invented session IDs cannot enable decompression. Compressed
+messages must contain exactly one complete Zstd frame with a known content size
+matching the original-length prefix. Invalid headers and sizes above the local
+receive limit are rejected before allocating decompression output memory.
 
 Choose the threshold from the latency crossover for your payloads and network.
 Smaller output alone does not establish a latency benefit. The
@@ -713,12 +723,16 @@ options through `server/create` or the CLI flags with the same names:
 | --- | --- | --- |
 | `:max-connections` / `--max-connections` | `1024` | All admitted connections, including anonymous sockets. |
 | `:max-unauthenticated-connections` / `--max-unauthenticated-connections` | `64` | Connections awaiting verified credentials or a live session token. |
+| `:max-message-size` / `--max-message-size` | `67108864` | Maximum received payload bytes, both on the wire and after decompression, excluding the five-byte frame header. |
 | `:authentication-timeout-ms` / `--authentication-timeout-ms` | `10000` | Absolute time from acceptance to authentication. Anonymous traffic does not extend it. |
 | `:read-timeout-ms` / `--read-timeout-ms` | `60000` | Time to receive each complete frame, including waiting for its first byte except between requests in an active explicit transaction. Partial progress does not extend it. |
 | `:write-timeout-ms` / `--write-timeout-ms` | `60000` | Time to send a response, including every copy-out frame through `:copy-done`. Partial progress does not extend it. |
 
-All five values must be positive 32-bit integers. At startup, the anonymous limit
-is clamped to the total limit, including when its default exceeds a configured
+All values must be positive 32-bit integers; `:max-message-size` must also leave
+five bytes for the frame header. A server's receive limit applies to every
+connection, including anonymous sockets and bulk-transfer frames. Raise it
+explicitly for workloads that require larger individual messages. At startup,
+the anonymous limit is clamped to the total limit, including when its default exceeds a configured
 total. Successful authentication releases anonymous capacity;
 an invented or expired session ID does not. Total capacity is retained until the
 connection owner finishes cleanup, including native transaction abort.
@@ -734,7 +748,10 @@ the maximum heap. Insufficient capacity returns `:server/busy` with
 retryable when existing hashes occupy capacity; a hash exceeding the entire
 memory budget requires a larger heap or smaller hashing memory setting. Requests
 do not queue, and transport cancellation does not return capacity until the hash
-actually finishes. Heaps below 512 MiB cannot admit the default hash.
+actually finishes. The bundled client retries transient hashing-capacity rejections
+with backoff within the authentication deadline, sharing an enclosing request's
+remaining budget during recovery. Credential failures and non-retryable capacity
+errors fail immediately. Heaps below 512 MiB cannot admit the default hash.
 
 A separate connection maintenance thread enforces these deadlines even when
 session expiration or persistence stalls. Its polling interval is at most 100 ms,

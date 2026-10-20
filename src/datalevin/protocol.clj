@@ -48,12 +48,18 @@
                      "datalevin/SpillableVector"
                      (fn [v] (into [] v)))})
 
+(defn ^:no-doc message-size-limit
+  "Local receive limit in payload bytes, excluding the five-byte frame header."
+  ^long [opts]
+  (long (get opts :max-message-size WireCompression/DEFAULT_MAX_MESSAGE_SIZE)))
+
 (defn ^:no-doc client-wire-opts
   "Validate and capture connection policy before opening any sockets."
   [opts]
   (let [compression (get opts :wire-compression :none)
         threshold (get opts :wire-compression-threshold c/*wire-compression-threshold*)
-        level (get opts :wire-compression-level c/*wire-compression-level*)]
+        level (get opts :wire-compression-level c/*wire-compression-level*)
+        maximum (get opts :max-message-size WireCompression/DEFAULT_MAX_MESSAGE_SIZE)]
     (when-not (#{:none :zstd} compression)
       (raise "Expected :wire-compression to be :none or :zstd" {:value compression}))
     (when-not (and (integer? threshold) (<= 0 threshold Integer/MAX_VALUE))
@@ -61,9 +67,12 @@
     (when-not (and (integer? level)
                   (<= (Zstd/minCompressionLevel) level (Zstd/maxCompressionLevel)))
       (raise "Invalid wire compression level" {:value level}))
+    (when-not (and (integer? maximum) (<= 1 maximum (- Integer/MAX_VALUE c/message-header-size)))
+      (raise "Invalid maximum wire message size" {:value maximum}))
     {:compression (when (= compression :zstd) :zstd)
      :compression-threshold (long threshold)
-     :compression-level (int level)}))
+     :compression-level (int level)
+     :max-message-size (long maximum)}))
 
 (defn ^:no-doc local-wire-capabilities
   ([] (local-wire-capabilities (client-wire-opts nil)))
@@ -79,10 +88,8 @@
     :compression-level (:compression-level opts)}))
 
 (defn ^:no-doc default-wire-opts
-  []
-  {:compression           nil
-   :compression-threshold (long c/*wire-compression-threshold*)
-   :compression-level     (int c/*wire-compression-level*)})
+  ([] (default-wire-opts nil))
+  ([opts] (client-wire-opts (assoc opts :wire-compression :none))))
 
 (defn- peer-supports-zstd?
   [peer-capabilities]
@@ -317,19 +324,35 @@
     2 (read-nippy-bf payload)
     (raise "Unknown wire message format" {:format fmt :format-code (fmt-code fmt)})))
 
+(defn- check-message-size! [^long size wire-opts]
+  (when (> size (message-size-limit wire-opts))
+    (raise "Wire message exceeds receive size limit"
+           {:error :protocol/message-too-large :size size
+            :max-message-size (message-size-limit wire-opts)})))
+
+(defn- check-frame-size! [^long length wire-opts]
+  (when (< length c/message-header-size)
+    (raise "Message corruption: length is less than header size" {:length length}))
+  (check-message-size! (- length c/message-header-size) wire-opts))
+
+(defn- check-compression! [fmt wire-opts]
+  (when (and (zstd-compressed? fmt) (not= (:compression wire-opts) :zstd))
+    (raise "Received compressed wire message without negotiated support"
+           {:compression-flag :zstd :wire-opts wire-opts})))
+
 (defn read-value
   ([fmt bs] (read-value fmt bs nil))
   ([fmt bs wire-opts]
    (let [^ByteBuffer payload (if (instance? ByteBuffer bs) bs (ByteBuffer/wrap bs))]
+     (check-message-size! (.remaining payload) wire-opts)
      (if (zstd-compressed? fmt)
        (do
-         (when-not (= (:compression wire-opts) :zstd)
-           (raise "Received compressed wire message without negotiated support"
-                  {:compression-flag :zstd :wire-opts wire-opts}))
+         (check-compression! fmt wire-opts)
          ;; Keep the lease through thaw: a custom reader may recursively decode
          ;; another message, whose scratch buffer must not overwrite this one.
          (context/with-compression [codec]
-           (read-payload fmt (.decompress ^WireCompression codec payload))))
+           (read-payload fmt (.decompress ^WireCompression codec payload
+                                         (int (message-size-limit wire-opts))))))
        (read-payload fmt payload)))))
 
 (deftype ^:no-doc RequestDecoder [native? bindings])
@@ -504,13 +527,13 @@
       (let [available (.limit read-bf)
             fmt       (.get read-bf)
             length    ^int (.getInt read-bf)
-            _         (when (< length c/message-header-size)
-                        (raise "Message corruption: length is less than header size"
-                               {:length length}))
+            _         (check-frame-size! length wire-opts)
+            _         (check-compression! fmt wire-opts)
             read-bf   (if (< (.capacity read-bf) length)
                         (let [^ByteBuffer bf
                               (ByteBuffer/allocateDirect
-                                (* ^long c/+buffer-grow-factor+ length))]
+                                (int (min (+ (message-size-limit wire-opts) c/message-header-size)
+                                          (* (long c/+buffer-grow-factor+) length))))]
                           (.rewind read-bf)
                           (bf/buffer-transfer read-bf bf)
                           (vreset! buffer-v bf)
@@ -638,16 +661,18 @@
   owned byte array. Return true when a complete frame was extracted."
   ([read-bf msg-handler]
    (extract-message read-bf (fn [_ buffer] (b/get-bytes buffer)) msg-handler))
-  ([^ByteBuffer read-bf msg-reader msg-handler]
+  ([read-bf msg-reader msg-handler]
+   (extract-message read-bf msg-reader msg-handler nil))
+  ([^ByteBuffer read-bf msg-reader msg-handler wire-opts]
    (let [pos (.position read-bf)]
      (when (>= pos c/message-header-size)
        (.flip read-bf)
        (let [available (.limit read-bf)
              fmt       (.get read-bf)
              length    (.getInt read-bf)]
-         (when (< length c/message-header-size)
-           (raise "Message corruption: length is less than header size"
-                    {:length length}))
+         (check-frame-size! length wire-opts)
+         ;; The legacy extractor also serves raw readers without wire policy.
+         (when wire-opts (check-compression! fmt wire-opts))
          (if (< available length)
            (do
              (doto read-bf

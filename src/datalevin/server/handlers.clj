@@ -851,11 +851,16 @@
   [deps server ^SelectionKey skey message]
   (let [client-id         (:client-id message)
         wire-capabilities (:wire-capabilities message)
-        wire-opts         (p/negotiate-wire-opts wire-capabilities)]
+        authenticated?    (some? ((:get-client deps) server client-id))
+        wire-opts         (assoc (if authenticated?
+                                  (p/negotiate-wire-opts wire-capabilities)
+                                  (p/default-wire-opts))
+                                 :max-message-size
+                                 (p/message-size-limit (:wire-opts @(skey-state skey))))]
     ;; Preserve the registration reply for expired sessions so the next
     ;; request can trigger normal client renewal. An invented ID cannot
-    ;; escape anonymous admission or its authentication deadline.
-    (when ((:get-client deps) server client-id)
+    ;; enable compression or escape anonymous admission or its deadline.
+    (when authenticated?
       (connection/authenticated! skey))
     ((:write-message deps) skey
      {:type              :set-client-id-ok

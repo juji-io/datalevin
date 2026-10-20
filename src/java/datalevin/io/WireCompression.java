@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 /** Scratch buffers and native contexts leased exclusively by one wire codec.
  * Returned buffers remain valid until the lease is released. */
 public final class WireCompression implements Closeable {
+    public static final int DEFAULT_MAX_MESSAGE_SIZE = 64 * 1024 * 1024;
     private ZstdCompressCtx compressor;
     private ZstdDecompressCtx decompressor;
     private ByteBuffer raw, packed, input;
@@ -18,11 +19,16 @@ public final class WireCompression implements Closeable {
     private boolean closed;
 
     private static ByteBuffer ensure(ByteBuffer buffer, int size) {
-        if (size < 0) throw new IllegalArgumentException("Wire payload too large");
+        return ensure(buffer, size, Integer.MAX_VALUE);
+    }
+
+    private static ByteBuffer ensure(ByteBuffer buffer, int size, int maximum) {
+        if (size < 0 || size > maximum)
+            throw new IllegalArgumentException("Wire payload too large");
         if (buffer == null || buffer.capacity() < size) {
             long capacity = Math.max(8192L, size);
             if (buffer != null) capacity = Math.max(capacity, 2L * buffer.capacity());
-            buffer = ByteBuffer.allocateDirect((int) Math.min(Integer.MAX_VALUE, capacity));
+            buffer = ByteBuffer.allocateDirect((int) Math.min(maximum, capacity));
         }
         buffer.clear();
         return buffer;
@@ -70,23 +76,64 @@ public final class WireCompression implements Closeable {
 
     /** Decode directly from the socket buffer into reusable direct storage. */
     public ByteBuffer decompress(ByteBuffer source) {
+        return decompress(source, DEFAULT_MAX_MESSAGE_SIZE);
+    }
+
+    /** Validate the complete frame and its size before allocating output memory. */
+    public ByteBuffer decompress(ByteBuffer source, int maximum) {
         checkOpen();
+        if (maximum <= 0) throw new IllegalArgumentException("Invalid wire message size limit");
+        if (source.remaining() > maximum)
+            throw new IllegalArgumentException("Wire payload too large");
         if (source.remaining() < 4)
             throw new IllegalArgumentException("Wire message missing uncompressed length");
         int expected = source.getInt();
         if (expected < 0)
             throw new IllegalArgumentException("Negative wire uncompressed length");
+        if (expected > maximum) throw new IllegalArgumentException("Wire payload too large");
         int start = source.position(), length = source.remaining();
+        // Only ordinary Zstd frames are part of this protocol, not skippable frames.
+        if (length < 4 || source.get(start) != (byte) 0x28
+                || source.get(start + 1) != (byte) 0xb5
+                || source.get(start + 2) != (byte) 0x2f
+                || source.get(start + 3) != (byte) 0xfd)
+            throw new IllegalArgumentException("Invalid Zstd wire frame header");
+        long declared;
+        if (source.isDirect()) {
+            declared = Zstd.getDirectByteBufferFrameContentSize(source, start, length);
+        } else if (source.hasArray()) {
+            declared = Zstd.getFrameContentSize(source.array(), source.arrayOffset() + start, length);
+        } else {
+            // Read-only heap buffers expose no array. A Zstd header is at most 18
+            // bytes; never copy an unvalidated payload into direct scratch space.
+            byte[] header = new byte[Math.min(18, length)];
+            source.duplicate().get(header);
+            declared = Zstd.getFrameContentSize(header);
+        }
+        if (declared < 0)
+            throw new IllegalArgumentException("Invalid or unknown Zstd wire frame content size");
+        if (declared != expected)
+            throw new IllegalArgumentException("Wire message decompression length mismatch");
+        // Checking block boundaries requires no output buffer. Reject truncated
+        // input and concatenated frames before reserving the declared output.
+        if (source.hasArray()) {
+            long frameSize = Zstd.findFrameCompressedSize(source.array(), source.arrayOffset() + start, length);
+            if (Zstd.isError(frameSize) || frameSize != length)
+                throw new IllegalArgumentException("Invalid or truncated Zstd wire frame");
+        }
         ByteBuffer compressed = source;
         if (!source.isDirect()) {
-            compressed = directInput(source, start, length);
+            input = ensure(input, length, maximum);
+            input.put(source.duplicate()).flip();
+            compressed = input;
             start = 0;
         }
-        // Reject an inconsistent size prefix before allocating from that prefix.
-        long declared = Zstd.getDirectByteBufferFrameContentSize(compressed, start, length);
-        if (declared >= 0 && declared != expected)
-            throw new IllegalArgumentException("Wire message decompression length mismatch");
-        raw = ensure(raw, expected);
+        if (!source.hasArray()) {
+            long frameSize = Zstd.findDirectByteBufferFrameCompressedSize(compressed, start, length);
+            if (Zstd.isError(frameSize) || frameSize != length)
+                throw new IllegalArgumentException("Invalid or truncated Zstd wire frame");
+        }
+        raw = ensure(raw, expected, maximum);
         if (decompressor == null) decompressor = new ZstdDecompressCtx();
         int actual = decompressor.decompressDirectByteBuffer(
             raw, 0, expected, compressed, start, length);

@@ -77,7 +77,8 @@
           (.join thread 1000)
           (is (not (.isAlive thread)) "cancellation must finish before the 5-second deadline")
           (let [{:keys [error interrupted?]} (deref result 1000 {})]
-            (is (instance? InterruptedException (ex-cause error)))
+            (is (or (instance? InterruptedException error)
+                    (instance? InterruptedException (ex-cause error))))
             (is (true? interrupted?)))
           (is (= 1 @selects) "an interrupted select is never retried")
           (is (zero? @finishes) "readiness cannot publish an interrupted connection")
