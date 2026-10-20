@@ -33,7 +33,7 @@
                                  (vreset! kernel nil)
                                  (doseq [token (.keySet values)] (source/release! token))
                                  (.clear values))))))
-              reserve! (fn [rows bytes]
+              reserve! (fn [^long rows bytes]
                          (check!)
                          (when (> rows Integer/MAX_VALUE)
                            (value/fail! :query-source/limit :reserve))

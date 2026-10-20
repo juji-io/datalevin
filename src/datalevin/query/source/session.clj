@@ -112,7 +112,7 @@
                                                (count (get-in d [:logical-schema :domains]))
                                                (count (get-in d [:logical-schema :attributes])))))
                           token (control/reserve! (:control runtime)
-                                                 {:retained-bytes (+ 4096 (* 512 nodes))})]
+                                                 {:retained-bytes (+ 4096 (* 512 (long nodes)))})]
                       (try (ensure! (= (logical-view previous) (logical-view descriptor)) :descriptor)
                            (finally (control/release! token)))))
                   (assoc-in accepted [:scopes (:id scope)] scope-view))
@@ -284,7 +284,8 @@
   private. Native read guarantees are reported by the existing native engine."
   [runtime groups]
   (let [n (reduce + (map #(count (:aliases %)) groups))
-        token (control/reserve! (:control runtime) {:retained-bytes (+ 1024 (* 1024 n))})]
+        token (control/reserve! (:control runtime)
+                {:retained-bytes (value/add-charge 1024 (value/multiply-charge 1024 n))})]
     (try
       (let [result (into []
                          (mapcat (fn [{:keys [aliases request actual-consistency data-version]}]

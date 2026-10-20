@@ -62,7 +62,8 @@
       (swap! (:state diagnostics) update :regions conj region))))
 
 (defn- add-count [a b]
-  (when (> b (- Long/MAX_VALUE (long (or a 0)))) (fail! :query-source/limit :metrics))
+  (when-not (value/at-most? b (- Long/MAX_VALUE (long (or a 0))))
+    (fail! :query-source/limit :metrics))
   (+ (long (or a 0)) (long b)))
 
 (defn operator!
@@ -132,7 +133,11 @@
   (active! runtime)
   (let [diagnostics (:diagnostics runtime)
         {:keys [sources regions cursors actual]} @(:state diagnostics)
-        _ (reserve! runtime (+' 2048 (*' 1024 (+ (count regions) (reduce + 0 (map #(count (:operators %)) regions))))))
+        _ (reserve! runtime
+            (value/add-charge 2048
+              (value/multiply-charge 1024
+                (reduce (fn [^long n region] (+ n (count (:operators region))))
+                        (count regions) regions))))
         regions (mapv (fn [region]
                         (update region :operators
                           (fn [operators]

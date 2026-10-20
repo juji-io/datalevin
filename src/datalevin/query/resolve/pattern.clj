@@ -612,18 +612,18 @@
     (doseq [tuple coll]
       (check!)
       (when (and (matches-pattern? pattern tuple)
-                 (every? (fn [[index constant]]
+                 (every? (fn [[^long index constant]]
                            (check!)
                            (or (>= index (count tuple))
                                (QueryKey/equiv constant (nth tuple index)))) literal-values)
-                 (every? (fn [[index constant]]
+                 (every? (fn [[^long index constant]]
                            (check!)
                            (and (< index (count tuple)) (QueryKey/equals constant (nth tuple index)))) key-values)
-                 (every? (fn [[a b]]
+                 (every? (fn [[^long a ^long b]]
                            (check!)
                            (and (< a (count tuple)) (< b (count tuple))
                                 (QueryKey/equals (nth tuple a) (nth tuple b)))) key-equalities))
-        (when (some #(>= % (count tuple)) positions) (invalid!))
+        (when (some #(>= (long %) (count tuple)) positions) (invalid!))
         (admit-row!)
         (.add rows (object-array (mapv #(nth tuple %) positions)))))
     (r/relation! (zipmap columns (range)) rows)))

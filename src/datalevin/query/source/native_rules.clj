@@ -33,11 +33,12 @@
 (defn- retain! [runtime token]
   (rt/own! runtime #(control/release! token)))
 
-(defn- containers! [runtime rows width]
+(defn- containers! [runtime ^long rows ^long width]
   (when (> rows Integer/MAX_VALUE) (fail! :query-source/limit :reserve))
   (retain! runtime
     (control/reserve! (:control runtime)
-      {:retained-bytes (+' 2048 (*' 128 width) (*' rows (+' 512 (*' 64 width))))})))
+      {:retained-bytes (value/add-charge (+ 2048 (* 128 width))
+                        (value/multiply-charge rows (+ 512 (* 64 width))))})))
 
 (defn- checked [check! rel]
   (let [^List tuples (:tuples rel)]
@@ -124,13 +125,13 @@
         graph (atom {})]
     (letfn [(visit-node! [node inherited depth calls negatives negative?]
               (check!)
-              (when (> depth 128) (fail! :query-source/limit :planning))
+              (when (> (long depth) 128) (fail! :query-source/limit :planning))
               (containers! runtime 0 1)
               (let [source (source-symbol node inherited)]
                 (cond
                   (instance? Not node)
                   (doseq [clause (:clauses node)]
-                    (visit-node! clause source (inc depth) calls negatives (not negative?)))
+                    (visit-node! clause source (inc (long depth)) calls negatives (not negative?)))
                   (instance? Pattern node)
                   (when-not (and (contains? entries source) (:native (get entries source)))
                     (fail! :query-source/unsupported :planning))
@@ -138,13 +139,13 @@
                   (let [key [source (get-in node [:name :symbol])]]
                     (vswap! calls conj key)
                     (when negative? (vswap! negatives conj key))
-                    (visit-rule! node source (inc depth)))
+                    (visit-rule! node source (inc (long depth))))
                   (or (instance? Or node) (instance? And node))
                   (doseq [clause (:clauses node)]
-                    (visit-node! clause source (inc depth) calls negatives negative?)))))
+                    (visit-node! clause source (inc (long depth)) calls negatives negative?)))))
             (visit-rule! [node source depth]
               (check!)
-              (when (> depth 128) (fail! :query-source/limit :planning))
+              (when (> (long depth) 128) (fail! :query-source/limit :planning))
               (let [name (get-in node [:name :symbol]) key [source name]
                     rule (get rules name) head (head-vars (first (:branches rule)))]
                 (when-not (and rule (= (count head) (count (:args node))))
@@ -157,7 +158,7 @@
                   (swap! graph assoc key {:head-vars head})
                   (let [calls (volatile! #{}) negatives (volatile! #{})]
                     (doseq [branch (:branches rule) clause (:clauses branch)]
-                      (visit-node! clause source (inc depth) calls negatives false))
+                      (visit-node! clause source (inc (long depth)) calls negatives false))
                     (swap! graph assoc key {:head-vars head :source source
                                             :required-count (count (get-in (first (:branches rule)) [:vars :required]))
                                             :branches (:branches rule) :dependencies @calls
@@ -176,7 +177,7 @@
                 (vswap! edges conj [from to]))]
     (letfn [(visit! [node inherited local path depth]
               (check!)
-              (when (> depth 128) (fail! :query-source/limit :planning))
+              (when (> (long depth) 128) (fail! :query-source/limit :planning))
               (containers! runtime 0 2)
               (let [source (source-symbol node inherited)]
                 (cond
@@ -193,10 +194,10 @@
                         exports (set (map :symbol exports))]
                     (doseq [[i clause] (map-indexed vector (:clauses node))]
                       (let [child (conj path i)]
-                        (visit! clause source #(if (exports %) (local %) [child %]) child (inc depth)))))
+                        (visit! clause source #(if (exports %) (local %) [child %]) child (inc (long depth))))))
                   (instance? And node)
                   (doseq [[i clause] (map-indexed vector (:clauses node))]
-                    (visit! clause source local (conj path i) (inc depth))))))]
+                    (visit! clause source local (conj path i) (inc (long depth)))))))]
       (doseq [id ids [j branch] (map-indexed vector (:branches (get graph id)))]
         (let [local #(vector id j %)]
           (doseq [[i v] (map-indexed vector (head-vars branch))] (edge! (local v) [id :head i]))
@@ -209,7 +210,7 @@
                              (if (contains? known from) (conj known to) known)) known @edges)]
           (if (= known next)
             (into {} (map (fn [id]
-                            [id (into [] (filter #(or (< % (:required-count (get graph id)))
+                            [id (into [] (filter #(or (< (long %) (long (:required-count (get graph id))))
                                                      (contains? known [id :head %])))
                                   (range (count (:head-vars (get graph id)))))])) ids)
             (recur next)))))))
@@ -218,7 +219,7 @@
   "Infer a conjunction's binding interface without executing its clauses.
   Private union variables cannot become inputs of the enclosing scope."
   [runtime clauses exports initial positions source depth]
-  (when (> depth 128) (fail! :query-source/limit :planning))
+  (when (> (long depth) 128) (fail! :query-source/limit :planning))
   (containers! runtime (+ 2 (count clauses)) (+ 2 (count exports)))
   (let [check! #(control/check-active! (:control runtime))
         vars (fn [args] (into #{} (keep #(when (instance? Variable %) (:symbol %))) args))
@@ -241,7 +242,7 @@
                           inputs (reduce (fn [inputs clause]
                                            (set/union inputs
                                              (binding-inputs! runtime (if (instance? And clause) (:clauses clause) [clause])
-                                               public required positions source (inc depth)))) required (:clauses node))]
+                                               public required positions source (inc (long depth))))) required (:clauses node))]
                       {:requires inputs :columns public})
                     (instance? Not node) {:negative (vars (:vars node)) :columns #{}}
                     :else {:requires #{} :columns #{}}))) clauses)
@@ -292,9 +293,9 @@
                           optional (remove (set base) (get observed id))
                           admit! (fn [positions]
                                    (control/check-active! (:control runtime))
-                                   (when (>= @n max-adornments) (fail! :query-source/limit :planning))
+                                   (when (>= (long @n) (long max-adornments)) (fail! :query-source/limit :planning))
                                    (containers! runtime 1 (count positions))
-                                   (vswap! n inc)
+                                   (vswap! n (fn [n] (inc (long n))))
                                    positions)]
                       [id (reduce (fn [variants i]
                                     (into variants (map #(admit! (vec (sort (conj % i))))) variants))
@@ -312,7 +313,7 @@
                            (reduce (fn [levels dependency]
                                      (check!)
                                      (update levels id max
-                                       (+ (get levels dependency)
+                                       (+ (long (get levels dependency))
                                           (if (contains? (:negative-dependencies (get graph id)) dependency) 1 0))))
                              levels (:dependencies (get graph id)))) levels ids)]
         (cond (= levels next)
@@ -320,7 +321,7 @@
                 ;; Lower strata complete synchronously inside compiled steps.
                 ;; Bound that descent before allocating body programs or using
                 ;; the JVM stack; clause nesting has its separate logical cap.
-                (when (some #(> % max-stratum-depth) (vals levels)) (fail! :query-source/limit :planning))
+                (when (some #(> (long %) (long max-stratum-depth)) (vals levels)) (fail! :query-source/limit :planning))
                 levels)
               (>= round (count ids)) (fail! :query-source/unsupported :planning)
               :else (recur next (inc round)))))))
@@ -465,8 +466,12 @@
                   (doseq [token @tokens] (control/release! token))
                   (vreset! tokens [])))]
     (try
-      (hold! (control/reserve! ctl {:retained-bytes (+' 4096 (*' 4096 (count headers))
-                                                         (*' 1024 (reduce +' 0 (map (comp count :input-positions) (vals headers)))))}))
+      (hold! (control/reserve! ctl
+               {:retained-bytes
+                (value/add-charge (+ 4096 (* 4096 (count headers)))
+                  (value/multiply-charge 1024
+                    (reduce (fn [^long n header] (+ n (count (:input-positions header))))
+                            0 (vals headers))))}))
       (vreset! tables (into {} (map (fn [[id header]]
                                      [id {:rows (FastList.) :seen (HashSet.)
                                           :positions (:input-positions header)
@@ -483,7 +488,7 @@
          (when @closed? (fail! :query-source/invalid :execution))
          (let [{:keys [^List rows ^HashSet seen variables positions]} (get @tables id)
                width (count variables)
-               workspace (control/reserve! ctl {:retained-bytes (+' 1024 (*' 128 (+ width (count input-cols))))})]
+               workspace (control/reserve! ctl {:retained-bytes (+ 1024 (* 128 (+ width (count input-cols))))})]
            (try
              (let [attrs (zipmap input-cols (range)) args (map #(nth (:args node) %) positions)
                    scratch (object-array width) lookup (relation/array-lookup)]
@@ -499,7 +504,7 @@
                    (doseq [x scratch] (value/execution-value! x check!))
                    (when-not (.contains seen (relation/reset-array-lookup! lookup scratch))
                      (when (= Integer/MAX_VALUE (.size rows)) (fail! :query-source/limit :reserve))
-                     (hold! (control/reserve! ctl {:retained-bytes (+' 512 (*' 64 width))}))
+                     (hold! (control/reserve! ctl {:retained-bytes (+ 512 (* 64 width))}))
                      (let [row (vec scratch) _ (hold! (rt/charge-copy! runtime row))
                            owned (object-array (value/owned-copy row check!))]
                        (.add seen (relation/wrap-array owned))
@@ -664,7 +669,7 @@
                                (solve-seeded! runtime (:headers stratum) (:ids stratum) (:empty stratum)
                                  (:dependencies stratum) (:owners stratum) run-rule! root node input-cols tuples
                                  (fn [key node input-cols tuples]
-                                   (when-not (< (get levels key) level) (fail! :query-source/invalid :execution))
+                                   (when-not (< (long (get levels key)) (long level)) (fail! :query-source/invalid :execution))
                                    (solve! key node input-cols tuples)))))]
                      (solve! root node input-cols tuples))
                    (if seeded?

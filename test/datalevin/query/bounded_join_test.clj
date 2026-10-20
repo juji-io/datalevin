@@ -3,7 +3,7 @@
             [datalevin.join :as join]
             [datalevin.relation :as relation])
   (:import [java.math BigDecimal BigInteger]
-           [java.util Random]))
+           [java.util AbstractList AbstractMap Random]))
 
 (defn- rel [variables rows]
   (relation/relation! (zipmap variables (range)) (mapv object-array rows)))
@@ -104,3 +104,48 @@
       (when cancel? (is (= 3 @hashes)))
       (is (empty? @active))
       (is (empty? @retained)))))
+
+(deftest oversized-workspace-estimates-remain-exact
+  (let [tuples (proxy [AbstractList] []
+                 (size [] Integer/MAX_VALUE)
+                 (get [_] (throw (AssertionError. "Rows must not be read"))))
+        attrs (proxy [AbstractMap] []
+                (size [] Integer/MAX_VALUE)
+                (entrySet [] (throw (AssertionError. "Keys must not be read"))))
+        input {:attrs attrs :tuples tuples}]
+    (doseq [operation [join/hash-join-bounded join/subtract-rel-bounded]]
+      (let [charge (atom nil)
+            failure (try
+                      (operation input input
+                                 {:check! (fn [])
+                                  :reserve! (fn [_ bytes]
+                                              (reset! charge bytes)
+                                              (throw (ex-info "quota" {})))})
+                      (catch clojure.lang.ExceptionInfo e e))]
+        (is (= "quota" (ex-message failure)))
+        (is (integer? @charge))
+        (is (> @charge Long/MAX_VALUE))))))
+
+(deftest oversized-output-estimates-reject-before-reading-rows
+  (let [tuples (proxy [AbstractList] []
+                 (size [] Integer/MAX_VALUE)
+                 (get [_] (throw (AssertionError. "Rows must not be read"))))
+        released (atom [])
+        charge (atom nil)
+        failure (try
+                  (join/hash-join-bounded
+                    {:attrs {'?left 0} :tuples tuples}
+                    {:attrs {'?right 0} :tuples tuples}
+                    {:check! (fn [])
+                     :reserve! (fn [rows bytes]
+                                 (if (zero? rows)
+                                   ::workspace
+                                   (do (reset! charge [rows bytes])
+                                       (throw (ex-info "quota" {})))))
+                     :release! #(swap! released conj %)})
+                  (catch clojure.lang.ExceptionInfo e e))]
+    (is (= "quota" (ex-message failure)))
+    (is (= 4611686014132420609 (first @charge)))
+    (is (integer? (second @charge)))
+    (is (> (second @charge) Long/MAX_VALUE))
+    (is (= [::workspace] @released))))

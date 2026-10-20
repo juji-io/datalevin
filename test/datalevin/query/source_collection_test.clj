@@ -259,6 +259,21 @@
              (into #{} (map (fn [[p ^Date t name]] [(vec p) (.getTime t) name])) result)))
       (is (= 1 (count (events-of events :session-close)))))))
 
+(deftest container-admission-preserves-row-and-byte-overflow-limits
+  (doseq [[rows width category phase]
+          [[Integer/MAX_VALUE Integer/MAX_VALUE :query-source/invalid :reserve]
+           [(inc (long Integer/MAX_VALUE)) 0 :query-source/limit :inputs]]]
+    (let [captured (atom nil)
+          failure (error #(rt/with-runtime {:limits {:retained-bytes Long/MAX_VALUE}}
+                            (fn [runtime]
+                              (reset! captured (:control runtime))
+                              (#'collection/containers! runtime rows width))))]
+      ;; The ledger rejects charges beyond its long range; row capacity has
+      ;; its own resource limit. Neither estimate may wrap into an admission.
+      (is (= category (:error failure)))
+      (is (= phase (:phase failure)))
+      (is (every? zero? (vals (control/usage @captured)))))))
+
 (deftest local-capture-stops-at-quota-and-releases-partial-work
   (doseq [facts [(repeat [1]) [(repeat 1)]]]
     (let [events (atom []) saved (atom nil)]

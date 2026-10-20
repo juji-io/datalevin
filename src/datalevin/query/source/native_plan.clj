@@ -70,7 +70,7 @@
       (cond (and literal? (#{:db.type/long :db.type/ref} type)
                  (integer? x) (<= Long/MIN_VALUE x Long/MAX_VALUE)) (long x)
             (value/matches-type? logical x)
-            (if (and (#{:db.type/float :db.type/double} type) (zero? x))
+            (if (and (#{:db.type/float :db.type/double} type) (zero? (double x)))
               (if (= type :db.type/float) (float 0.0) 0.0) x)))))
 
 (defn- predicate-constraints [node core-clauses props check!]
@@ -165,8 +165,8 @@
 (defn- binding-keys! [runtime check! entity v mode input-cols ^List tuples]
   (let [entity? (not= mode :value) value? (#{:value :entity-value} mode)
         fixed? (instance? Constant entity)
-        n (if (and fixed? (not value?)) (min 1 (.size tuples)) (.size tuples))
-        token (control/reserve! (:control runtime) {:retained-bytes (+' 2048 (*' 512 n))})
+        n (long (if (and fixed? (not value?)) (min 1 (.size tuples)) (.size tuples)))
+        token (control/reserve! (:control runtime) {:retained-bytes (+ 2048 (* 512 n))})
         _ (rt/own! runtime #(control/release! token))
         seen (QueryKey$KeySet.) keys (FastList.)
         e-index (.indexOf ^List input-cols (:symbol entity)) v-index (.indexOf ^List input-cols (:symbol v))]

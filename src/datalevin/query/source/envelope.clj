@@ -29,7 +29,7 @@
 (defn- variable? [x] (and (symbol? x) (.startsWith (name x) "?")))
 (defn- id? [x] (or (and (keyword? x) (seq (name x))) (and (string? x) (seq x))))
 (defn- nonnegative? [x] (and (integer? x) (<= 0 x Long/MAX_VALUE)))
-(defn- positive? [x] (and (nonnegative? x) (pos? x)))
+(defn- positive? [x] (and (nonnegative? x) (pos? (long x))))
 (defn- columns! [columns check!]
   (ensure! (vector? columns))
   (when (seq columns) (contract/binding-columns! columns check!))
@@ -217,7 +217,7 @@
       (request! runtime request)
       (fields! response #{:alternatives} #{})
       (let [alternatives (:alternatives response)]
-        (ensure! (and (vector? alternatives) (<= (count alternatives) (:max-alternatives request))))
+        (ensure! (and (vector? alternatives) (<= (count alternatives) (long (:max-alternatives request)))))
         (admit! (dissoc response :alternatives) 512)
         ;; A subvector's hidden alternatives remain reachable until capture.
         ;; Inspect every retained parent; only each explicit plan slot is opaque.

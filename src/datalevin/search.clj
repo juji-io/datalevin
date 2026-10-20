@@ -1526,7 +1526,7 @@
            {:max-term-visits max-term-visits}))
   (when (and (some? max-prefix-expansions)
              (not (and (pos-int? max-prefix-expansions)
-                       (<= max-prefix-expansions Integer/MAX_VALUE))))
+                       (<= (long max-prefix-expansions) Integer/MAX_VALUE))))
     (raise ":max-prefix-expansions must be nil or an integer between 1 and 2147483647"
            {:max-prefix-expansions max-prefix-expansions}))
   (let [^TermDictionary dictionary (.-dictionary engine)

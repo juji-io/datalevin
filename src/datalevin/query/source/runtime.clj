@@ -124,7 +124,7 @@
                            (every? #(and (identical? (:control runtime) (:control %))
                                          (= (:query-id runtime) (:query-id %))) owners))
               (value/fail! :query-source/invalid :execution))
-          token (source/reserve! (:control runtime) {:retained-bytes (+' 1024 (*' 128 (count owners)))})
+          token (source/reserve! (:control runtime) {:retained-bytes (+ 1024 (* 128 (count owners)))})
           workspace (assoc runtime :cleanup (atom []))
           primary (volatile! nil)]
       (binding [*runtime* workspace
@@ -215,7 +215,10 @@
   [runtime f]
   (let [ctl (:control runtime)
         remaining (control/remaining-time-ms ctl)
-        local (when remaining (long (min Long/MAX_VALUE (+' (System/currentTimeMillis) remaining))))
+        local (when remaining
+                (try
+                  (Math/addExact (System/currentTimeMillis) (long remaining))
+                  (catch ArithmeticException _ Long/MAX_VALUE)))
         deadlines (keep identity [timeout/*deadline* (:deadline runtime) local])
         deadline (when (seq deadlines) (reduce min deadlines))
         runtime (assoc runtime :deadline deadline)

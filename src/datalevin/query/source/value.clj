@@ -39,7 +39,7 @@
 (def ^:private maximum-depth 128)
 
 (defn- check-depth! [depth phase]
-  (when (> depth maximum-depth) (fail! :query-source/limit phase)))
+  (when (> (long depth) (long maximum-depth)) (fail! :query-source/limit phase)))
 
 (defn- custom-comparator? [x]
   (and (sorted? x) (not (identical? RT/DEFAULT_COMPARATOR (.comparator ^Sorted x)))))
@@ -50,7 +50,7 @@
   (if (satisfies? IQuerySourceValue x)
     x
     (let [_ (when (custom-comparator? x) (fail! :query-source/unsupported :values))
-          copy-child #(owned-copy* % check! (inc depth))
+          copy-child #(owned-copy* % check! (inc (long depth)))
           copy (cond
                  (bytes? x) (aclone ^bytes x)
                  (= Date (class x)) (Date. (.getTime ^Date x))
@@ -75,7 +75,7 @@
 (defn- diagnostic-copy* [x check! depth]
   (check!)
   (check-depth! depth :values)
-  (let [copy #(diagnostic-copy* % check! (inc depth))]
+  (let [copy #(diagnostic-copy* % check! (inc (long depth)))]
     (cond
       (symbol? x) (with-meta x nil)
       (plain-map? x) (into {} (map (fn [[k v]] [(copy k) (copy v)])) x)
@@ -137,7 +137,7 @@
 (defn- portable*? [x check! depth]
   (when check! (check!))
   (check-depth! depth :values)
-  (let [child? #(portable*? % check! (inc depth))]
+  (let [child? #(portable*? % check! (inc (long depth)))]
     (and (metadata-node? x)
          (cond
            (plain-map? x) (every? (fn [[k v]] (and (child? k) (child? v))) x)
@@ -161,11 +161,11 @@
 (defn- collection-overhead [x observe! backing? metadata-phase depth]
   (add-charges
     (charge-part (+ 64 (* 48 (count x))) observe!)
-    (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0)
+    (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc (long depth))) 0)
     ;; A view pins the entire parent, including elements outside its range
     ;; and the parent's metadata. An owned copy detaches that parent.
     (if (and backing? (instance? APersistentVector$SubVector x))
-      (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase (inc depth)) 0)))
+      (value-charge* (.-v ^APersistentVector$SubVector x) observe! true metadata-phase (inc (long depth))) 0)))
 
 (defn- value-charge* [x observe! backing? metadata-phase depth]
   (when observe! (observe! 0))
@@ -188,7 +188,7 @@
       (charge-part 96 observe!)
       (value-charge* (namespace x) observe! backing? metadata-phase depth)
       (value-charge* (name x) observe! backing? metadata-phase depth)
-      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0))
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc (long depth))) 0))
     (instance? UUID x) (charge-part 48 observe!)
     (= Date (class x)) (charge-part 64 observe!)
     (or (instance? Instant x) (instance? Duration x) (instance? Period x))
@@ -209,13 +209,13 @@
     (plain-map? x)
     (add-charges
       (charge-part (+ 96 (* 64 (count x))) observe!)
-      (reduce (fn [n [k v]] (add-charges n (value-charge* k observe! backing? metadata-phase (inc depth))
-                                          (value-charge* v observe! backing? metadata-phase (inc depth)))) 0 x)
-      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc depth)) 0))
+      (reduce (fn [n [k v]] (add-charges n (value-charge* k observe! backing? metadata-phase (inc (long depth)))
+                                          (value-charge* v observe! backing? metadata-phase (inc (long depth))))) 0 x)
+      (if-let [m (meta x)] (value-charge* m observe! backing? metadata-phase (inc (long depth))) 0))
     (or (vector? x) (set? x) (list? x))
     (add-charges
       (collection-overhead x observe! backing? metadata-phase depth)
-      (reduce (fn [n child] (add-charges n (value-charge* child observe! backing? metadata-phase (inc depth)))) 0 x))
+      (reduce (fn [n child] (add-charges n (value-charge* child observe! backing? metadata-phase (inc (long depth))))) 0 x))
     :else (fail! :query-source/unsupported :values)))
 
 (defn value-charge
@@ -254,7 +254,7 @@
     (if (map? t)
       (case (:kind t)
         :tuple (and (vector? x) (= (count x) (count (:elements t)))
-                    (every? true? (map #(matches-type*? %1 %2 charged? check! (inc depth)) (:elements t) x)))
+                    (every? true? (map #(matches-type*? %1 %2 charged? check! (inc (long depth))) (:elements t) x)))
         :custom (and (satisfies? IQuerySourceValue x) (= t (-logical-type x)))
         false)
       (case t
@@ -307,8 +307,8 @@
   (when check! (check!))
   (check-depth! depth :values)
   (cond
-    (plain-map? x) (doseq [[k v] x] (execution-value* k check! (inc depth)) (execution-value* v check! (inc depth)))
-    (or (vector? x) (set? x) (list? x)) (run! #(execution-value* % check! (inc depth)) x)))
+    (plain-map? x) (doseq [[k v] x] (execution-value* k check! (inc (long depth))) (execution-value* v check! (inc (long depth))))
+    (or (vector? x) (set? x) (list? x)) (run! #(execution-value* % check! (inc (long depth))) x)))
 
 (defn execution-value!
   ([x] (execution-value! x nil))

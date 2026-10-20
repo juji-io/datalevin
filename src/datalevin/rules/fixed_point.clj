@@ -4,10 +4,23 @@
   clauses, variables, sources, or provider plans."
   (:refer-clojure :exclude [run!])
   (:require [datalevin.relation :as relation])
-  (:import [java.util HashSet IdentityHashMap List]
+  (:import [java.math BigInteger]
+           [java.util HashSet IdentityHashMap List]
            [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:private objects-class (class (object-array 0)))
+
+(defn- initial-allocation-bytes
+  "Estimate table/schema storage exactly. Scaling the sum of all head widths
+  may overflow a long even though each collection count fits in an int."
+  [^long tables ^long columns]
+  (let [base (+ 4096 (* 1024 tables))]
+    (try
+      (Math/addExact base (Math/multiplyExact 256 columns))
+      (catch ArithmeticException _
+        (bigint (.add (BigInteger/valueOf base)
+                      (.multiply (BigInteger/valueOf 256)
+                                 (BigInteger/valueOf columns))))))))
 
 (defn run!
   "Drive the native delta iteration with caller-supplied relation operations.
@@ -71,8 +84,8 @@
                                    (vreset! error e))))))
                     (when-let [e @error] (throw e)))))
         schemas (volatile! nil)
-        new-list! (fn [width]
-                    (let [token (reserve! 0 (+' 1024 (*' 128 width))) rows (FastList.)]
+        new-list! (fn [^long width]
+                    (let [token (reserve! 0 (+ 1024 (* 128 width))) rows (FastList.)]
                       (.put lists rows token) rows))
         release-list! (fn [rel]
                         (let [^List rows (:tuples rel)]
@@ -87,7 +100,7 @@
                                  (every? #(contains? (:attrs body) %) variables)
                                  (instance? List (:tuples body))
                                  (<= 0 (.size ^List (:tuples body)))) (invalid!))
-                workspace (reserve! 0 (+' 2048 (*' 256 width)))]
+                workspace (reserve! 0 (+ 2048 (* 256 width)))]
             (try
               (let [_ (when-not (every? #(and (integer? %) (<= 0 % Integer/MAX_VALUE))
                                        (map (:attrs body) variables)) (invalid!))
@@ -108,7 +121,7 @@
                     (when-not (.contains keys (relation/reset-array-lookup! probe scratch))
                       ;; Covers the immutable key/tuple, hash table growth and
                       ;; delta/total list slots before retaining a new answer.
-                      (reserve! (inc (.size keys)) (+' 512 (*' 64 width)))
+                      (reserve! (inc (.size keys)) (+ 512 (* 64 width)))
                       (let [^objects owned (own-row! scratch)]
                         (active!)
                         (when-not (and (instance? objects-class owned) (not (identical? owned scratch))
@@ -121,8 +134,11 @@
           (reduce-kv
             (fn [totals id delta]
               (active!)
-              (let [before (get totals id) n (+' (.size ^List (:tuples before)) (.size ^List (:tuples delta)))
-                    width (count (get @schemas id)) token (reserve! n (+' 1024 (*' 16 n) (*' 128 width)))
+              (let [before (get totals id)
+                    n (+ (long (.size ^List (:tuples before)))
+                         (long (.size ^List (:tuples delta))))
+                    width (count (get @schemas id))
+                    token (reserve! n (+ 1024 (* 16 n) (* 128 width)))
                     rel (relation/sum-rel before delta)]
                 (.put lists (:tuples rel) token)
                 (assoc totals id rel))) totals deltas))
@@ -134,14 +150,17 @@
               (active!)
               (when-not (.containsKey keep (:tuples rel)) (release-list! rel)))))]
     (try
-      (reserve! 0 (+' 4096 (*' 1024 (+ (count initial) (count rule-ids) (count dependencies)))
-                     (*' 256 (reduce + 0 (map (comp count :attrs) (vals initial))))))
+      (let [tables (long (+ (count initial) (count rule-ids) (count dependencies)))
+            columns (long (reduce (fn [^long total rel]
+                                    (+ total (long (count (:attrs rel)))))
+                                  0 (vals initial)))]
+        (reserve! 0 (initial-allocation-bytes tables columns)))
       (when-not (and (vector? rule-ids) (= (count rule-ids) (count (set rule-ids)))
                      (= (set rule-ids) (set (keys initial)) (set (keys dependencies)))
                      (every? #(every? (set rule-ids) %) (vals dependencies))) (invalid!))
       (vreset! schemas (into {} (map (fn [[id rel]] [id (mapv key (sort-by val (:attrs rel)))])) initial))
       (doseq [id rule-ids]
-        (reserve! 0 (+' 2048 (*' 256 (count (get @schemas id)))))
+        (reserve! 0 (+ 2048 (* 256 (count (get @schemas id)))))
         (swap! seen assoc id (HashSet.)))
       (let [consume-one!
             (fn [id produce!]

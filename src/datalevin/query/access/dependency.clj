@@ -2,7 +2,8 @@
   "Typed dependency scheduling for complete access and local operator plans.
   This planner consumes declared schemas, never rows, estimates or cursors.
   Its caller owns validation, canonical choice order and workspace admission."
-  (:require [clojure.set :as set]))
+  (:require [clojure.set :as set])
+  (:import [clojure.lang BigInt]))
 
 (defn supplies?
   "Whether every value declared by from is admitted by to. Complete logical
@@ -45,8 +46,13 @@
   (check!)
   ;; One admitted scratch envelope covers transitions and memo probes, including
   ;; transitions immediately discarded without retaining a new search frame.
-  (reserve! (+ 1024 (* 512 (+ (count inputs) (reduce + 0 (map (comp count :columns) choices))))
-               (* 128 (count required-work))))
+  (let [columns (long (reduce (fn [^long n choice] (+ n (count (:columns choice))))
+                              (count inputs) choices))
+        base (+ 1024 (* 128 (count required-work)))
+        scaled (*' 512 columns)]
+    (reserve! (if (instance? Long scaled)
+                (+' base (long scaled))
+                (.add (BigInt/valueOf base) ^BigInt scaled))))
   (let [frame! (fn [known done used index choice]
                  (check!)
                  (reserve! (+ 512 (* 256 (count known)) (* 64 (count done)) (* 128 (count used))))
@@ -66,7 +72,7 @@
           :else
           (let [{:keys [covers requires columns after resources unavailable?] :as choice}
                 (nth choices index)
-                stack (assoc stack (dec (count stack)) (assoc frame :index (inc index)))
+                stack (assoc stack (dec (count stack)) (assoc frame :index (inc (long index))))
                 next-known
                 (when (and (not unavailable?)
                            (empty? (set/intersection covers done))
@@ -78,7 +84,7 @@
               (let [next-done (into done covers) next-used (into used resources)]
                 (if (contains? failed [next-known next-done next-used])
                   (recur stack failed visited)
-                  (if (>= visited max-states)
+                  (if (>= visited (long max-states))
                     {:status :bound}
                     (recur (conj stack (frame! next-known next-done next-used 0 choice))
                            failed (inc visited)))))

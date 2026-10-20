@@ -36,9 +36,10 @@
   (loop []
     (control/check-active! (.-control ids))
     (when @(.-closed ids) (fail! :query-source/invalid :open))
-    (let [n (.get (.-next-id ids))]
+    (let [^AtomicLong next-id (.-next-id ids)
+          n (.get next-id)]
       (when (neg? n) (fail! :query-source/unsupported :open))
-      (if (.compareAndSet (.-next-id ids) n (unchecked-inc n)) n (recur)))))
+      (if (.compareAndSet next-id n (unchecked-inc n)) n (recur)))))
 
 (defn close-keys!
   "Drop keys, witnesses, response state, and reservations. Closing does not
@@ -130,16 +131,18 @@
                                           :max-request-binding-rows])))
     (fail! :query-source/invalid :open)))
 
-(defn- charge-part! [ctl base maximum size!]
+(defn- charge-part!
+  "Size an admitted header or element exactly, returning a bounded long charge."
+  ^long [ctl ^long base ^long maximum size!]
   (let [bytes (volatile! base)
         observe! (fn [n]
                    (control/check-active! ctl)
-                   (when (> (vswap! bytes +' n) maximum)
+                   (when-not (value/at-most? (vswap! bytes value/add-charge n) maximum)
                      (fail! :query-source/limit :open
                             {:category :binding-bytes :maximum maximum :attempted @bytes})))]
     (observe! 0)
     (size! observe!)
-    @bytes))
+    (long @bytes)))
 
 (defn seal!
   "Split complete distinct inputs by both query/provider caps. For :once,
@@ -157,8 +160,8 @@
         (when-not (#{:once :many} opens) (fail! :query-source/invalid :open))
         (let [{:keys [requires entries]} @state
               limits (control/limits ctl)
-              row-cap (min (:binding-rows limits) (:max-binding-rows constraints))
-              byte-cap (min (:binding-bytes limits) (:max-binding-bytes constraints))
+              row-cap (min (long (:binding-rows limits)) (long (:max-binding-rows constraints)))
+              byte-cap (min (long (:binding-bytes limits)) (long (:max-binding-bytes constraints)))
               scratch (control/reserve! ctl
                         {:retained-bytes (+ 1024 (* 128 (min row-cap (count entries))))})
               finish! (fn [batch batch-entries bytes]
@@ -186,15 +189,16 @@
                     (let [single (charge-part! ctl header byte-cap
                                    #(value/owned-binding-element-charge (:binding entry) %))
                           element (- single header)
+                          total (+' bytes element)
                           split? (or (= (count batch) row-cap)
-                                     (> (+' bytes element) byte-cap))]
+                                     (not (value/at-most? total byte-cap)))]
                       (when split?
                         (when (= :once opens) (fail! :query-source/unsupported :open))
                         (finish! batch pending bytes))
                       (recur (next remaining)
                              (conj (if split? [] batch) (:binding entry))
                              (conj (if split? [] pending) entry)
-                             (if split? single (+' bytes element))))
+                             (if split? single (long total))))
                     (when (seq batch) (finish! batch pending bytes))))))
             (swap! state assoc :phase :sealed)
             (count (:batches @state))
@@ -209,7 +213,8 @@
     (locking state
       (control/check-active! (:control (.-runtime keys)))
       (when-not (and (= :sealed (:phase @state)) (integer? index)
-                     (<= 0 index) (< index (count (:batches @state))))
+                     (not (value/at-most? index -1))
+                     (value/at-most? index (dec (count (:batches @state)))))
         (fail! :query-source/invalid :open))
       (:bindings (nth (:batches @state) index)))))
 
@@ -224,7 +229,8 @@
     (locking state
       (control/check-active! ctl)
       (when-not (and (= :sealed (:phase @state)) (integer? index)
-                     (<= 0 index) (< index (count (:batches @state))))
+                     (not (value/at-most? index -1))
+                     (value/at-most? index (dec (count (:batches @state)))))
         (fail! :query-source/invalid :batch))
       (try
         (let [batch (nth (:batches @state) index)

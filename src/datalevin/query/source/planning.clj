@@ -31,18 +31,18 @@
     (try
       (letfn [(copy [x depth]
                 (check!)
-                (when (> depth 128) (fail! :query-source/limit :planning))
+                (when (> (long depth) 128) (fail! :query-source/limit :planning))
                 (cond
                   (parser/-traversable? x)
                   (do
                     (own! (control/reserve! (:control runtime) {:retained-bytes 1024}))
-                    (let [node (reduce-kv (fn [node key value] (assoc node key (copy value (inc depth)))) x x)
+                    (let [node (reduce-kv (fn [node key value] (assoc node key (copy value (inc (long depth))))) x x)
                           metadata (meta x)]
                       (own! (rt/charge-copy! runtime metadata))
                       (with-meta node (value/owned-copy metadata check!))))
                   (and (vector? x) (some parser/-traversable? x))
                   (do (own! (control/reserve! (:control runtime) {:retained-bytes (+ 256 (* 64 (count x)))}))
-                      (mapv #(copy % (inc depth)) x))
+                      (mapv #(copy % (inc (long depth))) x))
                   :else (do (own! (rt/charge-copy! runtime x)) (value/owned-copy x check!))))]
         (let [owned (copy syntax 0) held @tokens]
           (rt/own! runtime #(doseq [token held] (control/release! token)))

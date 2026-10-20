@@ -47,10 +47,13 @@
         (input-program/parse! parser/parse-timeout form))))
 
 (defn- deadline [millis]
-  (let [local (when millis (long (min Long/MAX_VALUE (+' (System/currentTimeMillis) millis))))]
+  (let [local (when millis
+                (try
+                  (Math/addExact (System/currentTimeMillis) (long millis))
+                  (catch ArithmeticException _ Long/MAX_VALUE)))]
     (cond (nil? local) timeout/*deadline*
           (nil? timeout/*deadline*) local
-          :else (min (long timeout/*deadline*) local))))
+          :else (min (long timeout/*deadline*) (long local)))))
 
 (defn read!
   "Read a bounded invocation header without copying query constants or input
@@ -62,7 +65,9 @@
         _ (when-not (value/plain-map? options) (fail! :query-source/invalid :context))
         millis (timeout! runtime (:timeout header))
         inherited (timeout/time-left)
-        duration (cond (nil? millis) inherited (nil? inherited) millis :else (min millis inherited))]
+        duration (cond (nil? millis) inherited
+                       (nil? inherited) millis
+                       :else (min (long millis) (long inherited)))]
     {:options options :timeout-ms duration :deadline (deadline millis)}))
 
 (defn open!

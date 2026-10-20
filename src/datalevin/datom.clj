@@ -12,7 +12,7 @@
   (:require
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
-   [datalevin.util :refer [combine-hashes combine-cmp defcomp]])
+   [datalevin.util :refer [array? combine-hashes combine-cmp defcomp]])
   (:import
    [datalevin.utl BitOps]
    [java.util Arrays]
@@ -175,16 +175,26 @@
 
 (defn compare-with-type [a b]
   (try
-    (compare a b)
+    (if (and (array? a) (identical? (class a) (class b)))
+      ;; Pending transaction indexes must distinguish vector contents even
+      ;; when every value has the same array class and serialized prefix.
+      (case (.getName (class a))
+        "[B" (BitOps/compareBytes a b)
+        "[S" (Arrays/compare ^shorts a ^shorts b)
+        "[I" (Arrays/compare ^ints a ^ints b)
+        "[J" (Arrays/compare ^longs a ^longs b)
+        "[F" (Arrays/compare ^floats a ^floats b)
+        "[D" (Arrays/compare ^doubles a ^doubles b)
+        "[C" (Arrays/compare ^chars a ^chars b)
+        "[Z" (Arrays/compare ^booleans a ^booleans b)
+        (compare (vec a) (vec b)))
+      (compare a b))
     (catch ClassCastException e
       (cond
         ;; using `compare` on colls throws when items at the same index of
         ;; the coll are not of the same type, so we use `=`. since `a` and
         ;; `b` are of identical type, use hash for ordering when not equal
         (coll? a)  (if (= a b) 0 (Long/compare (hash a) (hash b)))
-        (bytes? a) (if (Arrays/equals ^bytes a ^bytes b)
-                     0
-                     (BitOps/compareBytes a b))
         ;; for different types, order by type name for consistency
         :else      (compare (str (type a)) (str (type b)))))))
 

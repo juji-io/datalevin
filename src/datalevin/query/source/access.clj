@@ -62,7 +62,7 @@
 
 (defn compare-keys
   "Compare admitted structural identifiers in canonical Unicode/numeric order."
-  [a b check!]
+  ^long [a b check!]
   (let [tag (key-tag a) other (key-tag b)]
     (if (not= tag other) (compare tag other)
         (case tag
@@ -251,10 +251,13 @@
       (columns! input-columns check!)
       (ensure! (set/subset? (set (map :variable input-columns)) (:input-vars region)))
       (vreset! workspace
-        (control/reserve! ctl {:retained-bytes (+ 1024 (* 512 (+ (count input-columns)
-                                                              (reduce + 0 (map (comp count :columns) (:patterns region)))
-                                                              (count operators)
-                                                              (reduce + 0 (map (comp count :columns) operators)))))}))
+        (control/reserve! ctl
+          {:retained-bytes
+           (value/add-charge 1024
+             (value/multiply-charge 512
+               (reduce (fn [^long n item] (+ n (count (:columns item))))
+                       (+ (count input-columns) (count operators))
+                       (concat (:patterns region) operators))))}))
       ;; Mapped facts are optimistic potential producers in this necessary
       ;; preflight. They do not become execution seeds. Even with all of those
       ;; variables, an unseeded local dependency cannot be repaired by a provider
@@ -333,7 +336,7 @@
                                  (set/subset? (into #{} (map #(vector (:source-symbol o) region-id %)) (:covers o))
                                               required)))))
              _ (doseq [[source-symbol candidates] (group-by #(get-in % [:expr :source]) plans)]
-                 (ensure! (<= (count candidates) (:max-alternatives (request-map source-symbol))))
+                 (ensure! (<= (count candidates) (long (:max-alternatives (request-map source-symbol)))))
                  (ensure! (= (count candidates)
                              (count (set (map #(get-in % [:path :options :alternative-id]) candidates))))))
              candidates (->> plans
@@ -430,8 +433,11 @@
   (let [ctl (:control runtime)]
     (control/check-active! ctl)
     (ensure! (vector? schedules))
-    (let [n (reduce (fn [n schedule] (+' n (count (:plans schedule)))) 0 schedules)
-          token (control/reserve! ctl {:retained-bytes (+' 1024 (*' 512 n) (* 256 (count schedules)))})]
+    (let [n (reduce (fn [^long n schedule] (+ n (count (:plans schedule)))) 0 schedules)
+          token (control/reserve! ctl
+                  {:retained-bytes
+                   (value/add-charge (+ 1024 (* 256 (count schedules)))
+                     (value/multiply-charge 512 n))})]
       (try
         (ensure! (= (count schedules) (count (set (map :region-id schedules)))))
         (loop [remaining (seq schedules) used #{} work #{}]
@@ -494,10 +500,10 @@
                             (assoc :consumption-group (get-in alternative [:properties :consumption-group]))
                             (seq (:requires o))
                             (assoc :binding-limits
-                                   {:rows (min (:binding-rows (control/limits ctl))
-                                               (get-in alternative [:constraints :max-binding-rows]))
-                                    :bytes (min (:binding-bytes (control/limits ctl))
-                                                (get-in alternative [:constraints :max-binding-bytes]))}))))) plans)
+                                   {:rows (min (long (:binding-rows (control/limits ctl)))
+                                               (long (get-in alternative [:constraints :max-binding-rows])))
+                                    :bytes (min (long (:binding-bytes (control/limits ctl)))
+                                                (long (get-in alternative [:constraints :max-binding-bytes])))}))))) plans)
             result (assoc (select-keys schedule [:region-id :policy :selection
                                                  :estimated-access-ns :fallback-reasons :planning-time-ms]) :steps steps)]
         (rt/own! runtime #(control/release! token))

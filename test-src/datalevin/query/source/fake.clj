@@ -144,7 +144,7 @@
           next-match
           (if dependent?
             (fn [[binding-index fact-index]]
-            (loop [b binding-index f fact-index]
+            (loop [b (long binding-index) f (long fact-index)]
               (check!)
               (cond
                 (= b (count inputs)) nil
@@ -160,7 +160,7 @@
                      :binding-id (:binding-id input)}
                     (recur b (inc f)))))))
             (fn [fact-index]
-              (loop [f fact-index]
+              (loop [f (long fact-index)]
                 (check!)
                 (when (< f (count facts))
                   (let [fact (nth facts f)
@@ -186,7 +186,8 @@
                     {:rows rows :ids ids :next-position (if dependent? [(count inputs) 0] (count facts))
                      :exhausted? true})))
               bytes (batch-bytes (:columns plan) rows ids check! max-bytes)
-              token (when (pos? bytes) (spi/reserve! control {:retained-bytes bytes :in-flight-batches 1}))]
+              token (when-not (value/at-most? bytes 0)
+                      (spi/reserve! control {:retained-bytes bytes :in-flight-batches 1}))]
           (try
             (let [owned (value/owned-copy rows check!)
                   owned-ids (when dependent? (value/owned-copy ids check!))

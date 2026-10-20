@@ -62,11 +62,11 @@
 (defn- add-columns [schema columns]
   (reduce #(update %1 (:variable %2) merge-column %2) schema columns))
 
-(defn- reserve! [runtime rows bytes]
-  (let [ctl (:control runtime) maximum (:retained-bytes (control/limits ctl))
-        attempted (+' (:retained-bytes (control/usage ctl)) bytes)]
+(defn- reserve! [runtime ^long rows bytes]
+  (let [ctl (:control runtime) maximum (long (:retained-bytes (control/limits ctl)))
+        attempted (value/add-charge (long (:retained-bytes (control/usage ctl))) bytes)]
     (control/check-active! ctl)
-    (when (or (> rows Integer/MAX_VALUE) (> attempted maximum))
+    (when (or (> rows Integer/MAX_VALUE) (not (value/at-most? attempted maximum)))
       (fail! :query-source/limit :reserve
              {:category :retained-bytes :maximum maximum :attempted attempted}))
     (control/reserve! ctl {:retained-bytes bytes})))
@@ -74,8 +74,10 @@
 (defn- retain! [runtime token]
   (rt/own! runtime #(control/release! token)))
 
-(defn- containers! [runtime rows width]
-  (reserve! runtime rows (+' 2048 (*' 128 width) (*' rows (+' 192 (*' 32 width))))))
+(defn- containers! [runtime ^long rows ^long width]
+  (reserve! runtime rows
+    (value/add-charge (+ 2048 (* 128 width))
+      (value/multiply-charge rows (+ 192 (* 32 width))))))
 
 (defn- checked-list [check! ^List tuples]
   (proxy [AbstractList] []
@@ -146,8 +148,9 @@
                             (fn [workspace]
                               (retain! workspace
                                 (reserve! workspace (.size tuples)
-                                  (+' 2048 (*' 128 (count variables))
-                                      (*' (.size tuples) (+' 512 (*' 64 (count variables)))))))
+                                  (value/add-charge (+ 2048 (* 128 (count variables)))
+                                    (value/multiply-charge (.size tuples)
+                                      (+ 512 (* 64 (count variables)))))))
                               (let [outer (relation/relation! (zipmap input-cols (range)) tuples)
                                     input (relation/project-distinct (assoc outer :tuples (checked-list check! tuples)) variables)
                                     body ((:run! program) input)
@@ -675,7 +678,7 @@
                                  (check!)
                                  (when started
                                    (diagnostics/operator! runtime program-id id index
-                                     (.size ^List tuples) (.size ^List result) (- (System/nanoTime) started)))
+                                     (.size ^List tuples) (.size ^List result) (- (System/nanoTime) (long started))))
                                  (recur result (inc index)))))]
               (relation/relation! (zipmap cols (range)) tuples)))))
       (reset! state :ready)
@@ -731,7 +734,9 @@
         ^List tuples (:tuples rel) n (.size tuples) width (count all-vars)
         ;; Projection, set indexes, group keys/lists, return maps and window
         ;; vectors are all sized before invoking their shared constructors.
-        token (reserve! runtime n (+' 8192 (*' 512 width) (*' n (+' 4096 (*' 128 width)))))
+        token (reserve! runtime n
+                (value/add-charge (+ 8192 (* 512 width))
+                  (value/multiply-charge n (+ 4096 (* 128 width)))))
         _ (retain! runtime token)
         collected (spill/new-spillable-set nil {:spill-threshold Long/MAX_VALUE :initial-capacity n})
         context {:rels [(assoc rel :tuples (checked-list check! tuples))] :sources {} :rules {}}

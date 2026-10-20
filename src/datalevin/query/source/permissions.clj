@@ -82,7 +82,7 @@
   (let [^LinkedList history (.-history limiter)]
     (loop []
       (when-let [^RequestStart start (.peekFirst history)]
-        (when (not (pos? (.compareTo (.add (.-at start) (.-interval limiter)) now)))
+        (when (not (pos? (long (.compareTo (.add (.-at start) (.-interval limiter)) now))))
           (.removeFirst history)
           (control/release! (.-reservation start))
           (recur))))))
@@ -128,7 +128,7 @@
             (when (>= (long (:external-requests usage)) (long (:external-requests limits)))
               (fail! :query-source/limit :reserve
                      {:category :external-requests :maximum (:external-requests limits)
-                      :attempted (inc' (:external-requests usage))}))
+                      :attempted (inc' (long (:external-requests usage)))}))
             (when (.-interval limiter) (prune-requests! limiter now))
             (if (and (< (long (:concurrent-requests usage)) (long (:concurrent-requests limits)))
                      (< (long (:active @(.-state limiter))) (.-maximum limiter))

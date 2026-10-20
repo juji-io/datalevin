@@ -22,16 +22,16 @@
   (let [result (volatile! #{})]
     (letfn [(visit [x depth]
               (check!)
-              (when (> depth 128) (fail! :query-source/limit :planning))
+              (when (> (long depth) 128) (fail! :query-source/limit :planning))
               (cond
                 (instance? Constant x) nil
                 (instance? Variable x)
                 (do (reserve! 256) (vswap! result conj (with-meta (:symbol x) nil)))
-                (instance? Or x) (visit (:rule-vars x) (inc depth))
-                (instance? Not x) (visit (:vars x) (inc depth))
+                (instance? Or x) (visit (:rule-vars x) (inc (long depth)))
+                (instance? Not x) (visit (:vars x) (inc (long depth)))
                 (dp/-traversable? x)
-                (do (reserve! 256) (doseq [v (vals x)] (visit v (inc depth))))
-                (sequential? x) (doseq [v x] (visit v (inc depth)))))]
+                (do (reserve! 256) (doseq [v (vals x)] (visit v (inc (long depth)))))
+                (sequential? x) (doseq [v x] (visit v (inc (long depth))))))]
       (visit node 0)
       @result)))
 
@@ -67,7 +67,7 @@
           next-occurrence! (fn [] (check!)
                              (let [id @occurrence]
                                (when (= Long/MAX_VALUE id) (fail! :query-source/limit :planning))
-                               (vswap! occurrence inc) id))
+                               (vswap! occurrence (fn [n] (inc (long n)))) id))
           reserve-node! #(own! (control/reserve! ctl {:retained-bytes %}))]
       (try
         (ensure! (and (instance? datalevin.parser.Query parsed) (vector? entries) (vector? rules)
@@ -106,19 +106,23 @@
                             (= head (head-vars branch))
                             (= required-count (count (get-in branch [:vars :required])))
                             (vector? input-positions)
-                            (every? #(and (integer? %) (<= 0 %) (< % (count head))) input-positions)
+                            (every? #(and (integer? %)
+                                          (not (value/at-most? % -1))
+                                          (value/at-most? % (dec (count head)))) input-positions)
                             (= input-positions (vec (sort (set input-positions))))
                             (set/subset? (set (range required-count)) (set input-positions))
                             (or (nil? observable-positions)
                                 (and (vector? observable-positions)
-                                     (every? #(and (integer? %) (<= 0 %) (< % (count head))) observable-positions)
+                                     (every? #(and (integer? %)
+                                                   (not (value/at-most? % -1))
+                                                   (value/at-most? % (dec (count head)))) observable-positions)
                                      (= observable-positions (vec (sort (set observable-positions))))))))))
           (doseq [entry entries]
             (own! (rt/charge-metadata! runtime (:symbol entry) :inputs))
             (ensure! (and (symbol? (:symbol entry)) (.startsWith (name (:symbol entry)) "$"))))
           (letfn [(external? [node inherited seen depth]
                     (check!)
-                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (when (> (long depth) 128) (fail! :query-source/limit :planning))
                     (reserve-node! 256)
                     (let [source (source-symbol node inherited)]
                       (cond
@@ -132,10 +136,10 @@
                           ;; supply headers here; bodies compile separately.
                           (when-not (or (contains? (:rule-relations compiler-context) key) (contains? @seen key))
                             (vswap! seen conj key)
-                            (some #(external? % source seen (inc depth))
+                            (some #(external? % source seen (inc (long depth)))
                                   (mapcat :clauses (:branches (rules-by-name name))))))
                         (or (instance? Or node) (instance? And node) (instance? Not node))
-                        (some #(external? % source seen (inc depth)) (:clauses node))
+                        (some #(external? % source seen (inc (long depth))) (:clauses node))
                         :else false)))
                   (native-core? [node inherited stack depth]
                     ;; Positive acyclic native calls can use the same bounded
@@ -143,7 +147,7 @@
                     ;; native programs retain their existing core rule node for
                     ;; the native evaluator's separate controlled-emission gate.
                     (check!)
-                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (when (> (long depth) 128) (fail! :query-source/limit :planning))
                     (reserve-node! 256)
                     (let [source (source-symbol node inherited)]
                       (cond
@@ -153,10 +157,10 @@
                               rule (rules-by-name name)]
                           (ensure! rule)
                           (or (contains? stack key)
-                              (some #(native-core? % source (conj stack key) (inc depth))
+                              (some #(native-core? % source (conj stack key) (inc (long depth)))
                                     (mapcat :clauses (:branches rule)))))
                         (or (instance? Or node) (instance? And node))
-                        (some #(native-core? % source stack (inc depth)) (:clauses node))
+                        (some #(native-core? % source stack (inc (long depth))) (:clauses node))
                         :else false)))
                   (region! [path input-vars live bindings literals inherited]
                     (check!)
@@ -227,7 +231,7 @@
                         (add-core! id node path))))
                   (body! [clauses path inherited input-vars live bindings literals stack depth]
                     (check!)
-                    (when (> depth 128) (fail! :query-source/limit :planning))
+                    (when (> (long depth) 128) (fail! :query-source/limit :planning))
                     (reserve-node! (+ 1024 (* 256 (count clauses))))
                     (let [id (region! path input-vars live bindings literals inherited)
                           variables (mapv node-vars clauses)
@@ -258,7 +262,7 @@
                                           (body! (if (instance? And branch) (:clauses branch) [branch])
                                                  (conj location :branch j) source inputs exports
                                                  (select-keys bindings inputs) (set/intersection literals inputs)
-                                                 stack (inc depth)))
+                                                 stack (inc (long depth))))
                                         (range) (:clauses node))]
                               (site! {:kind :union :path location :node node :parent-region id :exports exports
                                       :required-inputs required :branches branch-ids :set-boundary? true})
@@ -294,7 +298,7 @@
                                                                                               (and (= :var tag) (contains? literals x))) v))) mapping)
                                                       child (body! (:clauses branch) (conj location :rule-branch j)
                                                                    source inputs (set head) constants literal-vars
-                                                                   (conj stack key) (inc depth))]
+                                                                   (conj stack key) (inc (long depth)))]
                                                   {:region-id child :head-vars head :arguments mapping
                                                    :required-inputs required :input-vars inputs}))
                                               (range) (:branches rule))]

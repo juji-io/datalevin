@@ -107,7 +107,7 @@
                       (value/dependent-batch-charge-bytes (:columns batch) (:rows batch) (:binding-ids batch) observe!)
                       (value/batch-charge-bytes (:columns batch) (:rows batch) observe!))]
           (ensure! (= bytes (:byte-count batch)) :batch)
-          (when (or (pos? bytes) (:reservation batch))
+          (when (or (not (value/at-most? bytes 0)) (:reservation batch))
             (control/accept! ctl (:reservation batch) bytes)
             (vreset! accepted? true)))
         (deliver! batch)
@@ -206,7 +206,7 @@
     (ensure! (= (count columns) n) :execution)
     ;; Reserve before allocating the map, then detach mutable leaves before an
     ;; upstream iterator can advance/reuse its tuple or value buffers.
-    (let [token (control/reserve! (:control runtime) {:retained-bytes (+ 256 (* 64 n))})]
+    (let [token (control/reserve! (:control runtime) {:retained-bytes (+ 256 (* 64 (long n)))})]
       (try
         (let [check! #(control/check-active! (:control runtime))
               bindings (persistent!
@@ -231,7 +231,7 @@
       ;; This adapter implements complete regions only. Final windows belong
       ;; downstream, and cannot authorize a prefix of a dependent access.
       (ensure! (and (= :exact (:quality demand)) (empty? (:ordering demand))
-                    (zero? (or (:offset bounds) 0)) (nil? (:limit bounds))
+                    (zero? (long (or (:offset bounds) 0))) (nil? (:limit bounds))
                     (nil? (:required-count bounds)) (nil? (:max-candidates work))) :execution)
       (captured! runtime group plan dependent?)
       (own! (control/reserve! ctl {:retained-bytes 2048}))
@@ -273,7 +273,10 @@
                       (let [left-rows (FastList.) right-rows (FastList.)
                             right-cols (mapv :variable columns)]
                         (own! (control/reserve! ctl
-                                {:retained-bytes (+' 2048 (*' (count owned) (+ 128 (* 16 (count input-cols)))))}))
+                                {:retained-bytes
+                                 (value/add-charge 2048
+                                   (value/multiply-charge (count owned)
+                                     (+ 128 (* 16 (count input-cols)))))}))
                         (doseq [outer owned]
                           (check!)
                           (.add left-rows (object-array (mapv outer input-cols))))
@@ -290,7 +293,7 @@
                                        (relation/relation! (zipmap input-cols (range)) left-rows)
                                        (relation/relation! (zipmap right-cols (range)) right-rows)
                                        {:check! check!
-                                        :reserve! (fn [rows bytes]
+                                        :reserve! (fn [^long rows bytes]
                                                     (when (> rows Integer/MAX_VALUE)
                                                       (fail! :query-source/limit :reserve))
                                                     (control/reserve! ctl {:retained-bytes bytes}))

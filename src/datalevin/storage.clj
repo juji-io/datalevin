@@ -89,7 +89,7 @@
    [datalevin.validate :as vld]
    [datalevin.vector :as v])
   (:import
-   [java.util List Collection HashMap HashSet IdentityHashMap UUID Arrays]
+   [java.util List Collection HashMap HashSet IdentityHashMap UUID Objects]
    [datalevin.utl QueryKey QueryKey$KeyMap]
    [java.util.concurrent TimeUnit ScheduledExecutorService ConcurrentHashMap ScheduledFuture]
    [java.util.concurrent.locks ReentrantReadWriteLock]
@@ -122,8 +122,10 @@
 
 (defn- value-equal?
   [expected actual]
-  (if (bytes? expected)
-    (and (bytes? actual) (Arrays/equals ^bytes expected ^bytes actual))
+  ;; Decoding a giant produces new arrays, including quantized vector values.
+  ;; Their identity cannot determine whether a stored datom matches a retract.
+  (if (u/array? expected)
+    (Objects/deepEquals expected actual)
     (= expected actual)))
 
 ;; Retain interned helpers used by sibling tests.

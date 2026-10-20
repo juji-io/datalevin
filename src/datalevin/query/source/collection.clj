@@ -21,11 +21,12 @@
 (defn- retain! [runtime token]
   (rt/own! runtime #(control/release! token)))
 
-(defn- containers! [runtime rows width]
+(defn- containers! [runtime ^long rows ^long width]
   (when (> rows Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
   (retain! runtime
     (control/reserve! (:control runtime)
-      {:retained-bytes (+' 1024 (*' rows (+' 192 (*' 32 width))))})))
+      {:retained-bytes (value/add-charge 1024
+                         (value/multiply-charge rows (+ 192 (* 32 width))))})))
 
 (defn check!
   "An owned source is usable only within its capturing invocation."
@@ -120,8 +121,8 @@
                {:check! check! :columns variables :positions (mapv positions variables)
                 :literal-values literals :key-values key-values :key-equalities key-equalities
                 :invalid! #(fail! :query-source/invalid :inputs)
-                :admit-row! #(do (vswap! emitted inc)
-                                 (when (> @emitted Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
+                :admit-row! #(do (vswap! emitted (fn [n] (inc (long n))))
+                                 (when (> (long @emitted) Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
                                  (containers! runtime 1 (count variables)))})]
      (check!) rel)))
 

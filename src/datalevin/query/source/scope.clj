@@ -163,7 +163,9 @@
     (try
       (check!)
       (own! (rt/charge-metadata! runtime [site-index parent-columns branch-outputs] :planning))
-      (ensure! (and (integer? site-index) (<= 0 site-index) (< site-index (count (:sites compiled)))
+      (ensure! (and (integer? site-index)
+                    (not (value/at-most? site-index -1))
+                    (value/at-most? site-index (dec (count (:sites compiled))))
                     (vector? branch-outputs)))
       (let [site (nth (:sites compiled) site-index)
             parent-region (nth (:regions compiled) (:parent-region site))
@@ -178,16 +180,19 @@
           (ensure! (and (value/plain-map? output)
                         (contains? output :region-id) (contains? output :columns)
                         (set/subset? (set (keys output)) #{:region-id :columns :constant-constraints})
-                        (integer? region-id) (<= 0 region-id)))
+                        (integer? region-id) (not (value/at-most? region-id -1))))
           (columns! columns check!)
           (when constant-constraints
             (ensure! (vector? constant-constraints))
             ;; Several scalar producers may constrain the same literal.
             (doseq [column constant-constraints] (columns! [column] check!))))
         (own! (control/reserve! ctl
-                {:retained-bytes (+ 4096 (* 2048 (count branch-outputs))
-                                    (* 512 (count parent-columns))
-                                    (* 1024 (reduce + 0 (map (comp count :columns) branch-outputs))))}))
+                {:retained-bytes
+                 (value/add-charge (+ 4096 (* 2048 (count branch-outputs))
+                                      (* 512 (count parent-columns)))
+                   (value/multiply-charge 1024
+                     (reduce (fn [^long n output] (+ n (count (:columns output))))
+                             0 branch-outputs)))}))
         (let [branches (:branches site)
               child-id #(if (map? %) (:region-id %) %)
               expected (set (map child-id branches))
@@ -196,7 +201,7 @@
           (ensure! (and (= expected (set (keys by-id))) (= (count by-id) (count branch-outputs))))
           (doseq [[id columns] by-id]
             (check!)
-            (ensure! (and (< id (count (:regions compiled)))
+            (ensure! (and (value/at-most? id (dec (count (:regions compiled))))
                           (set/subset? (set (map :variable columns))
                                        (get-in compiled [:regions id :available-vars])))))
           (doseq [[id columns] constraints]
@@ -283,7 +288,9 @@
               (reduce (fn [ids boundary]
                         (check! runtime boundary)
                         (let [index (:site-index boundary)
-                              _ (ensure! (and (integer? index) (<= 0 index) (< index (count sites))))
+                              _ (ensure! (and (integer? index)
+                                              (not (value/at-most? index -1))
+                                              (value/at-most? index (dec (count sites)))))
                               site (nth sites index)
                               owner (get-in regions [(:parent-region site) :owner])
                               child-id #(if (map? %) (:region-id %) %)]
@@ -317,7 +324,7 @@
           (assoc compiled :regions refined))
         (catch Throwable e (control/release! token) (throw e))))))
 
-(defn- admit-container! [runtime tokens rows width]
+(defn- admit-container! [runtime tokens ^long rows ^long width]
   ;; Shared projection/union helpers allocate their sized lists, key indexes,
   ;; wrappers and tuple arrays eagerly. Admit a conservative complete envelope
   ;; before invoking them. Value leaves have separate owned handoff charges.
@@ -342,7 +349,8 @@
                   (every? (fn [column]
                             (let [v (:variable column)]
                               (or (not (contains? attrs v))
-                                  (and (integer? (get attrs v)) (<= 0 (get attrs v)))))) columns)))
+                                  (and (integer? (get attrs v))
+                                       (not (value/at-most? (get attrs v) -1)))))) columns)))
     (check!)
     (admit-container! runtime tokens 0 width)
     (let [output (FastList.)]
@@ -355,7 +363,9 @@
                           (every? (fn [column]
                                     (let [v (:variable column) index (get attrs v)]
                                       (or (not (contains? attrs v))
-                                          (and (integer? index) (<= 0 index) (< index (alength ^objects tuple))))))
+                                          (and (integer? index)
+                                               (not (value/at-most? index -1))
+                                               (value/at-most? index (dec (alength ^objects tuple)))))))
                                   columns)))
             (let [row (mapv (fn [column]
                               (let [v (:variable column)]

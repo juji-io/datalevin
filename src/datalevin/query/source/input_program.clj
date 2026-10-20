@@ -29,14 +29,14 @@
 (defn- retain! [runtime token]
   (rt/own! runtime #(control/release! token)))
 
-(defn- containers! [runtime rows width]
+(defn- containers! [runtime ^long rows ^long width]
   (when (> rows Integer/MAX_VALUE) (fail! :query-source/limit :inputs))
   (retain! runtime
     (control/reserve! (:control runtime)
       {:retained-bytes (value/add-charge 512
                          (value/multiply-charge rows (+ 192 (* 32 width))))})))
 
-(defn- layout! [runtime binding depth]
+(defn- layout! [runtime binding ^long depth]
   (control/check-active! (:control runtime))
   (when (> depth 128) (fail! :query-source/limit :inputs))
   (containers! runtime 1 1)
@@ -108,7 +108,7 @@
           ;; A nested binding can itself expand into several correlated rows.
           (let [rel (binding! runtime check! join! child item)
                 ^List tuples (:tuples rel) n (.size tuples)]
-            (when (> (+' (.size rows) n) Integer/MAX_VALUE)
+            (when (> (+ (long (.size rows)) (long n)) Integer/MAX_VALUE)
               (fail! :query-source/limit :inputs))
             (containers! runtime n (count columns))
             (dotimes [i n]

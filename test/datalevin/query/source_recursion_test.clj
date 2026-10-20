@@ -13,6 +13,18 @@
 (defn- rel [variables rows]
   (relation/relation! (zipmap variables (range)) (mapv object-array rows)))
 
+(deftest initial-storage-estimates-preserve-overflow-and-the-primitive-fast-path
+  (let [estimate @#'fixed-point/initial-allocation-bytes]
+    (is (= 4096 (estimate 0 0)))
+    (is (= 5376 (estimate 1 1)))
+    (is (instance? Long (estimate 1 1)))
+    (let [product-overflow (estimate 0 36028797018963968)
+          sum-overflow (estimate 3 36028797018963967)]
+      (is (integer? product-overflow))
+      (is (= 9223372036854779904N product-overflow))
+      (is (integer? sum-overflow))
+      (is (= 9223372036854782720N sum-overflow)))))
+
 (defn- rows [handle id]
   (mapv vec (:tuples (get ((:relations handle)) id))))
 

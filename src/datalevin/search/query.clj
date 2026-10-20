@@ -25,7 +25,7 @@
         (raise ":max-edits must be an integer between 0 and 2" opts))
       (when-not (boolean? transpositions?)
         (raise ":transpositions? must be a boolean" opts))
-      (when-not (and (pos-int? max-expansions) (<= max-expansions 100000))
+      (when-not (and (pos-int? max-expansions) (<= (long max-expansions) 100000))
         (raise ":max-expansions must be an integer between 1 and 100000" opts))
       (select-keys opts [:max-edits :transpositions? :max-expansions]))))
 
