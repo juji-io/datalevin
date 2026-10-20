@@ -88,7 +88,7 @@
             (let [baseline (session-ids srv)
                   imported (d/init-db [(d/datom 100 :item/value 100)] uri nil opts)]
               (try
-                (is (= (+ (count baseline) (if (= pool-size 1) 1 2))
+                (is (= (+ (count baseline) 2)
                        (count (session-ids srv))))
                 (is (= 100 (d/q '[:find ?v . :where [100 :item/value ?v]] imported)))
                 (is (= 100 (d/q '[:find ?v . :where [100 :item/value ?v]] @conn)))

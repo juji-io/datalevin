@@ -13,6 +13,7 @@
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
+   [datalevin.client.request :as cr]
    [datalevin.datom :as d]
    [datalevin.native-value :as nv]
    [datalevin.protocol.context :as context]
@@ -413,51 +414,72 @@
 
 (defn send-all
   "Send all data in buffer to channel, will block if channel is busy.
-  Close the channel and raise exception if something is wrong"
-  [^SocketChannel ch ^ByteBuffer bf ]
-  (let [non-blocking? (not (.isBlocking ch))
-        selector      (volatile! nil)]
-    (try
-      (loop []
-        (when (.hasRemaining bf)
-          (let [n (long (send-ch ch bf))]
-            (cond
-              (== n -1)
-              (do (.close ch)
-                  (raise "Socket channel is closed." {}))
+  An optional timeout bounds the entire send, including slow progress. Close
+  the channel on timeout or interruption: a partial frame cannot be reused."
+  ([ch bf] (send-all ch bf nil))
+  ([^SocketChannel ch ^ByteBuffer bf timeout-ms]
+   (let [timed? (some? timeout-ms)
+         timeout-ms (if timed? (max 1 (long timeout-ms)) 0)
+         deadline-ns (if timed?
+                       (let [local (+ (System/nanoTime) (* 1000000 timeout-ms))]
+                         (if cr/*request* (min local (cr/deadline)) local))
+                       0)
+         blocking? (.isBlocking ch)
+         selector (volatile! nil)]
+     (try
+       (when (and timed? blocking?) (.configureBlocking ch false))
+       (loop []
+         (when (.hasRemaining bf)
+           (cr/check! :send)
+           (when (.isInterrupted (Thread/currentThread))
+             (.close ch)
+             (throw (InterruptedException. "Interrupted while sending a socket message")))
+           (when (and timed? (>= (System/nanoTime) deadline-ns))
+             (.close ch)
+             (raise "Socket channel send timed out."
+                    {:error :socket/timeout :phase :send :timeout-ms timeout-ms}))
+           (let [n (long (send-ch ch bf))]
+             (when-not (zero? n) (cr/sending!))
+             (cond
+               (== n -1)
+               (do (.close ch)
+                   (raise "Socket channel is closed." {}))
 
-              (> n 0)
-              (recur)
+               (> n 0)
+               (recur)
 
-              non-blocking?
-              (let [^Selector sel (or @selector
-                                      (let [s (open-selector ch SelectionKey/OP_WRITE)]
-                                        (vreset! selector s)
-                                        s))]
-                ;; Avoid busy-spinning on non-blocking sockets under backpressure.
-                (.select sel)
-                (when (.isInterrupted (Thread/currentThread))
-                  ;; A partial frame cannot be reused for another request.
-                  (.close ch)
-                  (throw (InterruptedException. "Interrupted while sending a socket message")))
-                (.clear (.selectedKeys sel))
-                (recur))
+               (or timed? (not blocking?))
+               (let [^Selector sel (or @selector
+                                       (let [s (open-selector ch SelectionKey/OP_WRITE)]
+                                         (vreset! selector s)
+                                         s))]
+                 ;; Always use a positive wait; select(0) waits indefinitely.
+                 (if timed?
+                   (.select sel (max 1 (quot (- deadline-ns (System/nanoTime))
+                                            1000000)))
+                   (.select sel))
+                 (.clear (.selectedKeys sel))
+                 (recur))
 
-              :else
-              (do
-                (Thread/yield)
-                (recur))))))
-      (finally
-        (when-let [^Selector sel @selector]
-          (.close sel))))))
+               :else
+               (do (Thread/yield) (recur))))))
+       (finally
+         (when-let [^Selector sel @selector]
+           (.close sel))
+         (when (and timed? blocking? (.isOpen ch))
+           (.configureBlocking ch true)))))))
 
 (defn write-message-owned
   "Write using an exclusively owned buffer. The caller supplies synchronization."
-  [^SocketChannel ch ^ByteBuffer bf msg wire-opts]
-  (.clear bf)
-  (write-message-bf bf msg c/message-format-nippy wire-opts)
-  (.flip bf)
-  (send-all ch bf))
+  ([ch bf msg wire-opts] (write-message-owned ch bf msg wire-opts nil))
+  ([^SocketChannel ch ^ByteBuffer bf msg wire-opts timeout-ms]
+   (.clear bf)
+   (write-message-bf bf msg c/message-format-nippy wire-opts)
+   ;; Encoding and custom codecs are synchronous. Their elapsed time consumes
+   ;; the budget, and an overrun must never be followed by a socket write.
+   (cr/check! :send)
+   (.flip bf)
+   (send-all ch bf timeout-ms)))
 
 (defn write-message-blocking
   "Write a message in blocking mode"
@@ -526,7 +548,7 @@
       -1)))
 
 (defn- await-read-ready!
-  [^SocketChannel ch selector-v ^long deadline-ms ^long timeout-ms]
+  [^SocketChannel ch selector-v ^long deadline-ns ^long timeout-ms]
   (let [^Selector sel (or @selector-v
                           (locking selector-v
                             (or @selector-v
@@ -534,14 +556,15 @@
                                   (vreset! selector-v s)
                                   s))))]
     (loop []
+      (cr/check! :receive)
       (when (.isInterrupted (Thread/currentThread))
         (throw (InterruptedException. "Interrupted while receiving a socket message")))
-      (let [remaining-ms (- deadline-ms (System/currentTimeMillis))]
-        (when-not (pos? remaining-ms)
+      (let [remaining-ns (- deadline-ns (System/nanoTime))]
+        (when-not (pos? remaining-ns)
           (raise "Socket channel receive timed out."
                    {:error :socket/timeout
                     :timeout-ms timeout-ms}))
-        (if (pos? (.select sel remaining-ms))
+        (if (pos? (.select sel (max 1 (quot (+ remaining-ns 999999) 1000000))))
           (.clear (.selectedKeys sel))
           (recur))))))
 
@@ -554,8 +577,8 @@
   [^SocketChannel ch buffer-v wire-opts timeout-ms read-selector]
   (let [timed?      (some? timeout-ms)
         timeout-ms  (if timed? (long (max 1 (long timeout-ms))) 0)
-        deadline-ms (if timed?
-                      (long (+ (System/currentTimeMillis) timeout-ms))
+        deadline-ns (if timed?
+                      (long (+ (System/nanoTime) (* 1000000 timeout-ms)))
                       0)
         blocking?   (and timed? (.isBlocking ch))
         selector-v  (or read-selector (volatile! nil))]
@@ -564,6 +587,10 @@
     (try
       (when blocking? (.configureBlocking ch false))
       (loop []
+        (cr/check! :receive)
+        (when (and timed? (>= (System/nanoTime) deadline-ns))
+          (raise "Socket channel receive timed out."
+                 {:error :socket/timeout :phase :receive :timeout-ms timeout-ms}))
         (if-let [msg (receive-one-message! buffer-v wire-opts)]
           msg
           (let [^int readn (read-ch ch @buffer-v)]
@@ -572,7 +599,7 @@
               (= readn 0)  (do
                              (when timed?
                                (await-read-ready! ch selector-v
-                                                  deadline-ms timeout-ms))
+                                                  deadline-ns timeout-ms))
                              (recur))
               (= readn -1) (do (.close ch)
                                (raise "Socket channel is closed." {}))))))

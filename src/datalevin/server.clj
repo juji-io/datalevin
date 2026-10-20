@@ -169,6 +169,12 @@
                    (locking tx-lock
                      (try
                        (ensure-ha-client-op-dbi-open! kv-store)
+                       ;; Saved sessions may list only a subset of the durable
+                       ;; catalog. Restoring a missing DBI handle opens a native
+                       ;; catalog transaction; do that before owning the writer
+                       ;; so a later transactional read cannot wait on itself.
+                       (doseq [dbi (i/list-dbis kv-store)]
+                         (i/get-dbi kv-store dbi false))
                        {:ok? true
                         :store store
                         :kv-store kv-store
@@ -218,7 +224,8 @@
                                    {:type :reconnect}
                                    ~'wire-opts)))))
 
-(declare run-event-loop! close-conn store->db-name session-lmdb remove-store
+(declare run-event-loop! run-session-maintenance! close-conn store->db-name
+         session-lmdb remove-store
          with-db-runtime-store-swap
          halt-run abort-run cleanup-connection-transactions! cleanup-abandoned-transaction!
          session-deps copy-deps
@@ -309,6 +316,8 @@
             (doseq [db-name (keys dbs)]
               (ensure-ha-renew-loop server db-name)
               (ensure-ha-follower-sync-loop server db-name))
+            (.submit ^ExecutorService (:session-maintenance execution)
+                     ^Runnable #(run-session-maintenance! server))
             (.submit dispatcher ^Callable init)
             (catch Throwable t
               (.set running false)
@@ -340,6 +349,9 @@
             dispatcher work-executor sys-conn clients dbs
             (atom (if (.get running) :running :created))
             (assoc execution
+                   :session-maintenance
+                   (or (:session-maintenance execution)
+                       (Executors/newSingleThreadExecutor))
                    :event-loop-stop (CountDownLatch. 1)
                    :connections (ConcurrentHashMap/newKeySet)
                    :connection-keys (ConcurrentHashMap.)
@@ -376,6 +388,8 @@
     (cleanup! #(.close ^ServerSocketChannel (.-server-socket server)))
     (cleanup! #(.close selector))
     (cleanup! #(shutdown-executor! (.-dispatcher server) "Server dispatcher"))
+    (cleanup! #(shutdown-executor! (:session-maintenance (.-execution server))
+                                  "Server session maintenance"))
     ;; Acceptance has stopped. Cancel every owner, then join it before stores
     ;; close; each owner aborts its native transaction in its read-loop finally.
     (doseq [key (vals (:connection-keys (.-execution server)))]
@@ -2321,9 +2335,13 @@
 
 (defn- log-event-loop-error!
   [phase e failures delay-ms]
-  (log/warn "Server event loop operation failed"
-            {:phase phase :message (ex-message e)
-             :consecutive-failures failures :retry-in-ms delay-ms})
+  (let [cause (or (ex-cause e) e)]
+    (log/warn "Server event loop operation failed"
+              {:phase phase :message (ex-message e)
+               :cause (ex-message cause) :error-class (.getName (class cause))
+               :consecutive-failures failures :retry-in-ms delay-ms})
+    (when (= 1 failures)
+      (log/warn e "Server operation failure" {:phase phase})))
   (log/debug e "Server event loop failure" {:phase phase}))
 
 (defn- ^:redef wait-event-loop-retry!
@@ -2379,8 +2397,7 @@
 (defn- event-loop
   [^Server server]
   (let [^Selector selector (.-selector server)
-        ^AtomicBoolean running (.-running server)
-        sweep-state (volatile! {:failures 0 :next-ns (System/nanoTime)})]
+        ^AtomicBoolean running (.-running server)]
     (loop [failures 0]
       (when (.get running)
         (let [failure
@@ -2390,13 +2407,8 @@
                 (when-not (.isOpen selector) (throw (ClosedSelectorException.)))
                 (when-not (.isOpen ^ServerSocketChannel (.-server-socket server))
                   (raise "Server listener is closed" {:error :server/listener-closed}))
-                (sweep-idle-sessions! server sweep-state)
-                ;; Timed selection also runs maintenance on an idle server.
-                (.select selector
-                         (max 1 (min 1000
-                                     (inc (quot (- (long (:next-ns @sweep-state))
-                                                   (System/nanoTime))
-                                                1000000)))))
+                ;; Periodically detect listener closure even without traffic.
+                (.select selector 1000)
                 (when (.get running) (handle-selected-keys server))
                 nil
                 (catch Exception e
@@ -2415,22 +2427,44 @@
               (recur failures))
             (recur 0)))))))
 
+(defn- fail-server!
+  [^Server server t message]
+  (when (.compareAndSet ^AtomicBoolean (.-running server) true false)
+    (.countDown ^CountDownLatch (:event-loop-stop (.-execution server)))
+    (log/error t message)
+    ;; Cleanup must not await its own executor, or take the lifecycle monitor
+    ;; while a concurrent stop holds it and awaits that executor.
+    (.start (Thread.
+              ^Runnable #(try
+                           (stop server)
+                           (catch Throwable cleanup-error
+                             (log/error cleanup-error "Server failure cleanup failed")))
+              (str "datalevin-server-shutdown-" (.-port server))))))
+
+(defn- run-session-maintenance!
+  [^Server server]
+  ;; Session persistence and per-client locks can block. They must never own
+  ;; the listener thread, even when a large batch expires after a quiet period.
+  (let [state (volatile! {:failures 0 :next-ns (System/nanoTime)})]
+    (try
+      (while (.get ^AtomicBoolean (.-running server))
+        (when (.isInterrupted (Thread/currentThread))
+          (throw (InterruptedException. "Server session maintenance interrupted")))
+        (sweep-idle-sessions! server state)
+        (.await ^CountDownLatch (:event-loop-stop (.-execution server))
+                (long (max 1 (inc (quot (- (long (:next-ns @state))
+                                          (System/nanoTime))
+                                       1000000))))
+                TimeUnit/MILLISECONDS))
+      (catch Throwable t
+        (fail-server! server t "Server session maintenance cannot continue; shutting down")))))
+
 (defn- run-event-loop!
   [^Server server]
   (try
     (event-loop server)
     (catch Throwable t
-      (when (.compareAndSet ^AtomicBoolean (.-running server) true false)
-        (.countDown ^CountDownLatch (:event-loop-stop (.-execution server)))
-        (log/error t "Server event loop cannot continue; shutting down")
-        ;; Cleanup must not await its own dispatcher, or take the lifecycle
-        ;; monitor while a concurrent stop holds it and awaits the dispatcher.
-        (.start (Thread.
-                  ^Runnable #(try
-                               (stop server)
-                               (catch Throwable cleanup-error
-                                 (log/error cleanup-error "Server failure cleanup failed")))
-                  (str "datalevin-server-shutdown-" (.-port server))))))))
+      (fail-server! server t "Server event loop cannot continue; shutting down"))))
 
 (def ^:private session-deps
   (sdeps/validate
@@ -2566,6 +2600,8 @@
                          {:transaction-threads transaction-threads}))
               dispatcher (own! (Executors/newSingleThreadExecutor)
                                 #(shutdown-executor! % "Server dispatcher"))
+              maintenance (own! (Executors/newSingleThreadExecutor)
+                                 #(shutdown-executor! % "Server session maintenance"))
               background (own! (bounded-runner-executor (or background-threads threads)
                                                         :background-threads)
                                 #(shutdown-executor! % "Server background executor"))
@@ -2581,6 +2617,7 @@
                     server-socket selector (ConcurrentLinkedQueue.)
                     dispatcher background sys-conn clients dbs
                     {:background background
+                     :session-maintenance maintenance
                      :transaction-slots (Semaphore. transaction-limit)
                      :lock-timeout-ms transaction-lock-timeout-ms}))))
     (catch Exception e

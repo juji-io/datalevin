@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+### Fixed
+- [Server] lifecycle and recovery bugs.
+- [Vector] index restoration after server restart.
+### Improved
+- [Server] improve resilience of server/client lifecycle.
+- [Test] Chaos Monkey tests for server resilience.
+
 ## 1.2.5 (2026-10-14)
 
 ### Fixed
@@ -13,8 +22,8 @@
 ### Fixed
 - [KV] native cursor memory leaks.
 ### Improved
-- [Server] atomic `init-db`.
 - [KV] cleanup resources after use.
+- [Server] atomic `init-db`.
 - update deps.
 
 ## 1.2.3 (2026-10-13)

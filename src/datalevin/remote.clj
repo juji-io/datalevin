@@ -226,66 +226,73 @@
    (load-datoms* client db-name datoms datom-type simulated? writing? ha-source
                  request-datoms))
   ([client db-name datoms datom-type simulated? writing? ha-source send-fn]
-   (let [tx? (#{:txs :txs+info :txs-ack} datom-type)
-         t   (case datom-type
-               :txs      :tx-data
-               :txs+info :tx-data+db-info
-               :txs-ack  :tx-data-ack
-               :load-datoms)
-         client-op-id (when (and tx? (not simulated?))
-                        (cop/new-client-op-id))
-         client-op-hash (when client-op-id
-                          (cop/request-hash
-                           (cop/tx-request-payload t db-name datoms
-                                                   simulated?)))
-         response-kind (case t
-                         :tx-data-ack cop/tx-data-ack-response-kind
-                         :tx-data+db-info cop/tx-data+db-info-response-kind
-                         :tx-data cop/tx-data-response-kind
-                         nil)
-         req (if (< (count datoms) ^long c/+wire-datom-batch-size+)
-               (cond-> {:type     t
-                        :mode     :request
-                        :writing? writing?
-                        :args     (if tx?
-                                    [db-name datoms simulated?]
-                                    [db-name datoms])}
-                 client-op-id
-                 (assoc :client-op-id client-op-id
-                        :client-op-hash client-op-hash
-                        :client-op-response-kind response-kind))
-               (cond-> {:type     t
-                        :mode     :copy-in
-                        :writing? writing?
-                        :args     (if tx?
-                                    [db-name simulated?]
-                                    [db-name])}
-                 client-op-id
-                 (assoc :client-op-id client-op-id
-                        :client-op-hash client-op-hash
-                        :client-op-response-kind response-kind)))
-         request-fn
-         (fn [retry-client req]
-           (send-fn retry-client req datoms))
-         response
-         (try
-           (request-fn client req)
-           (catch Exception e
-             (or (and client-op-id
-                      (retry-ha-transport-failure
-                       client
-                       req
-                       request-fn
-                       (cached-ha-member-endpoints ha-source)
-                       e))
-                 (throw e))))
-         {:keys [type message result err-data]}
-         response]
-     (if (= type :error-response)
-       (if (:resized err-data)
-         (raise message err-data)
-         (cl/retry-ha-write-request client req message err-data request-fn))
-       (if tx? (cl/decode-tx-response response) result)))))
+   (cl/call-with-request client
+                         {:type (case datom-type :txs :tx-data :txs+info :tx-data+db-info
+                                      :txs-ack :tx-data-ack :load-datoms)
+                          :args [db-name] :writing? writing?}
+                         (fn []
+                           (let [tx? (#{:txs :txs+info :txs-ack} datom-type)
+                                 t   (case datom-type
+                                       :txs      :tx-data
+                                       :txs+info :tx-data+db-info
+                                       :txs-ack  :tx-data-ack
+                                       :load-datoms)
+                                 client-op-id (when (and tx? (not simulated?))
+                                                (cop/new-client-op-id))
+                                 client-op-hash (when client-op-id
+                                                  (cop/request-hash
+                                                   (cop/tx-request-payload t db-name datoms
+                                                                           simulated?)))
+                                 response-kind (case t
+                                                 :tx-data-ack cop/tx-data-ack-response-kind
+                                                 :tx-data+db-info cop/tx-data+db-info-response-kind
+                                                 :tx-data cop/tx-data-response-kind
+                                                 nil)
+                                 req (if (< (count datoms) ^long c/+wire-datom-batch-size+)
+                                       (cond-> {:type     t
+                                                :mode     :request
+                                                :writing? writing?
+                                                :args     (if tx?
+                                                            [db-name datoms simulated?]
+                                                            [db-name datoms])}
+                                         client-op-id
+                                         (assoc :client-op-id client-op-id
+                                                :client-op-hash client-op-hash
+                                                :client-op-response-kind response-kind))
+                                       (cond-> {:type     t
+                                                :mode     :copy-in
+                                                :writing? writing?
+                                                :args     (if tx?
+                                                            [db-name simulated?]
+                                                            [db-name])}
+                                         client-op-id
+                                         (assoc :client-op-id client-op-id
+                                                :client-op-hash client-op-hash
+                                                :client-op-response-kind response-kind)))
+                                 request-fn
+                                 (fn [retry-client req]
+                                   (send-fn retry-client req datoms))
+                                 response
+                                 (try
+                                   (request-fn client req)
+                                   (catch Exception e
+                                     (or (and client-op-id
+                                              (retry-ha-transport-failure
+                                               client
+                                               req
+                                               request-fn
+                                               (cached-ha-member-endpoints ha-source)
+                                               e))
+                                         (throw e))))
+                                 {:keys [type message result err-data]}
+                                 response]
+                             (if (= type :error-response)
+                               (if (:resized err-data)
+                                 (raise message err-data)
+                                 (cl/retry-ha-write-request client req message err-data request-fn))
+                               (if tx? (cl/decode-tx-response response) result)))))))
+
+
 
 ;; remote datalog db
 
@@ -915,28 +922,32 @@
 
 (defn- update-kv-request
   [client open-db-opts writing? args metadata]
-  (let [req        (with-meta
-                     {:type :update-kv
-                      :writing? writing?
-                      :args args
-                      :client-op-id (cop/new-client-op-id)
-                      :client-op-hash (cop/request-hash [:update-kv args])
-                      :client-op-response-kind cop/kv-result-response-kind}
-                     metadata)
-        request-fn (fn [client req] (cl/request client req))
-        {:keys [type message result err-data]}
-        (try
-          (request-fn client req)
-          (catch Exception e
-            (or (retry-ha-transport-failure
-                  client req request-fn
-                  (cached-ha-member-endpoints open-db-opts) e)
-                (throw e))))]
-    (if (= type :error-response)
-      (if (:resized err-data)
-        (raise message err-data)
-        (cl/retry-ha-write-request client req message err-data request-fn))
-      result)))
+  (cl/call-with-request client {:type :update-kv :args args :writing? writing?}
+                        (fn []
+                          (let [req        (with-meta
+                                             {:type :update-kv
+                                              :writing? writing?
+                                              :args args
+                                              :client-op-id (cop/new-client-op-id)
+                                              :client-op-hash (cop/request-hash [:update-kv args])
+                                              :client-op-response-kind cop/kv-result-response-kind}
+                                             metadata)
+                                request-fn (fn [client req] (cl/request client req))
+                                {:keys [type message result err-data]}
+                                (try
+                                  (request-fn client req)
+                                  (catch Exception e
+                                    (or (retry-ha-transport-failure
+                                         client req request-fn
+                                         (cached-ha-member-endpoints open-db-opts) e)
+                                        (throw e))))]
+                            (if (= type :error-response)
+                              (if (:resized err-data)
+                                (raise message err-data)
+                                (cl/retry-ha-write-request client req message err-data request-fn))
+                              result)))))
+
+
 
 (deftype+ KVStore [^String uri
                   ^String db-name
@@ -1121,6 +1132,8 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [_ dbi-name txs k-type v-type]
+    (cl/call-with-request client {:type :transact-kv :args [db-name] :writing? writing?}
+     (fn []
     (let [txs            (l/expand-datom-kv-txs txs)
           client-op-id   (when writing? (cop/new-client-op-id))
           client-op-hash (when client-op-id
@@ -1169,7 +1182,7 @@
           (raise message err-data)
           (if (cl/retryable-ha-write-reject? err-data)
             (cl/retry-ha-write-request client req message err-data request-fn)
-            (raise "Error transacting kv to server:" message {:uri uri}))))))
+            (raise "Error transacting kv to server:" message {:uri uri}))))))))
 
   (get-value [db dbi-name k]
     (.get-value db dbi-name k :data :data true))

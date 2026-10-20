@@ -14,6 +14,7 @@
    [datalevin.util :as u :refer [raise]]
    [datalevin.constants :as c]
    [datalevin.command :as cmd]
+   [datalevin.client.request :as cr]
    [datalevin.native-value :as nv]
    [datalevin.udf :as udf]
    [clojure.string :as s]
@@ -26,7 +27,8 @@
    [java.nio.channels SocketChannel Selector SelectionKey]
    [java.util UUID WeakHashMap Collections LinkedHashMap]
    [datalevin.prepared Request]
-   [java.util.concurrent ConcurrentHashMap]
+   [java.util.concurrent ConcurrentHashMap TimeUnit]
+   [java.util.concurrent.locks ReentrantLock]
    [java.util.concurrent.atomic AtomicBoolean AtomicInteger AtomicReference]
    [java.net InetSocketAddress StandardSocketOptions URI]))
 
@@ -46,10 +48,17 @@
 
 (deftype ^:no-doc ClientState [^AtomicReference readers
                                ^ConcurrentHashMap read-endpoints
-                               ^AtomicReference endpoint])
+                               ^AtomicReference endpoint
+                               ^AtomicBoolean closed
+                               ^AtomicReference renewal
+                               ^ConcurrentHashMap creating
+                               ^AtomicReference retry-settings])
 
 (definterface IClientInternals
   (^datalevin.client.ClientState clientState [])
+  (renewSession [observed-pool deadline-ns])
+  (publishSession [observed-pool attempt client-id replacement])
+  (disposeClient [])
   (requestBound [req]))
 
 ;; These weak registries support reset-client-state! and alternate IClient
@@ -63,7 +72,8 @@
 (defn- new-client-state
   []
   (let [state (ClientState. (AtomicReference.) (ConcurrentHashMap.)
-                            (AtomicReference.))]
+                            (AtomicReference.) (AtomicBoolean. false)
+                            (AtomicReference.) (ConcurrentHashMap.) (AtomicReference.))]
     (.put client-state-refs state true)
     state))
 
@@ -114,6 +124,7 @@
     (doseq [^ClientState state (.keySet client-state-refs)]
       (.set ^AtomicReference (.-readers state) nil)
       (.clear ^ConcurrentHashMap (.-read-endpoints state))
+      (.set ^AtomicReference (.-retry-settings state) nil)
       (.set ^AtomicReference (.-endpoint state) nil)))
   (doseq [^java.util.Map m [fallback-client-states ha-retry-clients
                             ha-known-db-endpoints
@@ -124,8 +135,9 @@
   nil)
 
 (defn- request-native-reader [client req]
-  (when-let [readers (.get ^AtomicReference (.-readers (client-state client)))]
-    (get readers (or (:db-name req) (first (:args req))))))
+  (when-let [db-name (or (:db-name req) (first (:args req)))]
+    (when-let [readers (.get ^AtomicReference (.-readers (client-state client)))]
+      (get readers db-name))))
 
 (defn- inherit-native-readers! [client source]
   (when source
@@ -165,11 +177,30 @@
          retry-client-disconnected?
          evict-retry-client!
          cleanup-after-failure!
+         renew-session!
+         disconnect-client!
+         call-with-request
          disconnect)
 
 (defn- clear-conn-wire-opts!
   [^SocketChannel ch]
   (.remove connection-wire-opts ch))
+
+(defmacro ^:private with-connection-io [[lock closed released context timeout] & body]
+  `(let [^ReentrantLock lock# ~lock]
+     (when-not (.tryLock lock# (cr/remaining-ms ~timeout)
+                         TimeUnit/MILLISECONDS)
+       (raise "Timeout waiting for connection I/O" {:error :socket/timeout}))
+     (try
+       (when (.get ^AtomicBoolean ~closed)
+         (raise "Socket channel is closed." {}))
+       ~@body
+       (finally
+         (try
+           (when (and (.get ^AtomicBoolean ~closed)
+                      (.compareAndSet ^AtomicBoolean ~released false true))
+             (let [^java.io.Closeable context# ~context] (.close context#)))
+           (finally (.unlock lock#)))))))
 
 (deftype ^:no-doc Connection [^SocketChannel ch
                               ^long time-out
@@ -179,101 +210,111 @@
                               ^ByteBuffer probe-bf
                               ^AtomicReference wire-options
                               receive-buffer
-                              ^LinkedHashMap prepared-handles]
+                              ^LinkedHashMap prepared-handles
+                              ^ReentrantLock io-lock
+                              ^AtomicBoolean closed
+                              ^AtomicBoolean context-closed]
   IConnectionIO
   (exchange [_ msg wire-opts]
-    ;; The caller owns the connection monitor. Grow only before sending.
+    ;; The caller owns the connection I/O lock. Grow only before sending.
     (context/with-context context
       (loop []
         (when-not (try
-                    (p/write-message-owned ch bf msg wire-opts)
+                    (p/write-message-owned ch bf msg wire-opts time-out)
                     true
                     (catch BufferOverflowException _ false))
           (set! bf (bf/allocate-buffer
-                     (* ^long c/+buffer-grow-factor+ (.capacity bf))))
+                    (* ^long c/+buffer-grow-factor+ (.capacity bf))))
           (recur)))
       (.clear bf)
       (vreset! receive-buffer bf)
       (try
-        (p/receive-ch! ch receive-buffer wire-opts time-out
-                      (when-not (.isBlocking ch) read-selector))
+        (p/receive-ch! ch receive-buffer wire-opts (min time-out (cr/remaining-ms time-out))
+                       (when-not (.isBlocking ch) read-selector))
         (finally (set! bf @receive-buffer)))))
 
   IConnection
   (send-n-receive [this msg]
-    (locking this
-      (try
-        (let [wire-opts (.get wire-options)
-              prepared-id (::prepared/id (meta msg))
-              enabled? (and prepared-id (:prepared-read? wire-opts)
-                            (case (:type msg)
-                              :update-kv (:prepared-update? wire-opts)
-                              :q (:prepared-query? wire-opts)
-                              true))
-              id (when enabled? prepared-id)]
-          (loop [register? (and enabled? (nil? (.get prepared-handles id)))]
-            (let [wire-msg
-                  (if enabled?
-                    (if register?
-                      (with-meta (assoc msg :prepare-id id) nil)
-                      (cond-> {:type :execute-prepared :handle id
-                               :value (nth (:args msg) 2)
-                               :writing? (:writing? msg)}
-                        (= :update-kv (:type msg))
-                        (merge (select-keys msg [:client-op-id :client-op-hash
-                                                 :client-op-response-kind]))
-                        (:ha-read-min-tx msg)
-                        (assoc :ha-read-min-tx (:ha-read-min-tx msg))))
-                    (if prepared-id (with-meta msg nil) msg))
-                  response (.exchange ^IConnectionIO this wire-msg wire-opts)]
-              (if (and enabled? (not register?)
-                       (= :error-response (:type response))
-                       (= :prepared/missing (get-in response [:err-data :error])))
-                (do (.remove prepared-handles id) (recur true))
-                (do
-                  (when (and register?
-                             (#{:command-complete :copy-out-response} (:type response)))
+    (cr/track-exchange! msg)
+    (with-connection-io [io-lock closed context-closed context time-out]
+      (binding [cr/*wire-request* msg]
+        (try
+          (let [wire-opts (.get wire-options)
+                prepared-id (::prepared/id (meta msg))
+                enabled? (and prepared-id (:prepared-read? wire-opts)
+                              (case (:type msg)
+                                :update-kv (:prepared-update? wire-opts)
+                                :q (:prepared-query? wire-opts)
+                                true))
+                id (when enabled? prepared-id)]
+            (loop [register? (and enabled? (nil? (.get prepared-handles id)))]
+              (let [wire-msg
+                    (if enabled?
+                      (if register?
+                        (with-meta (assoc msg :prepare-id id) nil)
+                        (cond-> {:type :execute-prepared :handle id
+                                 :value (nth (:args msg) 2)
+                                 :writing? (:writing? msg)}
+                          (= :update-kv (:type msg))
+                          (merge (select-keys msg [:client-op-id :client-op-hash
+                                                   :client-op-response-kind]))
+                          (:ha-read-min-tx msg)
+                          (assoc :ha-read-min-tx (:ha-read-min-tx msg))))
+                      (if prepared-id (with-meta msg nil) msg))
+                    response (.exchange ^IConnectionIO this wire-msg wire-opts)]
+                (if (and enabled? (not register?)
+                         (= :error-response (:type response))
+                         (= :prepared/missing (get-in response [:err-data :error])))
+                  (do (.remove prepared-handles id) (recur true))
+                  (do
+                    (when (and register?
+                               (#{:command-complete :copy-out-response} (:type response)))
                     ;; A compact pull decoder may already have installed the
                     ;; result layout in this same bounded handle cache.
-                    (prepared/remember! prepared-handles id
-                                        (or (.get prepared-handles id) true)))
-                  response)))))
-        (catch Exception e
-          (when (nv/decoding-error? e) (throw e))
-          (raise "Error sending message and receiving response: "
-                 e {:msg msg})))))
+                      (prepared/remember! prepared-handles id
+                                          (or (.get prepared-handles id) true)))
+                    response)))))
+          (catch Exception e
+            (when (nv/decoding-error? e) (throw e))
+            (throw (ex-info (str "Error sending message and receiving response: "
+                                 (ex-message e))
+                            (assoc (ex-data e) :msg msg) e)))))))
 
-  (send-only [this msg]
-    (locking this
-      (try
-        (context/with-context context
-          (loop []
-            (when-not (try
-                        (p/write-message-owned ch bf msg (.get wire-options))
-                        true
-                        (catch BufferOverflowException _ false))
-              (set! bf (bf/allocate-buffer
-                         (* ^long c/+buffer-grow-factor+ (.capacity bf))))
-              (recur))))
-        (catch Exception e
-          (raise "Error sending message: " e {:msg msg})))))
+  (send-only [_ msg]
+    (with-connection-io [io-lock closed context-closed context time-out]
+      (binding [cr/*wire-request* msg]
+        (try
+          (context/with-context context
+            (loop []
+              (when-not (try
+                          (p/write-message-owned ch bf msg (.get wire-options) time-out)
+                          true
+                          (catch BufferOverflowException _ false))
+                (set! bf (bf/allocate-buffer
+                          (* ^long c/+buffer-grow-factor+ (.capacity bf))))
+                (recur))))
+          (catch Exception e
+            (throw (ex-info (str "Error sending message: " (ex-message e))
+                            (assoc (ex-data e) :msg msg) e)))))))
 
-  (receive [this]
+  (receive [_]
     (try
-      (locking this
+      (with-connection-io [io-lock closed context-closed context time-out]
         (context/with-context context
           (vreset! receive-buffer bf)
           (try
-            (p/receive-ch! ch receive-buffer (.get wire-options) time-out
-                          (when-not (.isBlocking ch) read-selector))
+            (p/receive-ch! ch receive-buffer (.get wire-options) (min time-out (cr/remaining-ms time-out))
+                           (when-not (.isBlocking ch) read-selector))
             (finally (set! bf @receive-buffer)))))
       (catch Exception e
         (when (nv/decoding-error? e) (throw e))
-        (raise "Error receiving data:" e {}))))
+        (throw (ex-info (str "Error receiving data: " (ex-message e))
+                        (ex-data e) e)))))
 
-  (close [this]
+  (close [_]
     ;; Closing the channel wakes an in-flight read. Serialize only lazy
     ;; selector creation/closure, never the blocking receive itself.
+    (.set closed true)
     (try
       (locking read-selector
         (let [^Selector selector @read-selector]
@@ -289,7 +330,13 @@
               (vreset! read-selector nil)
               (clear-conn-wire-opts! ch)))))
       (finally
-        (locking this (.close ^java.io.Closeable context))))))
+        ;; A decoder may be inside an application callback. Its owner closes
+        ;; codec state after returning; transport closure must never join it.
+        (when (.tryLock io-lock)
+          (try
+            (when (.compareAndSet context-closed false true)
+              (.close ^java.io.Closeable context))
+            (finally (.unlock io-lock))))))))
 
 #_{:clj-kondo/ignore [:redefined-var]}
 (defn ^:no-doc ->Connection
@@ -301,7 +348,8 @@
          conn (Connection. ch (long time-out) bf (volatile! nil)
                            (context/create handles)
                            (ByteBuffer/allocate 1) options (volatile! bf)
-                           handles)]
+                           handles (ReentrantLock.) (AtomicBoolean. false)
+                           (AtomicBoolean. false))]
      (.put connection-wire-opts ch options)
      conn)))
 
@@ -310,17 +358,27 @@
   (.clear ^LinkedHashMap (.-prepared-handles conn))
   (.set ^AtomicReference (.-wire-options conn) wire-opts))
 
+(def ^:dynamic ^:no-doc *resolve-address*
+  "Synchronous address resolution; explicitly bindable for transport tests."
+  (fn [^String host port] (InetSocketAddress. host (int port))))
+
 (defn- ^SocketChannel connect-socket
   "connect to server and return the client socket channel"
   [^String host port timeout-ms]
   (let [timeout-ms       (long (max 1 (long timeout-ms)))
-        deadline-ms      (+ (System/currentTimeMillis) timeout-ms)
+        deadline-ns      (let [local (+ (System/nanoTime) (* 1000000 timeout-ms))]
+                           (if cr/*request* (min local (cr/deadline)) local))
         ^SocketChannel ch (SocketChannel/open)]
     (try
       (.setOption ch StandardSocketOptions/SO_KEEPALIVE true)
       (.setOption ch StandardSocketOptions/TCP_NODELAY true)
       (.configureBlocking ch false)
-      (let [address (InetSocketAddress. host ^int port)]
+      (cr/check! :resolve)
+      (let [address (*resolve-address* host port)]
+        (cr/check! :connect)
+        (when (>= (System/nanoTime) deadline-ns)
+          (raise "Unable to connect to server: timed out"
+                 {:error :socket/timeout :phase :connect :timeout-ms timeout-ms}))
         (if (.connect ch address)
           (do
             (.configureBlocking ch true)
@@ -329,8 +387,10 @@
                 (with-open [^Selector selector (Selector/open)]
                   (.register ch selector SelectionKey/OP_CONNECT)
                   (loop []
-                    (let [remaining-ms (- deadline-ms
-                                          (System/currentTimeMillis))]
+                    (cr/check! :connect)
+                    (let [remaining-ms (max 0 (quot (+ 999999 (- deadline-ns
+                                                                   (System/nanoTime)))
+                                                      1000000))]
                       (when-not (pos? remaining-ms)
                         (raise "Unable to connect to server: timed out"
                                  {:host host
@@ -351,10 +411,9 @@
         (try
           (.close ch)
           (catch Exception _ nil))
-        (raise "Unable to connect to server: " e
-                 {:host host
-                  :port port
-                  :timeout-ms timeout-ms})))))
+        (throw (ex-info (str "Unable to connect to server: " (ex-message e))
+                        (merge (ex-data e) {:host host :port port
+                                            :timeout-ms timeout-ms}) e))))))
 
 (defn- ^:redef new-connection
   ([host port time-out]
@@ -502,11 +561,13 @@
       (.incrementAndGet waiters)
       (try
         (loop []
+          (cr/check! :checkout)
           (check-pool-open! pool)
           ;; Recheck after publishing the waiter so a concurrent release
           ;; between the first scan and this monitor cannot be lost.
           (or (claim-connection-slot pool)
-              (let [remaining (- deadline (System/nanoTime))]
+              (let [remaining (- (if cr/*request* (min deadline (cr/deadline)) deadline)
+                                 (System/nanoTime))]
                 (when (<= remaining 0)
                   (raise "Timeout in obtaining a connection" {}))
                 (.wait waiters (quot remaining 1000000)
@@ -533,6 +594,7 @@
     (try
       ;; Registration can block. Only publication and shutdown share a monitor.
       (locking pool
+        (cr/check! :registration)
         (check-pool-open! pool)
         (install-pool-connection! pool slot replacement))
       (catch Throwable t
@@ -541,6 +603,7 @@
 
 (defn- borrow-connection
   [^ConnectionPool pool probe?]
+  (cr/check! :checkout)
   (check-pool-open! pool)
   (let [^ConnectionSlot slot (or (claim-connection-slot pool)
                                  (await-connection-slot pool))]
@@ -579,27 +642,28 @@
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
   Always close the temporary connection. Return a client id on success."
-  [host port username password time-out]
-  (let [conn (new-connection host
-                             port
-                             time-out
-                             (max (long time-out)
-                                  (long c/default-connection-timeout)))
-
-        client-id
-        (try
-          (let [{:keys [type client-id message]}
-                (send-n-receive conn {:type     :authentication
-                                      :username username
-                                      :password password})]
-            (if (= type :authentication-ok)
-              client-id
-              (raise "Authentication failure: " message {})))
-          (catch Throwable t
-            (cleanup-after-failure! t #(close conn))
-            (throw t)))]
-    (close conn)
-    client-id))
+  ([host port username password time-out]
+   ;; Initial authentication may include cold password-hashing startup. Renewing
+   ;; an existing client must instead respect that request's remaining budget.
+   (authenticate host port username password time-out
+                 (if cr/*request* time-out
+                     (max (long time-out) (long c/default-connection-timeout)))))
+  ([host port username password connect-time-out receive-time-out]
+   (let [conn (new-connection host port connect-time-out receive-time-out)
+         client-id
+         (try
+           (let [{:keys [type client-id message]}
+                 (send-n-receive conn {:type     :authentication
+                                       :username username
+                                       :password password})]
+             (if (= type :authentication-ok)
+               client-id
+               (raise "Authentication failure: " message {})))
+           (catch Throwable t
+             (cleanup-after-failure! t #(close conn))
+             (throw t)))]
+     (close conn)
+     client-id)))
 
 (defn- new-connectionpool
   ([host port client-id pool-size time-out]
@@ -739,10 +803,10 @@
         (copy-out conn req result)
         result))
     (catch Exception e
-      (when (nv/decoding-error? e)
-        (close conn)
-        (throw e))
-      (send-n-receive conn {:type :copy-fail})
+      ;; A failed payload exchange may have an incomplete frame. Cleanup is
+      ;; local: never spend another network budget sending copy-fail.
+      (cleanup-after-failure! e #(close conn))
+      (when (nv/decoding-error? e) (throw e))
       (raise "Unable to copy in:" e
                {:req req :count (count data)}))))
 
@@ -766,6 +830,9 @@
   (when (or (nv/decoding-error? e) (write-indeterminate? e))
     (throw e))
   (when-not (transport-replay-safe? req)
+    (when (and cr/*request*
+               (not (.get ^AtomicBoolean (:uncertain? cr/*request*))))
+      (throw e))
     (let [message "Write outcome is unknown after transport failure; request was not retried"
           error   {:error :ha/write-indeterminate
                    :reason :transport-failure
@@ -786,31 +853,55 @@
                           ^ClientState state]
   IClientInternals
   (clientState [_] state)
+  (renewSession [client observed-pool deadline-ns]
+    (renew-session! client observed-pool deadline-ns))
+  (publishSession [client observed-pool attempt client-id replacement]
+    (locking client
+      (cr/check! :publication)
+      (when (and (identical? (.-pool ^Client client) observed-pool)
+                 (identical? (.get ^AtomicReference (.-renewal state)) attempt))
+        (check-pool-open! observed-pool)
+        (set! (.-id ^Client client) client-id)
+        (set! (.-pool ^Client client) replacement)
+        true)))
+  (disposeClient [client] (disconnect-client! client false))
+
   (requestBound [client req]
     (let [success? (volatile! false)
-          start    (System/currentTimeMillis)
           read?    (and (not (:writing? req)) (cmd/read-only? (:type req)))]
       (loop []
-        (let [^ConnectionPool pool' pool
+        (cr/check! :request)
+        (let [^ConnectionPool pool' (.-pool ^Client client)
               ;; A read can retry after EOF; mutations still probe idle
               ;; sockets before sending anything with an ambiguous outcome.
-              conn                 (if (and read? (instance? ConnectionPool pool'))
-                                     (borrow-connection pool' false)
-                                     (get-connection pool'))
-              response             (try
-                                     (send-n-receive conn req)
+              conn                 (try
+                                     (if (and read? (instance? ConnectionPool pool'))
+                                       (borrow-connection pool' false)
+                                       (get-connection pool'))
                                      (catch Exception e
-                                       (close conn)
-                                       (when (or (nv/decoding-error? e)
-                                                 (write-indeterminate? e)
-                                                 (not (transport-replay-safe? req)))
-                                         (release-connection pool' conn)
-                                         (reject-unsafe-transport-replay!
-                                          req (str host ":" port) e))
+                                       ;; A concurrent renewal can retire the
+                                       ;; observed pool while checkout waits.
+                                       ;; No request was sent; use the new pool.
+                                       (when (identical? (.-pool ^Client client) pool')
+                                         (throw e))
                                        nil))
+              response             (when conn
+                                     (try
+                                       (send-n-receive conn req)
+                                       (catch Exception e
+                                         (cr/failed-exchange! req)
+                                         (cleanup-after-failure! e #(close conn))
+                                         (when (or (nv/decoding-error? e)
+                                                   (write-indeterminate? e)
+                                                   (not (transport-replay-safe? req)))
+                                           (release-connection pool' conn)
+                                           (reject-unsafe-transport-replay!
+                                            req (str host ":" port) e))
+                                         nil)))
               res                  (try
                                      (when-let [{:keys [type] :as result}
                                                 response]
+                                       (cr/response! req result)
                                        (vreset! success? true)
                                        (case type
                                          :copy-out-response (copy-out conn req result)
@@ -828,35 +919,16 @@
                                            (vreset! success? false)
                                            {:request-status :reconnect})))
                                      (catch Exception e
+                                       (cr/failed-exchange! req)
                                        (reject-unsafe-transport-replay!
                                         req (str host ":" port) e)
                                        (throw e))
                                      (finally
-                                       (release-connection pool' conn)))
+                                       (when conn (release-connection pool' conn))))
               res'                 (case (:request-status res)
                                      :reconnect
                                      (do
-                                       ;; Several in-flight requests can learn
-                                       ;; that the same server session is stale.
-                                       ;; Only the request that still owns the
-                                       ;; observed pool should replace it.
-                                       (locking client
-                                         (when (identical? pool pool')
-                                           (let [client-id
-                                                 (authenticate
-                                                   host port username password
-                                                   time-out)
-                                                 new-pool
-                                                 (new-connectionpool
-                                                   host port client-id
-                                                   pool-size time-out
-                                                   (pool-wire-options pool'))]
-                                             ;; Explicit field access is needed
-                                             ;; for mutable deftype fields inside
-                                             ;; the locking form.
-                                             (set! (.-id ^Client client) client-id)
-                                             (set! (.-pool ^Client client) new-pool)
-                                             (close-pool pool'))))
+                                       (.renewSession client pool' (cr/deadline))
                                        nil)
 
                                      :reopen
@@ -865,58 +937,79 @@
                                        nil)
 
                                      res)]
+          (when (= :command-complete (:type res)) (cr/response! req res))
           ;; The deadline limits retries, not an already completed response.
           (if @success?
             res'
-            (if (>= (- (System/currentTimeMillis) start)
-                    ^long (.-time-out pool'))
-              (raise "Timeout in making request" {})
-              (recur)))))))
+            (do (cr/check! :retry) (recur)))))))
 
   IClient
   (request [client req]
-    (let [reader (or (request-native-reader client req) nv/*wire-reader*)]
-      (if (identical? reader nv/*wire-reader*)
-        (.requestBound client req)
-        (binding [nv/*wire-reader* reader]
-          (.requestBound client req)))))
+    (call-with-request client req
+                       (fn []
+                         (cr/register-request! req)
+                         (let [reader (or (request-native-reader client req) nv/*wire-reader*)]
+                           (if (identical? reader nv/*wire-reader*)
+                             (.requestBound client req)
+                             (binding [nv/*wire-reader* reader]
+                               (.requestBound client req)))))))
 
   (copy-in [client req data batch-size]
-    (binding [nv/*wire-reader* (or (request-native-reader client req)
-                                 nv/*wire-reader*)]
-      (let [conn (get-connection pool)]
-        (try
-          (let [{:keys [type] :as response} (send-n-receive conn req)]
-            (case type
-              :copy-in-response (copy-in* conn req data batch-size)
-              ;; A retry can complete from its saved result before the server
-              ;; asks for the payload again. Admission can also reject it here.
-              (:command-complete :error-response) response
-              (raise "Server refuses to accept copy in" {:req req})))
-          (finally (release-connection pool conn))))))
+    (call-with-request client req
+                       (fn []
+                         (cr/register-request! req)
+                         (binding [nv/*wire-reader* (or (request-native-reader client req)
+                                                        nv/*wire-reader*)]
+                           (loop []
+                             (cr/check! :copy-in)
+                             (let [pool' (.-pool ^Client client)
+                                   conn (try (get-connection pool')
+                                             (catch Exception e
+                                               (when (identical? (.-pool ^Client client) pool') (throw e))
+                                               nil))
+                                   result
+                                   (when conn
+                                     (try
+                                       (let [{:keys [type] :as response} (send-n-receive conn req)]
+                      ;; A copy-in header has not committed the payload. Its
+                      ;; final response, rather than admission, resolves it.
+                                         (when-not (= :copy-in-response type) (cr/response! req response))
+                                         (case type
+                                           :copy-in-response (let [result (copy-in* conn req data batch-size)]
+                                                               (cr/response! req result)
+                                                               result)
+                        ;; These responses precede payload acceptance. Retrying
+                        ;; after renewal/reopen cannot replay a mutation.
+                                           (:reconnect :reopen) (assoc response ::retry-unexecuted? true)
+                                           (:command-complete :error-response) response
+                                           (raise "Server refuses to accept copy in" {:req req})))
+                                       (catch Exception e
+                                         (cr/failed-exchange! req)
+                                         (cleanup-after-failure! e #(close conn))
+                                         (throw e))
+                                       (finally (release-connection pool' conn))))]
+                               (if (and conn (not (::retry-unexecuted? result)))
+                                 result
+                                 (do
+                                   (cr/check! :retry)
+                                   (case (:type result)
+                                     :reconnect (.renewSession client pool' (cr/deadline))
+                                     :reopen (open-database client (:db-name result) (:db-type result))
+                                     nil)
+                                   (recur)))))))))
 
   (disconnect [client]
-    (try
-      (let [conn (get-connection pool)]
-        (send-only conn {:type :disconnect})
-        (release-connection pool conn))
-      (finally
-        (try
-          (.remove ha-write-retry-settings client)
-          (.set ^AtomicReference (.-readers state) nil)
-          (.remove index-open-options client)
-          (.remove ha-retry-disabled-clients client)
-          (.set ^AtomicReference (.-endpoint state) nil)
-          (.clear ^ConcurrentHashMap (.-read-endpoints state))
-          (.remove ha-known-db-endpoints client)
-          (disconnect-retry-clients! client disconnect)
-          (finally
-            ;; A failed best-effort disconnect must still make the local
-            ;; lifecycle transition final and release every socket.
-            (close-pool pool))))))
+    (disconnect-client! client true))
 
   (disconnected? [client]
-    (closed-pool? pool))
+    (loop []
+      (let [observed (.-pool ^Client client)
+            closed? (or (.get ^AtomicBoolean (.-closed state)) (closed-pool? observed))]
+        ;; Renewal publishes its replacement before retiring the old pool.
+        ;; Do not report the retired pool's terminal state as the client's.
+        (if (identical? observed (.-pool ^Client client))
+          closed?
+          (recur)))))
 
   (get-pool [client] pool)
 
@@ -927,6 +1020,137 @@
   [username password host port pool-size time-out id pool]
   (Client. username password host port pool-size time-out id pool
            (new-client-state)))
+
+(defn- complete-recovery!
+  [client ^AtomicReference reference attempt result]
+  (locking client
+    (.compareAndSet reference attempt nil)
+    (deliver (:result attempt) result)
+    (.notifyAll ^Object client)))
+
+(defn- wait-for-recovery!
+  [client attempt]
+  (locking client
+    (loop []
+      (cr/check! :recovery)
+      (if (realized? (:result attempt))
+        @(:result attempt)
+        (do (cr/await! client :recovery) (recur))))))
+
+(defn- renew-session! [^Client client observed-pool deadline-ns]
+  (let [^ClientState state (client-state client)
+        ^AtomicReference reference (.-renewal state)]
+    (cr/with-budget (assoc (cr/budget 1 0 (.-closed state) nil)
+                           :deadline (long deadline-ns) :maximum (long deadline-ns))
+      (let [[owner? attempt]
+            (locking client
+              (cr/check! :renewal)
+              (when (identical? (get-pool client) observed-pool)
+                (check-pool-open! observed-pool)
+                (if-let [pending (.get reference)]
+                  [false pending]
+                  (let [pending {:pool observed-pool :result (promise)}]
+                    (.set reference pending)
+                    [true pending]))))]
+        (when attempt
+          (if owner?
+            (let [candidate (volatile! nil)
+                  failure (volatile! nil)]
+              (try
+                (let [remaining (cr/remaining-ms (.-time-out client))
+                      client-id (authenticate (.-host client) (.-port client)
+                                              (.-username client) (.-password client)
+                                              remaining remaining)
+                      replacement (new-connectionpool
+                                   (.-host client) (.-port client) client-id
+                                   (.-pool-size client) (.-time-out client)
+                                   (pool-wire-options observed-pool))]
+                  (vreset! candidate replacement)
+                  (when (.publishSession client observed-pool attempt client-id replacement)
+                    (vreset! candidate nil)
+                    (close-pool observed-pool)))
+                (catch Throwable t
+                  (vreset! failure t)
+                  (throw t))
+                (finally
+                  (try
+                    (when-let [pool @candidate]
+                      (if-let [t @failure]
+                        (cleanup-after-failure! t #(close-pool pool))
+                        (close-pool pool)))
+                    (finally
+                      (complete-recovery! client reference attempt @failure))))))
+            ;; An owner's bounded attempt may expire while a waiter still has
+            ;; time. Let that caller claim the next attempt on its next loop.
+            (when-let [failure (wait-for-recovery! client attempt)]
+              (when-not (= :socket/timeout (:error (ex-data failure)))
+                (throw failure)))))))))
+
+(def ^:dynamic ^:private *disconnect-budget* nil)
+
+(defn- notify-disconnect! [^ConnectionPool pool]
+  ;; Only an existing idle slot is eligible. Never enter ordinary checkout or
+  ;; repair a broken socket just to notify a server that the client is closing.
+  (when-not (cr/expired?)
+    (when-let [^ConnectionSlot slot (claim-connection-slot pool)]
+      (try
+        (when-let [^Connection conn (.get ^AtomicReference (.-connection slot))]
+          (when (and (.isOpen ^SocketChannel (.-ch conn))
+                     (.tryLock ^ReentrantLock (.-io-lock conn)))
+            (try
+              (send-only conn {:type :disconnect})
+              (finally (.unlock ^ReentrantLock (.-io-lock conn))))))
+        (catch Exception _ nil)
+        (finally (.set ^AtomicBoolean (.-borrowed? slot) false))))))
+
+(defn- cleanup-all! [cleanups]
+  (let [failure (volatile! nil)]
+    (doseq [cleanup cleanups]
+      (try (cleanup)
+           (catch Throwable t
+             (if-let [primary @failure]
+               (when-not (identical? primary t) (.addSuppressed ^Throwable primary t))
+               (vreset! failure t)))))
+    (when-let [t @failure] (throw t))))
+
+(defn- disconnect-client! [^Client client notify?]
+  (let [budget (or *disconnect-budget*
+                   (let [b (cr/budget (min 100 (long (.-time-out client))) 0 nil nil)
+                         deadline (if cr/*request* (min (:deadline b) (cr/deadline)) (:deadline b))]
+                     (assoc b :deadline deadline :maximum deadline)))
+        ^ClientState state (client-state client)
+        [pool owned]
+        (locking client
+          (.set ^AtomicBoolean (.-closed state) true)
+          (when-let [pending (.get ^AtomicReference (.-renewal state))]
+            (deliver (:result pending)
+                     (ex-info "This client is closed" {:error :client/closed
+                                                        :termination-reason :client-disconnected})))
+          (doseq [pending (.values ^ConcurrentHashMap (.-creating state))]
+            (deliver (:result pending)
+                     (ex-info "This client is closed" {:error :client/closed
+                                                        :termination-reason :client-disconnected})))
+          (.notifyAll ^Object client)
+          [(get-pool client) (.remove ha-retry-clients client)])]
+    (binding [*disconnect-budget* budget cr/*request* budget]
+      (cleanup-all!
+       (concat
+        [(fn [] (when notify? (notify-disconnect! pool)))
+         #(close-pool pool)]
+        (map (fn [child]
+               #(if (instance? IClientInternals child)
+                  (disconnect-client! child notify?)
+                  (disconnect child)))
+             (when owned (.values ^ConcurrentHashMap owned)))
+        [(fn []
+           (.remove ha-retry-open-targets client)
+           (.remove ha-write-retry-settings client)
+           (.set ^AtomicReference (.-readers state) nil)
+           (.remove index-open-options client)
+           (.remove ha-retry-disabled-clients client)
+           (.set ^AtomicReference (.-endpoint state) nil)
+           (.clear ^ConcurrentHashMap (.-read-endpoints state))
+           (.remove ha-known-db-endpoints client))])))))
 
 (def ^:private minimum-ha-write-retry-timeout-ms 5000)
 (def ^:private default-ha-write-retry-delay-ms 100)
@@ -963,17 +1187,29 @@
 
 (defn- set-client-ha-write-retry-settings!
   [client time-out opts]
-  (.put ha-write-retry-settings client
-        (normalize-ha-write-retry-settings time-out opts))
+  (let [settings (normalize-ha-write-retry-settings time-out opts)]
+    (.put ha-write-retry-settings client settings)
+    (.set ^AtomicReference (.-retry-settings (client-state client)) settings))
   client)
 
 (defn- client-ha-write-retry-settings
   [client]
-  (or (.get ha-write-retry-settings client)
-      (when (instance? Client client)
-        (normalize-ha-write-retry-settings
-          (.-time-out ^Client client)
-          nil))))
+  (if (instance? Client client)
+    (or (.get ^AtomicReference (.-retry-settings (client-state client)))
+        (normalize-ha-write-retry-settings (.-time-out ^Client client) nil))
+    (.get ha-write-retry-settings client)))
+
+(defn ^:no-doc call-with-request
+  "Share one budget and mutation outcome across routing and nested opens. HA's
+  extra allowance is allocated once, and activated only when HA retry begins."
+  [client req f]
+  (cr/with-budget
+    (let [settings (client-ha-write-retry-settings client)]
+      (cr/budget (if (instance? Client client) (.-time-out ^Client client)
+                    c/default-connection-timeout)
+                 (or (:ha-write-retry-timeout-ms settings) 0)
+                 (.-closed (client-state client)) req))
+    (f)))
 
 (defn open-database
   "Open a database on server. `db-type` can be \"datalog\", \"kv\",
@@ -1039,8 +1275,10 @@
   The following can be set in the optional map:
   * `:pool-size` determines number of connections maintained in the connection
   pool, default is 3.
-  * `:time-out` specifies the time (milliseconds) before an exception is thrown
-  when obtaining an open network connection, default is 60000.
+  * `:time-out` bounds request transport and coordination waits, default 60000 ms.
+  Checkout, registration, renewal and reopening share its remaining budget.
+  Synchronous DNS and codec callbacks cannot be preempted, but their elapsed time
+  consumes the budget and an overrun prevents further network work.
   * `:wire-compression` selects `:none` (default) or `:zstd`, in both directions.
   * `:wire-compression-threshold` sets the minimum serialized payload bytes.
   * `:wire-compression-level` sets the Zstd level (default 3).
@@ -1086,26 +1324,26 @@
     (disconnect client)))
 
 (defn ^:no-doc dedicated-transaction-client
+  "Keep explicit transactions off the ordinary request pool, including a
+  one-connection pool. Its slot is returned between transaction commands, so
+  sharing it would let unrelated callers use the transaction owner's socket."
   [client]
   (if (instance? Client client)
-    (let [^Client client client]
-      (if (= 1 (.-pool-size client))
-        client
-        (let [username  (.-username client)
-              password  (.-password client)
-              host      (.-host client)
-              port      (.-port client)
-              time-out  (.-time-out client)
-              ha-settings (client-ha-write-retry-settings client)
-              client-id (authenticate host port username password time-out)
-              pool      (new-connectionpool host port client-id 1 time-out
-                                            (pool-wire-options (get-pool client)))]
-          (-> (->Client username password host port 1 time-out
-                        client-id pool)
-              (set-client-ha-write-retry-settings! time-out ha-settings)
-              (inherit-native-readers! client)
-              (inherit-index-options! client)
-              (as-> tx-client (sync-ha-routing! client tx-client))))))
+    (let [^Client client client
+          username  (.-username client)
+          password  (.-password client)
+          host      (.-host client)
+          port      (.-port client)
+          time-out  (.-time-out client)
+          ha-settings (client-ha-write-retry-settings client)
+          client-id (authenticate host port username password time-out)
+          pool      (new-connectionpool host port client-id 1 time-out
+                                        (pool-wire-options (get-pool client)))]
+      (-> (->Client username password host port 1 time-out client-id pool)
+          (set-client-ha-write-retry-settings! time-out ha-settings)
+          (inherit-native-readers! client)
+          (inherit-index-options! client)
+          (as-> tx-client (sync-ha-routing! client tx-client))))
     client))
 
 (defn- endpoint-key
@@ -1516,21 +1754,31 @@
   (when (satisfies? IClient retry-client)
     (when-let [[db-name db-type :as target] (request-db-target req)]
       (let [targets (retry-client-open-target-set retry-client)]
-        (when (.add targets target)
+        (when-not (.contains targets target)
           (try
             (open-database retry-client db-name db-type)
+            (.add targets target)
             (catch Exception e
               (.remove targets target)
               (throw e)))))))
   retry-client)
 
+(defn- check-retry-parent-open!
+  [client]
+  (when (and (instance? Client client)
+             (some? (get-pool client))
+             (disconnected? client))
+    (raise "This client is closed" {:client-id (get-id client)})))
+
 (defn- ^ConcurrentHashMap retry-client-cache
   [client]
-  (locking ha-retry-clients
-    (or (.get ha-retry-clients client)
-        (let [cache (ConcurrentHashMap.)]
-          (.put ha-retry-clients client cache)
-          cache))))
+  (locking client
+    (check-retry-parent-open! client)
+    (locking ha-retry-clients
+      (or (.get ha-retry-clients client)
+          (let [cache (ConcurrentHashMap.)]
+            (.put ha-retry-clients client cache)
+            cache)))))
 
 (defn- cached-retry-client
   [client endpoint]
@@ -1555,8 +1803,11 @@
 
 (defn- cache-retry-client!
   [client endpoint retry-client]
-  (let [^ConcurrentHashMap cache (retry-client-cache client)]
-    (.put cache endpoint retry-client))
+  ;; Authentication and opening may block. Only publication shares the parent's
+  ;; disconnect monitor, and must recheck its terminal state under that lock.
+  (locking client
+    (let [^ConcurrentHashMap cache (retry-client-cache client)]
+      (.put cache endpoint retry-client)))
   retry-client)
 
 (defn- retry-client-disconnected?
@@ -1570,8 +1821,11 @@
   (when retry-client
     (clear-retry-client-open-targets! retry-client)
     (try
-      (disconnect-fn retry-client)
-      (catch Exception _ nil))))
+      (if (instance? IClientInternals retry-client)
+        (.disposeClient ^IClientInternals retry-client)
+        ;; Alternate implementations supply their local destructor explicitly.
+        (disconnect-fn retry-client))
+      (catch Throwable _ nil))))
 
 (defn- evict-retry-client!
   [client endpoint disconnect-fn]
@@ -1589,38 +1843,86 @@
 
 (defn- prepare-retry-client
   [req retry-context host port disconnect-fn new-client-fn]
-  (let [endpoint    (endpoint-key host port)
-        base-client (:client retry-context)]
-    (if base-client
-      (locking (retry-client-cache base-client)
-        (if-let [cached (cached-retry-client base-client endpoint)]
-          (if (or (retry-client-timeout-mismatch? cached retry-context)
-                  (retry-client-disconnected? cached))
-            (do
-              (evict-retry-client! base-client endpoint disconnect-fn)
-              (let [retry-client (-> (new-client-fn retry-context host port)
-                                     (ensure-retry-client-open! req))]
-                (cache-retry-client! base-client endpoint retry-client)
-                {:client retry-client
-                 :cached? true
-                 :endpoint endpoint
-                 :base-client base-client}))
-            {:client (ensure-retry-client-open! cached req)
-             :cached? true
-             :endpoint endpoint
-             :base-client base-client})
-          (let [retry-client (-> (new-client-fn retry-context host port)
-                                 (ensure-retry-client-open! req))]
-            (cache-retry-client! base-client endpoint retry-client)
-            {:client retry-client
-             :cached? true
-             :endpoint endpoint
-             :base-client base-client})))
-      {:client (-> (new-client-fn retry-context host port)
-                   (ensure-retry-client-open! req))
-       :cached? false
-       :endpoint endpoint
-       :base-client nil})))
+  (let [endpoint (endpoint-key host port)
+        base-client (:client retry-context)
+        state (when base-client (client-state base-client))
+        ^ConcurrentHashMap pending (when state (.-creating ^ClientState state))]
+    (cr/with-budget (cr/budget (or (:time-out retry-context) c/default-connection-timeout)
+                               0 (when state (.-closed ^ClientState state)) req)
+      (loop []
+        (cr/check! :endpoint-creation)
+        (let [[kind value observed-pool]
+              (if base-client
+                (locking base-client
+                  (check-retry-parent-open! base-client)
+                  (let [cached (cached-retry-client base-client endpoint)]
+                    (cond
+                      (and cached
+                           (not (retry-client-timeout-mismatch? cached retry-context))
+                           (not (retry-client-disconnected? cached)))
+                      [:cached cached]
+                      (.get pending endpoint) [:wait (.get pending endpoint)]
+                      :else
+                      (let [attempt {:result (promise)}]
+                        (.put pending endpoint attempt)
+                        [:owner attempt (when (satisfies? IClient base-client)
+                                          (get-pool base-client))]))))
+                [:owner {:result (promise)} nil])]
+          (case kind
+            :cached
+            {:client (ensure-retry-client-open! value req) :cached? true
+             :endpoint endpoint :base-client base-client}
+
+            :wait
+            (let [failure (wait-for-recovery! base-client value)]
+              (when (and failure (not= :socket/timeout (:error (ex-data failure))))
+                (throw failure))
+              (recur))
+
+            :owner
+            (let [candidate (volatile! nil)
+                  failure (volatile! nil)]
+              (try
+                (when base-client
+                  (evict-retry-client! base-client endpoint disconnect-fn))
+                (let [created (new-client-fn retry-context host port)]
+                  (vreset! candidate created)
+                  (cr/check! :endpoint-opening)
+                  (when base-client (check-retry-parent-open! base-client))
+                  (ensure-retry-client-open! created req)
+                  (cr/check! :endpoint-publication)
+                  (when base-client
+                    (locking base-client
+                      (check-retry-parent-open! base-client)
+                      (cr/check! :endpoint-publication)
+                      (when-not (and (identical? observed-pool
+                                                  (when (satisfies? IClient base-client)
+                                                    (get-pool base-client)))
+                                     (identical? value (.get pending endpoint)))
+                        (raise "Recovery was superseded" {:error :client/stale-recovery}))
+                      (cache-retry-client! base-client endpoint created)))
+                  (vreset! candidate nil)
+                  {:client created :cached? (some? base-client)
+                   :endpoint endpoint :base-client base-client})
+                (catch Throwable t
+                  (vreset! failure t)
+                  (throw t))
+                (finally
+                  (try
+                    (when-let [created @candidate]
+                      (clear-retry-client-open-targets! created)
+                      (let [dispose! #(if (instance? IClientInternals created)
+                                        (.disposeClient ^IClientInternals created)
+                                        (disconnect-fn created))]
+                        (if-let [t @failure]
+                          (cleanup-after-failure! t dispose!)
+                          (dispose!))))
+                    (finally
+                      (when base-client
+                        (locking base-client
+                          (.remove pending endpoint value)
+                          (deliver (:result value) @failure)
+                          (.notifyAll ^Object base-client))))))))))))))
 
 (defn- attempt-ha-endpoint-request
   [req retry-context host port request-fn disconnect-fn new-client-fn]
@@ -1631,6 +1933,7 @@
       (try
         (let [{:keys [type message result err-data] :as response}
               (request-fn client req)]
+          (cr/response! req response)
           (if (= type :error-response)
             {:kind :error
              :message message
@@ -1642,6 +1945,7 @@
                        (decode-tx-response response)
                        result)}))
         (catch Exception e
+          (cr/failed-exchange! req)
           (when cached?
             (evict-retry-client! base-client endpoint disconnect-fn))
           ;; Once request-fn has started, a lost reply can hide a commit. Only
@@ -1660,33 +1964,37 @@
 (defn- retry-ha-write-request*
   ([req message err-data retry-context request-fn disconnect-fn new-client-fn]
    (retry-ha-write-request*
-     req
-     message
-     err-data
-     retry-context
-     request-fn
-     disconnect-fn
-     new-client-fn
-     (constantly nil)))
+    req
+    message
+    err-data
+    retry-context
+    request-fn
+    disconnect-fn
+    new-client-fn
+    (constantly nil)))
   ([req message err-data retry-context request-fn disconnect-fn new-client-fn
-   on-success-endpoint!]
+    on-success-endpoint!]
    (let [self-key (endpoint-key (:host retry-context) (:port retry-context))
-         deadline-ms
-         (+ (System/currentTimeMillis)
-            (long (or (:ha-write-retry-timeout-ms retry-context)
-                      (derived-default-ha-write-retry-timeout-ms
-                        (:time-out retry-context)))))
+         _ (cr/enter-ha!)
+         local-deadline (+ (System/nanoTime)
+                           (* 1000000 (long (or (:ha-write-retry-timeout-ms retry-context)
+                                               (derived-default-ha-write-retry-timeout-ms
+                                                 (:time-out retry-context))))))
+         deadline-ns (if cr/*request* (min local-deadline (cr/deadline)) local-deadline)
          [pending _]
          (collect-ha-retry-endpoints
-           #{self-key}
-           (:ha-retry-endpoints err-data))
+          #{self-key}
+          (:ha-retry-endpoints err-data))
          [round-order seen]
          (collect-ha-retry-endpoints
-           #{}
-           (append-ha-retry-endpoint
-             (:ha-retry-endpoints err-data)
-             self-key))]
-     (loop [round        1
+          #{}
+          (append-ha-retry-endpoint
+           (:ha-retry-endpoints err-data)
+           self-key))]
+     (binding [cr/*stage-deadline* (if cr/*stage-deadline*
+                                     (min deadline-ns (long cr/*stage-deadline*))
+                                     deadline-ns)]
+      (loop [round        1
             remaining    pending
             round-order  round-order
             seen         seen
@@ -1695,20 +2003,23 @@
             last-message message
             last-err     err-data
             attempts     []]
+       (cr/check! :ha-retry)
+       (when-let [client (:client retry-context)]
+         (check-retry-parent-open! client))
        (if-let [{:keys [endpoint host port]} (first remaining)]
-         (let [remaining-ms (- deadline-ms (System/currentTimeMillis))]
+         (let [remaining-ms (quot (+ 999999 (- deadline-ns (System/nanoTime))) 1000000)]
            (if (<= remaining-ms 0)
              (raise-normal-request-error
-               req last-message last-err
-               {:ha-retry-attempts attempts
-                :ha-retry-rounds round})
+              req last-message last-err
+              {:ha-retry-attempts attempts
+               :ha-retry-rounds round})
              (let [attempt-context
-                   (retry-context-with-attempt-timeout retry-context
-                                                       remaining-ms)
+                   (if cr/*request* retry-context
+                       (retry-context-with-attempt-timeout retry-context remaining-ms))
                    outcome
                    (attempt-ha-endpoint-request
-                     req attempt-context host port
-                     request-fn disconnect-fn new-client-fn)]
+                    req attempt-context host port
+                    request-fn disconnect-fn new-client-fn)]
                (cond
                  (= :success (:kind outcome))
                  (do
@@ -1734,8 +2045,8 @@
                    (if (retryable-ha-reject? retry-err)
                      (let [[extra seen']
                            (collect-ha-retry-endpoints
-                             seen
-                             (:ha-retry-endpoints retry-err))
+                            seen
+                            (:ha-retry-endpoints retry-err))
                            round-order'
                            (into round-order extra)]
                        (recur round
@@ -1743,7 +2054,7 @@
                               round-order'
                               seen'
                               (merge-ha-retry-after-ms
-                                round-retry-after-ms retry-err)
+                               round-retry-after-ms retry-err)
                               retry-message
                               retry-err
                               (conj attempts
@@ -1751,24 +2062,24 @@
                                      :type :error-response
                                      :reason (:reason retry-err)})))
                      (raise-normal-request-error
-                       req retry-message retry-err
-                       {:ha-retry-attempts
-                        (conj attempts
-                              {:endpoint endpoint
-                               :type :error-response
-                               :reason (:reason retry-err)})})))))))
-         (let [remaining-ms (- deadline-ms (System/currentTimeMillis))]
+                      req retry-message retry-err
+                      {:ha-retry-attempts
+                       (conj attempts
+                             {:endpoint endpoint
+                              :type :error-response
+                              :reason (:reason retry-err)})})))))))
+         (let [remaining-ms (quot (+ 999999 (- deadline-ns (System/nanoTime))) 1000000)]
            (if (or (empty? round-order)
                    (<= remaining-ms 0))
              (raise-normal-request-error
-               req last-message last-err
-               {:ha-retry-attempts attempts
-                :ha-retry-rounds round})
+              req last-message last-err
+              {:ha-retry-attempts attempts
+               :ha-retry-rounds round})
              (do
                (let [retry-delay-ms
                      (long
-                       (next-ha-write-retry-round-delay-ms
-                         retry-context remaining-ms round-retry-after-ms))]
+                      (next-ha-write-retry-round-delay-ms
+                       retry-context remaining-ms round-retry-after-ms))]
                  (when (pos? ^long retry-delay-ms)
                    (Thread/sleep ^long retry-delay-ms)))
                (recur (inc round)
@@ -1778,7 +2089,7 @@
                       0
                       last-message
                       last-err
-                      attempts)))))))))
+                      attempts))))))))))
 
 (defn- ^:redef try-preferred-ha-write-request*
   [client req retry-context request-fn disconnect-fn new-client-fn retry-fn]
@@ -1863,7 +2174,7 @@
             (map? retry-result)
             (merge (select-keys retry-result [:db-info :new-attributes]))))))))
 
-(defn ^:no-doc request-ha-open
+(defn- request-ha-open-impl
   "Internal retry API: send a transaction-open request, trying the preferred HA
   endpoint first and retrying eligible write rejections. Returns the result and
   records the winning endpoint. The caller must then pin the transaction to
@@ -1886,6 +2197,13 @@
       (if (= type :error-response)
         (raise-normal-request-error req message err-data nil)
         result))))
+
+(defn ^:no-doc request-ha-open
+  "Open an explicit transaction using one deadline through HA routing and
+  recovery. The caller then pins data and control operations to the selected
+  session using active-ha-request-client."
+  [client req]
+  (call-with-request client req #(request-ha-open-impl client req)))
 
 (defn- try-preferred-ha-read-request*
   [client req routing-context request-fn disconnect-fn new-client-fn]
@@ -1971,14 +2289,14 @@
         new-client-for-endpoint
         #(set-preferred-ha-read-endpoint! client db-name %)))))
 
-(defn- normal-request*
+(defn- normal-request-impl
   "Send request to server and returns results. Does not use the
   copy-in protocol. `call` is a keyword, `args` is a vector,
   `writing?` is a boolean indicating if write-txn should be used"
   ([client call args]
-   (normal-request* client call args false))
+   (normal-request-impl client call args false))
   ([client call args writing?]
-   (normal-request* client call args writing? nil))
+   (normal-request-impl client call args writing? nil))
   ([client call args writing? ^Request prepared-request]
    (let [write-route?        (or writing? (cmd/ha-write? call))
          read-route?         (and (not writing?) (cmd/read-only? call))
@@ -2098,6 +2416,13 @@
                        "HA read target became unavailable")
                    (when db-name (known-ha-db-endpoints client db-name)))
                  (throw e)))))))))
+
+(defn- normal-request*
+  ([client call args] (normal-request* client call args false))
+  ([client call args writing?] (normal-request* client call args writing? nil))
+  ([client call args writing? prepared-request]
+   (call-with-request client {:type call :args args :writing? writing?}
+     #(normal-request-impl client call args writing? prepared-request))))
 
 (defn ^:no-doc normal-prepared-request
   "Use normal routing and replay rules with connection-local preparation."

@@ -184,8 +184,10 @@
                  session))))))))
 
 (defn reopen-dbs
+  "Restore saved stores and database handles. Search engines and vector indexes open
+  lazily via :reopen so clients can supply options absent from session records."
   [deps root clients ^ConcurrentHashMap dbs]
-  (doseq [[_ {:keys [stores engines indices dt-dbs]}] clients]
+  (doseq [[_ {:keys [stores dt-dbs]}] clients]
     (doseq [[db-name {:keys [datalog? dbis consensus-ha?]}]
             stores
             :when (not (get-in dbs [db-name :store]))
@@ -230,20 +232,6 @@
                                                        runtime-opts))))
                                     store)]
                   (.put dbs db-name next-m))))))))
-    (doseq [db-name engines
-            :when   (and (not (get-in dbs [db-name :engine]))
-                         (get-in dbs [db-name :store]))
-            :let    [m (get dbs db-name {})]]
-      (.put dbs db-name
-            (assoc m :engine
-                   (d/new-search-engine (get-in dbs [db-name :store])))))
-    (doseq [db-name indices
-            :when   (and (not (get-in dbs [db-name :index]))
-                         (get-in dbs [db-name :store]))
-            :let    [m (get dbs db-name {})]]
-      (.put dbs db-name
-            (assoc m :index
-                   (d/new-vector-index (get-in dbs [db-name :store])))))
     (doseq [db-name dt-dbs
             :when   (and (not (get-in dbs [db-name :dt-db]))
                          (get-in dbs [db-name :store]))

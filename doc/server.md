@@ -299,8 +299,9 @@ Example:
 `datalevin.client/new-client` accepts:
 
 * `:pool-size` (default `3`): max pooled connections per client instance.
-* `:time-out` (default `60000` ms): timeout for getting a connection and for
-  retrying requests.
+* `:time-out` (default `60000` ms): one request budget shared by checkout,
+  connection setup, authentication, registration, socket I/O, resource reopening,
+  and coordination waits. Nested recovery requests do not restart this budget.
 * `:ha-write-retry-timeout-ms` (default `min(:time-out, 17000)` with current HA
   defaults): extra wall clock budget for retryable HA write failover after an
   endpoint rejects a write because leadership changed. The default is derived
@@ -322,6 +323,55 @@ Example:
 ```
 
 Close a client with `cl/close-client` when the application owns its lifecycle.
+Remote KV and Datalog handles also own a separate one-connection client for
+explicit transactions, including when their ordinary pool size is one.
+
+Keep the same client and remote database/search handles across server outages.
+The client replaces failed sockets, renews expired server sessions, and reopens
+remote resources internally. Calls can fail while the server is unavailable;
+later calls reuse the original client after service returns. Applications do not
+need to replace a client in response to transient transport failures.
+
+The client allocates the ordinary budget and applicable extra HA allowance once
+at request entry, using a monotonic clock. HA retry can use that extra allowance;
+changing endpoints cannot allocate it again. Synchronous DNS resolution,
+encoding/compression, decoding, and application codec callbacks can overrun the
+deadline on the caller's thread. Their elapsed time consumes the budget, and the
+client checks again before connecting, sending, waiting, or retrying. A request
+whose encoding finishes after expiry is never sent. An authoritative result
+already decoded is preserved.
+
+Session renewal runs outside the client lock. Concurrent callers share its
+result and wait within their own deadlines. If the owner exhausts its budget,
+another caller with time remaining can attempt renewal. A stalled synchronous
+resolver retains the renewal claim until its owner returns. Callers that
+encounter a replaced pool continue through the current pool.
+
+Explicit `cl/close-client` or `cl/disconnect` is terminal, including when it races
+with renewal or HA endpoint creation. It marks closure and wakes waiters before
+best-effort server notification. Notification uses existing idle sockets only,
+with one budget of at most 100 ms shared across owned endpoint clients and capped
+by `:time-out` and any enclosing request deadline. Disconnect never waits for a
+pool slot or reconnects to notify the server. It closes active transports without
+waiting for a codec callback; that exchange's owner releases codec state when
+the callback returns. Failed recovery candidates are disposed locally, without
+server notification or another network timeout.
+
+Search and vector indexes reopen lazily with their remembered options after a
+restart. Recovery assumes the original persistent resources still exist; it does
+not protect an old handle against another client dropping and recreating a
+resource with the same name. Interrupted explicit transactions fail, and recovery
+does not impose a server transaction inactivity deadline or preempt native work.
+
+If a mutation's acknowledgment is lost and recovery stops, the error retains
+`:error :ha/write-indeterminate`, `:outcome :unknown`, `:indeterminate? true`,
+`:retryable? false`, its original operation ID/hash/response kind when available,
+and `:termination-reason` (such as `:deadline-exceeded` or
+`:client-disconnected`). A later failed reconnect or rejection cannot erase an
+earlier attempt's unknown outcome. Retrying as a fresh invocation can duplicate a
+committed effect; any supported receipt lookup or replay must use the original
+operation identity. Calls known not to have executed return the ordinary timeout
+or closure error.
 
 #### HA write failover
 
@@ -642,7 +692,10 @@ need programmatic server setup.
 
 ### Networking
 
-The listener's event loop accepts connections and performs session maintenance.
+The listener's event loop accepts connections. A dedicated maintenance executor
+expires idle sessions, so a blocked cleanup cannot stall acceptance. Cleanup
+failures are isolated per session and retried with backoff capped at five seconds;
+the first failure logs a stack trace at warning level.
 Each connection has a blocking socket and its own thread, which reads, decodes,
 executes and replies in arrival order. Complete buffered requests are processed
 before the next socket read. Slow handlers apply socket backpressure without
@@ -653,8 +706,9 @@ Explicit transactions are pinned to the connection that opens them. Its thread
 owns the native transaction through commit or abort. Another socket cannot use
 that transaction, even within the same authenticated session. Clients using the
 wire protocol directly must keep open, transaction operations and close/abort on
-one socket. The bundled KV and Datalog clients use a dedicated one-connection
-transaction client when their ordinary pool has more than one connection. A lost
+one socket. The bundled KV and Datalog clients always use a dedicated
+one-connection transaction client, keeping ordinary requests off the transaction
+owner's socket even when the ordinary pool size is one. A lost
 connection aborts its transaction; replacing the socket cannot resume or commit it.
 
 Bulk transfers stay on the connection thread until their final response. During
@@ -669,6 +723,35 @@ the same for both the local databases and remote databases. In addition, the
 client has a built-in connection pool, to reuse pre-established connections.
 Each connection uses a nonblocking socket and reuses its receive selector to
 enforce receive timeouts without allocating a selector for each response.
+The client connection timeout also bounds each socket send, including when a
+server accepts a connection but stops reading. A timed-out send closes the socket
+because a partially sent frame cannot be reused. Transport failures preserve the
+pool's slots so later calls can reconnect when the server recovers. Mutations
+whose response was lost may have committed; the existing replay restrictions
+still apply.
+
+The sibling `dtlvtest` project exercises this lifecycle with a real TCP fault
+proxy and a disposable server JVM:
+
+```console
+cd ../dtlvtest
+lein test datalevin.client-deadline-integration-test
+lein test datalevin.client-recovery-chaos-test
+DTLV_CLIENT_RECOVERY_CHAOS_SEEDS=1,2,3,4 DTLV_CLIENT_RECOVERY_CHAOS_CYCLES=64 lein test datalevin.client-recovery-chaos-test
+```
+
+The suite keeps the original clients and KV, Datalog, and search handles through
+connection resets, withheld authentication/registration/operation replies,
+truncated replies, lost write acknowledgements, session removal, server restarts,
+interrupted bulk transfers, and forced termination of the server JVM while KV
+and Datalog transactions hold uncommitted writes. Concurrent operations run during
+each fault. Recovery checks full pool capacity, acknowledged data, non-idempotent
+update counts, transaction aborts, subsequent reads and writes, and resource
+cleanup. It also races explicit disconnects with session renewal. Failures report
+the seed, fault order, operation outcomes, and proxy events for reproduction.
+Each scenario runs in an isolated JVM with a progress watchdog. A stalled native
+call or shutdown fails the test within a bounded time and preserves the last
+checkpoint, server log, and thread dump in the reported temporary directory.
 
 The wire protocol between server and client is largely inspired by the wire
 protocol of PostgreSQL. It uses TLV message format, with 1 byte message type in
