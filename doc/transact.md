@@ -197,6 +197,11 @@ The default timeout is unset. It can be changed with
 the transaction when control returns to the macro. Code that ignores
 interruption can still run until it returns.
 
+For remote transactions, the server's socket read timeout does not limit idle
+time between transaction requests. Once a request starts arriving, its complete
+frame must arrive within `:read-timeout-ms`; stalled copy-in transfers also remain
+subject to this limit. Losing the owning socket still aborts the transaction.
+
 Java exposes `withTransaction(timeoutMs, fn)` and
 `setExplicitTransactionTimeout(...)`; Python exposes
 `with_transaction(fn, timeout_ms=...)` and `set_explicit_transaction_timeout`;

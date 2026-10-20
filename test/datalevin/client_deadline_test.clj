@@ -63,6 +63,134 @@
 (defn- elapsed-ms [start] (quot (- (System/nanoTime) start) 1000000))
 (defn- dispose! [c] (.disposeClient ^IClientInternals c))
 
+(defn- await! [pred]
+  (let [until (+ (System/nanoTime) 5000000000)]
+    (loop []
+      (when-not (pred)
+        (when (>= (System/nanoTime) until)
+          (throw (ex-info "Client lifecycle barrier timed out" {})))
+        (Thread/sleep 5)
+        (recur)))))
+
+(deftest request-scopes-respect-nested-bindings-and-release-after-failure
+  (let [outer (cr/budget 5000 0 nil {:type :get-value :args ["outer"]})
+        expired (cr/budget 0 0 nil {:type :get-value :args ["expired"]})
+        failure (ex-info "Scope failed" {})]
+    (is (nil? (cr/current)))
+    (cr/with-budget outer
+      (is (identical? outer (cr/current)))
+      (binding [cr/*request* expired]
+        (is (identical? expired (cr/current)))
+        (is (= :deadline-exceeded
+               (:termination-reason (ex-data (outcome #(cr/check! :nested)))))))
+      (is (identical? outer (cr/current)))
+      (binding [cr/*request* nil] (is (nil? (cr/current))))
+      (is (identical? outer (cr/current)))
+      (is (identical? failure
+                      (outcome #(cr/with-budget outer (throw failure)))))
+      (is (identical? outer (cr/current))))
+    (is (nil? (cr/current)))
+    (is (identical? failure (outcome #(cr/with-budget outer (throw failure)))))
+    (is (nil? (cr/current)))
+    (cr/with-budget expired
+      (is (= :deadline-exceeded
+             (:termination-reason (ex-data (outcome #(cr/check! :next-request)))))))
+    (is (nil? (cr/current)))))
+
+(deftest local-only-budgets-respect-nested-scopes-and-explicit-bindings
+  (let [outer (cr/budget 5000 0 nil {:type :get-value :args ["outer"]})
+        expired (cr/budget 0 0 nil {:type :get-value :args ["expired"]})]
+    (is (nil? (cr/current)))
+    (cr/with-local-budget outer
+      (is (nil? cr/*request*))
+      (is (identical? outer (cr/current)))
+      (cr/with-budget (throw (ex-info "Must inherit the local budget" {}))
+        (is (identical? outer (cr/current)))
+        (is (identical? outer (deref (future (cr/current)) 1000 ::timeout))))
+      (cr/with-local-budget expired
+        (is (identical? expired (cr/current)))
+        (is (= :deadline-exceeded
+               (:termination-reason (ex-data (outcome #(cr/check! :local-only)))))))
+      (is (identical? outer (cr/current)))
+      (binding [cr/*request* expired]
+        (is (identical? expired (cr/current))))
+      (binding [cr/*request* nil]
+        (is (nil? (cr/current))))
+      (is (identical? outer (cr/current))))
+    (is (nil? (cr/current)))))
+
+(deftest disconnect-respects-an-expired-local-only-budget
+  (let [{:keys [client channel writes]} (scripted-client 5000 nil)
+        budget (cr/budget 0 0 nil nil)]
+    (try
+      (cr/with-local-budget budget
+        (client/disconnect client)
+        (is (identical? budget (cr/current))))
+      (is (zero? @writes) "expired cleanup must not start a disconnect notification")
+      (is (client/disconnected? client))
+      (is (not (.isOpen ^SocketChannel channel)))
+      (is (nil? (cr/current)))
+      (finally (dispose! client)))))
+
+(deftest local-only-budgets-preserve-write-outcome-uncertainty
+  (let [request {:type :transact-kv :args ["db"]}
+        budget (cr/budget 5000 0 nil request)
+        failure (ex-info "Transport failed" {})
+        reject! #(#'client/reject-unsafe-transport-replay! request "localhost:8898" failure)]
+    (cr/with-local-budget budget
+      (is (identical? failure (outcome reject!))
+          "a failed exchange before sending preserves the original failure")
+      (cr/failed-exchange! request)
+      (let [error (outcome reject!)]
+        (is (= :ha/write-indeterminate (get-in (ex-data error) [:err-data :error])))
+        (is (identical? failure (ex-cause error)))))))
+
+(deftest conveyed-callers-keep-their-budget-after-the-parent-scope-exits
+  (let [closed (AtomicBoolean. false)
+        budget (cr/budget 5000 0 closed {:type :get-value :args ["parent"]})
+        entered (promise)
+        release (promise)
+        child (cr/with-budget budget
+                (future
+                  (cr/with-budget (throw (ex-info "Budget must be conveyed" {}))
+                    (deliver entered (identical? budget (cr/current)))
+                    (when-not (deref release 5000 false)
+                      (throw (ex-info "Parent did not release child" {})))
+                    [(identical? budget (cr/current))
+                     (:termination-reason (ex-data (outcome #(cr/check! :child))))])))]
+    (try
+      (is (true? (deref entered 5000 false)))
+      (is (nil? (cr/current)))
+      (cr/with-budget (cr/budget 5000 0 nil {:type :get-value :args ["next"]})
+        (.set closed true)
+        (deliver release true)
+        (is (= [true :client-disconnected] (deref child 5000 ::timeout)))
+        (is (nil? (cr/check! :independent-request))))
+      (is (nil? (cr/current)))
+      (finally (deliver release true)))))
+
+(deftest nested-wire-scopes-preserve-mutation-outcomes
+  (let [request {:type :transact-kv :args ["db"] :client-op-id "original-op"}
+        failure (ex-info "Transport failed" {})]
+    (cr/with-budget (cr/budget 5000 0 nil request)
+      (cr/track-exchange! request)
+      (cr/with-wire-request request
+        (cr/with-wire-request {:type :get-value :args ["db"]}
+          (cr/sending!))
+        (cr/failed-attempt!)
+        (is (identical? failure (cr/failure failure))
+            "a nested read's bytes cannot make the outer write indeterminate")
+        (is (identical? failure
+                        (outcome #(cr/with-wire-request {:type :get-value :args ["db"]}
+                                    (throw failure)))))
+        (cr/sending!)
+        (cr/failed-attempt!)
+        (let [error (cr/failure failure)]
+          (is (= :ha/write-indeterminate (:error (ex-data error))))
+          (is (= "original-op" (:client-op-id (ex-data error)))))))
+    (is (nil? (cr/wire-request)))
+    (is (nil? (cr/current)))))
+
 (deftest encoding-past-the-deadline-never-sends-a-mutation
   (let [{:keys [client channel writes]} (scripted-client 100 {:type :command-complete})
         entered (promise)
@@ -124,6 +252,75 @@
           (is (zero? @resolved))
           (is (client/disconnected? client))
           (finally (dispose! client)))))))
+
+(deftest child-renewal-cannot-publish-after-disconnect-under-a-parent-budget
+  (with-open [listener (doto (ServerSocketChannel/open)
+                         (.bind (InetSocketAddress. "127.0.0.1" 0)))]
+    (let [{parent :client} (scripted-client 10000 nil)
+          {original :client} (scripted-client 10000 nil)
+          pool (client/get-pool original)
+          child (client/->Client "user" "password" "127.0.0.1"
+                                 (.getPort ^InetSocketAddress (.getLocalAddress listener))
+                                 1 10000 (client/get-id original) pool)
+          ^ClientState state (.clientState ^IClientInternals child)
+          entered (promise)
+          release (promise)
+          peer (future
+                 (outcome
+                  #(doseq [response [{:type :authentication-ok :client-id (random-uuid)}
+                                    {:type :set-client-id-ok :extra (WireValue. 1)}]]
+                     (let [conn (client/->Connection (.accept listener) 10000
+                                                    (ByteBuffer/allocate 65536))]
+                       (try
+                         (client/receive conn)
+                         (client/send-only conn response)
+                         (finally (client/close conn)))))))
+          renewal (future
+                    (binding [*decode-pause* [entered release]
+                              cr/*request* (client/request-budget parent nil)]
+                      (outcome #(.renewSession ^IClientInternals child pool (cr/deadline)))))]
+      (try
+        (is (true? (deref entered 5000 false)))
+        (let [attempt (.get ^AtomicReference (.-renewal state))
+              channels (filterv #(instance? SocketChannel %)
+                                (get-in attempt [:transport-owner :resources]))
+              closing
+              ;; Keep the captured pool open after disconnect marks the child
+              ;; closed, while allowing renewal to finish decoding registration.
+              (locking pool
+                (let [closing (future (outcome #(client/disconnect child)))]
+                  (await! #(client/disconnected? child))
+                  (is (not (client/closed-pool? pool)))
+                  (is (not (client/disconnected? parent)))
+                  (deliver release true)
+                  (await! #(or (realized? renewal)
+                               (not (identical? pool (client/get-pool child)))))
+                  (is (identical? pool (client/get-pool child)))
+                  (is (= (client/get-id original) (client/get-id child)))
+                  closing))]
+          (let [error (deref renewal 5000 ::timeout)]
+            (is (= :client/closed (:error (ex-data error))))
+            (is (= :client-disconnected (:termination-reason (ex-data error)))))
+          (is (nil? (deref closing 5000 ::timeout)))
+          (is (seq channels))
+          (doseq [^SocketChannel channel channels]
+            (is (not (.isOpen channel)))
+            ;; Disconnect closes provisional channels directly. Removal from
+            ;; this registry proves the rejected candidate's Connection closed.
+            (is (not (.containsKey ^ConcurrentHashMap @#'client/connection-wire-opts channel))))
+          (is (nil? (.get ^AtomicReference (.-renewal state))))
+          (is (client/disconnected? child))
+          (is (client/closed-pool? (client/get-pool child)))
+          (is (not (client/disconnected? parent))))
+        (is (nil? (deref peer 5000 ::timeout)))
+        (finally
+          (deliver release true)
+          (.close listener)
+          (deref renewal 5000 nil)
+          (deref peer 5000 nil)
+          (dispose! child)
+          (dispose! original)
+          (dispose! parent))))))
 
 (deftest a-stalled-resolver-keeps-one-renewal-claim-and-cannot-connect-late
   (doseq [kind [:renewal :ha] stop [:deadline :disconnect]]

@@ -19,6 +19,7 @@
    [datalevin.kv.txlog :as kvtx]
    [datalevin.protocol :as p]
    [datalevin.protocol.context :as codec]
+   [datalevin.server.connection :as connection]
    [datalevin.server.deps :as sdeps]
    [datalevin.server.prepared :as prepared]
    [datalevin.util :as u :refer [raise]]
@@ -120,6 +121,7 @@
     (fn [cause]
       (let [message (ex-message cause)]
         (or (instance? ClosedChannelException cause)
+            (= :server/connection-timeout (:error (ex-data cause)))
             (= message "Socket channel is closed.")
             (and (string? message)
                  (or (s/includes? message "Connection reset by peer")
@@ -164,9 +166,8 @@
 
 (defn- error-response
   [^SelectionKey skey error-msg error-data]
-  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)
-        ^SocketChannel ch (.channel skey)]
-    (p/write-message-blocking ch write-bf
+  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)]
+    (connection/write-message skey write-bf
                               {:type     :error-response
                                :message  error-msg
                                :err-data error-data}
@@ -174,9 +175,8 @@
 
 (defn- reopen-response
   [^SelectionKey skey msg]
-  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)
-        ^SocketChannel ch (.channel skey)]
-    (p/write-message-blocking ch write-bf msg wire-opts)))
+  (let [{:keys [^ByteBuffer write-bf wire-opts]} @(.attachment skey)]
+    (connection/write-message skey write-bf msg wire-opts)))
 
 (defn handle-message-error!
   [deps ^SelectionKey skey e]
@@ -414,7 +414,9 @@
                             (vswap! state assoc :codec-context context)
                             context))
         ^SocketChannel ch (.channel skey)
-        read-message! #(read-message deps server skey %1 %2)
+        read-message! (fn [fmt message]
+                        (connection/end-read! skey)
+                        (read-message deps server skey fmt message))
         handle-message! (fn [_ message]
                           (handle-message deps server skey message))]
     ;; Binding only the cache context leaves handler/storage serialization policy
@@ -438,8 +440,19 @@
                           (bf/buffer-transfer read-bf buffer)
                           (vswap! state assoc :read-bf buffer)
                           buffer))
+                      ;; An explicit transaction has no default body timeout.
+                      ;; Leave its socket idle between requests, but bound any
+                      ;; partial frame already buffered on that same socket.
+                      idle-transaction? (and (zero? (.position read-bf))
+                                             (seq (:transaction-owners @state)))
+                      _ (when-not idle-transaction?
+                          (connection/begin-read! skey))
                       ^int readn (p/read-ch ch read-bf)]
-                  (when (pos? readn) (recur)))))))
+                  (when (pos? readn)
+                    ;; The first bytes end a transaction's idle exemption.
+                    ;; Further progress shares this absolute frame deadline.
+                    (when idle-transaction? (connection/begin-read! skey))
+                    (recur)))))))
         (catch InterruptedException _ nil)
         (catch Exception e
           (when-not (client-disconnect? e)

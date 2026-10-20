@@ -10,6 +10,7 @@
 (ns ^:no-doc datalevin.server.api
   "Datalevin query/search/vector server API handlers."
   (:require
+   [clojure.walk :as walk]
    [datalevin.built-ins :as dbq]
    [datalevin.constants :as c]
    [datalevin.core :as d]
@@ -24,6 +25,7 @@
    [datalevin.vector :as v])
   (:import
    [java.nio.channels SelectionKey]
+   [java.util.regex Pattern]
    [datalevin.db DB]))
 
 (defn- write-or-copy-result!
@@ -87,23 +89,60 @@
         data                 (dbq/fulltext-datoms db query opts)]
     (write-or-copy-result! write-message copy-out skey data)))
 
+(defn- search-engine-options
+  "Normalize defaults and serialized function sources for shared-engine reuse."
+  [opts]
+  (let [opts (merge sc/default-opts {:domain c/default-domain} opts)]
+    (walk/prewalk
+      (fn [x]
+        (cond
+          (= :datalevin/inter-fn (:type (meta x)))
+          {:datalevin/inter-fn-source (:source (meta x))}
+
+          (instance? Pattern x)
+          [::pattern (.pattern ^Pattern x) (.flags ^Pattern x)]
+
+          :else x))
+      (-> opts
+          (assoc :query-analyzer (or (:query-analyzer opts) (:analyzer opts)))
+          (update :search-opts #(merge sc/default-search-opts %))))))
+
 (defn new-search-engine
-  [{:keys [search-engine* get-store update-client update-db write-message
+  [{:keys [db-state get-store update-client update-db write-message
            with-index-write-admission]}
    server skey client-id {:keys [args] :as message}]
   (let [[db-name opts] args
-        engine         (or (search-engine* server skey db-name)
-                           (if-let [store (get-store server db-name)]
-                             (or (sc/open-search-engine store opts)
-                                 (with-index-write-admission
-                                   server message
-                                   #(sc/new-search-engine store opts)))
-                             (raise "engine store not found"
-                                      {:type :reopen
-                                       :db-name db-name
-                                       :db-type "kv"})))]
+        requested-opts (search-engine-options opts)]
+    (if-let [store (get-store server db-name)]
+      ;; Dispatch keeps the store stable with runtime read access. Coordinate
+      ;; initialization and publication across sessions so a stale reload cannot
+      ;; replace a live engine's document state and ID counters.
+      (locking store
+        (let [{:keys [engine engine-opts]} (db-state server db-name)]
+          (if engine
+            (when-not (= engine-opts requested-opts)
+              (raise "Search engine options conflict with the live engine"
+                     {:error :search/options-mismatch
+                      :db-name db-name
+                      :existing-domain (:domain engine-opts)
+                      :requested-domain (:domain requested-opts)
+                      :conflicting-options
+                      (into #{} (filter #(not= (get engine-opts %)
+                                               (get requested-opts %)))
+                            (into (set (keys engine-opts))
+                                  (keys requested-opts)))}))
+            (let [engine (or (sc/open-search-engine store opts)
+                             (with-index-write-admission
+                               server message
+                               #(sc/new-search-engine store opts)))]
+              (update-db server db-name
+                         #(assoc % :engine engine
+                                   :engine-opts requested-opts))))))
+      (raise "engine store not found"
+               {:type :reopen
+                :db-name db-name
+                :db-type "kv"}))
     (update-client server client-id #(update % :engines conj db-name))
-    (update-db server db-name #(assoc % :engine engine))
     (write-message skey {:type :command-complete})))
 
 (defn search-call
@@ -119,7 +158,8 @@
    server skey {:keys [args]}]
   (let [[db-name opts] args
         engine         (i/re-index (search-engine server skey db-name) opts)]
-    (update-db server db-name #(assoc % :engine engine))
+    (update-db server db-name #(assoc % :engine engine
+                                      :engine-opts (search-engine-options opts)))
     (write-message skey {:type :command-complete})))
 
 (defn new-vector-index

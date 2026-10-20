@@ -354,7 +354,10 @@ with one budget of at most 100 ms shared across owned endpoint clients and cappe
 by `:time-out` and any enclosing request deadline. Disconnect never waits for a
 pool slot or reconnects to notify the server. It closes active transports without
 waiting for a codec callback; that exchange's owner releases codec state when
-the callback returns. Failed recovery candidates are disposed locally, without
+the callback returns. Sockets and selectors being created for session renewal
+or HA recovery are owned from creation, so disconnect also wakes pending connect,
+authentication, registration, and reopening waits before publication. Failed
+recovery candidates are disposed locally, without
 server notification or another network timeout.
 
 Search and vector indexes reopen lazily with their remembered options after a
@@ -702,6 +705,59 @@ before the next socket read. Slow handlers apply socket backpressure without
 adding requests to an application queue. HA and replica loops use a separate
 bounded background executor.
 
+Socket admission is bounded before allocating connection buffers or starting an
+owner thread. Excess sockets are closed immediately. Configure the following
+options through `server/create` or the CLI flags with the same names:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `:max-connections` / `--max-connections` | `1024` | All admitted connections, including anonymous sockets. |
+| `:max-unauthenticated-connections` / `--max-unauthenticated-connections` | `64` | Connections awaiting verified credentials or a live session token. |
+| `:authentication-timeout-ms` / `--authentication-timeout-ms` | `10000` | Absolute time from acceptance to authentication. Anonymous traffic does not extend it. |
+| `:read-timeout-ms` / `--read-timeout-ms` | `60000` | Time to receive each complete frame, including waiting for its first byte except between requests in an active explicit transaction. Partial progress does not extend it. |
+| `:write-timeout-ms` / `--write-timeout-ms` | `60000` | Time to send a response, including every copy-out frame through `:copy-done`. Partial progress does not extend it. |
+
+All five values must be positive 32-bit integers. At startup, the anonymous limit
+is clamped to the total limit, including when its default exceeds a configured
+total. Successful authentication releases anonymous capacity;
+an invented or expired session ID does not. Total capacity is retained until the
+connection owner finishes cleanup, including native transaction abort.
+
+Password hashing has a separate, JVM-wide admission limit shared by authentication,
+user creation, and password resets across all embedded servers. With the default
+128 MiB Argon2 working memory, the memory budget permits one concurrent hash per
+512 MiB of maximum JVM heap, capped at four hashes. Larger custom hashing memory
+settings consume proportionally more capacity. Each hash reserves twice its
+working memory for allocation overhead and GC overlap against a budget of half
+the maximum heap. Insufficient capacity returns `:server/busy` with
+`:reason :password-hashing-capacity` before allocating hashing memory. It is
+retryable when existing hashes occupy capacity; a hash exceeding the entire
+memory budget requires a larger heap or smaller hashing memory setting. Requests
+do not queue, and transport cancellation does not return capacity until the hash
+actually finishes. Heaps below 512 MiB cannot admit the default hash.
+
+A separate connection maintenance thread enforces these deadlines even when
+session expiration or persistence stalls. Its polling interval is at most 100 ms,
+or one quarter of the shortest timeout (minimum 1 ms). Enforcement is subject to
+thread scheduling.
+Read deadlines pause during ordinary request decoding and handler execution, and
+apply again to each copy-in frame. They bound network waits, without preempting
+synchronous handler or native execution. An idle authenticated socket can expire
+while its session remains live; the bundled client replaces that socket on its
+next call using the same client and remote handles. Active explicit transactions
+are exempt while waiting for the first byte of their next request. Once any bytes
+arrive, the complete frame must arrive within `:read-timeout-ms`. Each copy-in
+frame also retains its deadline, including the wait for its first byte.
+Write deadlines begin when a response starts and span encoding, buffer growth,
+and socket writes. Copy-out batches share one deadline for the entire transfer.
+On expiry, the server closes the socket so the owner can unwind, release database
+runtime locks, abort any connection-owned transaction, and return admission capacity.
+
+```console
+dtlv serv -r /data/dtlv --max-connections 512 --max-unauthenticated-connections 32 \
+  --authentication-timeout-ms 5000 --read-timeout-ms 60000 --write-timeout-ms 60000
+```
+
 Explicit transactions are pinned to the connection that opens them. Its thread
 owns the native transaction through commit or abort. Another socket cannot use
 that transaction, even within the same authenticated session. Clients using the
@@ -710,6 +766,9 @@ one socket. The bundled KV and Datalog clients always use a dedicated
 one-connection transaction client, keeping ordinary requests off the transaction
 owner's socket even when the ordinary pool size is one. A lost
 connection aborts its transaction; replacing the socket cannot resume or commit it.
+Pauses between transaction requests have no default timeout. Use the explicit
+transaction `:timeout-ms` option or `set-explicit-transaction-timeout!` to bound
+the transaction body; see [transaction timeouts](transact.md#explicit-synchronous-transaction).
 
 Bulk transfers stay on the connection thread until their final response. During
 copy-in, send transfer batches followed by `:copy-done` (or `:copy-fail`); ordinary

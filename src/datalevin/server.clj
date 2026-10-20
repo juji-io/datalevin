@@ -220,11 +220,11 @@
          (raise ~message {}))
        (do
          (remove-client ~'server ~'client-id)
-         (p/write-message-blocking ~'ch ~'write-bf
-                                   {:type :reconnect}
-                                   ~'wire-opts)))))
+         (connection/write-message ~'skey ~'write-bf
+                                   {:type :reconnect} ~'wire-opts)))))
 
-(declare run-event-loop! run-session-maintenance! close-conn store->db-name
+(declare run-event-loop! run-session-maintenance! run-connection-maintenance!
+         close-conn store->db-name
          session-lmdb remove-store
          with-db-runtime-store-swap
          halt-run abort-run cleanup-connection-transactions! cleanup-abandoned-transaction!
@@ -318,6 +318,8 @@
               (ensure-ha-follower-sync-loop server db-name))
             (.submit ^ExecutorService (:session-maintenance execution)
                      ^Runnable #(run-session-maintenance! server))
+            (.submit ^ExecutorService (:connection-maintenance execution)
+                     ^Runnable #(run-connection-maintenance! server))
             (.submit dispatcher ^Callable init)
             (catch Throwable t
               (.set running false)
@@ -352,6 +354,11 @@
                    :session-maintenance
                    (or (:session-maintenance execution)
                        (Executors/newSingleThreadExecutor))
+                   :connection-maintenance
+                   (or (:connection-maintenance execution)
+                       (Executors/newSingleThreadExecutor))
+                   :connection-limits
+                   (or (:connection-limits execution) (connection/limits {}))
                    :event-loop-stop (CountDownLatch. 1)
                    :connections (ConcurrentHashMap/newKeySet)
                    :connection-keys (ConcurrentHashMap.)
@@ -390,6 +397,8 @@
     (cleanup! #(shutdown-executor! (.-dispatcher server) "Server dispatcher"))
     (cleanup! #(shutdown-executor! (:session-maintenance (.-execution server))
                                   "Server session maintenance"))
+    (cleanup! #(shutdown-executor! (:connection-maintenance (.-execution server))
+                                  "Server connection maintenance"))
     ;; Acceptance has stopped. Cancel every owner, then join it before stores
     ;; close; each owner aborts its native transaction in its read-loop finally.
     (doseq [key (vals (:connection-keys (.-execution server)))]
@@ -1227,22 +1236,23 @@
 (defn- write-message
   "write a message to channel, auto grow the buffer"
   [^SelectionKey skey msg]
-  (let [state                          (.attachment skey)
-        {:keys [^ByteBuffer write-bf wire-opts]} @state
-        ^SocketChannel  ch             (.channel skey)]
-    (try
-      (p/write-message-blocking ch write-bf msg wire-opts)
-      (catch BufferOverflowException _
-        (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
-          (vswap! state assoc :write-bf (bf/allocate-buffer size))
-          (write-message skey msg))))))
+  (connection/with-write skey
+    (let [state                          (.attachment skey)
+          {:keys [^ByteBuffer write-bf wire-opts]} @state]
+      (try
+        (connection/write-message skey write-bf msg wire-opts)
+        (catch BufferOverflowException _
+          (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
+            (vswap! state assoc :write-bf (bf/allocate-buffer size))
+            (write-message skey msg)))))))
 
 (declare new-connection-context)
 
 (defn- ^:redef handle-accept
   [^Server server ^SelectionKey skey]
-  (let [{:keys [connections connection-keys connection-threads]} (.-execution server)]
-    (connection/accept! skey connections connection-keys connection-threads
+  (let [{:keys [connections connection-keys connection-threads connection-limits]}
+        (.-execution server)]
+    (connection/accept! skey connections connection-keys connection-threads connection-limits
                         #(sdisp/handle-read dispatch-deps server %)
                         #(new-connection-context server %))))
 
@@ -2052,7 +2062,10 @@
         (halt-run this)
         (sdisp/handle-message-error! dispatch-deps request-key e))))
 
-  (halt-run [_] (release-slot!))
+  (halt-run [this]
+    (try
+      (vswap! (.attachment ^SelectionKey skey) update :transaction-owners disj this)
+      (finally (release-slot!))))
 
   (abort-run [this f]
     (if (identical? thread (Thread/currentThread))
@@ -2080,6 +2093,10 @@
                #(merge (dissoc % :aborted-transaction-close)
                        (dissoc tx-state :release-slot!)
                        {:runner runner :runner-skey skey}))
+    ;; Track owners on the socket so idle reads need not scan all databases.
+    ;; A set keeps halt idempotent and permits multiple database transactions.
+    (vswap! (.attachment ^SelectionKey skey) update :transaction-owners
+            (fnil conj #{}) runner)
     runner))
 
 (defn- cleanup-abandoned-transaction!
@@ -2196,7 +2213,6 @@
      :root #'server-root
      :acquire-transaction-slot! #'acquire-transaction-slot!
      :search-engine #'search-engine
-     :search-engine* #'search-engine*
      :server-copy-store! #'server-copy-store!
      :store #'store
      :store->db-name #'store->db-name
@@ -2459,6 +2475,20 @@
       (catch Throwable t
         (fail-server! server t "Server session maintenance cannot continue; shutting down")))))
 
+(defn- run-connection-maintenance!
+  [^Server server]
+  (let [{:keys [connection-keys connection-limits event-loop-stop]} (.-execution server)
+        interval (max 1 (min 100 (quot (min (long (:authentication-timeout-ms connection-limits))
+                                           (long (:read-timeout-ms connection-limits))
+                                           (long (:write-timeout-ms connection-limits))) 4)))]
+    (try
+      (while (.get ^AtomicBoolean (.-running server))
+        (connection/expire! connection-keys)
+        (.await ^CountDownLatch event-loop-stop (long interval) TimeUnit/MILLISECONDS))
+      (catch Throwable t
+        (when (.get ^AtomicBoolean (.-running server))
+          (fail-server! server t "Server connection maintenance failed; shutting down"))))))
+
 (defn- run-event-loop!
   [^Server server]
   (try
@@ -2593,7 +2623,8 @@
              {:transaction-lock-timeout-ms transaction-lock-timeout-ms}))
     (resources/with-acquired
       (fn [own!]
-        (let [threads (configured-runner-thread-count worker-threads worker-queue-size)
+        (let [connection-limits (connection/limits opts)
+              threads (configured-runner-thread-count worker-threads worker-queue-size)
               transaction-limit (or transaction-threads threads)
               _ (when-not (pos-int? transaction-limit)
                   (raise "Server transaction limit must be positive"
@@ -2602,6 +2633,9 @@
                                 #(shutdown-executor! % "Server dispatcher"))
               maintenance (own! (Executors/newSingleThreadExecutor)
                                  #(shutdown-executor! % "Server session maintenance"))
+              connection-maintenance
+              (own! (Executors/newSingleThreadExecutor)
+                    #(shutdown-executor! % "Server connection maintenance"))
               background (own! (bounded-runner-executor (or background-threads threads)
                                                         :background-threads)
                                 #(shutdown-executor! % "Server background executor"))
@@ -2617,6 +2651,8 @@
                     server-socket selector (ConcurrentLinkedQueue.)
                     dispatcher background sys-conn clients dbs
                     {:background background
+                     :connection-limits connection-limits
+                     :connection-maintenance connection-maintenance
                      :session-maintenance maintenance
                      :transaction-slots (Semaphore. transaction-limit)
                      :lock-timeout-ms transaction-lock-timeout-ms}))))

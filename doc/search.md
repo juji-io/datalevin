@@ -282,6 +282,10 @@ Documents can be put into different search domains, each corresponding to a
 search engine of its own. The option map of `new-search-engine` has a `:domain`
 that is a string value. If not specified, the default domain is `datalevin`.
 
+Remote KV stores share one live search engine per database. Opening another
+engine reuses it when its domain and options match; conflicting options raise
+an error. Use separate databases for different remote search domains.
+
 When starting a  Datalog store, a `:search-domains` option can be added to the
 option map, and its value is a map from domain strings to the option maps of each
 search domain.

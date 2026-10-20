@@ -29,6 +29,7 @@
    [datalevin.read-encode :as enc]
    [datalevin.server.client-op-cache :as op-cache]
    [datalevin.server.api :as sapi]
+   [datalevin.server.connection :as connection]
    [datalevin.server.prepared :as prepared]
    [datalevin.server.auth :as auth
     :refer [view-act alter-act create-act control-act database-obj user-obj
@@ -43,7 +44,7 @@
    [datalevin.validate :as vld]
    [taoensso.timbre :as log])
   (:import
-   [java.nio.channels SelectionKey SocketChannel]
+   [java.nio.channels SelectionKey]
    [java.nio.file Paths]
    [java.util UUID]
    [java.util.concurrent ConcurrentHashMap Semaphore TimeUnit]
@@ -66,7 +67,7 @@
      :get-lock :get-store :halt-run :in-use-dbs :lmdb :new-runtime-db
      :open-server-copied-store! :open-server-store :open-write-txn-with-retry
      :remove-client :remove-store :root :acquire-transaction-slot! :search-engine
-     :search-engine* :server-copy-store! :store :store->db-name :store-closed?
+     :server-copy-store! :store :store->db-name :store-closed?
      :sync-copy-response-store! :sys-conn :unpin-server-copy-backup-floor!
      :update-cached-permission :update-cached-role :update-client :update-db
      :vector-index :with-db-runtime-store-read-access :write-message
@@ -115,7 +116,6 @@
 (defn- with-permission!
   [deps server ^SelectionKey skey req-act req-obj req-tgt denied-message f]
   (let [{:keys [client-id write-bf wire-opts]} @(skey-state skey)
-        ^SocketChannel ch                    (.channel skey)
         {:keys [permissions]}                ((:get-client deps) server client-id)]
     (if permissions
       (if (auth/has-permission? req-act req-obj req-tgt permissions)
@@ -123,7 +123,7 @@
         (raise denied-message {}))
       (do
         ((:remove-client deps) server client-id)
-        (p/write-message-blocking ch write-bf {:type :reconnect} wire-opts)))))
+        (connection/write-message skey write-bf {:type :reconnect} wire-opts)))))
 
 (defn- privileged-server-option-key?
   [k]
@@ -830,8 +830,16 @@
 (defn authentication
   [deps server skey message]
   (if-let [client-id ((:authenticate deps) server skey message)]
-    ((:write-message deps) skey
-     {:type :authentication-ok :client-id client-id})
+    (try
+      (connection/authenticated! skey)
+      ((:write-message deps) skey
+       {:type :authentication-ok :client-id client-id})
+      (catch Throwable t
+        (try ((:remove-client deps) server client-id)
+             (catch Throwable cleanup-error
+               (when-not (identical? t cleanup-error)
+                 (.addSuppressed t cleanup-error))))
+        (throw t)))
     (raise "Failed to authenticate" {})))
 
 (defn disconnect
@@ -840,10 +848,15 @@
     ((:disconnect-client* deps) server client-id)))
 
 (defn set-client-id
-  [deps _server ^SelectionKey skey message]
+  [deps server ^SelectionKey skey message]
   (let [client-id         (:client-id message)
         wire-capabilities (:wire-capabilities message)
         wire-opts         (p/negotiate-wire-opts wire-capabilities)]
+    ;; Preserve the registration reply for expired sessions so the next
+    ;; request can trigger normal client renewal. An invented ID cannot
+    ;; escape anonymous admission or its authentication deadline.
+    (when ((:get-client deps) server client-id)
+      (connection/authenticated! skey))
     ((:write-message deps) skey
      {:type              :set-client-id-ok
       :wire-capabilities (p/local-wire-capabilities wire-opts)})

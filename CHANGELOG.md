@@ -7,6 +7,10 @@
 - [Vector] index restoration after server restart.
 ### Improved
 - [Server] improve resilience of server/client lifecycle.
+- [Server] add configurable [connection limits and authentication/read/write
+  deadlines](doc/server.md#networking); use dedicated connections for explicit
+  transactions, exempting idle pauses from read deadlines while retaining
+  partial-frame and copy-in timeouts.
 - [Test] Chaos Monkey tests for server resilience.
 
 ## 1.2.5 (2026-10-14)

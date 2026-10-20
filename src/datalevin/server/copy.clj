@@ -15,6 +15,7 @@
    [datalevin.kv :as kv]
    [datalevin.native-value :as nv]
    [datalevin.protocol :as p]
+   [datalevin.server.connection :as connection]
    [datalevin.storage :as st]
    [datalevin.util :as u :refer [raise]]
    [taoensso.timbre :as log])
@@ -71,13 +72,15 @@
                                          (catch Exception e
                                            (vreset! decode-error e)
                                            (UUID/randomUUID)))))]
-    (p/write-message-blocking ch write-bf {:type :copy-in-response}
-                              wire-opts)
+    (connection/write-message skey write-bf {:type :copy-in-response} wire-opts)
     ;; The connection owner has compacted the opening request.
     ;; Any coalesced copy batches already in read-bf belong to this transfer.
     (loop [bf read-bf]
-      (let [[msg bf'] (binding [nv/*wire-reader* read-native]
-                        (p/receive-ch ch bf wire-opts))]
+      (connection/begin-read! skey)
+      (let [[msg bf'] (try
+                        (binding [nv/*wire-reader* read-native]
+                          (p/receive-ch ch bf wire-opts))
+                        (finally (connection/end-read! skey)))]
         (when-not (identical? bf bf') (vswap! state assoc :read-bf bf'))
         (if (map? msg)
           (let [{:keys [type]} msg]
@@ -106,7 +109,6 @@
   ([deps ^SelectionKey skey data batch-size copy-meta response-meta]
    (let [state                          (.attachment skey)
          {:keys [^ByteBuffer write-bf wire-opts]} @state
-         ^SocketChannel ch              (.channel skey)
          response                       (cond-> {:type :copy-out-response}
                                           (map? data)
                                           (assoc :copy-result-type :map)
@@ -116,12 +118,12 @@
                                           (assoc :copy-meta copy-meta)
                                           (seq response-meta)
                                           (merge response-meta))]
-     (locking write-bf
-       (p/write-message-blocking ch write-bf response wire-opts)
-       (doseq [batch (partition batch-size batch-size nil data)]
-         ((:write-message-fn deps) skey batch))
-       (p/write-message-blocking ch write-bf {:type :copy-done}
-                                 wire-opts))
+     (connection/with-write skey
+       (locking write-bf
+         (connection/write-message skey write-bf response wire-opts)
+         (doseq [batch (partition batch-size batch-size nil data)]
+           ((:write-message-fn deps) skey batch))
+         (connection/write-message skey write-bf {:type :copy-done} wire-opts)))
      (log/debug "Copied out" (count data) "data items"))))
 
 (defn copy-file-out
@@ -136,32 +138,33 @@
                       (assoc :copy-meta copy-meta))
         ^MessageDigest md (MessageDigest/getInstance "SHA-256")
         chunk             (byte-array chunk-bytes)]
-    ((:write-message-fn deps) skey response)
-    (with-open [in (Files/newInputStream path
-                                         (into-array OpenOption []))]
-      (loop [written-bytes 0
-             chunk-count   0]
-        (let [n (.read in chunk)]
-          (if (neg? n)
-            (let [checksum (u/hexify (.digest md))]
-              ((:write-message-fn deps)
-               skey
-               {:type          :copy-done
-                :copy-format   :binary-chunks
-                :checksum-algo :sha-256
-                :checksum      checksum
-                :bytes         written-bytes
-                :chunks        chunk-count})
-              (log/debug "Copied out" written-bytes "bytes in" chunk-count
-                         "chunks"))
-            (let [^bytes out-chunk (if (= n chunk-bytes)
-                                     chunk
-                                     (let [tail (byte-array n)]
-                                       (System/arraycopy chunk 0 tail 0 n)
-                                       tail))]
-              (.update md out-chunk 0 n)
-              ((:write-message-fn deps) skey [out-chunk])
-              (recur (+ written-bytes n) (inc chunk-count)))))))))
+    (connection/with-write skey
+      ((:write-message-fn deps) skey response)
+      (with-open [in (Files/newInputStream path
+                                           (into-array OpenOption []))]
+        (loop [written-bytes 0
+               chunk-count   0]
+          (let [n (.read in chunk)]
+            (if (neg? n)
+              (let [checksum (u/hexify (.digest md))]
+                ((:write-message-fn deps)
+                 skey
+                 {:type          :copy-done
+                  :copy-format   :binary-chunks
+                  :checksum-algo :sha-256
+                  :checksum      checksum
+                  :bytes         written-bytes
+                  :chunks        chunk-count})
+                (log/debug "Copied out" written-bytes "bytes in" chunk-count
+                           "chunks"))
+              (let [^bytes out-chunk (if (= n chunk-bytes)
+                                       chunk
+                                       (let [tail (byte-array n)]
+                                         (System/arraycopy chunk 0 tail 0 n)
+                                         tail))]
+                (.update md out-chunk 0 n)
+                ((:write-message-fn deps) skey [out-chunk])
+                (recur (+ written-bytes n) (inc chunk-count))))))))))
 
 (defn copy-source-kv-store
   [store]

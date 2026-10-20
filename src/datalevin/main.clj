@@ -248,6 +248,26 @@
     :default c/default-idle-timeout
     :parse-fn #(Long/parseLong %)
     :validate [#(<= 0 ^long %) "Must be a natural number"]]
+   [nil "--max-connections COUNT" "Maximum admitted server connections"
+    :default c/default-server-max-connections
+    :parse-fn #(Integer/parseInt %)
+    :validate [pos-int? "Must be positive"]]
+   [nil "--max-unauthenticated-connections COUNT" "Maximum connections awaiting authentication"
+    :default c/default-server-max-unauthenticated-connections
+    :parse-fn #(Integer/parseInt %)
+    :validate [pos-int? "Must be positive"]]
+   [nil "--authentication-timeout-ms MS" "Deadline from socket acceptance to authentication"
+    :default c/default-server-authentication-timeout-ms
+    :parse-fn #(Integer/parseInt %)
+    :validate [pos-int? "Must be positive"]]
+   [nil "--read-timeout-ms MS" "Deadline for receiving each complete frame"
+    :default c/default-server-read-timeout-ms
+    :parse-fn #(Integer/parseInt %)
+    :validate [pos-int? "Must be positive"]]
+   [nil "--write-timeout-ms MS" "Deadline for sending a response, including copy-out"
+    :default c/default-server-write-timeout-ms
+    :parse-fn #(Integer/parseInt %)
+    :validate [pos-int? "Must be positive"]]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-n" "--nippy" "Dump/load database in nippy binary format"]
    ["-p" "--port PORT" "Server listening port number"

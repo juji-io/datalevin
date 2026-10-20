@@ -28,7 +28,7 @@
    [java.io ByteArrayInputStream ByteArrayOutputStream EOFException]
    [java.nio ByteBuffer BufferOverflowException]
    [java.util UUID]
-   [java.nio.channels SocketChannel Selector SelectionKey]
+   [java.nio.channels ClosedSelectorException SocketChannel Selector SelectionKey]
    [datalevin.io ByteBufferInputStream ByteBufferOutputStream WireCompression]
    [datalevin.spill SpillableVector]
    [datalevin.datom Datom]
@@ -404,7 +404,7 @@
   (let [selector (Selector/open)]
     (try
       (.register ch selector (int ops))
-      selector
+      (cr/track-transport! selector)
       (catch Throwable t
         (try (.close selector)
              (catch Throwable close-error
@@ -422,7 +422,7 @@
          timeout-ms (if timed? (max 1 (long timeout-ms)) 0)
          deadline-ns (if timed?
                        (let [local (+ (System/nanoTime) (* 1000000 timeout-ms))]
-                         (if cr/*request* (min local (cr/deadline)) local))
+                         (if (cr/current) (min local (cr/deadline)) local))
                        0)
          blocking? (.isBlocking ch)
          selector (volatile! nil)]
@@ -463,9 +463,13 @@
 
                :else
                (do (Thread/yield) (recur))))))
+       (catch ClosedSelectorException e
+         (cr/check! :send)
+         (throw e))
        (finally
          (when-let [^Selector sel @selector]
-           (.close sel))
+           (try (.close sel)
+                (finally (cr/untrack-transport! sel))))
          (when (and timed? blocking? (.isOpen ch))
            (.configureBlocking ch true)))))))
 
@@ -602,11 +606,16 @@
                                                   deadline-ns timeout-ms))
                              (recur))
               (= readn -1) (do (.close ch)
+                               (cr/check! :receive)
                                (raise "Socket channel is closed." {}))))))
+      (catch ClosedSelectorException e
+        (cr/check! :receive)
+        (throw e))
       (finally
         (when-not read-selector
           (when-let [^Selector sel @selector-v]
-            (.close sel)))
+            (try (.close sel)
+                 (finally (cr/untrack-transport! sel)))))
         (when (and blocking? (.isOpen ch))
           (.configureBlocking ch true))))))
 

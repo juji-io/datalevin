@@ -533,11 +533,15 @@
   ;; Password verification can itself consume a short budget under CPU load.
   ;; Certify a genuinely withheld reply before releasing the concurrent wave;
   ;; expiry before the proxy sees a reply is not evidence of this fault.
-  (let [proxy (:proxy ctx)]
+  (let [proxy (:proxy ctx)
+        deadline (+ (System/nanoTime) 10000000000)]
     (loop [attempt 0]
-      (when (and (< attempt 4)
-                 (<= (long (get @(:hits proxy) :authentication-timeout 0))
-                     (long hits-before)))
+      (when (<= (long (get @(:hits proxy) :authentication-timeout 0))
+                (long hits-before))
+        (ensure! (and (< attempt 20) (< (System/nanoTime) deadline))
+                 "Authentication timeout certification never reached a withheld reply"
+                 {:attempts attempt :timeout-ms 10000 :hits-before hits-before
+                  :hits @(:hits proxy)})
         (let [start (System/nanoTime)]
           (try (cl/list-databases (:admin ctx)) (catch Exception _ nil))
           (ensure! (< (- (System/nanoTime) start) 1500000000)
