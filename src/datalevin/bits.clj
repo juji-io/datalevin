@@ -532,6 +532,10 @@
 (defn- sep->slash
   [^bytes bs]
   (let [n-1 (dec (alength bs))]
+    ;; An implicit array bounds exception can lose its message after JIT
+    ;; warmup. Keep malformed keyword/symbol payload failures deterministic.
+    (when (neg? n-1)
+      (throw (ArrayIndexOutOfBoundsException. "Index 0 out of bounds for length 0")))
     (loop [i 0]
       (cond
         (= (aget bs i) c/separator) (aset-byte bs i c/slash)
