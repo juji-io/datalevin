@@ -1360,6 +1360,10 @@
     ;; Store shutdown waits for in-flight sampling before freeing native state.
     ;; Clearing through the live LMDB handle bypasses that coordination.
     (close conn)
+    (when (instance? Store store)
+      ;; Clear invalidates every handle to this database, including aliases
+      ;; whose references kept the shared store open after closing conn.
+      (s/retire-shared-local-store! dir))
     (let [lmdb (open-kv dir)]
       (try
         (doseq [dbi [c/eav c/ave c/giants c/ha-client-ops c/schema c/meta]]

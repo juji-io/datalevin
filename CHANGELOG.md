@@ -4,6 +4,7 @@
 ### Fixed
 - [Server] prevent sampler hijacking write txn.
 - [KV] shutdown sampler before closing.
+- [Datalog] planner bug induced NPE.
 
 ## 1.2.6 (2026-10-20)
 
