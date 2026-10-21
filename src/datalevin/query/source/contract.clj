@@ -46,12 +46,11 @@
        (fail! :query-source/invalid :descriptor)))
    t))
 
-(defn- column! [column variable-required? check!]
-  (fields! column (cond-> #{:type :nullable?} variable-required? (conj :variable))
-           #{} :descriptor)
+(defn- column! [column check!]
+  (fields! column #{:type :nullable? :variable} #{} :descriptor)
   (type! (:type column) check!)
   (ensure! (and (boolean? (:nullable? column))
-                (or (not variable-required?) (variable? (:variable column)))) :descriptor))
+                (variable? (:variable column))) :descriptor))
 
 (defn binding-columns!
   "Validate the nonempty ordered typed inputs of a dependent access. This pure
@@ -59,7 +58,7 @@
   ([columns] (binding-columns! columns nil))
   ([columns check!]
    (ensure! (and (vector? columns) (seq columns) (v/portable? columns check!)) :batch)
-   (doseq [column columns] (column! column true check!))
+   (doseq [column columns] (column! column check!))
    (ensure! (= (count columns) (count (set (map :variable columns)))) :batch)
    columns))
 

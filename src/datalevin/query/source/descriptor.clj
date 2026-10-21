@@ -6,7 +6,6 @@
             [datalevin.query.source.schema :as schema]
             [datalevin.query.source.value :as value :refer [fail!]]))
 
-(def logical-schema! schema/logical-schema!)
 (def source-info! schema/source-info!)
 
 (defn capture!

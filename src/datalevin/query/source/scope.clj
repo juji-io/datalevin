@@ -111,7 +111,7 @@
     {:region-id (:region-id region) :empty? empty?
      :inputs inputs :bindings constants
      ;; Projection is before call-argument unification, including `_` positions.
-     :projection head :set-key head :arguments arguments
+     :projection head :arguments arguments
      :columns head-columns
      :outputs (if empty? (projected [] variables true check!)
                   (projected (vec (vals call-columns)) variables false check!))}))
@@ -139,8 +139,7 @@
         output (projected (vec (vals body)) variables empty? check!)]
     {:region-id (:region-id region) :empty? empty? :inputs inputs
      :bindings (select-keys (:bindings region) (set (map :variable inputs)))
-     :restore restore :projection variables :columns output :outputs output
-     :set-key (when (= :union (:kind site)) variables)}))
+     :restore restore :projection variables :columns output :outputs output}))
 
 (defn interfaces!
   "Compile one captured site's boundary from complete shared branch schemas.
@@ -251,7 +250,6 @@
                         :columns columns :branches outputs
                         :call-args call-args :public-projection variables
                         :empty? (every? :empty? outputs)
-                        :set-boundary? (not= :attribute (:kind site))
                         :combine (if (= :attribute (:kind site)) :bag-union :set-union)}
                 _ (own! (rt/charge-copy! runtime (dissoc output :owner :closed?)))
                 output (value/owned-copy (dissoc output :owner :closed?) check!)

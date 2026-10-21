@@ -1220,7 +1220,8 @@ source inputs in `d/q` and `d/explain`, bypassing native result caches. Run its
 focused integration suite with:
 
 ```sh
-clojure -M:test -m datalevin.query.source.execution-runner
+cd ../dtlvtest
+lein run -m datalevin.query.source.execution-runner
 ```
 
 The same runner includes the v2

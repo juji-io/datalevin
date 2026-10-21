@@ -206,8 +206,7 @@
                                         (swap! regions update-in [region :available-vars]
                                                into (contract/variables (:clause branch)))
                                         (swap! regions update-in [region :patterns] conj
-                                               (assoc branch :source-symbol source :origin path
-                                                             :original-clause-id (:id clause))))]
+                                               (assoc branch :source-symbol source :origin path)))]
                           (cond
                             (:empty-proof lowered)
                             (do (swap! regions assoc-in [id :empty?] true)
@@ -227,7 +226,7 @@
                                       :mode (:mode lowered) :attribute-variable (:attribute-variable lowered)
                                       :exports (node-vars node) :required-inputs (if (= :dispatch (:mode lowered))
                                                                             #{(:attribute-variable lowered)} #{})
-                                      :branches child-ids :lowered lowered}))))
+                                      :branches child-ids}))))
                         (add-core! id node path))))
                   (body! [clauses path inherited input-vars live bindings literals stack depth]
                     (check!)
@@ -265,7 +264,7 @@
                                                  stack (inc (long depth))))
                                         (range) (:clauses node))]
                               (site! {:kind :union :path location :node node :parent-region id :exports exports
-                                      :required-inputs required :branches branch-ids :set-boundary? true})
+                                      :required-inputs required :branches branch-ids})
                               (when (every? #(:empty? (nth @regions %)) branch-ids)
                                 (swap! regions assoc-in [id :empty?] true)))
                             (instance? RuleExpr node)
@@ -303,7 +302,7 @@
                                                    :required-inputs required :input-vars inputs}))
                                               (range) (:branches rule))]
                                     (site! {:kind :rule :path location :node node :rule rule :parent-region id
-                                            :exports (node-vars node) :branches branches :set-boundary? true})
+                                            :exports (node-vars node) :branches branches})
                                     (when (every? #(:empty? (nth @regions (:region-id %))) branches)
                                       (swap! regions assoc-in [id :empty?] true))))))
                             (instance? Not node)

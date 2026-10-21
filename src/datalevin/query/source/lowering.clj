@@ -117,7 +117,6 @@
                                (check!)
                                (keep! (control/reserve! ctl {:retained-bytes 4096}))
                                (branch descriptor clause bindings attribute check!))) candidates)
-              closed? (atom false)
               output {:mode mode :attribute-variable (when (= :var tag) x)
                       :branches branches
                       :empty-proof (when (empty? branches)
@@ -128,8 +127,7 @@
                                                  [(first (:terms clause)) (nth (:terms clause) 2)])
                                          :incompatible-constant :incompatible-repeated-variable)))}
               held @tokens
-              close (rt/own! runtime #(when (compare-and-set! closed? false true)
-                                       (doseq [token held] (control/release! token))))]
+              close (rt/own! runtime #(doseq [token held] (control/release! token)))]
           (vreset! success? true)
-          (assoc output :close close :closed? closed?)))
+          (assoc output :close close)))
       (finally (when-not @success? (doseq [token @tokens] (control/release! token)))))))

@@ -324,15 +324,6 @@
                       (fail! :query-source/invalid :native-value))
                     (thaw-preflighted! buffer)))}))))
 
-(defn giant-value
-  "Decode a pre-reserved scalar or fixed tuple without metadata. Values needing
-  an additional layout charge must use prepare-giant and reserve it first."
-  [buffer type eid attribute]
-  (when (layout-charge? type) (fail! :query-source/unsupported :native-value))
-  (let [{:keys [retained-bytes decode]} (prepare-giant buffer type eid attribute)]
-    (when (pos? (long retained-bytes)) (fail! :query-source/unsupported :native-value))
-    (decode)))
-
 (defn- scalar-header [^long header]
   (case header
     (-64 -63 -8) :long
@@ -435,10 +426,3 @@
            (when-not (= type (scalar-header (.get buffer)))
              (fail! :query-source/invalid :native-value)))
          {:retained-bytes 0 :decode #(bits/avg->inline-value raw)})))))
-
-(defn inline-value
-  "Decode a pre-reserved scalar or fixed tuple. Other supported values must use
-  prepare-inline and reserve its returned charge before invoking the decoder."
-  [raw type]
-  (when (layout-charge? type) (fail! :query-source/unsupported :native-value))
-  ((:decode (prepare-inline raw type))))

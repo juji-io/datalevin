@@ -22,11 +22,18 @@ Shared test fixtures needed by this repository's builds and language binding
 checks remain in `test/data`; test-only adapter infrastructure lives in
 `test-src` so the sibling checkout can use it too.
 
-The query-source F0 contract suite runs independently of the query engine:
-`clojure -M:test -m datalevin.query.source.runner`. It uses the test-only fake
-and conformance driver under `test-src/datalevin/query/source`.
-The initial F1 query-engine integration checks run with
-`clojure -M:test -m datalevin.query.source.execution-runner`.
+The query-source contract and binding checks and the public query smoke suite
+remain here. Run them with `lein test datalevin.query.source-test
+datalevin.query.source-binding-test datalevin.query.source-smoke-test`, or run
+the contract suite with `clojure -M:test -m datalevin.query.source.runner`.
+Detailed planning, execution, lifecycle and native decoder regressions live in
+`../dtlvtest/test/datalevin/query`. From `../dtlvtest`, run
+`lein run -m datalevin.query.source.execution-runner` for the focused SPI suite,
+or `lein test` for all regressions.
+
+The fake providers and shared conformance drivers remain under
+`test-src/datalevin/query/source` for the regression project and companion
+federation adapter.
 
 When implementation moves to another namespace, update its tests to call the
 owning namespace. Do not keep forwarding functions or pass-through stubs in
