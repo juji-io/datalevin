@@ -7,7 +7,6 @@
    [datalevin.entity :as de]
    [datalevin.server :as srv]
    [taoensso.timbre :as log]
-   [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
    [java.net ServerSocket]))
@@ -54,22 +53,17 @@
   [f]
   (let [port (allocate-port)
         dir (u/tmp-dir (str "server-test-" (random-uuid)))
-        server (binding [c/*db-background-sampling?* false]
-                 (srv/create {:port port :root dir}))]
+        server (srv/create {:port port :root dir})]
     (log/set-min-level! :report)
-    (binding [c/*db-background-sampling?* false
-              cl/*default-port* port]
+    (binding [cl/*default-port* port]
       (try
         (srv/start server)
         (f)
         (finally
           (srv/stop server)
-          (u/delete-files dir)))))
-  (System/gc))
+          (u/delete-files dir))))))
 
 (defn db-fixture
   [f]
   (log/set-min-level! :report)
-  (binding [c/*db-background-sampling?* false]
-    (f))
-  (System/gc))
+  (f))

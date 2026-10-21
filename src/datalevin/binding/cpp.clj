@@ -527,44 +527,52 @@
 
 (declare key-range-list-count-fast)
 
+(defn- assert-native-write-owner!
+  [^Rtx rtx]
+  (when-not (.isWriterOwner ^Txn (.-txn rtx))
+    (raise "Native writer belongs to another caller"
+           {:error :lmdb/write-transaction-open :retryable? true})))
+
 (defn- close-native-write!
   [^Env env write-txn wdb before-commit]
   (if-let [^Rtx wtxn @write-txn]
-    (try
-      (when-let [^Txn txn (.-txn wtxn)]
-        (close-resolution-cursor! wtxn)
-        (let [aborted? @(.-aborted? wtxn)]
-          (if aborted?
+    (do
+      (assert-native-write-owner! wtxn)
+      (try
+        (when-let [^Txn txn (.-txn wtxn)]
+          (close-resolution-cursor! wtxn)
+          (let [aborted? @(.-aborted? wtxn)]
+            (if aborted?
+              (.close txn)
+              (try
+                (when before-commit
+                  (before-commit wdb {:operation :close-transact-kv}))
+                (close-resolution-cursor! wtxn)
+                (.commit txn)
+                (catch Util$MapFullException _
+                  (close-resolution-cursor! wtxn)
+                  (.close txn)
+                  (up-db-size env)
+                  (raise "DB resized" {:resized true}))
+                (catch Exception e
+                  (close-resolution-cursor! wtxn)
+                  (.close txn)
+                  (if (or (l/resized? e)
+                          (= :ha/write-rejected (:error (ex-data e))))
+                    (throw e)
+                    (raise "Fail to commit read/write transaction in LMDB: "
+                           e {})))))
             (.close txn)
-            (try
-              (when before-commit
-                (before-commit wdb {:operation :close-transact-kv}))
-              (close-resolution-cursor! wtxn)
-              (.commit txn)
-              (catch Util$MapFullException _
-                (close-resolution-cursor! wtxn)
-                (.close txn)
-                (up-db-size env)
-                (raise "DB resized" {:resized true}))
-              (catch Exception e
-                (close-resolution-cursor! wtxn)
-                (.close txn)
-                (if (or (l/resized? e)
-                        (= :ha/write-rejected (:error (ex-data e))))
-                  (throw e)
-                  (raise "Fail to commit read/write transaction in LMDB: "
-                         e {})))))
-          (.close txn)
-          (if aborted? :aborted :committed)))
-      (finally
-        ;; Every exit must detach the writer before closing its buffers, even
-        ;; when a commit hook throws an Error or map growth itself fails. A
-        ;; metadata write may also have replaced the original transaction.
-        (let [replacement @write-txn]
-          (vreset! write-txn nil)
-          (when-not (identical? replacement wtxn)
-            (close-rtx-quiet! replacement))
-          (close-rtx-quiet! wtxn))))
+            (if aborted? :aborted :committed)))
+        (finally
+          ;; Every exit must detach the writer before closing its buffers, even
+          ;; when a commit hook throws an Error or map growth itself fails. A
+          ;; metadata write may also have replaced the original transaction.
+          (let [replacement @write-txn]
+            (vreset! write-txn nil)
+            (when-not (identical? replacement wtxn)
+              (close-rtx-quiet! replacement))
+            (close-rtx-quiet! wtxn)))))
     (raise "Calling `close-transact-kv` without opening" {})))
 
 
@@ -732,6 +740,7 @@
   (reset-write
     [this]
     (when-let [old @write-txn]
+      (assert-native-write-owner! old)
       (vreset! write-txn nil)
       (close-rtx-quiet! old))
     (let [lease (when-let [guard (:native-lifetime @info)] (lifetime/enter! guard))]
@@ -1115,13 +1124,16 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
-    (.check-ready this)
-    (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
-    (try
-      (.reset-write this)
-      (.mark-write this)
-      (catch Exception e
-        (raise "Fail to open read/write transaction in LMDB: " e {}))))
+    (locking write-txn
+      (.check-ready this)
+      (when-let [rtx @write-txn]
+        (assert-native-write-owner! rtx))
+      (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
+      (try
+        (.reset-write this)
+        (.mark-write this)
+        (catch Exception e
+          (raise "Fail to open read/write transaction in LMDB: " e {})))))
 
   (close-transact-kv [_]
     (when writing? (assert-write-view-valid! writer-context))
@@ -1133,6 +1145,7 @@
     (when writing? (assert-write-view-valid! writer-context))
     (when-let [abort! (some-> writer-context .batchAbort)] (abort!))
     (when-let [^Rtx wtxn @write-txn]
+      (assert-native-write-owner! wtxn)
       (vreset! (.-aborted? wtxn) true)
       (vreset! write-txn wtxn)
       nil))
@@ -1152,6 +1165,7 @@
       (letfn [(do-transact [prepared]
               (.check-ready this)
               (let [^Rtx rtx  @write-txn
+                    _ (when rtx (assert-native-write-owner! rtx))
                     one-shot? (nil? rtx)
                     ^DBI dbi  (when dbi-name
                                 (or (.get dbis dbi-name)

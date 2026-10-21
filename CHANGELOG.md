@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Server] prevent sampler hijacking write txn.
+
 ## 1.2.6 (2026-10-20)
 
 ### Fixed
