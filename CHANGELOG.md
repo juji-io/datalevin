@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.6 (2026-10-20)
 
 ### Fixed
 - [Server] lifecycle and recovery bugs.
