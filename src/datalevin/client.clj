@@ -1094,6 +1094,16 @@
     (deliver (:result attempt) result)
     (.notifyAll ^Object client)))
 
+(defn- recovery-result
+  "Keep an owner's cancellation local. Waiters may retry an abandoned attempt
+  after cleanup, using their own remaining budgets. Capture before cleanup can
+  alter the owner's interrupt flag."
+  [failure]
+  (if (or (= :socket/timeout (:error (ex-data failure)))
+          (cr/interrupted? failure))
+    ::abandoned
+    failure))
+
 (defn- finish-recovery-transports! [attempt failure]
   (when-let [^Set resources (get-in attempt [:transport-owner :resources])]
     (try
@@ -1109,7 +1119,8 @@
     (loop []
       (cr/check! :recovery)
       (if (realized? (:result attempt))
-        @(:result attempt)
+        (let [result @(:result attempt)]
+          (when-not (= ::abandoned result) result))
         (do (cr/await! client :recovery) (recur))))))
 
 (defn- renew-session! [^Client client observed-pool deadline-ns]
@@ -1132,7 +1143,8 @@
             (binding [cr/*transport-owners*
                       (conj cr/*transport-owners* (:transport-owner attempt))]
               (let [candidate (volatile! nil)
-                    failure (volatile! nil)]
+                    failure (volatile! nil)
+                    result (volatile! nil)]
                 (try
                   (let [remaining (cr/remaining-ms (.-time-out client))
                         client-id (authenticate (.-host client) (.-port client)
@@ -1148,6 +1160,7 @@
                       (close-pool observed-pool)))
                   (catch Throwable t
                     (vreset! failure t)
+                    (vreset! result (recovery-result t))
                     (throw t))
                   (finally
                     (try
@@ -1157,12 +1170,11 @@
                           (close-pool pool)))
                       (finally
                         (finish-recovery-transports! attempt @failure)
-                        (complete-recovery! client reference attempt @failure)))))))
-            ;; An owner's bounded attempt may expire while a waiter still has
-            ;; time. Let that caller claim the next attempt on its next loop.
+                        (complete-recovery! client reference attempt @result)))))))
+            ;; Cancellation and expiry abandon only the owner's attempt. A live
+            ;; caller can claim the next attempt on its ordinary request loop.
             (when-let [failure (wait-for-recovery! client attempt)]
-              (when-not (= :socket/timeout (:error (ex-data failure)))
-                (throw failure)))))))))
+              (throw failure))))))))
 
 (def ^:dynamic ^:private *disconnect-budget* nil)
 
@@ -1979,8 +1991,8 @@
              :endpoint endpoint :base-client base-client}
 
             :wait
-            (let [failure (wait-for-recovery! base-client value)]
-              (when (and failure (not= :socket/timeout (:error (ex-data failure))))
+            (do
+              (when-let [failure (wait-for-recovery! base-client value)]
                 (throw failure))
               (recur))
 
@@ -1989,7 +2001,8 @@
                       (cond-> cr/*transport-owners*
                         base-client (conj (:transport-owner value)))]
               (let [candidate (volatile! nil)
-                    failure (volatile! nil)]
+                    failure (volatile! nil)
+                    result (volatile! nil)]
                 (try
                   (when base-client
                     (evict-retry-client! base-client endpoint disconnect-fn))
@@ -2016,6 +2029,7 @@
                      :endpoint endpoint :base-client base-client})
                   (catch Throwable t
                     (vreset! failure t)
+                    (vreset! result (recovery-result t))
                     (throw t))
                   (finally
                     (try
@@ -2032,7 +2046,7 @@
                         (when base-client
                           (locking base-client
                             (.remove pending endpoint value)
-                            (deliver (:result value) @failure)
+                            (deliver (:result value) @result)
                             (.notifyAll ^Object base-client)))))))))))))))
 
 (defn- attempt-ha-endpoint-request

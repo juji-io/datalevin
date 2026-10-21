@@ -112,7 +112,6 @@ Set `DATALEVIN_URI` to the authenticated connection URI for the target database.
 The user needs permission to alter that database, and create permission if the
 database does not exist yet.
 
-The client sends bounded batches; large batches use the copy-in protocol.
 `datalevin.constants/*fill-db-batch-size*` controls datoms per batch (default
 2,097,152). `init-db` commits all batches in one transaction; a failed load
 rolls back all of its datom writes. Database creation and schema setup precede
@@ -134,53 +133,34 @@ remain available with view permission.
 
 ## Embedded server lifecycle
 
-When using `datalevin.server` from Clojure, `create` allocates server resources
-and binds the listening port; `start` begins processing requests and starts the
-HA renewal and follower loops. Failed construction or startup releases acquired
-resources. Always call `stop` after successful creation, even if `start` was
-never called.
-Calling `start` on a running instance or calling `stop` repeatedly is harmless.
-Concurrent calls to `start` and `stop` are serialized.
+When using `datalevin.server` from Clojure, `create` binds the listening port
+and `start` begins serving requests. Always call `stop` after successful
+creation, even if `start` was never called. Calling `start` on a running instance
+or calling `stop` repeatedly is harmless.
 
 Stopping or failing to start is permanent for that server instance. A later
 `start` throws an exception with `:error :server/stopped`. To restart, call
 `create` with the same root and port after `stop` completes, then start the new
-instance. The stored databases and sessions are retained.
+instance. Stored databases and sessions are retained.
 
-Recoverable selector and accept failures retry in the same dispatcher task,
-with exponential backoff from 100 milliseconds to 5 seconds. A successful
-network cycle resets that delay, and `stop` wakes a pending retry immediately.
-Idle-session sweeps have their own retry schedule, so a failed session cleanup
-does not prevent socket processing or cleanup of other sessions. Failed client
-reads close the affected connection.
-
-A closed selector or listener, an interrupted event loop, or a fatal error
-stops the server and releases its resources. Cleanup runs outside the dispatcher
-so it can wait for that thread to exit. Restart requires a new server instance,
-as with an explicit `stop`.
-
-Each accepted TCP connection has an ID and an owning thread. The server keeps
-an ID-to-thread registry for cancellation and joins those threads during shutdown
-before closing stores. Closing a connection closes its socket and interrupts its
-owner, which aborts any active native transaction on that same thread.
+The server retries recoverable network failures automatically. A fatal failure
+stops the server; restarting requires a new instance.
 
 `create` accepts these execution limits:
 
-* `:transaction-threads`: maximum simultaneous explicit transactions. Despite the
-  legacy option name, transactions use their connection threads, with no separate
-  transaction executor. Default four times the CPU count, bounded between 16 and
-  128. Exhausting this limit rejects the open immediately.
-* `:background-threads`: maximum simultaneous HA and replica background loops,
-  with the same default. Allow capacity for all configured loops.
-* `:transaction-lock-timeout-ms`: maximum wait for the database writer semaphore,
+* `:transaction-threads`: maximum simultaneous explicit transactions. Default
+  four times the CPU count, bounded between 16 and 128. Further transaction
+  opens are rejected immediately when this limit is reached.
+* `:background-threads`: maximum simultaneous HA and replica background tasks,
+  with the same default. Allow capacity for all configured tasks.
+* `:transaction-lock-timeout-ms`: maximum wait to acquire database write access,
   default `1000` milliseconds. Use `0` for immediate rejection.
 
-The legacy `:worker-threads` option supplies defaults for transaction and background
-limits when those options are omitted. `:worker-queue-size` is accepted and
-validated for compatibility but has no effect. There is no request worker pool
-or routing queue.
+The legacy `:worker-threads` option supplies defaults for transaction and
+background limits when those options are omitted. `:worker-queue-size` is
+accepted for compatibility but has no effect.
 
-Exhausted transaction capacity and expired writer-slot waits return
+Exhausted transaction capacity and expired write-access waits return
 `:error :server/busy` with `:retryable? true` before the operation executes.
 Other connections, including transaction commit and abort, continue independently.
 
@@ -219,65 +199,24 @@ and is rechecked before delivery.
 
 `listen!` continues to provide transaction reports only for its own connection.
 
-## Implementation
+## Remote access
 
-The client/server mode is enabled with little changes to the Datalevin core library.
+Queries with a single remote data source run on the server to reduce network
+traffic. Queries involving other data sources may also process data on the
+client. The same database APIs work in both cases.
 
-### Architecture
+Clients check for remote database changes before reusing cached data. Keep client
+and server clocks synchronized, for example with NTP or chrony.
 
-As mentioned, the main design criteria is to have transparent remote databases
-access that has the same API as local databases. This is achieved by building a
-remote access layer to proxy the database storage. Each local storage access function
-has a corresponding proxy function that performs remote storage access over the
-wire. That is to say, the local and remote storage present exactly the same
-interface to the higher level callers.
+## Configuration
 
-Compared with traditional client/server architecture, where the server performs
-all the actual data processing work, the architecture of Datalevin enable easier
-implementation of rich user convenience features. For much of the high level
-functionalities sit on top of storage, such as caching, transaction data
-preparation, query parse, change listening, and so on, they are handled on
-the client side, which is the same as in the local embedded mode. For example,
-our recent added feature of [transactable
-entity](https://github.com/juji-io/datalevin#entities-with-staged-transactions-datalog-store) works the same in
-either embedded or server mode, without needing any code changes.
+Most deployments work well with defaults. The following options control common
+latency and throughput trade-offs.
 
-Compared with the peer architecture of Datomic®, where peers receive all the
-data, Datalevin clients requests only the needed data on demand. The amount of
-network traffic is reduced, clients are simpler than peers and have less work to
-do, so the impact on the user application performance is minimized. Because not
-all the data are duplicated on all the peers, the size of the database only
-depends on the capacity of the server, which can afford to be a beefy machine.
-
-In Datalevin client/server mode, transaction and querying can happen both in
-client and server side, depending on the context. For example, for queries
-having a single remote data source, the entire query processing is done remotely
-to save networking traffic. For other cases, only low level data access
-functions are handled on the server.
-
-By default, each client checks `last-modified` time of the remote database
-before data access, so when multiple clients are accessing the same database on
-the server, all see the same most update-to-date data, as long as the clients
-and the server have clock synchronization, which is a mild condition that most
-modern server deployment environment should meet, with ntp or chrony services
-being part of the standard server environment. In term of CAP theorem,
-Datalevin favors consistency over availability, in consistent with our goal of
-simplifying data access.
-
-All these are transparent to the users and the same data access API works for
-all cases.  Further optimizations can be implemented behind the scene
-without having to introduce new operational complexities.
-
-### Tuning knobs
-
-Most deployments work well with defaults, but these knobs control common
-latency/throughput trade-offs.
-
-#### Client cache freshness vs remote round trips
+### Client cache freshness vs remote round trips
 
 `datalevin.constants/*remote-db-last-modified-check-interval-ms*` (default
-`0`) sets the minimum interval between remote `last-modified` checks performed
-by `db?`.
+`0`) sets the minimum interval between checks for remote database changes.
 
 * `0` means check on every call (strict freshness, more network round trips).
 * A positive value reuses the previous freshness check inside the interval
@@ -294,18 +233,17 @@ Example:
   (d/get-conn "dtlv://user:pass@db-host:8898/app"))
 ```
 
-#### Client connection pool
+### Client connection pool
 
 `datalevin.client/new-client` accepts:
 
 * `:pool-size` (default `3`): max pooled connections per client instance.
-* `:time-out` (default `60000` ms): one request budget shared by checkout,
-  connection setup, authentication, registration, socket I/O, resource reopening,
-  and coordination waits. Nested recovery requests do not restart this budget.
+* `:time-out` (default `60000` ms): time allowed for one request, including
+  connection setup and automatic recovery. Recovery does not restart this timeout.
 * `:ha-write-retry-timeout-ms` (default `min(:time-out, 17000)` with current HA
   defaults): extra wall clock budget for retryable HA write failover after an
   endpoint rejects a write because leadership changed. The default is derived
-  from HA lease timeout and promotion timing, rather than being a fixed 5s.
+  from HA lease timeout and promotion timing.
 * `:ha-write-retry-delay-ms` (default `100` ms): sleep between HA write retry
   rounds.
 
@@ -323,97 +261,56 @@ Example:
 ```
 
 Close a client with `cl/close-client` when the application owns its lifecycle.
-Remote KV and Datalog handles also own a separate one-connection client for
-explicit transactions, including when their ordinary pool size is one.
+Remote KV and Datalog handles reserve a separate connection for explicit
+transactions, including when their ordinary pool size is one.
 
-Keep the same client and remote database/search handles across server outages.
-The client replaces failed sockets, renews expired server sessions, and reopens
-remote resources internally. Calls can fail while the server is unavailable;
-later calls reuse the original client after service returns. Applications do not
-need to replace a client in response to transient transport failures.
+Keep the same client and remote database, search, and vector handles across
+server outages. The client reconnects, renews expired sessions, and reopens
+resources automatically. Calls can fail while the server is unavailable; later
+calls can reuse the original handles once service returns. Recovery requires
+the original resources to still exist; dropping and recreating a resource with
+the same name does not preserve an old handle.
 
-The client allocates the ordinary budget and applicable extra HA allowance once
-at request entry, using a monotonic clock. HA retry can use that extra allowance;
-changing endpoints cannot allocate it again. Synchronous DNS resolution,
-encoding/compression, decoding, and application codec callbacks can overrun the
-deadline on the caller's thread. Their elapsed time consumes the budget, and the
-client checks again before connecting, sending, waiting, or retrying. A request
-whose encoding finishes after expiry is never sent. An authoritative result
-already decoded is preserved.
+Each request shares its timeout across recovery attempts and HA endpoints.
+Synchronous DNS resolution and custom codecs can delay completion beyond the
+deadline, but their elapsed time counts toward it. A request whose encoding
+finishes after expiry is never sent. A successful response already decoded is
+preserved.
 
-Session renewal runs outside the client lock. Concurrent callers share its
-result and wait within their own deadlines. If the owner exhausts its budget,
-another caller with time remaining can attempt renewal. A stalled synchronous
-resolver retains the renewal claim until its owner returns. Callers that
-encounter a replaced pool continue through the current pool.
+Cancelling a request stops its retries and preserves the thread's interrupt
+status. Other concurrent requests can continue recovering within their own
+timeouts. Explicit `cl/close-client` or `cl/disconnect` permanently closes the
+client and cancels pending network requests. Create a new client to connect again.
 
-Explicit `cl/close-client` or `cl/disconnect` is terminal, including when it races
-with renewal or HA endpoint creation. It marks closure and wakes waiters before
-best-effort server notification. Notification uses existing idle sockets only,
-with one budget of at most 100 ms shared across owned endpoint clients and capped
-by `:time-out` and any enclosing request deadline. Disconnect never waits for a
-pool slot or reconnects to notify the server. It closes active transports without
-waiting for a codec callback; that exchange's owner releases codec state when
-the callback returns. Sockets and selectors being created for session renewal
-or HA recovery are owned from creation, so disconnect also wakes pending connect,
-authentication, registration, and reopening waits before publication. Failed
-recovery candidates are disposed locally, without
-server notification or another network timeout.
+If a mutation's acknowledgment is lost, the mutation may already have committed.
+An error with `:error :ha/write-indeterminate`, `:outcome :unknown`,
+`:indeterminate? true`, and `:retryable? false` reports this uncertainty;
+`:termination-reason` explains why recovery stopped. Check the outcome before
+issuing the mutation again. When operation metadata is available, preserve it
+for any supported receipt lookup or replay. Calls known not to have executed
+return the ordinary timeout, cancellation, or closure error.
 
-Search and vector indexes reopen lazily with their remembered options after a
-restart. Recovery assumes the original persistent resources still exist; it does
-not protect an old handle against another client dropping and recreating a
-resource with the same name. Interrupted explicit transactions fail, and recovery
-does not impose a server transaction inactivity deadline or preempt native work.
+### HA write failover
 
-If a mutation's acknowledgment is lost and recovery stops, the error retains
-`:error :ha/write-indeterminate`, `:outcome :unknown`, `:indeterminate? true`,
-`:retryable? false`, its original operation ID/hash/response kind when available,
-and `:termination-reason` (such as `:deadline-exceeded` or
-`:client-disconnected`). A later failed reconnect or rejection cannot erase an
-earlier attempt's unknown outcome. Retrying as a fresh invocation can duplicate a
-committed effect; any supported receipt lookup or replay must use the original
-operation identity. Calls known not to have executed return the ordinary timeout
-or closure error.
+In HA deployments, the client retries writes rejected because leadership changed
+against other known endpoints. Retries stop when a write succeeds, the request
+is cancelled, or the `:ha-write-retry-timeout-ms` allowance is exhausted.
+`:ha-write-retry-delay-ms` sets the minimum delay between retry rounds; the server
+may request a longer delay.
 
-#### HA write failover
-
-In HA deployments, ordinary write requests use bounded automatic failover:
-
-* if a node quickly replies with a retryable HA write rejection such as
-  `:not-leader`, the client immediately moves on to the next known endpoint
-* after probing the current endpoint set once, the client can retry the same
-  set in later rounds, sleeping at least `:ha-write-retry-delay-ms` between
-  rounds
-* retryable HA rejections may also carry an internal `:ha-retry-after-ms` hint;
-  the client treats that as a per-round minimum delay when it is larger than
-  the configured base delay
-* the whole retry process stops once a write succeeds or the extra
-  `:ha-write-retry-timeout-ms` budget is exhausted
-
-This matters because leader failover is not usually instantaneous. The
-control-plane defaults are already in the seconds range, so a client may need a
-short bounded retry window to ride through election and promotion convergence.
-
-The automatic HA retry path applies to ordinary one-shot writes, and also to
-opening explicit remote write transactions. `open-transact` /
-`open-transact-kv` can retry across known HA endpoints until a leader accepts
-the open request. Once the transaction session is opened, however, it stays
-bound to that server connection and is not automatically migrated to a new
-leader mid-transaction.
+Automatic failover also applies when opening explicit remote write transactions.
+Once opened, a transaction stays on that connection and cannot migrate to a new
+leader.
 
 A transport failure after a write starts can hide a committed mutation. Without
-supported deduplication metadata, the client stops instead of resending to the
-same or another endpoint. It throws an exception whose `ex-data` contains
-`:indeterminate? true` and `:err-data` with `:error :ha/write-indeterminate`,
-`:retryable? false`, and the failed `:endpoint`. The mutation may have committed;
-check its outcome before issuing it again. Reads and requests carrying complete
-client operation metadata for `:tx-data`, `:tx-data+db-info`, or `:transact-kv`
-can still recover from a lost reply. Metadata on other commands, including
-`:add-vec`, does not enable deduplication. Connection setup failures before
-sending the request can still fall back to another endpoint.
+supported deduplication metadata, the client stops with
+`:error :ha/write-indeterminate` rather than resending the mutation. Reads and
+requests carrying complete client operation metadata for `:tx-data`,
+`:tx-data+db-info`, or `:transact-kv` can recover from a lost reply. Metadata on
+other commands, including `:add-vec`, does not enable deduplication. Connection
+setup failures before sending a request can fall back to another endpoint.
 
-#### HA static membership changes
+### HA static membership changes
 
 Consensus HA membership is static and operator managed. Datalevin does not
 discover nodes automatically, but a cluster can be reconfigured without wiping
@@ -443,12 +340,10 @@ Java and JavaScript, and as `client.ha_update_membership("app", spec)` in
 Python. Use normal language maps/objects for `spec`; keyword-like string keys
 such as `":ha-members"` are accepted by the non-Clojure bindings.
 
-The request validates the proposed `:ha-members` and control-plane `:voters`,
-optionally replaces the Raft voter set, persists the new HA options on the
-target server, CAS-updates the authoritative membership hash, clears existing
-leases by default, and restarts that server's local HA runtime. A node whose
-local config does not match the authoritative hash starts in a fail-closed,
-non-promotable state so it can be staged before the hash is updated.
+The update saves the new HA options on the target server and changes the
+authoritative cluster membership. By default it also replaces the Raft voter set
+and requires write leadership to be reacquired. Nodes whose local configuration
+does not match the authoritative membership cannot become leaders.
 
 Useful request keys:
 
@@ -471,7 +366,7 @@ are idempotent and can be used to persist local options on nodes that were
 staged before the first cluster-wide hash update. Removed nodes should be shut
 down and left out of the new member and voter lists.
 
-#### HA replica reads
+### HA replica reads
 
 In HA deployments, a client can read from a replica/follower by connecting to
 that node's endpoint with the normal client APIs. There is currently no
@@ -502,7 +397,7 @@ type: grant the user or role only `:datalevin.server/view` permission on the
 database, and do not grant `:datalevin.server/alter`,
 `:datalevin.server/create`, or `:datalevin.server/control`.
 
-#### Non-HA async read replicas
+### Non-HA async read replicas
 
 Datalevin also supports asynchronous read-only replicas without enabling HA. This
 is for a simple topology with one primary writer server and one or more
@@ -536,12 +431,9 @@ A replica is configured when the database is opened on the replica server:
     :wal-durability-profile :strict}))
 ```
 
-The first open bootstraps the replica from the primary copy/snapshot interface
-when the local database does not exist. After that, the replica tails source WAL
-records from the next LSN, applies them locally in LSN order, and periodically
-reports its applied LSN back to the primary so WAL garbage collection keeps
-needed segments. If the local replica data directory already exists, it is not
-recopied; remove that local database directory to force a fresh bootstrap.
+The first open copies the primary database if no local database exists, then
+applies subsequent changes asynchronously. An existing local database is reused;
+use a fresh local data directory to force a new copy.
 
 Replica options:
 
@@ -563,7 +455,7 @@ opening the local replica needs permission to create/open the database on the
 replica server.
 
 All normal read APIs work against the replica URI. All user writes are rejected
-by the replica server dispatch layer, even if the authenticated user otherwise
+by the replica server, even if the authenticated user otherwise
 has write permission:
 
 ```clojure
@@ -591,27 +483,20 @@ The returned map includes `:replica/read-only?`, `:replica/source`,
 `:replica-last-sync-ms`, `:replica-degraded-reason`, and
 `:replica-last-error`.
 
-#### Server idle session timeout
+### Server idle session timeout
 
 CLI option `--idle-timeout` (default `172800000` ms, i.e. 48 hours) controls
 when inactive sessions are disconnected to reclaim resources.
 
-Activity is checkpointed on requests at intervals of at most one minute, or
-one quarter of the idle timeout for shorter timeouts (minimum 1 ms). Ordinary
-requests within that window update only memory. Graceful shutdown saves the
-latest activity timestamp after request workers finish.
-
-After a crash, restored sessions receive only the saved checkpoint window as
-an allowance for activity that may not have reached disk. Server downtime
-counts toward expiry, and repeated restarts do not renew this allowance. Once
-a client sends another request, normal idle tracking resumes. Sessions saved
-by older versions receive a one-time fresh idle baseline during migration.
+Server downtime counts toward session expiry. After a crash, recent activity
+may not have been saved, so a session can expire earlier than expected. The
+bundled client renews expired sessions automatically on its next request.
 
 ```console
 dtlv serv -r /data/dtlv --idle-timeout 3600000
 ```
 
-#### Wire compression
+### Wire compression
 
 Connections use uncompressed transport by default. Enable wire compression in
 the connection's `:client-opts`. It applies to both requests and responses and
@@ -628,15 +513,12 @@ authentication is renewed, or transaction and HA clients are created.
 ```
 
 * `:wire-compression`: `:none` (default) or `:zstd`.
-* `:wire-compression-threshold`: minimum **uncompressed serialized payload**
-  size in bytes, excluding the five-byte message header. Compression is only
-  sent when its output, including the four-byte original-length prefix, is
-  smaller than the original payload.
+* `:wire-compression-threshold`: minimum uncompressed serialized payload size
+  in bytes. Messages are compressed only when doing so reduces their size.
 * `:wire-compression-level`: Zstd level; default `3`.
-* `:max-message-size`: local receive limit in payload bytes, excluding the
-  five-byte frame header; default `67108864` (64 MiB). It bounds both the
-  transmitted payload and its decompressed size. This limit is retained by
-  replacement and derived clients and cannot be increased by a peer.
+* `:max-message-size`: maximum received payload size in bytes; default
+  `67108864` (64 MiB). It bounds both the transmitted payload and its decompressed
+  size. The limit is retained across reconnections.
 
 These options can also be passed directly to `datalevin.client/new-client`.
 Different clients connecting to the same server can use different settings.
@@ -646,23 +528,13 @@ The dynamic vars `datalevin.constants/*wire-compression-threshold*` (default
 `8192`) and `datalevin.constants/*wire-compression-level*` (default `3`) supply
 creation-time defaults when compression is enabled. A current server accepts
 the client's settings for both directions. Older servers honor the on/off
-negotiation but use their own
-threshold and level for responses; peers without compression support exchange
-uncompressed messages.
-
-Compression is enabled only after registration with a live authenticated
-session. Expired or invented session IDs cannot enable decompression. Compressed
-messages must contain exactly one complete Zstd frame with a known content size
-matching the original-length prefix. Invalid headers and sizes above the local
-receive limit are rejected before allocating decompression output memory.
+negotiation but use their own threshold and level for responses. Peers without
+compression support exchange uncompressed messages.
 
 Choose the threshold from the latency crossover for your payloads and network.
-Smaller output alone does not establish a latency benefit. The
-[loopback measurements](wire-compression-2026-09-20/README.md) found none through
-4 MiB of YCSB strings or 2 MiB of keyword-heavy documents; use `:none` for that
-workload.
+Smaller output alone does not establish a latency benefit.
 
-#### Runtime UDFs
+### Runtime UDFs
 
 Remote transaction UDFs run where the transaction executes: on the server.
 Descriptor-backed `:db/udf` therefore requires server-side runtime setup.
@@ -703,169 +575,70 @@ At present, the standalone `dtlv serv` CLI does not provide a dedicated flag
 for installing foreign-language registries, so non-Clojure server-side UDFs
 need programmatic server setup.
 
-### Networking
+Functions defined with `inter-fn` run in the server sandbox. They cannot use host
+file I/O, namespace mutation, dynamic eval/load, thread or agent APIs, or Java
+interop, except for `Thread/sleep` calls of at most 1000 ms. Public functions from
+application namespaces already loaded on the server can be called by fully
+qualified symbol. Those helpers run as trusted server code and must be on the
+server classpath.
 
-The listener's event loop accepts connections. A dedicated maintenance executor
-expires idle sessions, so a blocked cleanup cannot stall acceptance. Cleanup
-failures are isolated per session and retried with backoff capped at five seconds;
-the first failure logs a stack trace at warning level.
-Each connection has a blocking socket and its own thread, which reads, decodes,
-executes and replies in arrival order. Complete buffered requests are processed
-before the next socket read. Slow handlers apply socket backpressure without
-adding requests to an application queue. HA and replica loops use a separate
-bounded background executor.
+## Networking
 
-Socket admission is bounded before allocating connection buffers or starting an
-owner thread. Excess sockets are closed immediately. Configure the following
-options through `server/create` or the CLI flags with the same names:
+The server limits connections, message sizes, and network waits. Connections
+beyond the configured limit are closed immediately. Configure these options
+through `server/create` or the corresponding CLI flags:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `:max-connections` / `--max-connections` | `1024` | All admitted connections, including anonymous sockets. |
-| `:max-unauthenticated-connections` / `--max-unauthenticated-connections` | `64` | Connections awaiting verified credentials or a live session token. |
+| `:max-unauthenticated-connections` / `--max-unauthenticated-connections` | `64` | Connections awaiting successful authentication. |
 | `:max-message-size` / `--max-message-size` | `67108864` | Maximum received payload bytes, both on the wire and after decompression, excluding the five-byte frame header. |
 | `:authentication-timeout-ms` / `--authentication-timeout-ms` | `10000` | Absolute time from acceptance to authentication. Anonymous traffic does not extend it. |
-| `:read-timeout-ms` / `--read-timeout-ms` | `60000` | Time to receive each complete frame, including waiting for its first byte except between requests in an active explicit transaction. Partial progress does not extend it. |
-| `:write-timeout-ms` / `--write-timeout-ms` | `60000` | Time to send a response, including every copy-out frame through `:copy-done`. Partial progress does not extend it. |
+| `:read-timeout-ms` / `--read-timeout-ms` | `60000` | Time to receive each complete message, including waiting for its first byte except between requests in an active explicit transaction. Partial progress does not extend it. |
+| `:write-timeout-ms` / `--write-timeout-ms` | `60000` | Time to send a complete response, including bulk transfers. Partial progress does not extend it. |
 
 All values must be positive 32-bit integers; `:max-message-size` must also leave
-five bytes for the frame header. A server's receive limit applies to every
-connection, including anonymous sockets and bulk-transfer frames. Raise it
-explicitly for workloads that require larger individual messages. At startup,
-the anonymous limit is clamped to the total limit, including when its default exceeds a configured
-total. Successful authentication releases anonymous capacity;
-an invented or expired session ID does not. Total capacity is retained until the
-connection owner finishes cleanup, including native transaction abort.
+five bytes for the frame header. The message-size limit applies to every
+connection, including bulk transfers. Raise it explicitly for workloads that
+require larger individual messages. The unauthenticated connection limit is
+capped at the total connection limit.
 
-Password hashing has a separate, JVM-wide admission limit shared by authentication,
-user creation, and password resets across all embedded servers. With the default
-128 MiB Argon2 working memory, the memory budget permits one concurrent hash per
-512 MiB of maximum JVM heap, capped at four hashes. Larger custom hashing memory
-settings consume proportionally more capacity. Each hash reserves twice its
-working memory for allocation overhead and GC overlap against a budget of half
-the maximum heap. Insufficient capacity returns `:server/busy` with
-`:reason :password-hashing-capacity` before allocating hashing memory. It is
-retryable when existing hashes occupy capacity; a hash exceeding the entire
-memory budget requires a larger heap or smaller hashing memory setting. Requests
-do not queue, and transport cancellation does not return capacity until the hash
-actually finishes. The bundled client retries transient hashing-capacity rejections
-with backoff within the authentication deadline, sharing an enclosing request's
-remaining budget during recovery. Credential failures and non-retryable capacity
-errors fail immediately. Heaps below 512 MiB cannot admit the default hash.
+Password hashing for authentication, user creation, and password resets shares a
+memory limit across servers in the same JVM. With the default hashing settings,
+every 512 MiB of maximum JVM heap permits one concurrent hash, up to four. Heaps
+below 512 MiB cannot admit the default hash. Custom hashing memory settings affect
+these requirements. Insufficient capacity returns `:server/busy` with
+`:reason :password-hashing-capacity`. The bundled client retries transient
+capacity errors within the authentication deadline. Non-retryable capacity
+errors require a larger heap or smaller hashing memory setting.
 
-A separate connection maintenance thread enforces these deadlines even when
-session expiration or persistence stalls. Its polling interval is at most 100 ms,
-or one quarter of the shortest timeout (minimum 1 ms). Enforcement is subject to
-thread scheduling.
-Read deadlines pause during ordinary request decoding and handler execution, and
-apply again to each copy-in frame. They bound network waits, without preempting
-synchronous handler or native execution. An idle authenticated socket can expire
-while its session remains live; the bundled client replaces that socket on its
-next call using the same client and remote handles. Active explicit transactions
-are exempt while waiting for the first byte of their next request. Once any bytes
-arrive, the complete frame must arrive within `:read-timeout-ms`. Each copy-in
-frame also retains its deadline, including the wait for its first byte.
-Write deadlines begin when a response starts and span encoding, buffer growth,
-and socket writes. Copy-out batches share one deadline for the entire transfer.
-On expiry, the server closes the socket so the owner can unwind, release database
-runtime locks, abort any connection-owned transaction, and return admission capacity.
+Read timeouts bound network waits, including each batch of a bulk upload. They
+do not include ordinary request decoding or handler execution. An idle connection
+can expire while its session remains live; the bundled client reconnects on the
+next call. Explicit transactions are exempt while waiting for the first byte of
+the next request, but once data arrives the complete message must arrive within
+`:read-timeout-ms`.
+
+Write timeouts cover response encoding and transmission, with one deadline for
+an entire bulk download. On expiry, the server closes the connection and aborts
+any active transaction. These network timeouts do not preempt synchronous
+application or native execution.
 
 ```console
 dtlv serv -r /data/dtlv --max-connections 512 --max-unauthenticated-connections 32 \
   --authentication-timeout-ms 5000 --read-timeout-ms 60000 --write-timeout-ms 60000
 ```
 
-Explicit transactions are pinned to the connection that opens them. Its thread
-owns the native transaction through commit or abort. Another socket cannot use
-that transaction, even within the same authenticated session. Clients using the
-wire protocol directly must keep open, transaction operations and close/abort on
-one socket. The bundled KV and Datalog clients always use a dedicated
-one-connection transaction client, keeping ordinary requests off the transaction
-owner's socket even when the ordinary pool size is one. A lost
-connection aborts its transaction; replacing the socket cannot resume or commit it.
+Explicit transactions stay on the connection that opens them. A lost connection
+aborts its transaction; reconnecting cannot resume or commit it. The bundled
+clients manage the transaction connection automatically. Custom clients must use
+one connection from transaction open through commit or abort.
+
 Pauses between transaction requests have no default timeout. Use the explicit
 transaction `:timeout-ms` option or `set-explicit-transaction-timeout!` to bound
 the transaction body; see [transaction timeouts](transact.md#explicit-synchronous-transaction).
 
-Bulk transfers stay on the connection thread until their final response. During
-copy-in, send transfer batches followed by `:copy-done` (or `:copy-fail`); ordinary
-requests can follow that terminator. A copy-out response includes every batch
-through `:copy-done` before the next request's response begins.
-
-For developer convenience, the bundled client provides a synchronous API.
-For normal commands, it sends a
-request and waits for the responses from the server, so the data access API is
-the same for both the local databases and remote databases. In addition, the
-client has a built-in connection pool, to reuse pre-established connections.
-Each connection uses a nonblocking socket and reuses its receive selector to
-enforce receive timeouts without allocating a selector for each response.
-The client connection timeout also bounds each socket send, including when a
-server accepts a connection but stops reading. A timed-out send closes the socket
-because a partially sent frame cannot be reused. Transport failures preserve the
-pool's slots so later calls can reconnect when the server recovers. Mutations
-whose response was lost may have committed; the existing replay restrictions
-still apply.
-
-The sibling `dtlvtest` project exercises this lifecycle with a real TCP fault
-proxy and a disposable server JVM:
-
-```console
-cd ../dtlvtest
-lein test datalevin.client-deadline-integration-test
-lein test datalevin.client-recovery-chaos-test
-DTLV_CLIENT_RECOVERY_CHAOS_SEEDS=1,2,3,4 DTLV_CLIENT_RECOVERY_CHAOS_CYCLES=64 lein test datalevin.client-recovery-chaos-test
-```
-
-The suite keeps the original clients and KV, Datalog, and search handles through
-connection resets, withheld authentication/registration/operation replies,
-truncated replies, lost write acknowledgements, session removal, server restarts,
-interrupted bulk transfers, and forced termination of the server JVM while KV
-and Datalog transactions hold uncommitted writes. Concurrent operations run during
-each fault. Recovery checks full pool capacity, acknowledged data, non-idempotent
-update counts, transaction aborts, subsequent reads and writes, and resource
-cleanup. It also races explicit disconnects with session renewal. Failures report
-the seed, fault order, operation outcomes, and proxy events for reproduction.
-Each scenario runs in an isolated JVM with a progress watchdog. A stalled native
-call or shutdown fails the test within a bounded time and preserves the last
-checkpoint, server log, and thread dump in the reported temporary directory.
-
-The wire protocol between server and client is largely inspired by the wire
-protocol of PostgreSQL. It uses TLV message format, with 1 byte message type in
-front, followed by 4 bytes message length, and concludes with the message
-payload.
-
-The payload format is extensible, indicated by
-the message type byte. For example, with type `1`,
-[transit+json](https://github.com/cognitect/transit-format) encoded bytes will
-be the payload. The default payload format is type `2`, using
-[nippy](https://github.com/ptaoussanis/nippy) serialization.
-
-nippy format produces smaller bytes with faster speed, but it only works
-with Clojure code. If a client needs to be written for other languages, transit
-is a better choice. The server accepts either format just as well. Other format
-may be added in the future if necessary.
-
-The command messages are EDN maps, e.g. `{:type :list-databases :args []}`. The
-command responses are also EDN maps. e.g. `{:type :command-complete :results
-["mydb" "hr-db"]}`. For bulk data, the client/server switch to a direct
-copy-in/copy-out sub-protocol, where data are continuously streamed. The
-copy-in/copy-out data stream messages are batched data in EDN vectors
-instead of maps.
-
-Clojure transaction functions defined with `inter-fn` can be serialized and
-sent to the server for execution. They are first evaluated in the sandbox using
-a Clojure interpreter, i.e. [sci](https://github.com/borkdude/sci) based on a
-white list. The serialized `inter-fn` sandbox does not allow host file I/O,
-namespace mutation, dynamic eval/load, thread/agent APIs, or Java interop,
-except for bounded `Thread/sleep`/`java.lang.Thread/sleep` calls of at most
-1000 ms for compatibility with slow transaction-function tests. An `inter-fn`
-may also call public vars from application namespaces that are already loaded
-in the server process when referenced by fully qualified symbol; those helpers
-run as trusted host Clojure code and must exist on the server classpath.
-Descriptor-backed `:db/udf` works differently: only the descriptor crosses the
-wire, and the server resolves it against its own runtime registry or resolver.
-
-### Security
+## Security
 
 Datalevin server implements full-fledged role based access control (RBAC).
 Permissions are granted to roles, and roles are assigned to users. User access
