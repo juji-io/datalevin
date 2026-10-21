@@ -74,6 +74,42 @@
         (is (pos? (get @(:hits proxy) :authentication-timeout 0)))
         (is (not (client/disconnected? c)))))))
 
+(deftest disconnect-before-recovery-lock-preserves-termination-reason
+  (with-client
+    (fn [c proxy _]
+      (let [result (promise)
+            req {:type :transact-kv :args ["db"]}
+            context (#'client/client-routing-context c)
+            caller (Thread.
+                     ^Runnable
+                     (fn []
+                       (binding [cr/*request* (client/request-budget c req)]
+                         (deliver result
+                                  (outcome
+                                    #(#'client/prepare-retry-client
+                                       req context "127.0.0.1" (:port proxy)
+                                       client/disconnect
+                                       (fn [& _]
+                                         (throw (ex-info "Unexpected retry client creation" {})))))))))]
+        (try
+          (locking c
+            (.start caller)
+            ;; The caller has passed its budget check and is waiting to inspect
+            ;; the parent. Disconnect wins the lock before recovery continues.
+            (await! #(and (= java.lang.Thread$State/BLOCKED (.getState caller))
+                          (some (fn [^StackTraceElement frame]
+                                  (.contains (.getClassName frame) "$prepare_retry_client"))
+                                (.getStackTrace caller))))
+            (client/disconnect c))
+          (let [error (deref result 1000 ::timeout)]
+            (is (instance? Exception error))
+            (is (= :client/closed (:error (ex-data error))))
+            (is (= :client-disconnected (:termination-reason (ex-data error)))
+                (pr-str error)))
+          (finally
+            (.join caller 5000)
+            (is (not (.isAlive caller)))))))))
+
 (deftest disconnect-cancels-provisional-recovery-transports
   (doseq [[kind phase] [[:renewal :authentication] [:renewal :set-client-id]
                        [:ha :authentication] [:ha :set-client-id] [:ha :open-kv]]]
@@ -128,7 +164,8 @@
                   (doseq [task [owner waiter]]
                     (let [error (deref task 1000 ::timeout)]
                       (is (instance? Exception error))
-                      (is (= :client-disconnected (:termination-reason (ex-data error))))))
+                      (is (= :client-disconnected (:termination-reason (ex-data error)))
+                          (pr-str error))))
                   (is (not (realized? release)) "the proxy is still withholding its reply")
                   (is (every? #(not (if (instance? Selector %)
                                      (.isOpen ^Selector %)

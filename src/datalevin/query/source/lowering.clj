@@ -5,8 +5,7 @@
             [datalevin.query.source.contract :as contract]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.runtime :as rt]
-            [datalevin.query.source.value :as value :refer [fail!]])
-  (:import [datalevin.utl QueryKey]))
+            [datalevin.query.source.value :as value :refer [fail!]]))
 
 (defn- ensure! [ok]
   (when-not ok (fail! :query-source/invalid :clauses)))
@@ -134,27 +133,3 @@
           (vreset! success? true)
           (assoc output :close close :closed? closed?)))
       (finally (when-not @success? (doseq [token @tokens] (control/release! token)))))))
-
-(defn visit!
-  "Visit compatible preplanned branches for one borrowed outer binding. The
-  callback borrows its restored binding map only during the call. Dispatch is
-  equality against captured keywords, never replanning or provider execution."
-  [runtime lowered outer emit!]
-  (let [ctl (:control runtime) variable (:attribute-variable lowered)]
-    (control/check-active! ctl)
-    (when-not (and (not @(:closed? lowered)) (value/plain-map? outer)
-                  (or (not= :dispatch (:mode lowered)) (contains? outer variable)))
-      (fail! :query-source/invalid :execution))
-    (doseq [branch (:branches lowered)]
-      (control/check-active! ctl)
-      (when @(:closed? lowered) (fail! :query-source/invalid :execution))
-      (when (every? (fn [[k v]]
-                      (or (not (contains? outer k)) (QueryKey/equals v (get outer k))))
-                    (:restore branch))
-        (let [token (control/reserve! ctl
-                      {:retained-bytes (+ 256 (* 96 (+ (count outer) (count (:restore branch)))))})]
-          (try (emit! branch (merge outer (:restore branch)))
-               (control/check-active! ctl)
-               (when @(:closed? lowered) (fail! :query-source/invalid :execution))
-               (finally (control/release! token))))))
-    nil))

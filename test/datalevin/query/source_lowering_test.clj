@@ -112,38 +112,6 @@
           (is (empty? (:branches result)))
           (is (= :undeclared-attribute (:empty-proof result))))))))
 
-(deftest dispatch-preserves-outer-multiplicity-and-never-replans
-  (rt/with-runtime {}
-    (fn [runtime]
-      (let [result (lowering/lower! runtime descriptor (pattern [:var '?e] [:var '?a] [:var '?v]) {} #{'?a})
-            emitted (atom [])
-            input [{'?a :row/name '?tag :first} {'?a :row/age '?tag :second}
-                   {'?a :row/name '?tag :first} {'?a :missing '?tag :none}]]
-        (doseq [outer input]
-          (lowering/visit! runtime result outer (fn [branch row] (swap! emitted conj [(:attribute branch) row]))))
-        (is (= [[:row/name (first input)] [:row/age (second input)] [:row/name (nth input 2)]] @emitted))
-        (is (= :query-source/invalid (:error (error #(lowering/visit! runtime result {} (fn [_ _]))))))))))
-
-(deftest union-restores-attribute-fact-identity-and-respects-existing-bindings
-  (rt/with-runtime {}
-    (fn [runtime]
-      (let [result (lowering/lower! runtime descriptor (pattern [:var '?e] [:var '?a] [:var '?v]) {} #{})
-            emitted (atom [])]
-        (lowering/visit! runtime result {'?tag 1} (fn [branch row] (swap! emitted conj [(:attribute branch) row])))
-        (is (= 4 (count @emitted)))
-        (is (= (set (map first @emitted)) (set (map #(get (second %) '?a) @emitted))))
-        (reset! emitted [])
-        (lowering/visit! runtime result {'?a :row/name} (fn [branch _] (swap! emitted conj (:attribute branch))))
-        (is (= [:row/name] @emitted))))))
-
-(deftest wildcard-does-not-create-an-observable-attribute-variable
-  (rt/with-runtime {}
-    (fn [runtime]
-      (let [result (lowering/lower! runtime descriptor (pattern [:var '?e] [:ignore] [:var '?v]) {} #{})
-            emitted (atom [])]
-        (lowering/visit! runtime result {} (fn [_ row] (swap! emitted conj row)))
-        (is (= [{} {} {} {}] @emitted))))))
-
 (deftest constants-and-input-metadata-are-owned-before-provider-execution
   (rt/with-runtime {}
     (fn [runtime]
@@ -169,22 +137,4 @@
             result (lowering/lower! runtime descriptor (pattern [:var '?e] [:ignore] [:var '?v]) {} #{})]
         ((:close result))
         (is (= before (control/usage (:control runtime))))
-        (is (= :query-source/invalid (:error (error #(lowering/visit! runtime result {} (fn [_ _]))))))))))
-
-(deftest routing-observes-cancellation-and-cannot-continue-after-reentrant-close
-  (rt/with-runtime {}
-    (fn [runtime]
-      (let [result (lowering/lower! runtime descriptor (pattern [:var '?e] [:ignore] [:var '?v]) {} #{})
-            emitted (atom 0)]
-        (is (= :query-source/invalid
-               (:error (error #(lowering/visit! runtime result {}
-                                               (fn [_ _] (swap! emitted inc) ((:close result))))))))
-        (is (= 1 @emitted)))))
-  (is (= :query-source/cancelled
-         (:error (error #(rt/with-runtime {}
-                           (fn [runtime]
-                             (let [result (lowering/lower! runtime descriptor
-                                                            (pattern [:var '?e] [:ignore] [:var '?v]) {} #{})]
-                               (lowering/visit! runtime result {}
-                                                (fn [_ _] (control/cancel! (:control runtime)
-                                                            {:error :query-source/cancelled :phase :execution})))))))))))
+        (is (true? @(:closed? result)))))))

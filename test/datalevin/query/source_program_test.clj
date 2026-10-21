@@ -9,7 +9,7 @@
             [datalevin.query.source-planning-test :as fixture]
             [datalevin.query.source-session-test :as session-fixture])
   (:import [java.math BigDecimal BigInteger MathContext]
-           [java.util Iterator]))
+           [java.util AbstractList Iterator]))
 
 (defn- rows [rel variables]
   (mapv (fn [^objects tuple] (mapv #(aget tuple (int (get (:attrs rel) %))) variables)) (:tuples rel)))
@@ -225,18 +225,47 @@
 (deftest attribute-dispatch-routes-complete-keys-once-and-restores-the-attribute
   (let [events (atom [])
         facts [[1 :row/value "one"] [1 :row/other "other"] [2 :row/value "two"]]
-        input [[1 :row/value :a] [1 :row/other :b] [1 :row/value :a] [2 :row/other :missing]]]
+        input [[1 :row/value :a] [1 :row/other :b] [1 :row/value :a]
+               [2 :row/other :missing] [1 :missing :undeclared]]]
     (rt/with-runtime {}
       (fn [runtime]
         (let [p (compile! runtime events
                   '[:find ?e ?a ?v ?tag :in $s [[?e ?a ?tag]] :where [$s ?e ?a ?v]] []
                   [(column '?e :long) (column '?a :keyword) (column '?tag :keyword)] input
                   {:descriptor two-attributes :facts facts :lookup-only? true})
+              plans (events-of events :plan)
               result (program/execute! runtime p)]
           (is (= (frequencies [[1 :row/value "one" :a] [1 :row/other "other" :b] [1 :row/value "one" :a]])
                  (frequencies (rows result ['?e '?a '?v '?tag]))))
           (is (= 2 (count (events-of events :plan))))
+          (is (= plans (events-of events :plan)) "routing uses the preplanned branches")
           (is (= 2 (count (events-of events :open)))))))))
+
+(deftest attribute-union-restores-fact-identity-and-preserves-outer-witnesses
+  (let [facts [[1 :row/value "same"] [1 :row/other "same"]]]
+    (doseq [bound? [false true]]
+      (let [events (atom [])]
+        (rt/with-runtime {}
+          (fn [runtime]
+            (let [p (if bound?
+                      (compile! runtime events
+                        '[:find ?e ?a ?v ?tag :in $s [[?a ?tag]] :where [$s ?e ?a ?v]] []
+                        [(column '?a :keyword) (column '?tag :keyword)]
+                        [[:row/value :outer] [:row/value :outer]]
+                        {:descriptor two-attributes :facts facts})
+                      (compile! runtime events
+                        '[:find ?e ?a ?v ?tag :in $s [?tag ...] :where [$s ?e ?a ?v]] []
+                        [(column '?tag :keyword)] [[:outer] [:outer]]
+                        {:descriptor two-attributes :facts facts}))
+                  plans (events-of events :plan)
+                  result (program/execute! runtime p)
+                  expected (for [_ (range 2)
+                                 attribute (if bound? [:row/value] [:row/value :row/other])]
+                             [1 attribute "same" :outer])]
+              (is (= (frequencies expected)
+                     (frequencies (rows result ['?e '?a '?v '?tag]))))
+              (is (= plans (events-of events :plan)))
+              (is (= (if bound? 1 2) (count (events-of events :open)))))))))))
 
 (deftest wildcard-attribute-union-keeps-fact-multiplicity-until-terminal-projection
   (let [events (atom []) facts [[1 :row/value "same"] [1 :row/other "same"]]]
@@ -245,8 +274,91 @@
         (let [p (compile! runtime events '[:find ?e ?v :in $s :where [$s ?e _ ?v]] [] [] nil
                   {:descriptor two-attributes :facts facts})
               result (program/execute! runtime p)]
+          (is (= #{'?e '?v} (set (keys (:attrs result)))))
           (is (= [[1 "same"] [1 "same"]] (rows result ['?e '?v])))
           (is (= 2 (count (events-of events :open)))))))))
+
+(deftest branch-routing-rejects-missing-required-inputs-without-retaining-scratch
+  (rt/with-runtime {}
+    (fn [runtime]
+      (let [before (control/usage (:control runtime))
+            check! #(control/check-active! (:control runtime))
+            failure (error
+                      (fn []
+                        (#'program/branch-input! runtime check! {:kind :attribute}
+                          {:restore {'?a :row/value} :inputs [(column '?e :long)]}
+                          ['?a] [(object-array [:row/value])])))]
+        (is (= :query-source/invalid (:error failure)))
+        (is (= before (control/usage (:control runtime))))))))
+
+(deftest branch-routing-observes-cancellation-before-reading-the-next-input
+  (let [reads (atom []) saved (atom nil)
+        failure
+        (error
+          #(rt/with-runtime {}
+             (fn [runtime]
+               (reset! saved runtime)
+               (let [check! (fn [] (control/check-active! (:control runtime)))
+                     before (control/usage (:control runtime))
+                     tuples (proxy [AbstractList] []
+                              (size [] 2)
+                              (get [i]
+                                (swap! reads conj i)
+                                (control/cancel! (:control runtime)
+                                  {:error :query-source/cancelled :phase :execution})
+                                (object-array [:row/value 1])))
+                     failure (error
+                               (fn []
+                                 (#'program/branch-input! runtime check! {:kind :attribute}
+                                   {:restore {'?a :row/value} :inputs [(column '?e :long)]}
+                                   ['?a '?e] tuples)))]
+                 (is (= :query-source/cancelled (:error failure)))
+                 (is (= before (control/usage (:control runtime))))))))]
+    (is (= :query-source/cancelled (:error failure)))
+    (is (= [0] @reads))
+    (is (every? zero? (vals (control/usage (:control @saved)))))))
+
+(deftest attribute-routing-stops-after-cancellation-or-reentrant-compilation-close
+  (doseq [stop [:cancel :close]]
+    (let [events (atom []) saved (atom nil)
+          failure
+          (error
+            #(rt/with-runtime {}
+               (fn [runtime]
+                 (reset! saved runtime)
+                 (let [p (compile! runtime events
+                           '[:find ?e ?a ?v :in $s :where [$s ?e ?a ?v]] [] [] nil
+                           {:descriptor two-attributes
+                            :facts [[1 :row/value "one"] [1 :row/other "other"]]})]
+                   (add-watch events ::stop-routing
+                     (fn [_ _ _ current]
+                       (when (= :open (first (peek current)))
+                         (if (= stop :cancel)
+                           (control/cancel! (:control runtime)
+                             {:error :query-source/cancelled :phase :execution})
+                           ((get-in p [:compilation :close]))))))
+                   (try (program/execute! runtime p)
+                        (finally (remove-watch events ::stop-routing)))))))]
+      (is (= (if (= stop :cancel) :query-source/cancelled :query-source/invalid)
+             (:error failure)))
+      (is (= 2 (count (events-of events :plan))))
+      (is (= 1 (count (events-of events :open))) "later branches must not execute")
+      (is (= 1 (count (events-of events :session-close))))
+      (is (every? zero? (vals (control/usage (:control @saved))))))))
+
+(deftest closed-compilation-cannot-route-attribute-inputs
+  (let [events (atom [])]
+    (rt/with-runtime {}
+      (fn [runtime]
+        (let [before (control/usage (:control runtime))
+              p (compile! runtime events
+                  '[:find ?e ?a ?v :in $s :where [$s ?e ?a ?v]] [] [] nil
+                  {:descriptor two-attributes})]
+          ((get-in p [:compilation :close]))
+          (is (= before (control/usage (:control runtime))))
+          (is (= :query-source/invalid
+                 (:error (error #(program/execute! runtime p)))))
+          (is (empty? (events-of events :open))))))))
 
 (deftest core-steps-are-instantiated-after-the-selected-source-layout-is-known
   (rt/with-runtime {}

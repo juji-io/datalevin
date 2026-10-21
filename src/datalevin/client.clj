@@ -1882,7 +1882,9 @@
   (when (and (instance? Client client)
              (some? (get-pool client))
              (disconnected? client))
-    (raise "This client is closed" {:client-id (get-id client)})))
+    (raise "This client is closed" {:client-id (get-id client)
+                                    :error :client/closed
+                                    :termination-reason :client-disconnected})))
 
 (defn- ^ConcurrentHashMap retry-client-cache
   [client]
