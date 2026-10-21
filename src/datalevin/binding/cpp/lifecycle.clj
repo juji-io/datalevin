@@ -29,21 +29,26 @@
 
 (defn sync-key [dir] (->> dir hash (str "lmdb-sync-") keyword))
 
-(deftype AsyncSync [dir lmdb]
+(deftype AsyncSync [dir lmdb write-lock]
   IAsyncWork
   (work-key [_] (sync-key dir))
-  (do-work [_] (i/sync lmdb 1))
+  (do-work [_]
+    ;; Timer cancellation cannot retract work already queued in the executor.
+    ;; Native teardown holds this same lock for the entire environment close.
+    (locking write-lock
+      (when-not (i/closed-kv? lmdb)
+        (i/sync lmdb 1))))
   (combine [_] first)
   (callback [_] nil))
 
 (defn start-scheduled-sync
-  [scheduled-sync dir lmdb]
+  [scheduled-sync dir lmdb write-lock]
   (let [scheduler ^ScheduledExecutorService (u/get-scheduler)
         fut (.scheduleWithFixedDelay
              scheduler
              ^Runnable #(let [exe (a/get-executor)]
                           (when (a/running? exe)
-                            (a/exec exe (AsyncSync. dir lmdb))))
+                            (a/exec exe (AsyncSync. dir lmdb write-lock))))
              ^long (rand-int c/lmdb-sync-interval)
              ^long c/lmdb-sync-interval
              TimeUnit/SECONDS)]

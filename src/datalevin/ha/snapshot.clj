@@ -301,23 +301,19 @@
   ;; HA store swaps must also retire write-side wrappers that share the same
   ;; LMDB env; leaving them live can poison subsequent reader creation after a
   ;; snapshot install or local reopen.
-  (close-best-effort! db/close-db (:wdt-db m))
-  (close-best-effort!
-    (fn [store]
-      (cond
-        (instance? IStore store) (i/close store)
-        (instance? ILMDB store) (i/close-kv store)
-        :else nil))
-    (:wstore m))
-  (close-best-effort! i/close-kv (:wlmdb m))
-  (close-best-effort! db/close-db (:dt-db m))
-  (close-best-effort!
-    (fn [store]
-      (cond
-        (instance? IStore store) (i/close store)
-        (instance? ILMDB store) (i/close-kv store)
-        :else nil))
-    (:store m)))
+  (let [stores [(:wstore m) (:store m)]
+        datalog-owner? (or (:wdt-db m) (:dt-db m)
+                           (some #(instance? IStore %) stores))]
+    (doseq [database [(:wdt-db m) (:dt-db m)]]
+      (close-best-effort! db/close-db database))
+    (doseq [store stores :when (instance? IStore store)]
+      (close-best-effort! i/close store))
+    ;; Datalog writer handles borrow the owner's environment. Closing them
+    ;; independently bypasses sampler shutdown, even if owner cleanup failed.
+    (when-not datalog-owner?
+      (doseq [store [(:wstore m) (:wlmdb m) (:store m)]
+              :when (instance? ILMDB store)]
+        (close-best-effort! i/close-kv store)))))
 
 (defn refresh-ha-local-dt-db
   [m]

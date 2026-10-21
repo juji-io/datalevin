@@ -3,6 +3,7 @@
 ## WIP
 ### Fixed
 - [Server] prevent sampler hijacking write txn.
+- [KV] shutdown sampler before closing.
 
 ## 1.2.6 (2026-10-20)
 

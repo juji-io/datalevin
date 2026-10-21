@@ -1752,7 +1752,8 @@
             (set-val-compressor lmdb value-codec)
             (lifecycle/register-shutdown-hook!
               dir (Thread. #(lifecycle/run-shutdown-close! dir lmdb)))
-            (lifecycle/start-scheduled-sync (.-scheduled-sync lmdb) dir lmdb)))
+            (lifecycle/start-scheduled-sync (.-scheduled-sync lmdb) dir lmdb
+                                            (.-write-txn lmdb))))
         ;; Every environment needs the write transaction's value scratch buffer,
         ;; including in-memory and temporary stores that skip persisted metadata.
         (set-max-val-size lmdb (max-val-size lmdb))
