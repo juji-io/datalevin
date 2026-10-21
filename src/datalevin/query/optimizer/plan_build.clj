@@ -192,11 +192,11 @@
 
 (defn- attrs-vec
   [attrs pred-options skips fidxs]
-  (mapv (fn [a options f]
+  (mapv (fn [a options skip? f]
           [a (cond-> (assoc options :skip? false :fidx nil)
-               (skips a) (assoc :skip? true)
+               skip?     (assoc :skip? true)
                f         (assoc :fidx f :skip? true))])
-        attrs pred-options fidxs))
+        attrs pred-options skips fidxs))
 
 (defn- aid [db] #(((db/-schema db) %) :db/aid))
 
@@ -257,14 +257,9 @@
                            (sort-by (fn [{:keys [attr]}] ((aid db) attr))))
               attrs   (mapv :attr all)
               vars    (mapv attr-var all)
-              skips   (cond-> (set (sequence
-                                     (comp (map (fn [a v]
-                                               (when (or (= v '_)
-                                                         (qu/placeholder? v))
-                                                 a)))
-                                        (remove nil?))
-                                     attrs vars))
-                        no-var? (conj attr))
+              ;; A constant or placeholder in one clause must not suppress a
+              ;; variable from another clause on the same attribute.
+              skips   (mapv #(or (= % '_) (qu/placeholder? %)) vars)
               pred-options
               (mapv (fn [v clause]
                       (cond-> (merge-pred-options v clause)
@@ -276,10 +271,10 @@
               cols         (into (:cols init)
                                  (sequence
                                    (comp
-                                     (map (fn [a v]
-                                            (when-not (skips a) #{a v})))
+                                     (map (fn [a v skip?]
+                                            (when-not skip? #{a v})))
                                      (remove nil?))
-                                   attrs vars))
+                                   attrs vars skips))
               strata       (conj (:strata init) (set vars))
               ires         (:result init)
               isp          (:sample init)

@@ -21,13 +21,20 @@ public class Txn {
 
     private DTLV.MDB_txn ptr;
     private final boolean readOnly;
+    private final Thread writerOwner;
     private boolean kvInfoChanged;
     private IdentityHashMap<Dbi, ReadCursorPool> cursorPools;
 
     public Txn(DTLV.MDB_txn ptr, boolean readOnly) {
         this.ptr = ptr;
         this.readOnly = readOnly;
+        writerOwner = readOnly ? null : Thread.currentThread();
         state = READY;
+    }
+
+    /** Native write transactions remain confined to the thread that opened them. */
+    public boolean isWriterOwner() {
+        return writerOwner == Thread.currentThread();
     }
 
     /**

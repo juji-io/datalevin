@@ -1360,14 +1360,18 @@
   "Close the Datalog database, then clear all data, including schema."
   [conn]
   (let [store (.-store ^DB @conn)
-        lmdb  (if (instance? DatalogStore store)
-                (let [dir (i/dir store)]
-                  (close conn)
-                  (open-kv dir))
-                (.-lmdb ^Store store))]
-    (try
-      (doseq [dbi [c/eav c/ave c/giants c/ha-client-ops c/schema c/meta]]
-        (i/clear-dbi lmdb dbi))
-      (finally
-        (db/remove-cache store)
-        (i/close-kv lmdb)))))
+        dir   (i/dir store)]
+    ;; Store shutdown waits for in-flight sampling before freeing native state.
+    ;; Clearing through the live LMDB handle bypasses that coordination.
+    (close conn)
+    (when (instance? Store store)
+      ;; Clear invalidates every handle to this database, including aliases
+      ;; whose references kept the shared store open after closing conn.
+      (s/retire-shared-local-store! dir))
+    (let [lmdb (open-kv dir)]
+      (try
+        (doseq [dbi [c/eav c/ave c/giants c/ha-client-ops c/schema c/meta]]
+          (i/clear-dbi lmdb dbi))
+        (finally
+          (db/remove-cache store)
+          (i/close-kv lmdb))))))

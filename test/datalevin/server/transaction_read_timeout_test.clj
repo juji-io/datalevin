@@ -68,7 +68,11 @@
               (is (= :value (d/get-value kv "data" :key)))
               (await! #(not (.isValid ^SelectionKey owner)))
               (is (nil? (:runner (get (.-dbs srv) "idle-kv")))
-                  "commit restores the ordinary idle socket deadline")))
+                  "commit restores the ordinary idle socket deadline")
+              ;; The ordinary pool can expire while waiting for the owner.
+              ;; Recover with a read before sending the close-store mutation.
+              (is (= :value (d/get-value kv "data" :key))
+                  "reads recover after the post-commit idle timeout")))
           (finally (d/close-kv kv))))
       (let [conn (d/create-conn (str uri "idle-datalog") {:value {}}
                                 {:client-opts {:pool-size 1 :time-out 3000}})]
@@ -82,7 +86,9 @@
                             owner))]
               (is (= 42 (:value (d/pull @conn [:value] 1))))
               (await! #(not (.isValid ^SelectionKey owner)))
-              (is (nil? (:runner (get (.-dbs srv) "idle-datalog"))))))
+              (is (nil? (:runner (get (.-dbs srv) "idle-datalog"))))
+              (is (= 42 (:value (d/pull @conn [:value] 1)))
+                  "reads recover after the post-commit idle timeout")))
           (finally (d/close conn)))))))
 
 (deftest partial-frames-and-copy-in-still-expire-inside-transactions

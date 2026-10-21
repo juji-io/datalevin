@@ -13,6 +13,12 @@
 - [Buffer] Allocate large (> 1 MiB) direct memory buffers on demand and release
   them after idle budget (time and space).
 
+## 1.2.7 (2026-10-21)
+### Fixed
+- [Server] prevent sampler hijacking write txn.
+- [KV] shutdown sampler before closing.
+- [Datalog] planner bug induced NPE.
+
 ## 1.2.6 (2026-10-20)
 
 ### Fixed
