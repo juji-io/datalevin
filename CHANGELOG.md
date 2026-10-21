@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 1.2.7 (2026-10-21)
 ### Fixed
 - [Server] prevent sampler hijacking write txn.
 - [KV] shutdown sampler before closing.
