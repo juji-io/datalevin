@@ -1,10 +1,10 @@
 (ns datalevin.query.source-test
   (:require [clojure.test :refer [deftest is]]
+            [datalevin.core :as d]
             [datalevin.query.source :as source]
-            [datalevin.query.source.contract :as contract]
+            [datalevin.query.source.batch :as batch]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.fake :as fake]
-            [datalevin.query.source.harness :as harness]
             [datalevin.query.source.runtime :as rt]
             [datalevin.query.source.value :as value]))
 
@@ -180,21 +180,28 @@
 (deftest owned-byte-values-survive-advance-and-close
   (let [bytes (byte-array [1 2 3])
         info (fake/row-info :bytes)
-        clauses [{:id 0 :kind :pattern :terms [[:ignore] [:const :row/value] [:var '?bytes]]}]
-        fake (fake/source info (vec (repeat 5 [1 :row/value bytes])))
+        borrowed (atom [])
         batches (atom [])
-        result (harness/run! fake clauses {:limits {:batch-rows 2}
-                                           :consume (fn [batch]
-                                                      (swap! batches conj (:row-count batch))
-                                                      (aset-byte bytes 0 (byte 9)))})
-        values (mapv first (:rows result))]
+        invalidate! (fn [_]
+                      (doseq [[_ bytes] @borrowed]
+                        (aset-byte ^bytes bytes 0 (byte 9))))
+        provider (fake/source info (mapv #(vector % :row/value bytes) (range 5))
+                             {:hooks {:fetch invalidate! :close-cursor invalidate!}
+                              :batch (fn [batch]
+                                       (swap! batches conj (:row-count batch))
+                                       (reset! borrowed (:rows batch))
+                                       batch)})
+        values (d/q '{:find [[?bytes ...]] :with [?id] :in [$s]
+                      :where [[$s ?id :row/value ?bytes]]
+                      :query-source {:limits {:batch-rows 2}}} provider)]
     (is (= [2 2 1] @batches))
     (is (= (repeat 5 [1 2 3]) (mapv vec values)))
     (is (= 5 (count (set values))))
     ;; Ownership holds between rows in one batch as well as across advances.
     (aset-byte ^bytes (first values) 0 (byte 7))
     (is (= (repeat 4 [1 2 3]) (mapv vec (next values))))
-    (is (= :close-session (first (last @(:events fake)))))))
+    (is (= [9 2 3] (vec (second (first @borrowed)))))
+    (is (= :close-session (first (last @(:events provider)))))))
 
 (deftest owned-metadata-survives-advance-and-close
   (doseq [x [[1] {:a 1} #{1} '(1) 'value (sorted-map :a 1) (sorted-set 1 2)]]
@@ -202,13 +209,18 @@
           date (java.util.Date. 1000)
           x (with-meta x {:bytes bytes :nested (with-meta 'leaf {:date date})})
           info (fake/row-info :data)
-          clauses [{:id 0 :kind :pattern :terms [[:ignore] [:const :row/value] [:var '?value]]}]
-          s (fake/source info (vec (repeat 5 [1 :row/value x])))
-          result (harness/run! s clauses
-                              {:limits {:batch-rows 2}
-                               :consume (fn [_] (aset-byte bytes 0 (byte 9)) (.setTime date 9000))})
-          values (mapv first (:rows result))
-          stamp #(-> % meta :nested meta :date)]
+          borrowed (atom [])
+          stamp #(-> % meta :nested meta :date)
+          invalidate! (fn [_]
+                        (doseq [[_ v] @borrowed]
+                          (aset-byte ^bytes (:bytes (meta v)) 0 (byte 9))
+                          (.setTime ^java.util.Date (stamp v) 9000)))
+          s (fake/source info (mapv #(vector % :row/value x) (range 5))
+                         {:hooks {:fetch invalidate! :close-cursor invalidate!}
+                          :batch (fn [batch] (reset! borrowed (:rows batch)) batch)})
+          values (d/q '{:find [[?value ...]] :with [?id] :in [$s]
+                        :where [[$s ?id :row/value ?value]]
+                        :query-source {:limits {:batch-rows 2}}} s)]
       (is (= (repeat 5 x) values))
       (doseq [v values]
         (is (= (class x) (class v)))
@@ -219,6 +231,7 @@
       (doseq [v (next values)]
         (is (= [1 2] (vec (:bytes (meta v)))))
         (is (= 1000 (.getTime ^java.util.Date (stamp v)))))
+      (is (= 9000 (.getTime ^java.util.Date (stamp (second (first @borrowed))))))
       (is (= :close-session (first (last @(:events s))))))))
 
 (deftest batch-accounting-validates-each-custom-value-once
@@ -288,10 +301,13 @@
         batch {:columns [] :rows rows :row-count 0 :byte-count bytes :exhausted? true}]
     (try
       (is (pos? bytes))
-      (is (= :query-source/invalid (category #(contract/batch! [] request batch))))
+      (is (= :query-source/invalid
+             (category #(batch/accept! {:control ctl} [] false request batch identity))))
       (let [token (source/reserve! ctl {:retained-bytes bytes :in-flight-batches 1})
             batch (assoc batch :reservation token)]
-        (is (= batch (contract/batch! [] request batch)))
+        (is (= batch (batch/accept! {:control ctl} [] false request batch identity)))
+        (is (= bytes (:retained-bytes (control/usage ctl))))
+        (is (= 1 (:in-flight-batches (control/usage ctl))))
         (source/release! token)
         (is (every? zero? (vals (control/usage ctl)))))
       (finally (control/close! ctl)))))

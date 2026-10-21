@@ -5,6 +5,7 @@
             [datalevin.parser]
             [datalevin.query.access :as access]
             [datalevin.query.source :as source]
+            [datalevin.query.source.batch :as batch]
             [datalevin.query.source.binding :as binding]
             [datalevin.query.source.control :as control]
             [datalevin.query.source.diagnostics :as diagnostics]
@@ -66,55 +67,15 @@
                 (contains? (:properties alternative) :consumption-group)
                 (assoc :consumption-group (get-in alternative [:properties :consumption-group])))}))
 
-(defn- limit! [category actual maximum]
-  (when-not (value/at-most? actual (long maximum))
-    (fail! :query-source/limit :batch
-           {:category category :maximum maximum :attempted actual})))
-
 (defn- deliver-batch!
   [runtime columns dependent? request batch deliver!]
-  (let [ctl (:control runtime) tokens (volatile! []) accepted? (volatile! false)
-        keep! #(vswap! tokens conj %)]
-    (try
-      (keep! (control/reserve! ctl {:retained-bytes 512}))
-      (when (nil? batch) (fail! :query-source/incomplete :batch))
-      (ensure! (value/plain-map? batch) :batch)
-      (let [required (cond-> #{:columns :rows :row-count :byte-count :exhausted?}
-                       dependent? (conj :binding-ids))]
-        (ensure! (and (every? #(contains? batch %) required)
-                      (every? #(do (control/check-active! ctl)
-                                   (or (required %) (= :reservation %) (qualified-keyword? %)))
-                              (keys batch))
-                      (vector? (:columns batch)) (= columns (:columns batch)) (vector? (:rows batch))
-                      (nonnegative? (:row-count batch)) (nonnegative? (:byte-count batch))
-                      (boolean? (:exhausted? batch))
-                      (= (:row-count batch) (count (:rows batch)))
-                      (or (seq (:rows batch)) (:exhausted? batch))) :batch)
-        ;; Reject oversized envelopes before walking any rows or annotations.
-        (limit! :batch-rows (:row-count batch) (:max-rows request))
-        (limit! :batch-bytes (:byte-count batch) (:max-bytes request))
-        (keep! (rt/charge-metadata! runtime (meta batch) :batch))
-        ;; The empty input-free charge is zero; its columns can still carry
-        ;; metadata/backing, so admit those separately even for an empty final.
-        (keep! (rt/charge-metadata! runtime (:columns batch) :batch))
-        (doseq [[k x] batch :when (qualified-keyword? k)]
-          (keep! (rt/charge-metadata! runtime [k x] :batch)))
-        (let [charged (volatile! 0)
-              observe! (fn [n]
-                         (control/check-active! ctl)
-                         (limit! :batch-bytes (vswap! charged value/add-charge n) (:max-bytes request)))
-              bytes (if dependent?
-                      (value/dependent-batch-charge-bytes (:columns batch) (:rows batch) (:binding-ids batch) observe!)
-                      (value/batch-charge-bytes (:columns batch) (:rows batch) observe!))]
-          (ensure! (= bytes (:byte-count batch)) :batch)
-          (when (or (not (value/at-most? bytes 0)) (:reservation batch))
-            (control/accept! ctl (:reservation batch) bytes)
-            (vreset! accepted? true)))
+  (batch/accept! runtime columns dependent? request batch
+    (fn [batch]
+      (try
         (deliver! batch)
-        (control/check-active! ctl))
-      (finally
-        (when @accepted? (control/release! (:reservation batch)))
-        (doseq [token @tokens] (control/release! token))))))
+        (control/check-active! (:control runtime))
+        (finally
+          (when-let [token (:reservation batch)] (control/release! token)))))))
 
 (defn- finish! [runtime primary close]
   (try (close)

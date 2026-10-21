@@ -1,8 +1,6 @@
 (ns ^:no-doc datalevin.query.source.contract
-  "Pure v2 type/pattern helpers and input-free batch validation.
-  Dependent envelopes are validated by the captured planning/cursor boundary."
-  (:require [datalevin.query.source.control :as control]
-            [datalevin.query.source.value :as v :refer [fail!]]))
+  "Pure v2 type/pattern helpers and captured cursor request construction."
+  (:require [datalevin.query.source.value :as v :refer [fail!]]))
 
 (defn- ensure! [ok phase]
   (when-not ok (fail! :query-source/invalid phase)))
@@ -14,7 +12,6 @@
 
 (defn- nonempty-string? [x] (and (string? x) (pos? (count x))))
 (defn- variable? [x] (and (symbol? x) (.startsWith (name x) "?")))
-(defn- nonnegative? [x] (and (integer? x) (<= 0 x Long/MAX_VALUE)))
 
 (defn cursor-request
   "Build the v2 open envelope from captured context and a selected plan.
@@ -116,36 +113,3 @@
 (defn variables [clause]
   (into #{} (keep #(when (= :var (first %)) (second %)))
         (or (:terms clause) (:args clause))))
-
-(defn- batch-limit! [category actual maximum]
-  (when-not (v/at-most? actual (long maximum))
-    (fail! :query-source/limit :batch
-           {:category category :maximum maximum :attempted actual})))
-
-(defn batch! [columns request batch]
-  (control/check-active! (:control request))
-  (fields! batch #{:columns :rows :row-count :byte-count :exhausted?} #{:reservation} :batch)
-  (ensure! (and (= columns (:columns batch))
-                (pos-int? (:max-rows request)) (pos-int? (:max-bytes request))
-                (nonnegative? (:row-count batch)) (nonnegative? (:byte-count batch))
-                (boolean? (:exhausted? batch)) (vector? (:rows batch))) :batch)
-  (let [rows (:rows batch)]
-    (ensure! (and (= (:row-count batch) (count rows))
-                  (or (seq rows) (:exhausted? batch))) :batch)
-    ;; Reject the envelope before inspecting any provider values. Recompute
-    ;; the charge under the cap as well: a provider can understate byte-count.
-    (batch-limit! :batch-rows (count rows) (:max-rows request))
-    (batch-limit! :batch-bytes (:byte-count batch) (:max-bytes request))
-    (let [charged (volatile! 0)
-          bytes (v/batch-charge-bytes (:columns batch) rows
-                  (fn [increment]
-                    (control/check-active! (:control request))
-                    ;; Each accepted running total fits the long request cap;
-                    ;; the next increment may still promote the sum to BigInt.
-                    (batch-limit! :batch-bytes
-                                  (vswap! charged #(v/add-charge (long %) increment))
-                                  (:max-bytes request))))]
-      (ensure! (= (:byte-count batch) bytes) :batch)
-      (when (or (not (v/at-most? bytes 0)) (:reservation batch))
-        (control/accept! (:control request) (:reservation batch) bytes))))
-  batch)
