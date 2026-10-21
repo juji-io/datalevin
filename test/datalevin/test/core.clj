@@ -9,7 +9,9 @@
    [taoensso.timbre :as log]
    [datalevin.util :as u])
   (:import
-   [java.net ServerSocket]))
+   [datalevin.server Server]
+   [java.net ServerSocket]
+   [java.nio.channels ServerSocketChannel]))
 
 (defn wrap-res [f]
   (let [res (f)]
@@ -47,13 +49,18 @@
   (with-open [s (ServerSocket. 0)]
     (.getLocalPort s)))
 
+(defn server-port
+  "Return the TCP port already bound by a server, including a :port 0 server."
+  [^Server server]
+  (.getLocalPort (.socket ^ServerSocketChannel (.-server-socket server))))
+
 (defn server-fixture
   "Run a remote test against a temporary server on an available port. Both
   test projects share this namespace, so either copy must provide the fixture."
   [f]
-  (let [port (allocate-port)
-        dir (u/tmp-dir (str "server-test-" (random-uuid)))
-        server (srv/create {:port port :root dir})]
+  (let [dir (u/tmp-dir (str "server-test-" (random-uuid)))
+        server (srv/create {:port 0 :root dir})
+        port (server-port server)]
     (log/set-min-level! :report)
     (binding [cl/*default-port* port]
       (try
