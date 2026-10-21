@@ -20,7 +20,7 @@
 
 (def version
   "Version number of Datalevin"
-  "1.2.5")
+  "1.2.6")
 
 (def version-file-name
   "Name of the file that stores version on disk"
@@ -392,6 +392,12 @@
 (def ^:const default-idle-timeout
   "The server session default idle timeout is 172800000ms (48 hours)"
   172800000)
+
+(def ^:const default-server-max-connections 1024)
+(def ^:const default-server-max-unauthenticated-connections 64)
+(def ^:const default-server-authentication-timeout-ms 10000)
+(def ^:const default-server-read-timeout-ms 60000)
+(def ^:const default-server-write-timeout-ms 60000)
 
 (def ^:const default-connection-pool-size
   "The default client connection pool size is 3"

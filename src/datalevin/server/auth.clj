@@ -17,6 +17,8 @@
   (:import
    [java.nio.charset StandardCharsets]
    [java.security MessageDigest SecureRandom]
+   [java.util.concurrent Semaphore]
+   [java.util.concurrent.atomic AtomicLong]
    [org.bouncycastle.crypto.generators Argon2BytesGenerator]
    [org.bouncycastle.crypto.params Argon2Parameters
     Argon2Parameters$Builder]))
@@ -109,28 +111,81 @@
     (.nextBytes (SecureRandom.) bs)
     bs))
 
+(def ^:private ^:const password-memory-kib 131072)
+
+(defrecord ^:private PasswordHashingCapacity
+    [heap-limit-fn ^Semaphore slots ^AtomicLong reserved])
+
+(defn- password-hashing-capacity
+  [heap-limit-fn]
+  ;; Reserve twice the Argon2 working memory to cover its object graph and
+  ;; allocation/GC overlap. Half the heap then allows at most a quarter of it
+  ;; in Argon2 blocks, with a separate ceiling on simultaneous CPU-heavy work.
+  (->PasswordHashingCapacity heap-limit-fn (Semaphore. 4) (AtomicLong.)))
+
+(defonce ^:private hashing-capacity
+  ;; Sample the runtime limit at admission, including in native images whose
+  ;; initialization heap can differ from their deployment's heap.
+  (password-hashing-capacity #(.maxMemory (Runtime/getRuntime))))
+
+(defn- with-password-hashing-capacity
+  [^PasswordHashingCapacity capacity memory-kib f]
+  (let [memory-bytes (* 2048 (long memory-kib))
+        ^Semaphore slots (.-slots capacity)
+        ^AtomicLong reserved (.-reserved capacity)]
+    (locking capacity
+      (let [required (+ (.get reserved) memory-bytes)
+            budget (quot (long ((.-heap-limit-fn capacity))) 2)]
+        (when-not (and (<= required budget)
+                       (.tryAcquire slots))
+          (raise (if (> memory-bytes budget)
+                   "Password hash exceeds the JVM's hashing memory budget"
+                   "Server is busy hashing passwords; retry later")
+                 {:error :server/busy :retryable? (<= memory-bytes budget)
+                  :reason :password-hashing-capacity}))
+        (.set reserved required)))
+    (try
+      (f)
+      (finally
+        ;; A closed socket or interrupted owner cannot release this reservation
+        ;; while its synchronous password hash is still using the memory.
+        (locking capacity
+          (.addAndGet reserved (- memory-bytes))
+          (.release slots))))))
+
 (defn password-hashing
-  "Hash a password using argon2id."
+  "Hash a password using argon2id within the JVM's shared hashing capacity.
+  Exhaustion rejects before allocating Argon2 memory, without queueing."
   ([password salt]
    (password-hashing password salt nil))
   ([^String password ^bytes salt
     {:keys [ops-limit mem-limit out-length parallelism]
      :or   {ops-limit   4
-            mem-limit   131072
+            mem-limit   password-memory-kib
             out-length  32
             parallelism 1}}]
-   (let [builder (doto (Argon2Parameters$Builder. Argon2Parameters/ARGON2_id)
-                   (.withVersion Argon2Parameters/ARGON2_VERSION_13)
-                   (.withIterations ops-limit)
-                   (.withMemoryAsKB mem-limit)
-                   (.withParallelism parallelism)
-                   (.withSalt salt))
-         gen     (doto (Argon2BytesGenerator.)
-                   (.init (.build builder)))
-         out-bs  (byte-array out-length)
-         in-bs   (.getBytes password StandardCharsets/UTF_8)]
-     (.generateBytes gen in-bs out-bs (int 0) (int out-length))
-     (b/encode-base64 out-bs))))
+   (doseq [[option value] [[:mem-limit mem-limit] [:parallelism parallelism]]]
+     (when-not (and (pos-int? value) (<= (long value) Integer/MAX_VALUE))
+       (raise "Password hashing parameter must be a positive 32-bit integer"
+              {:error :server/invalid-password-hashing-option
+               :option option :value value})))
+   (with-password-hashing-capacity
+     hashing-capacity
+     ;; Argon2 raises its allocation to at least eight blocks per lane.
+     (max (long mem-limit) (* 8 (long parallelism)))
+     (fn []
+       (let [builder (doto (Argon2Parameters$Builder. Argon2Parameters/ARGON2_id)
+                       (.withVersion Argon2Parameters/ARGON2_VERSION_13)
+                       (.withIterations ops-limit)
+                       (.withMemoryAsKB mem-limit)
+                       (.withParallelism parallelism)
+                       (.withSalt salt))
+             gen     (doto (Argon2BytesGenerator.)
+                       (.init (.build builder)))
+             out-bs  (byte-array out-length)
+             in-bs   (.getBytes password StandardCharsets/UTF_8)]
+         (.generateBytes gen in-bs out-bs (int 0) (int out-length))
+         (b/encode-base64 out-bs))))))
 
 (defn password-matches?
   [in-password password-hash salt]

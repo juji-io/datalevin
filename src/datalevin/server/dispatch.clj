@@ -121,6 +121,7 @@
     (fn [cause]
       (let [message (ex-message cause)]
         (or (instance? ClosedChannelException cause)
+            (= :server/connection-timeout (:error (ex-data cause)))
             (= message "Socket channel is closed.")
             (and (string? message)
                  (or (s/includes? message "Connection reset by peer")
@@ -409,7 +410,9 @@
                             (vswap! state assoc :codec-context context)
                             context))
         ^SocketChannel ch (.channel skey)
-        read-message! #(read-message deps server skey %1 %2)
+        read-message! (fn [fmt message]
+                        (connection/end-read! skey)
+                        (read-message deps server skey fmt message))
         handle-message! (fn [_ message]
                           (handle-message deps server skey message))]
     ;; Binding only the cache context leaves handler/storage serialization policy
@@ -420,7 +423,7 @@
         (loop []
           (when (and (.isOpen ch) (not (.isInterrupted (Thread/currentThread))))
             (let [^ByteBuffer read-bf (:read-bf @state)]
-              (if (p/extract-message read-bf read-message! handle-message!)
+              (if (p/extract-message read-bf read-message! handle-message! (:wire-opts @state))
                 ;; Copy-in may have grown the shared buffer. Fetch it afresh.
                 (do
                   (vswap! state update :read-bf bf/trim-buffer! c/+buffer-size+)
@@ -432,12 +435,27 @@
                         ;; allocating an entire request from its header alone.
                         (let [buffer (bf/resize-buffer!
                                        read-bf
-                                       (bf/grown-capacity (.capacity read-bf)
-                                                          (inc (.capacity read-bf))))]
+                                       (min (+ (p/message-size-limit (:wire-opts @state))
+                                               c/message-header-size)
+                                            (bf/grown-capacity (.capacity read-bf)
+                                                               (inc (.capacity read-bf))))
+                                       (+ (p/message-size-limit (:wire-opts @state))
+                                          c/message-header-size))]
                           (vswap! state assoc :read-bf buffer)
                           buffer))
+                      ;; An explicit transaction has no default body timeout.
+                      ;; Leave its socket idle between requests, but bound any
+                      ;; partial frame already buffered on that same socket.
+                      idle-transaction? (and (zero? (.position read-bf))
+                                             (seq (:transaction-owners @state)))
+                      _ (when-not idle-transaction?
+                          (connection/begin-read! skey))
                       ^int readn (p/read-ch ch read-bf)]
-                  (when (pos? readn) (recur)))))))
+                  (when (pos? readn)
+                    ;; The first bytes end a transaction's idle exemption.
+                    ;; Further progress shares this absolute frame deadline.
+                    (when idle-transaction? (connection/begin-read! skey))
+                    (recur)))))))
         (catch InterruptedException _ nil)
         (catch Exception e
           (when-not (client-disconnect? e)

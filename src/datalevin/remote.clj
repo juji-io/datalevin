@@ -100,6 +100,63 @@
     (when (= db-name (first stat-key))
       (.remove chatty-kv-stats* stat-key))))
 
+(defn- close-remote-store!
+  [client tx-client owns-client? db-name close-request!]
+  (let [failure (volatile! nil)
+        cleanup! (fn [f]
+                   (try
+                     (f)
+                     (catch Throwable t
+                       (if-let [primary @failure]
+                         (when-not (identical? primary t)
+                           (.addSuppressed ^Throwable primary t))
+                         (vreset! failure t)))))]
+    (try
+      (when-not (cl/disconnected? client)
+        (close-request!))
+      (catch Throwable t
+        (vreset! failure t))
+      (finally
+        ;; A failed close RPC must not prevent either owned client's disposal.
+        (when owns-client?
+          (cleanup! #(cl/close-client client)))
+        (when-not (identical? tx-client client)
+          (cleanup! #(cl/close-client tx-client)))
+        (cleanup! #(clear-chatty-kv-db! db-name))))
+    (when-let [t @failure] (throw t))))
+
+(defn- open-remote-store!
+  [uri-str client opts owns-client? open-db! new-store!]
+  (let [ordinary-client (volatile! client)
+        transaction-client (volatile! nil)]
+    (try
+      (let [uri (URI. uri-str)
+            db-name (or (cl/parse-db uri)
+                        (raise "URI should contain a database name" {}))
+            query (cl/parse-query uri)
+            client (if (and owns-client? (nil? client))
+                     (vreset! ordinary-client
+                              (cl/new-client uri-str (:client-opts opts)))
+                     client)
+            db-info (open-db! client db-name query)
+            tx-client (vreset! transaction-client
+                              (cl/dedicated-transaction-client client))]
+        (new-store! client tx-client db-name query db-info))
+      (catch Throwable t
+        ;; Ownership transfers only after the complete store is constructed.
+        (doseq [client (cond-> []
+                        (and @transaction-client
+                             (not (identical? @transaction-client @ordinary-client)))
+                        (conj @transaction-client)
+                        (and owns-client? @ordinary-client)
+                        (conj @ordinary-client))]
+          (try
+            (cl/close-client client)
+            (catch Throwable cleanup-error
+              (when-not (identical? t cleanup-error)
+                (.addSuppressed t cleanup-error)))))
+        (throw t)))))
+
 (defn reset-chatty-kv-stats!
   "Reset runtime chatty-KV detection state and counters."
   []
@@ -226,66 +283,73 @@
    (load-datoms* client db-name datoms datom-type simulated? writing? ha-source
                  request-datoms))
   ([client db-name datoms datom-type simulated? writing? ha-source send-fn]
-   (let [tx? (#{:txs :txs+info :txs-ack} datom-type)
-         t   (case datom-type
-               :txs      :tx-data
-               :txs+info :tx-data+db-info
-               :txs-ack  :tx-data-ack
-               :load-datoms)
-         client-op-id (when (and tx? (not simulated?))
-                        (cop/new-client-op-id))
-         client-op-hash (when client-op-id
-                          (cop/request-hash
-                           (cop/tx-request-payload t db-name datoms
-                                                   simulated?)))
-         response-kind (case t
-                         :tx-data-ack cop/tx-data-ack-response-kind
-                         :tx-data+db-info cop/tx-data+db-info-response-kind
-                         :tx-data cop/tx-data-response-kind
-                         nil)
-         req (if (< (count datoms) ^long c/+wire-datom-batch-size+)
-               (cond-> {:type     t
-                        :mode     :request
-                        :writing? writing?
-                        :args     (if tx?
-                                    [db-name datoms simulated?]
-                                    [db-name datoms])}
-                 client-op-id
-                 (assoc :client-op-id client-op-id
-                        :client-op-hash client-op-hash
-                        :client-op-response-kind response-kind))
-               (cond-> {:type     t
-                        :mode     :copy-in
-                        :writing? writing?
-                        :args     (if tx?
-                                    [db-name simulated?]
-                                    [db-name])}
-                 client-op-id
-                 (assoc :client-op-id client-op-id
-                        :client-op-hash client-op-hash
-                        :client-op-response-kind response-kind)))
-         request-fn
-         (fn [retry-client req]
-           (send-fn retry-client req datoms))
-         response
-         (try
-           (request-fn client req)
-           (catch Exception e
-             (or (and client-op-id
-                      (retry-ha-transport-failure
-                       client
-                       req
-                       request-fn
-                       (cached-ha-member-endpoints ha-source)
-                       e))
-                 (throw e))))
-         {:keys [type message result err-data]}
-         response]
-     (if (= type :error-response)
-       (if (:resized err-data)
-         (raise message err-data)
-         (cl/retry-ha-write-request client req message err-data request-fn))
-       (if tx? (cl/decode-tx-response response) result)))))
+   (cl/call-with-request client
+                         {:type (case datom-type :txs :tx-data :txs+info :tx-data+db-info
+                                      :txs-ack :tx-data-ack :load-datoms)
+                          :args [db-name] :writing? writing?}
+                         (fn []
+                           (let [tx? (#{:txs :txs+info :txs-ack} datom-type)
+                                 t   (case datom-type
+                                       :txs      :tx-data
+                                       :txs+info :tx-data+db-info
+                                       :txs-ack  :tx-data-ack
+                                       :load-datoms)
+                                 client-op-id (when (and tx? (not simulated?))
+                                                (cop/new-client-op-id))
+                                 client-op-hash (when client-op-id
+                                                  (cop/request-hash
+                                                   (cop/tx-request-payload t db-name datoms
+                                                                           simulated?)))
+                                 response-kind (case t
+                                                 :tx-data-ack cop/tx-data-ack-response-kind
+                                                 :tx-data+db-info cop/tx-data+db-info-response-kind
+                                                 :tx-data cop/tx-data-response-kind
+                                                 nil)
+                                 req (if (< (count datoms) ^long c/+wire-datom-batch-size+)
+                                       (cond-> {:type     t
+                                                :mode     :request
+                                                :writing? writing?
+                                                :args     (if tx?
+                                                            [db-name datoms simulated?]
+                                                            [db-name datoms])}
+                                         client-op-id
+                                         (assoc :client-op-id client-op-id
+                                                :client-op-hash client-op-hash
+                                                :client-op-response-kind response-kind))
+                                       (cond-> {:type     t
+                                                :mode     :copy-in
+                                                :writing? writing?
+                                                :args     (if tx?
+                                                            [db-name simulated?]
+                                                            [db-name])}
+                                         client-op-id
+                                         (assoc :client-op-id client-op-id
+                                                :client-op-hash client-op-hash
+                                                :client-op-response-kind response-kind)))
+                                 request-fn
+                                 (fn [retry-client req]
+                                   (send-fn retry-client req datoms))
+                                 response
+                                 (try
+                                   (request-fn client req)
+                                   (catch Exception e
+                                     (or (and client-op-id
+                                              (retry-ha-transport-failure
+                                               client
+                                               req
+                                               request-fn
+                                               (cached-ha-member-endpoints ha-source)
+                                               e))
+                                         (throw e))))
+                                 {:keys [type message result err-data]}
+                                 response]
+                             (if (= type :error-response)
+                               (if (:resized err-data)
+                                 (raise message err-data)
+                                 (cl/retry-ha-write-request client req message err-data request-fn))
+                               (if tx? (cl/decode-tx-response response) result)))))))
+
+
 
 ;; remote datalog db
 
@@ -471,19 +535,10 @@
 
   (close [_]
     (when (.compareAndSet closed? false true)
-      (try
-        (when-not (cl/disconnected? client)
-          ;; Closing a remote store detaches the client/session view of the DB.
-          ;; It is not a with-transaction control message and must not route
-          ;; through the server's write-runner path.
-          (datalog-request read-floor-tx client :close [db-name] false))
-        (when (and owns-client? (not (cl/disconnected? client)))
-          (cl/disconnect client))
-        (when (and (not (identical? tx-client client))
-                   (not (cl/disconnected? tx-client)))
-          (cl/disconnect tx-client))
-        (finally
-          (clear-chatty-kv-db! db-name)))))
+      ;; Closing detaches the session's DB view, outside the write-runner path.
+      (close-remote-store! client tx-client owns-client? db-name
+                           #(datalog-request read-floor-tx client :close
+                                             [db-name] false))))
 
   (closed? [_]
     (if (or (.get closed?) (cl/disconnected? client))
@@ -675,29 +730,27 @@
   ([uri-str]
    (open uri-str nil))
   ([uri-str schema]
-   (let [client (cl/new-client uri-str)]
-     (open client uri-str schema nil true)))
+   (open uri-str schema nil))
   ([uri-str schema opts]
-   (let [client (cl/new-client uri-str (:client-opts opts))]
-     (open client uri-str schema opts true)))
+   (open nil uri-str schema opts true))
   ([client uri-str schema opts]
    (open client uri-str schema opts false))
   ([client uri-str schema opts owns-client?]
-   (let [uri (URI. uri-str)]
-     (if-let [db-name (cl/parse-db uri)]
-       (let [store (or (get (cl/parse-query uri) "store")
-                       c/db-store-datalog)
-             db-info (merge-client-sampling-opts
-                       (cl/open-database client db-name store schema opts true)
-                       opts)]
-         (->DatalogStore uri-str db-name client
-                         (cl/dedicated-transaction-client client)
-                         (volatile! :remote-dl-mutex) false
-                         (volatile! db-info)
-                         (AtomicBoolean. false)
-                         owns-client?
-                         (AtomicBoolean. false)))
-       (raise "URI should contain a database name" {})))))
+   (open-remote-store!
+     uri-str client opts owns-client?
+     (fn [client db-name query]
+       (merge-client-sampling-opts
+         (cl/open-database client db-name
+                           (or (get query "store") c/db-store-datalog)
+                           schema opts true)
+         opts))
+     (fn [client tx-client db-name _query db-info]
+       (->DatalogStore uri-str db-name client tx-client
+                       (volatile! :remote-dl-mutex) false
+                       (volatile! db-info)
+                       (AtomicBoolean. false)
+                       owns-client?
+                       (AtomicBoolean. false))))))
 
 ;; Let `datalevin.db` open remote stores without depending on this namespace.
 (i/set-remote-open-fn! open)
@@ -915,28 +968,32 @@
 
 (defn- update-kv-request
   [client open-db-opts writing? args metadata]
-  (let [req        (with-meta
-                     {:type :update-kv
-                      :writing? writing?
-                      :args args
-                      :client-op-id (cop/new-client-op-id)
-                      :client-op-hash (cop/request-hash [:update-kv args])
-                      :client-op-response-kind cop/kv-result-response-kind}
-                     metadata)
-        request-fn (fn [client req] (cl/request client req))
-        {:keys [type message result err-data]}
-        (try
-          (request-fn client req)
-          (catch Exception e
-            (or (retry-ha-transport-failure
-                  client req request-fn
-                  (cached-ha-member-endpoints open-db-opts) e)
-                (throw e))))]
-    (if (= type :error-response)
-      (if (:resized err-data)
-        (raise message err-data)
-        (cl/retry-ha-write-request client req message err-data request-fn))
-      result)))
+  (cl/call-with-request client {:type :update-kv :args args :writing? writing?}
+                        (fn []
+                          (let [req        (with-meta
+                                             {:type :update-kv
+                                              :writing? writing?
+                                              :args args
+                                              :client-op-id (cop/new-client-op-id)
+                                              :client-op-hash (cop/request-hash [:update-kv args])
+                                              :client-op-response-kind cop/kv-result-response-kind}
+                                             metadata)
+                                request-fn (fn [client req] (cl/request client req))
+                                {:keys [type message result err-data]}
+                                (try
+                                  (request-fn client req)
+                                  (catch Exception e
+                                    (or (retry-ha-transport-failure
+                                         client req request-fn
+                                         (cached-ha-member-endpoints open-db-opts) e)
+                                        (throw e))))]
+                            (if (= type :error-response)
+                              (if (:resized err-data)
+                                (raise message err-data)
+                                (cl/retry-ha-write-request client req message err-data request-fn))
+                              result)))))
+
+
 
 (deftype+ KVStore [^String uri
                   ^String db-name
@@ -997,16 +1054,8 @@
 
   (close-kv [_]
     (when (.compareAndSet closed? false true)
-      (try
-        (when-not (cl/disconnected? client)
-          (cl/normal-request client :close-kv [db-name]))
-        (when (and owns-client? (not (cl/disconnected? client)))
-          (cl/disconnect client))
-        (when (and (not (identical? tx-client client))
-                   (not (cl/disconnected? tx-client)))
-          (cl/disconnect tx-client))
-        (finally
-          (clear-chatty-kv-db! db-name)))))
+      (close-remote-store! client tx-client owns-client? db-name
+                           #(cl/normal-request client :close-kv [db-name]))))
 
   (closed-kv? [_]
     (if (or (.get closed?) (cl/disconnected? client))
@@ -1121,6 +1170,8 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [_ dbi-name txs k-type v-type]
+    (cl/call-with-request client {:type :transact-kv :args [db-name] :writing? writing?}
+     (fn []
     (let [txs            (l/expand-datom-kv-txs txs)
           client-op-id   (when writing? (cop/new-client-op-id))
           client-op-hash (when client-op-id
@@ -1169,7 +1220,7 @@
           (raise message err-data)
           (if (cl/retryable-ha-write-reject? err-data)
             (cl/retry-ha-write-request client req message err-data request-fn)
-            (raise "Error transacting kv to server:" message {:uri uri}))))))
+            (raise "Error transacting kv to server:" message {:uri uri}))))))))
 
   (get-value [db dbi-name k]
     (.get-value db dbi-name k :data :data true))
@@ -1496,26 +1547,23 @@
   ([uri-str]
    (open-kv uri-str nil))
   ([uri-str opts]
-   (let [client (cl/new-client uri-str (:client-opts opts))]
-     (open-kv client uri-str opts true)))
+   (open-kv nil uri-str opts true))
   ([client uri-str opts]
    (open-kv client uri-str opts false))
   ([client uri-str opts owns-client?]
-   (let [uri     (URI. uri-str)
-         uri-str (str uri-str
-                      (if (cl/parse-query uri) "&" "?")
-                      "store=" c/db-store-kv)]
-     (if-let [db-name (cl/parse-db uri)]
-       (do (cl/open-database client db-name c/db-store-kv opts)
-           (->KVStore uri-str db-name client
-                      (cl/dedicated-transaction-client client)
-                      (volatile! :remote-kv-mutex) false
-                      ;; KV stores do not implement IStore/opts on the server.
-                      ;; Preserve caller-supplied open opts only for HA retry hints.
-                      (volatile! opts)
-                      owns-client?
-                      (AtomicBoolean. false)))
-       (raise "URI should contain a database name" {})))))
+   (open-remote-store!
+     uri-str client opts owns-client?
+     (fn [client db-name _query]
+       (cl/open-database client db-name c/db-store-kv opts))
+     (fn [client tx-client db-name query _db-info]
+       (->KVStore (str uri-str (if query "&" "?") "store=" c/db-store-kv)
+                  db-name client tx-client
+                  (volatile! :remote-kv-mutex) false
+                  ;; KV stores do not implement IStore/opts on the server.
+                  ;; Preserve caller-supplied open opts only for HA retry hints.
+                  (volatile! opts)
+                  owns-client?
+                  (AtomicBoolean. false))))))
 
 (defn batch-kv
   "Run multiple KV calls against a remote KV store in one RPC round trip.

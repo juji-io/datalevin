@@ -13,6 +13,19 @@
 - [Buffer] Allocate large (> 1 MiB) direct memory buffers on demand and release
   them after idle budget (time and space).
 
+## 1.2.6 (2026-10-20)
+
+### Fixed
+- [Server] lifecycle and recovery bugs.
+- [Vector] index restoration after server restart.
+### Improved
+- [Server] improve resilience of server/client lifecycle.
+- [Server] add configurable [connection limits and authentication/read/write
+  deadlines](doc/server.md#networking); use dedicated connections for explicit
+  transactions, exempting idle pauses from read deadlines while retaining
+  partial-frame and copy-in timeouts.
+- [Test] Chaos Monkey tests for server resilience.
+
 ## 1.2.5 (2026-10-14)
 
 ### Fixed
@@ -26,8 +39,8 @@
 ### Fixed
 - [KV] native cursor memory leaks.
 ### Improved
-- [Server] atomic `init-db`.
 - [KV] cleanup resources after use.
+- [Server] atomic `init-db`.
 - update deps.
 
 ## 1.2.3 (2026-10-13)

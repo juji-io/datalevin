@@ -1,4 +1,4 @@
-(def version "1.2.5")
+(def version "1.2.6")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -106,6 +106,7 @@
                    #"\.md" #"\.txt"
                    #"^java/"
                    #"datalevin/test_adapter"
+                   #"^datalevin/client_recovery_chaos([$_.]|$)"
                    #"rust/target/"
                    #"rust/fuzz/target/"
                    #"rust/test-adapter/target/"
@@ -119,6 +120,7 @@
                        #"datalevin/tx_group/batch/(env|private|recovery)([/$_.]|$)"
                        #"pod.huahaiy.datalevin-test"
                        #"datalevin/test_adapter"
+                       #"^datalevin/client_recovery_chaos([$_.]|$)"
                        #"rust/target/"
                        #"rust/fuzz/target/"
                        #"rust/test-adapter/target/"

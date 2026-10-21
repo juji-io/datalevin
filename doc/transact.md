@@ -142,14 +142,14 @@ Here are some examples of passing the env flags:
 (require '[datalevin.constants :as c])
 
 ;; Pass :nosync to my-kvdb KV store
-(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/default-env-flags :nosync))))})
+(def kv-db (d/open-kv "/tmp/my-kvdb" {:flags (conj c/default-env-flags :nosync)}))
 
 ;; Turn off :nosync
 (d/set-env-flags kv-db [:nosync] false)
 
 ;; Set :temp? true for a KV store automaticaly adds :nosync,
 ;; this DB will also be deleted on graceful JVM exit.
-(d/open-kv "/tmp/tmp-kvdb" {:temp? true))})
+(d/open-kv "/tmp/tmp-kvdb" {:temp? true})
 
 ;; Pass :writemap + :mapasync to testdb Datalog store
 (d/get-conn "/tmp/testdb" {}
@@ -196,6 +196,11 @@ The default timeout is unset. It can be changed with
 `nil` to disable it. The timeout interrupts the transaction thread and aborts
 the transaction when control returns to the macro. Code that ignores
 interruption can still run until it returns.
+
+For remote transactions, the server's socket read timeout does not limit idle
+time between transaction requests. Once a request starts arriving, its complete
+frame must arrive within `:read-timeout-ms`; stalled copy-in transfers also remain
+subject to this limit. Losing the owning socket still aborts the transaction.
 
 Java exposes `withTransaction(timeoutMs, fn)` and
 `setExplicitTransactionTimeout(...)`; Python exposes

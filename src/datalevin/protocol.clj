@@ -13,6 +13,7 @@
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
    [datalevin.constants :as c]
+   [datalevin.client.request :as cr]
    [datalevin.datom :as d]
    [datalevin.native-value :as nv]
    [datalevin.protocol.context :as context]
@@ -27,7 +28,7 @@
    [java.io ByteArrayInputStream ByteArrayOutputStream EOFException]
    [java.nio ByteBuffer BufferOverflowException]
    [java.util UUID]
-   [java.nio.channels SocketChannel Selector SelectionKey]
+   [java.nio.channels ClosedSelectorException SocketChannel Selector SelectionKey]
    [datalevin.io ByteBufferInputStream ByteBufferOutputStream WireCompression]
    [datalevin.spill SpillableVector]
    [datalevin.datom Datom]
@@ -47,12 +48,18 @@
                      "datalevin/SpillableVector"
                      (fn [v] (into [] v)))})
 
+(defn ^:no-doc message-size-limit
+  "Local receive limit in payload bytes, excluding the five-byte frame header."
+  ^long [opts]
+  (long (get opts :max-message-size WireCompression/DEFAULT_MAX_MESSAGE_SIZE)))
+
 (defn ^:no-doc client-wire-opts
   "Validate and capture connection policy before opening any sockets."
   [opts]
   (let [compression (get opts :wire-compression :none)
         threshold (get opts :wire-compression-threshold c/*wire-compression-threshold*)
-        level (get opts :wire-compression-level c/*wire-compression-level*)]
+        level (get opts :wire-compression-level c/*wire-compression-level*)
+        maximum (get opts :max-message-size WireCompression/DEFAULT_MAX_MESSAGE_SIZE)]
     (when-not (#{:none :zstd} compression)
       (raise "Expected :wire-compression to be :none or :zstd" {:value compression}))
     (when-not (and (integer? threshold) (<= 0 threshold Integer/MAX_VALUE))
@@ -60,9 +67,12 @@
     (when-not (and (integer? level)
                   (<= (Zstd/minCompressionLevel) level (Zstd/maxCompressionLevel)))
       (raise "Invalid wire compression level" {:value level}))
+    (when-not (and (integer? maximum) (<= 1 maximum (- Integer/MAX_VALUE c/message-header-size)))
+      (raise "Invalid maximum wire message size" {:value maximum}))
     {:compression (when (= compression :zstd) :zstd)
      :compression-threshold (long threshold)
-     :compression-level (int level)}))
+     :compression-level (int level)
+     :max-message-size (long maximum)}))
 
 (defn ^:no-doc local-wire-capabilities
   ([] (local-wire-capabilities (client-wire-opts nil)))
@@ -78,10 +88,8 @@
     :compression-level (:compression-level opts)}))
 
 (defn ^:no-doc default-wire-opts
-  []
-  {:compression           nil
-   :compression-threshold (long c/*wire-compression-threshold*)
-   :compression-level     (int c/*wire-compression-level*)})
+  ([] (default-wire-opts nil))
+  ([opts] (client-wire-opts (assoc opts :wire-compression :none))))
 
 (defn- peer-supports-zstd?
   [peer-capabilities]
@@ -316,19 +324,35 @@
     2 (read-nippy-bf payload)
     (raise "Unknown wire message format" {:format fmt :format-code (fmt-code fmt)})))
 
+(defn- check-message-size! [^long size wire-opts]
+  (when (> size (message-size-limit wire-opts))
+    (raise "Wire message exceeds receive size limit"
+           {:error :protocol/message-too-large :size size
+            :max-message-size (message-size-limit wire-opts)})))
+
+(defn- check-frame-size! [^long length wire-opts]
+  (when (< length c/message-header-size)
+    (raise "Message corruption: length is less than header size" {:length length}))
+  (check-message-size! (- length c/message-header-size) wire-opts))
+
+(defn- check-compression! [fmt wire-opts]
+  (when (and (zstd-compressed? fmt) (not= (:compression wire-opts) :zstd))
+    (raise "Received compressed wire message without negotiated support"
+           {:compression-flag :zstd :wire-opts wire-opts})))
+
 (defn read-value
   ([fmt bs] (read-value fmt bs nil))
   ([fmt bs wire-opts]
    (let [^ByteBuffer payload (if (instance? ByteBuffer bs) bs (ByteBuffer/wrap bs))]
+     (check-message-size! (.remaining payload) wire-opts)
      (if (zstd-compressed? fmt)
        (do
-         (when-not (= (:compression wire-opts) :zstd)
-           (raise "Received compressed wire message without negotiated support"
-                  {:compression-flag :zstd :wire-opts wire-opts}))
+         (check-compression! fmt wire-opts)
          ;; Keep the lease through thaw: a custom reader may recursively decode
          ;; another message, whose scratch buffer must not overwrite this one.
          (context/with-compression [codec]
-           (read-payload fmt (.decompress ^WireCompression codec payload))))
+           (read-payload fmt (.decompress ^WireCompression codec payload
+                                         (int (message-size-limit wire-opts))))))
        (read-payload fmt payload)))))
 
 (deftype ^:no-doc RequestDecoder [native? bindings])
@@ -403,7 +427,7 @@
   (let [selector (Selector/open)]
     (try
       (.register ch selector (int ops))
-      selector
+      (cr/track-transport! selector)
       (catch Throwable t
         (try (.close selector)
              (catch Throwable close-error
@@ -413,51 +437,76 @@
 
 (defn send-all
   "Send all data in buffer to channel, will block if channel is busy.
-  Close the channel and raise exception if something is wrong"
-  [^SocketChannel ch ^ByteBuffer bf ]
-  (let [non-blocking? (not (.isBlocking ch))
-        selector      (volatile! nil)]
-    (try
-      (loop []
-        (when (.hasRemaining bf)
-          (let [n (long (send-ch ch bf))]
-            (cond
-              (== n -1)
-              (do (.close ch)
-                  (raise "Socket channel is closed." {}))
+  An optional timeout bounds the entire send, including slow progress. Close
+  the channel on timeout or interruption: a partial frame cannot be reused."
+  ([ch bf] (send-all ch bf nil))
+  ([^SocketChannel ch ^ByteBuffer bf timeout-ms]
+   (let [timed? (some? timeout-ms)
+         timeout-ms (if timed? (max 1 (long timeout-ms)) 0)
+         deadline-ns (if timed?
+                       (let [local (+ (System/nanoTime) (* 1000000 timeout-ms))]
+                         (if (cr/current) (min local (cr/deadline)) local))
+                       0)
+         blocking? (.isBlocking ch)
+         selector (volatile! nil)]
+     (try
+       (when (and timed? blocking?) (.configureBlocking ch false))
+       (loop []
+         (when (.hasRemaining bf)
+           (cr/check! :send)
+           (when (.isInterrupted (Thread/currentThread))
+             (.close ch)
+             (throw (InterruptedException. "Interrupted while sending a socket message")))
+           (when (and timed? (>= (System/nanoTime) deadline-ns))
+             (.close ch)
+             (raise "Socket channel send timed out."
+                    {:error :socket/timeout :phase :send :timeout-ms timeout-ms}))
+           (let [n (long (send-ch ch bf))]
+             (when-not (zero? n) (cr/sending!))
+             (cond
+               (== n -1)
+               (do (.close ch)
+                   (raise "Socket channel is closed." {}))
 
-              (> n 0)
-              (recur)
+               (> n 0)
+               (recur)
 
-              non-blocking?
-              (let [^Selector sel (or @selector
-                                      (let [s (open-selector ch SelectionKey/OP_WRITE)]
-                                        (vreset! selector s)
-                                        s))]
-                ;; Avoid busy-spinning on non-blocking sockets under backpressure.
-                (.select sel)
-                (when (.isInterrupted (Thread/currentThread))
-                  ;; A partial frame cannot be reused for another request.
-                  (.close ch)
-                  (throw (InterruptedException. "Interrupted while sending a socket message")))
-                (.clear (.selectedKeys sel))
-                (recur))
+               (or timed? (not blocking?))
+               (let [^Selector sel (or @selector
+                                       (let [s (open-selector ch SelectionKey/OP_WRITE)]
+                                         (vreset! selector s)
+                                         s))]
+                 ;; Always use a positive wait; select(0) waits indefinitely.
+                 (if timed?
+                   (.select sel (max 1 (quot (- deadline-ns (System/nanoTime))
+                                            1000000)))
+                   (.select sel))
+                 (.clear (.selectedKeys sel))
+                 (recur))
 
-              :else
-              (do
-                (Thread/yield)
-                (recur))))))
-      (finally
-        (when-let [^Selector sel @selector]
-          (.close sel))))))
+               :else
+               (do (Thread/yield) (recur))))))
+       (catch ClosedSelectorException e
+         (cr/check! :send)
+         (throw e))
+       (finally
+         (when-let [^Selector sel @selector]
+           (try (.close sel)
+                (finally (cr/untrack-transport! sel))))
+         (when (and timed? blocking? (.isOpen ch))
+           (.configureBlocking ch true)))))))
 
 (defn write-message-owned
   "Write using an exclusively owned buffer. The caller supplies synchronization."
-  [^SocketChannel ch ^ByteBuffer bf msg wire-opts]
-  (.clear bf)
-  (write-message-bf bf msg c/message-format-nippy wire-opts)
-  (.flip bf)
-  (send-all ch bf))
+  ([ch bf msg wire-opts] (write-message-owned ch bf msg wire-opts nil))
+  ([^SocketChannel ch ^ByteBuffer bf msg wire-opts timeout-ms]
+   (.clear bf)
+   (write-message-bf bf msg c/message-format-nippy wire-opts)
+   ;; Encoding and custom codecs are synchronous. Their elapsed time consumes
+   ;; the budget, and an overrun must never be followed by a socket write.
+   (cr/check! :send)
+   (.flip bf)
+   (send-all ch bf timeout-ms)))
 
 (defn write-message-blocking
   "Write a message in blocking mode"
@@ -470,45 +519,50 @@
 (defn write-message-growing!
   "Send with an exclusively owned buffer holder. Grow before sending and
   release oversized scratch even when serialization or transport fails."
-  [ch buffer-v msg wire-opts]
-  (try
-    (loop []
-      (let [^ByteBuffer buffer @buffer-v]
-        (when-not (try
-                    (write-message-owned ch buffer msg wire-opts)
-                    true
-                    (catch BufferOverflowException e
-                      (when (= Integer/MAX_VALUE (.capacity buffer)) (throw e))
-                      false))
-          (.clear buffer)
-          (vreset! buffer-v
-                   (bf/resize-buffer! buffer
-                                      (bf/grown-capacity (.capacity buffer)
-                                                         (inc (.capacity buffer)))))
-          (recur))))
-    (finally
-      (let [^ByteBuffer buffer @buffer-v]
-        (.clear buffer)
-        (vreset! buffer-v (bf/trim-buffer! buffer c/+buffer-size+))))))
+  ([ch buffer-v msg wire-opts]
+   (write-message-growing! ch buffer-v msg wire-opts nil))
+  ([ch buffer-v msg wire-opts timeout-ms]
+   (try
+     (loop []
+       (let [^ByteBuffer buffer @buffer-v]
+         (when-not (try
+                     (write-message-owned ch buffer msg wire-opts timeout-ms)
+                     true
+                     (catch BufferOverflowException e
+                       (when (= Integer/MAX_VALUE (.capacity buffer)) (throw e))
+                       false))
+           (.clear buffer)
+           (vreset! buffer-v
+                    (bf/resize-buffer! buffer
+                                       (bf/grown-capacity (.capacity buffer)
+                                                          (inc (.capacity buffer)))))
+           (recur))))
+     (finally
+       (let [^ByteBuffer buffer @buffer-v]
+         (.clear buffer)
+         (vreset! buffer-v (bf/trim-buffer! buffer c/+buffer-size+)))))))
 
 (defn grow-read-buffer
-  "Grow an owned write-mode buffer to fit its declared frame length."
-  ^ByteBuffer [^ByteBuffer buffer]
-  (if (>= (.position buffer) c/message-header-size)
-    (let [length (.getInt buffer 1)]
-      (when (< length c/message-header-size)
-        (raise "Message corruption: length is less than header size"
-               {:length length}))
-      (if (> length (.capacity buffer))
-        (bf/resize-buffer! buffer (bf/grown-capacity (.capacity buffer) length))
-        buffer))
-    buffer))
+  "Validate a frame header before growing its owned write-mode buffer."
+  (^ByteBuffer [buffer] (grow-read-buffer buffer nil))
+  (^ByteBuffer [^ByteBuffer buffer wire-opts]
+   (if (>= (.position buffer) c/message-header-size)
+     (let [length (.getInt buffer 1)]
+       (check-frame-size! length wire-opts)
+       (check-compression! (.get buffer 0) wire-opts)
+       (if (> length (.capacity buffer))
+         (bf/resize-buffer!
+           buffer (min (+ (message-size-limit wire-opts) c/message-header-size)
+                       (bf/grown-capacity (.capacity buffer) length))
+           (+ (message-size-limit wire-opts) c/message-header-size))
+         buffer))
+     buffer)))
 
 (defn receive-one-message!
   "Consume a frame using a connection-owned buffer volatile. Return the message
   or nil for an incomplete frame, and publish any buffer growth to buffer-v."
   [buffer-v wire-opts]
-  (let [^ByteBuffer read-bf (grow-read-buffer @buffer-v)
+  (let [^ByteBuffer read-bf (grow-read-buffer @buffer-v wire-opts)
         _ (vreset! buffer-v read-bf)
         pos (.position read-bf)]
     (when (>= pos c/message-header-size)
@@ -552,7 +606,7 @@
       -1)))
 
 (defn- await-read-ready!
-  [^SocketChannel ch selector-v ^long deadline-ms ^long timeout-ms]
+  [^SocketChannel ch selector-v ^long deadline-ns ^long timeout-ms]
   (let [^Selector sel (or @selector-v
                           (locking selector-v
                             (or @selector-v
@@ -560,14 +614,15 @@
                                   (vreset! selector-v s)
                                   s))))]
     (loop []
+      (cr/check! :receive)
       (when (.isInterrupted (Thread/currentThread))
         (throw (InterruptedException. "Interrupted while receiving a socket message")))
-      (let [remaining-ms (- deadline-ms (System/currentTimeMillis))]
-        (when-not (pos? remaining-ms)
+      (let [remaining-ns (- deadline-ns (System/nanoTime))]
+        (when-not (pos? remaining-ns)
           (raise "Socket channel receive timed out."
                    {:error :socket/timeout
                     :timeout-ms timeout-ms}))
-        (if (pos? (.select sel remaining-ms))
+        (if (pos? (.select sel (max 1 (quot (+ remaining-ns 999999) 1000000))))
           (.clear (.selectedKeys sel))
           (recur))))))
 
@@ -580,8 +635,8 @@
   [^SocketChannel ch buffer-v wire-opts timeout-ms read-selector]
   (let [timed?      (some? timeout-ms)
         timeout-ms  (if timed? (long (max 1 (long timeout-ms))) 0)
-        deadline-ms (if timed?
-                      (long (+ (System/currentTimeMillis) timeout-ms))
+        deadline-ns (if timed?
+                      (long (+ (System/nanoTime) (* 1000000 timeout-ms)))
                       0)
         blocking?   (and timed? (.isBlocking ch))
         selector-v  (or read-selector (volatile! nil))]
@@ -590,6 +645,10 @@
     (try
       (when blocking? (.configureBlocking ch false))
       (loop []
+        (cr/check! :receive)
+        (when (and timed? (>= (System/nanoTime) deadline-ns))
+          (raise "Socket channel receive timed out."
+                 {:error :socket/timeout :phase :receive :timeout-ms timeout-ms}))
         (if-let [msg (receive-one-message! buffer-v wire-opts)]
           msg
           (let [^int readn (read-ch ch @buffer-v)]
@@ -598,15 +657,20 @@
               (= readn 0)  (do
                              (when timed?
                                (await-read-ready! ch selector-v
-                                                  deadline-ms timeout-ms))
+                                                  deadline-ns timeout-ms))
                              (recur))
               (= readn -1) (do (.close ch)
+                               (cr/check! :receive)
                                (raise "Socket channel is closed." {}))))))
+      (catch ClosedSelectorException e
+        (cr/check! :receive)
+        (throw e))
       (finally
         (vreset! buffer-v (bf/trim-buffer! @buffer-v c/+buffer-size+))
         (when-not read-selector
           (when-let [^Selector sel @selector-v]
-            (.close sel)))
+            (try (.close sel)
+                 (finally (cr/untrack-transport! sel)))))
         (when (and blocking? (.isOpen ch))
           (.configureBlocking ch true))))))
 
@@ -629,16 +693,18 @@
   owned byte array. Return true when a complete frame was extracted."
   ([read-bf msg-handler]
    (extract-message read-bf (fn [_ buffer] (b/get-bytes buffer)) msg-handler))
-  ([^ByteBuffer read-bf msg-reader msg-handler]
+  ([read-bf msg-reader msg-handler]
+   (extract-message read-bf msg-reader msg-handler nil))
+  ([^ByteBuffer read-bf msg-reader msg-handler wire-opts]
    (let [pos (.position read-bf)]
      (when (>= pos c/message-header-size)
        (.flip read-bf)
        (let [available (.limit read-bf)
              fmt       (.get read-bf)
              length    (.getInt read-bf)]
-         (when (< length c/message-header-size)
-           (raise "Message corruption: length is less than header size"
-                    {:length length}))
+         (check-frame-size! length wire-opts)
+         ;; The legacy extractor also serves raw readers without wire policy.
+         (when wire-opts (check-compression! fmt wire-opts))
          (if (< available length)
            (do
              (doto read-bf

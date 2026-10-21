@@ -95,15 +95,22 @@
 
 (defn resize-buffer!
   "Replace an owned buffer in write mode, preserving its buffered bytes and
-  releasing its old allocation. No views of the old buffer may remain in use."
-  ^ByteBuffer [^ByteBuffer buffer ^long capacity]
-  (let [replacement (or (when (> capacity (.capacity buffer))
-                          (.cachedBuffer (ScratchBufferPool/shared) (int capacity)))
-                        (allocate-buffer capacity))]
-    (.flip buffer)
-    (.put replacement buffer)
-    (release-buffer! buffer)
-    replacement))
+  releasing its old allocation. No views of the old buffer may remain in use.
+  An optional maximum bounds the capacity of a reused allocation."
+  (^ByteBuffer [buffer capacity]
+   (resize-buffer! buffer capacity Integer/MAX_VALUE))
+  (^ByteBuffer [^ByteBuffer buffer ^long capacity ^long maximum]
+   (let [cached (when (> capacity (.capacity buffer))
+                  (.cachedBuffer (ScratchBufferPool/shared) (int capacity)))
+         replacement (if (and cached (<= (.capacity ^ByteBuffer cached) maximum))
+                       cached
+                       (do
+                         (release-buffer! cached)
+                         (ByteBuffer/allocateDirect (int capacity))))]
+     (.flip buffer)
+     (.put replacement buffer)
+     (release-buffer! buffer)
+     replacement)))
 
 (defn trim-buffer!
   "Bound idle retention, preserving any unread bytes in a write-mode buffer.
