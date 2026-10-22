@@ -357,10 +357,13 @@ values;")
   (advance-max-tx [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
+  (schema-snapshot [this] "Return a coherent {:schema map :revision token}")
   (rschema [this] "Return the reverse schema map")
   (set-schema [this new-schema]
               [this new-schema del-attrs rename-map]
-    "Update the schema of open storage, return updated schema")
+              [this new-schema del-attrs rename-map expected-revision]
+    "Update schema atomically. With an expected revision, reject conflicts and
+     return {:schema map :revision token}; otherwise return the schema map.")
   (attrs [this] "Return the aid -> attr map")
   (index-attr [this attr]
     "Backfill AVE and clear :db/noindex atomically; return updated schema")

@@ -11,10 +11,12 @@
   "Schema patches, tuple type inference, attribute IDs, and rename validation."
   (:refer-clojure :exclude [update assoc])
   (:require
+   [datalevin.bits :as b]
    [datalevin.constants :as c]
+   [datalevin.custom-data :as custom]
    [datalevin.custom-datalog :as cd]
    [datalevin.inline :refer [update assoc]]
-   [datalevin.interface :refer [transact-kv get-range]]
+   [datalevin.interface :as i :refer [transact-kv get-range]]
    [datalevin.lmdb :as lmdb]
    [datalevin.storage.metadata :as metadata]
    [datalevin.util :as u :refer [conjs raise]]
@@ -27,7 +29,9 @@
       (cond
         ;; Attribute IDs are allocated and owned by storage. Ignoring incoming
         ;; IDs makes the result of `schema` safe to reuse as schema input.
-        (identical? k :db/aid) props
+        (and (identical? k :db/aid)
+             (not (or (vld/definition? old-props)
+                      (vld/definition? property-patch)))) props
 
         ;; A schema property is removed only when explicitly retracted.
         (identical? v :db/retract) (dissoc props k)
@@ -73,8 +77,11 @@
 (defn prepare-schema-update
   [old-schema schema-update]
   (vld/validate-schema-update schema-update)
-  (infer-tuple-attr-types
-    old-schema (apply-schema-patch old-schema schema-update)))
+  (let [prepared (infer-tuple-attr-types
+                   old-schema (apply-schema-patch old-schema schema-update))]
+    (doseq [[entry props] prepared]
+      (vld/validate-schema-entry-transition entry (old-schema entry) props))
+    prepared))
 
 (defn- attr->properties [k v]
   (case v
@@ -130,19 +137,45 @@
                           (fn [rschema prop]
                             (update rschema prop conjs attr))
                           rschema (attr->properties key value)))
-                      rschema attr-schema))
+                      rschema (if (vld/definition? attr-schema) {} attr-schema)))
                   {} schema)]
     (assoc rschema :db/attrTuples (attr-tuples schema rschema))))
 
+(defn transact-schema-txs
+  "Commit schema mutations together with their revision and freshness marker."
+  [lmdb txs]
+  (locking (lmdb/write-txn lmdb)
+    (let [commit! (fn [tx-lmdb]
+                    (transact-kv
+                      tx-lmdb
+                      (concat txs
+                              [(metadata/schema-revision-tx tx-lmdb)
+                               (lmdb/kv-tx :put c/meta :last-modified
+                                           (metadata/next-last-modified tx-lmdb) :attr :long)])))]
+      ;; Bulk loading owns a native writer while retaining its original Store
+      ;; handle. Borrow that transaction without closing the owner's writer.
+      (if @(lmdb/write-txn lmdb)
+        (commit! (lmdb/mark-write lmdb))
+        (lmdb/with-transaction-kv [tx-lmdb lmdb] (commit! tx-lmdb))))))
+
 (defn transact-schema
   [lmdb schema]
-  (locking (lmdb/write-txn lmdb)
-    (transact-kv
-      lmdb
-      (conj (for [[attr props] schema]
-              (lmdb/kv-tx :put c/schema attr props :attr :data))
-            (lmdb/kv-tx :put c/meta :last-modified
-                        (metadata/next-last-modified lmdb) :attr :long)))))
+  (transact-schema-txs lmdb (for [[attr props] schema]
+                            (lmdb/kv-tx :put c/schema attr props :attr :data))))
+
+(defn schema-snapshot
+  "Detach schema and revision from a single native read or write transaction."
+  [lmdb]
+  (let [writing? (lmdb/writing? lmdb)
+        rtx (if writing? @(lmdb/write-txn lmdb) (i/get-rtx lmdb))]
+    (try
+      (let [schema (into {} (custom/metadata-range-at lmdb rtx c/schema [:all] :attr))
+            dbi (i/get-dbi lmdb c/meta false)
+            _ (lmdb/put-key rtx :schema-revision :attr)
+            revision (if-let [buffer (lmdb/get-kv dbi rtx)]
+                       (b/read-buffer buffer :long) 0)]
+        {:schema schema :revision revision})
+      (finally (when-not writing? (i/return-rtx lmdb rtx))))))
 
 (defn load-schema
   [lmdb]
@@ -150,7 +183,7 @@
 
 (defn init-max-aid
   [schema]
-  (inc ^long (apply max (map :db/aid (vals schema)))))
+  (inc ^long (reduce max -1 (keep :db/aid (vals schema)))))
 
 (defn update-schema
   [old schema]
@@ -158,18 +191,20 @@
         i              (volatile! 0)]
     (into {}
           (map (fn [[attr props]]
-                 (if-let [old-props (old attr)]
-                   [attr (assoc props :db/aid (old-props :db/aid))]
-                   (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (vswap! i u/long-inc)
-                     res))))
+                 (if (vld/definition? props)
+                   [attr props]
+                   (if-let [old-props (old attr)]
+                     [attr (assoc props :db/aid (old-props :db/aid))]
+                     (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
+                       (vswap! i u/long-inc)
+                       res)))))
           schema)))
 
 (defn- effective-schema-update
   [old schema]
   (into {}
         (map (fn [[attr props]]
-               [attr (if-let [old-props (old attr)]
+               [attr (if-let [old-props (when-not (vld/definition? props) (old attr))]
                        (assoc props :db/aid (old-props :db/aid))
                        props)]))
         schema))
@@ -208,7 +243,7 @@
   (cd/initialize! lmdb (load-schema lmdb)))
 
 (defn init-attrs [schema]
-  (into {} (map (fn [[k v]] [(v :db/aid) k])) schema))
+  (into {} (keep (fn [[k v]] (when-some [aid (:db/aid v)] [aid k]))) schema))
 
 (defn validate-schema-operations
   [schema-update del-attrs rename-map]

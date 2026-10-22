@@ -1156,6 +1156,24 @@ Only usable for debug output.
   schema conn/schema)
 
 (def ^{:arglists '([conn])
+       :doc "Return {:schema schema-map :revision token} from one coherent storage
+  snapshot. The nonnegative revision changes on schema mutations, independently
+  of ordinary data writes. Pass it to [[update-schema-if-revision]]."}
+  schema-snapshot conn/schema-snapshot)
+
+(def ^{:arglists '([conn revision schema-update]
+                   [conn revision schema-update del-attrs]
+                   [conn revision schema-update del-attrs rename-map])
+       :doc "Atomically apply a schema update if the stored revision matches.
+  Uses the same patch, deletion and rename semantics as [[update-schema]].
+  Return the committed {:schema schema-map :revision token}. On a conflict,
+  throw ExceptionInfo with :error :schema/revision-conflict, :expected and
+  :actual, without applying changes. Reread [[schema-snapshot]], reapply the
+  intended changes and revalidate before retrying; never resubmit a stale merge.
+  An update with no effective changes retains the current revision."}
+  update-schema-if-revision conn/update-schema-if-revision)
+
+(def ^{:arglists '([conn])
        :doc      "Return async secondary index job status for a local Datalog connection."}
   secondary-index-status conn/secondary-index-status)
 
@@ -1184,8 +1202,14 @@ Only usable for debug output.
   Unique and reference attributes cannot opt out. Changing `:db/noindex`
   directly requires an empty attribute.
   Properties omitted from an existing attribute are preserved. Set a property
-  to `:db/retract` to remove it explicitly. The internal `:db/aid` property is
-  ignored when supplied and cannot be changed by a schema update.
+  to `:db/retract` to remove it explicitly. For native attributes, the internal
+  `:db/aid` property is ignored when supplied and cannot be changed by an update.
+
+  Metadata-only definitions use `:datalevin/definition-kind` with a keyword
+  value and exactly one owner-namespaced `definition` key containing a map.
+  Definitions receive no attribute ID and cannot store native datoms. Core
+  preserves unknown kinds without loading their owner; owners validate and
+  interpret payloads. Native attributes cannot become definitions in place.
 
   * `del-attrs` is a set of attributes to be removed from the schema, if there is
   no datoms associated with them, otherwise an exception will be thrown.

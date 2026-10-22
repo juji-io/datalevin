@@ -101,6 +101,7 @@
    :assoc-opts local-write
    :last-modified unguarded
    :schema unguarded
+   :schema-snapshot unguarded
    :rschema unguarded
    :set-schema db-write
    :index-attr db-write

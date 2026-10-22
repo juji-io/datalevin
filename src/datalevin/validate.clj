@@ -35,6 +35,31 @@
 
 ;; ---- Storage / schema validators ----
 
+(defn definition?
+  "Whether a schema entry explicitly selects a metadata definition contract."
+  [props]
+  (contains? props :datalevin/definition-kind))
+
+(defn validate-definition
+  "Validate the owner-independent envelope without interpreting its payload."
+  [entry props]
+  (let [body-keys (filter #(and (qualified-keyword? %) (= "definition" (name %)))
+                          (keys props))]
+    (when-not (and (keyword? (:datalevin/definition-kind props))
+                   (= 1 (count body-keys))
+                   (= 2 (count props))
+                   (map? (get props (first body-keys))))
+      (raise "Schema definitions require a keyword kind and one owner-namespaced definition map"
+             {:error :schema/validation :attribute entry})))
+  props)
+
+(defn validate-schema-entry-transition
+  "Definitions and native attributes cannot replace one another in place."
+  [entry old-props new-props]
+  (when (and old-props (not= (definition? old-props) (definition? new-props)))
+    (raise "Cannot convert between a native attribute and a schema definition"
+           {:error :schema/validation :attribute entry})))
+
 (defn validate-indexed-attr
   "Reject attribute conditions that require an opted-out AVE index."
   [schema attr]
@@ -45,12 +70,14 @@
 (defn populated-attribute?
   "Check for stored values, including attributes absent from AVE."
   [store attr]
-  (if (:db/noindex ((schema store) attr))
+  (cond
+    (definition? ((schema store) attr)) false
+    (:db/noindex ((schema store) attr))
     (boolean (i/head-filter store :eav #(= attr (:a %))
                            (d/datom c/e0 nil nil)
                            (d/datom c/emax nil nil)))
-    (populated? store :ave (d/datom c/e0 attr c/v0)
-                (d/datom c/emax attr c/vmax))))
+    :else (populated? store :ave (d/datom c/e0 attr c/v0)
+                      (d/datom c/emax attr c/vmax))))
 
 (defn validate-noindex-change
   "Changing AVE participation requires an empty attribute, also on reopen."
@@ -70,6 +97,9 @@
 (defn validate-closed-schema
   "Validate that attribute is defined in schema when :closed-schema? is true."
   [schema opts attr value]
+  (when (definition? (schema attr))
+    (raise "Schema definitions cannot store datoms"
+           {:error :schema/definition-not-attribute :attribute attr}))
   (when (and (opts :closed-schema?) (not (schema attr)))
     (raise "Attribute is not defined in schema when
 `:closed-schema?` is true: " attr {:attr attr :value value})))
@@ -166,6 +196,8 @@
 (defn validate-schema-mutation
   "Validate schema attribute changes (cardinality, value type, uniqueness)."
   [store lmdb attr old-props new-props]
+  (validate-schema-entry-transition attr old-props new-props)
+  (when (definition? new-props) (validate-definition attr new-props))
   (validate-noindex-change lmdb attr old-props new-props)
   (doseq [k [:db/cardinality :db/valueType :db/unique]
           :let [v' (old-props k)
@@ -1285,7 +1317,9 @@
   "Validate full schema structure."
   [schema]
   (validate-schema-update schema)
-  (doseq [[a kv] schema]
+  (doseq [[a kv] schema :when (definition? kv)]
+    (validate-definition a kv))
+  (doseq [[a kv] schema :when (not (definition? kv))]
     (let [comp? (:db/isComponent kv false)]
       (validate-schema-key a :db/isComponent (:db/isComponent kv) #{true false})
       (when (and comp? (not (identical? (:db/valueType kv) :db.type/ref)))
@@ -1369,6 +1403,8 @@
 
           (doseq [attr attrs
                   :let [ex-data (assoc ex-data :value attr)]]
+            (when (definition? (schema attr))
+              (raise a " :db/tupleAttrs must refer to native attributes" ex-data))
             (when (contains? (schema attr) :db/tupleAttrs)
               (raise a " :db/tupleAttrs can\u2019t depend on another tuple attribute: " attr ex-data))
 

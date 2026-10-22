@@ -48,7 +48,7 @@
          (#'chaos/stop-proxy! proxy)
          (u/delete-files root))))))
 
-(deftest authentication-timeout-certification-retries-unobserved-replies
+(deftest authentication-timeout-certification-follows-expired-requests
   (with-client {:time-out 500}
     (fn [c proxy ^Server srv]
       (let [replies (atom 0)]
@@ -69,10 +69,38 @@
                        (await! #(every? (fn [flow]
                                           (.get ^AtomicBoolean (:closed? flow)))
                                         flows)))))})
-        (#'chaos/exercise-authentication-timeout! {:admin c :proxy proxy} 0)
-        (is (> @replies 4))
+        (dotimes [attempt 4]
+          (is (= :socket/timeout
+                 (:error (ex-data (outcome #(client/list-databases c))))))
+          (await! #(>= (long @replies) (inc attempt))))
+        (is (zero? (get @(:hits proxy) :authentication-timeout 0)))
+        (with-open [^java.io.Closeable _certification
+                    (#'chaos/exercise-authentication-timeout! {:admin c :proxy proxy} 0)]
+          (is (> @replies 4))
+          (is (pos? (get @(:hits proxy) :authentication-timeout 0)))
+          (is (not (client/disconnected? c))))))))
+
+(deftest authentication-timeout-certification-survives-slow-server-replies
+  (with-client {:time-out 500}
+    (fn [c proxy ^Server srv]
+      (session/remove-client {:clients-fn (fn [_] (.-clients srv))
+                              :sys-conn-fn (fn [_] (.-sys-conn srv))}
+                             srv (client/get-id c))
+      (#'chaos/policy!
+        proxy {:mode :authentication-timeout
+               :observe (fn [direction type _]
+                          (when (and (= direction :reply) (= type :authentication))
+                            ;; Reproduce password verification or scheduling
+                            ;; taking longer than an ordinary request budget.
+                            (Thread/sleep 750)))})
+      (with-open [^java.io.Closeable _certification
+                  (#'chaos/exercise-authentication-timeout! {:admin c :proxy proxy} 0)]
         (is (pos? (get @(:hits proxy) :authentication-timeout 0)))
-        (is (not (client/disconnected? c)))))))
+        (is (not (client/disconnected? c))))
+      (is (nil? (.get ^AtomicReference (.-renewal ^ClientState (.clientState ^IClientInternals c))))
+          "Closing certification cancels and joins its provisional renewal")
+      (#'chaos/policy! proxy {:mode :pass})
+      (is (coll? (client/list-databases c)) "The original client recovers after certification"))))
 
 (deftest disconnect-before-recovery-lock-preserves-termination-reason
   (with-client

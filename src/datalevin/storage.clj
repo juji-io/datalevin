@@ -472,6 +472,8 @@
 
   (schema [_] schema)
 
+  (schema-snapshot [_] (schemas/schema-snapshot lmdb))
+
   (rschema [_] rschema)
 
   (set-schema [this new-schema]
@@ -509,19 +511,34 @@
         schema)))
 
   (set-schema [this schema-update del-attrs rename-map]
+    (.set-schema this schema-update del-attrs rename-map nil))
+
+  (set-schema [this schema-update del-attrs rename-map expected-revision]
     ;; Keep the LMDB write lock through commit and in-memory state adoption.
     ;; The nested lock taken by with-transaction-kv is reentrant.
-    (cd/validate-schema! lmdb (prepare-schema-update schema schema-update))
-    (cd/initialize! lmdb (prepare-schema-update schema schema-update))
     (locking (lmdb/write-txn lmdb)
-      (let [committed-state (volatile! nil)
+      (let [check-revision!
+            (fn [kv]
+              (when (some? expected-revision)
+                (let [actual (metadata/schema-revision kv)]
+                  (when-not (= expected-revision actual)
+                    (raise "Schema revision has changed"
+                           {:error :schema/revision-conflict
+                            :expected expected-revision :actual actual})))))
+            _ (check-revision! lmdb)
+            prepared (prepare-schema-update (load-schema lmdb) schema-update)
+            _ (cd/validate-schema! lmdb prepared)
+            _ (cd/initialize! lmdb prepared)
+            committed-state (volatile! nil)
             result
             (lmdb/with-transaction-kv [tx-lmdb lmdb]
+              (check-revision! tx-lmdb)
               (let [tx-store (transfer-current this tx-lmdb)
                     result   (apply-schema-update!
                                tx-store schema-update del-attrs rename-map)]
                 (vreset! committed-state
                          {:schema  result
+                          :revision (metadata/schema-revision tx-lmdb)
                           :max-aid (datalevin.interface/max-aid tx-store)
                           :max-gt  (datalevin.interface/max-gt tx-store)})
                 result))
@@ -539,12 +556,17 @@
           (set! idoc-indices
                 (merge-missing-idoc-indices lmdb idoc-indices schema* opts)))
         (mark-state-current! this (init-state-sync-ms lmdb))
-        result)))
+        (if (some? expected-revision)
+          (select-keys @committed-state [:schema :revision])
+          result))))
 
   (attrs [_] attrs)
 
   (index-attr [this attr]
     (vld/validate-attr attr 'index-attr)
+    (when (vld/definition? (schema attr))
+      (raise "Schema definitions have no native index"
+             {:error :schema/definition-not-attribute :attribute attr}))
     (locking (lmdb/write-txn lmdb)
       (if-not (lmdb/writing? lmdb)
         (let [result (lmdb/with-transaction-kv [tx-lmdb lmdb]
@@ -569,7 +591,6 @@
               (let [aid (:db/aid props)
                     txs (FastList.)
                     batch-size (max 1 (long c/*fill-db-batch-size*))
-                    modified-ms (metadata/next-last-modified lmdb)
                     props (dissoc props :db/noindex)]
                 ;; Copy encoded AVGs, preserving giant IDs and custom references.
                 ;; Both the backfill and schema publication share this write txn.
@@ -587,9 +608,7 @@
                           (.clear txs)))))
                   [:all] :id [:all] :avg)
                 (.add txs (lmdb/kv-tx :put c/schema attr props :attr :data))
-                (.add txs (lmdb/kv-tx :put c/meta :last-modified
-                                      modified-ms :attr :long))
-                (transact-kv lmdb txs)
+                (schemas/transact-schema-txs lmdb txs)
                 (set! schema (assoc schema attr props))
                 (set! rschema (schema->rschema schema))
                 (mark-state-current! this (init-state-sync-ms lmdb))
@@ -612,33 +631,37 @@
   (swap-attr [this attr f x]
     (.swap-attr this attr f x nil))
   (swap-attr [this attr f x y]
-    (let [o (or (schema attr)
-                (let [m {:db/aid max-aid}]
-                  (set! max-aid (inc ^long max-aid))
-                  m))
-          p (cond
-              (and x y) (f o x y)
-              x         (f o x)
-              :else     (f o))]
-      (check this attr o p)
-      (transact-schema lmdb {attr p})
-      (set! schema (assoc schema attr p))
-      (set! rschema (schema->rschema schema))
-      (set! attrs (assoc attrs (p :db/aid) attr))
-      (mark-state-current! this (init-state-sync-ms lmdb))
-      p))
+    (locking (lmdb/write-txn lmdb)
+      (when-not (lmdb/writing? lmdb) (ensure-current! this))
+      (when (vld/definition? (schema attr))
+        (raise "Schema definitions must be updated through schema operations"
+               {:error :schema/definition-not-attribute :attribute attr}))
+      (let [o (or (schema attr)
+                  (let [m {:db/aid max-aid}]
+                    (set! max-aid (inc ^long max-aid))
+                    m))
+            p (cond
+                (and x y) (f o x y)
+                x         (f o x)
+                :else     (f o))]
+        (check this attr o p)
+        (transact-schema lmdb {attr p})
+        (set! schema (assoc schema attr p))
+        (set! rschema (schema->rschema schema))
+        (set! attrs (assoc attrs (p :db/aid) attr))
+        (mark-state-current! this (init-state-sync-ms lmdb))
+        p)))
 
   (del-attr [this attr]
     (locking (lmdb/write-txn lmdb)
+      (when-not (lmdb/writing? lmdb) (ensure-current! this))
       (if-let [props (schema attr)]
         (do
           (vld/validate-attr-deletable
             (populated-attr? this attr))
           (let [aid (props :db/aid)]
-            (transact-kv
-              lmdb [(lmdb/kv-tx :del c/schema attr :attr)
-                    (lmdb/kv-tx :put c/meta :last-modified
-                                (metadata/next-last-modified lmdb) :attr :long)])
+            (schemas/transact-schema-txs
+              lmdb [(lmdb/kv-tx :del c/schema attr :attr)])
             (set! schema (dissoc schema attr))
             (set! rschema (schema->rschema schema))
             (set! attrs (dissoc attrs aid))
@@ -648,6 +671,7 @@
 
   (rename-attr [this attr new-attr]
     (locking (lmdb/write-txn lmdb)
+      (when-not (lmdb/writing? lmdb) (ensure-current! this))
       (let [props     (schema attr)
             new-props (schema new-attr)]
         (cond
@@ -662,14 +686,13 @@
 
           props
           (do
-            (transact-kv
+            (schemas/transact-schema-txs
               lmdb [(lmdb/kv-tx :del c/schema attr :attr)
-                    (lmdb/kv-tx :put c/schema new-attr props :attr)
-                    (lmdb/kv-tx :put c/meta :last-modified
-                                (metadata/next-last-modified lmdb) :attr :long)])
+                    (lmdb/kv-tx :put c/schema new-attr props :attr)])
             (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
             (set! rschema (schema->rschema schema))
-            (set! attrs (assoc attrs (props :db/aid) new-attr))
+            (when-some [aid (:db/aid props)]
+              (set! attrs (assoc attrs aid new-attr)))
             (mark-state-current! this (init-state-sync-ms lmdb))
             attrs)
 
@@ -780,7 +803,8 @@
   (analyze [this a]
     (if a
       (analyze* this a)
-      (doseq [attr (remove (set (keys c/implicit-schema)) (keys schema))]
+      (doseq [[attr props] schema
+              :when (and (:db/aid props) (not (contains? c/implicit-schema attr)))]
         (analyze* this attr)))
     :done)
 
@@ -2222,7 +2246,7 @@
                  (every? (fn [^Datom datom]
                            (let [props (store-schema (.-a datom))
                                  vt (:db/valueType props)]
-                             (and props (not (:db/fulltext props))
+                             (and (:db/aid props) (not (:db/fulltext props))
                                   (not (:db/embedding props))
                                   (not (#{:db.type/vec :db.type/idoc} vt))
                                   (buffered-datom-value? (.-v datom)))))

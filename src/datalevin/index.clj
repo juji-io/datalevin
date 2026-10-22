@@ -45,12 +45,14 @@
          vm (if high? c/vmax c/v0)
          gm (if high? c/gmax c/g0)]
      (if-let [a (.-a d)]
-       (if-let [p (schema a)]
-         (if-some [v (.-v d)]
-           (b/indexable e (p :db/aid) v (storage-type lmdb p)
-                        (if (and (not high?) (cd/custom-type? (value-type p))) 0 gm))
-           (b/indexable e (p :db/aid) vm (storage-type lmdb p) gm))
-         (b/indexable e c/a0 c/v0 nil gm))
+       (let [p (schema a)
+             aid (:db/aid p)]
+         (if (some? aid)
+           (if-some [v (.-v d)]
+             (b/indexable e aid v (storage-type lmdb p)
+                          (if (and (not high?) (cd/custom-type? (value-type p))) 0 gm))
+             (b/indexable e aid vm (storage-type lmdb p) gm))
+           (b/indexable e c/a0 c/v0 nil gm)))
        (let [am (if high? c/amax c/a0)]
          (if-some [v (.-v d)]
            (if (or (integer? v)

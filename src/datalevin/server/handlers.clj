@@ -2978,6 +2978,7 @@
    :assoc-opts assoc-opts
    :last-modified (normal-dt-handler i/last-modified)
    :schema (normal-dt-handler i/schema)
+   :schema-snapshot (normal-dt-handler i/schema-snapshot)
    :rschema (normal-dt-handler i/rschema)
    :set-schema set-schema
    :index-attr index-attr

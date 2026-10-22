@@ -11,7 +11,18 @@
   "Version timestamps for persisted store metadata."
   (:require
    [datalevin.constants :as c]
-   [datalevin.interface :as i]))
+   [datalevin.interface :as i]
+   [datalevin.lmdb :as lmdb]))
+
+(defn schema-revision
+  "Read the schema concurrency token, including schemas predating revisions."
+  ^long [lmdb]
+  (long (or (i/get-value lmdb c/meta :schema-revision :attr :long) 0)))
+
+(defn schema-revision-tx
+  "Advance the schema token in the caller's serialized metadata transaction."
+  [lmdb]
+  (lmdb/kv-tx :put c/meta :schema-revision (inc (schema-revision lmdb)) :attr :long))
 
 (defn next-last-modified
   "Advance the metadata version even within one millisecond or after clock

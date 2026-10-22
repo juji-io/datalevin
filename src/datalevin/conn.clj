@@ -1099,6 +1099,12 @@
   {:pre [(conn? conn)]}
   (i/schema ^Store (.-store ^DB @conn)))
 
+(defn schema-snapshot
+  "Return the complete schema and its revision from one storage snapshot."
+  [conn]
+  {:pre [(conn? conn)]}
+  (i/schema-snapshot (.-store ^DB (db conn))))
+
 (defn secondary-index-status
   [conn]
   {:pre [(conn? conn)]}
@@ -1131,6 +1137,22 @@
          result       (i/set-schema store schema-update del-attrs rename-map)]
      ;; A value-type update can re-encode stored datoms without going through
      ;; the normal Datalog transaction cache invalidation path.
+     (db/refresh-cache store)
+     result)))
+
+(defn update-schema-if-revision
+  ([conn revision schema-update]
+   (update-schema-if-revision conn revision schema-update nil nil))
+  ([conn revision schema-update del-attrs]
+   (update-schema-if-revision conn revision schema-update del-attrs nil))
+  ([conn revision schema-update del-attrs rename-map]
+   {:pre [(conn? conn)]}
+   (when-not (and (int? revision) (not (neg? (long revision))))
+     (raise "Expected schema revision must be a nonnegative long"
+            {:error :schema/validation :revision revision}))
+   (vld/validate-schema-update schema-update)
+   (let [store (.-store ^DB (db conn))
+         result (i/set-schema store schema-update del-attrs rename-map (long revision))]
      (db/refresh-cache store)
      result)))
 

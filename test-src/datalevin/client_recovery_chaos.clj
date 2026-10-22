@@ -20,13 +20,13 @@
    [datalevin.db DB]
    [datalevin.remote DatalogStore KVStore]
    [datalevin.server Server]
-   [java.io DataInputStream ByteArrayOutputStream DataOutputStream EOFException IOException]
+   [java.io Closeable DataInputStream ByteArrayOutputStream DataOutputStream EOFException IOException]
    [java.net InetSocketAddress]
    [java.nio.channels ServerSocketChannel SocketChannel]
    [java.nio.file Files]
    [java.util ArrayList Collections Random]
    [java.util.concurrent Callable ConcurrentHashMap CountDownLatch ExecutorService
-    Executors Future ThreadFactory TimeUnit]
+    Executors Future FutureTask ThreadFactory TimeUnit]
    [java.util.concurrent.atomic AtomicBoolean AtomicInteger AtomicLong]))
 
 (def faults
@@ -530,24 +530,50 @@
         (throw error)))))
 
 (defn- exercise-authentication-timeout! [ctx hits-before]
-  ;; Password verification can itself consume a short budget under CPU load.
-  ;; Certify a genuinely withheld reply before releasing the concurrent wave;
-  ;; expiry before the proxy sees a reply is not evidence of this fault.
+  ;; Password verification can exceed an ordinary request's short budget. Own a
+  ;; longer renewal until healing so the proxy can capture a live reply, then
+  ;; check the ordinary timeout while that reply is actually withheld.
   (let [proxy (:proxy ctx)
-        deadline (+ (System/nanoTime) 10000000000)]
-    (loop [attempt 0]
-      (when (<= (long (get @(:hits proxy) :authentication-timeout 0))
-                (long hits-before))
-        (ensure! (and (< attempt 20) (< (System/nanoTime) deadline))
-                 "Authentication timeout certification never reached a withheld reply"
-                 {:attempts attempt :timeout-ms 10000 :hits-before hits-before
-                  :hits @(:hits proxy)})
-        (let [start (System/nanoTime)]
-          (try (cl/list-databases (:admin ctx)) (catch Exception _ nil))
-          (ensure! (< (- (System/nanoTime) start) 1500000000)
-                   "Withheld authentication exceeded the short request budget" {})
-          (event! proxy {:fault :authentication-timeout :certification-attempt attempt}))
-        (recur (inc attempt))))))
+        client (:admin ctx)
+        pool (cl/get-pool client)
+        deadline (+ (System/nanoTime) 10000000000)
+        task (FutureTask.
+               ^Callable (reify Callable
+                           (call [_]
+                             (.renewSession ^IClientInternals client pool deadline))))
+        worker (doto (Thread. ^Runnable task "datalevin-chaos-authentication-certification")
+                 (.setDaemon true))
+        certification (reify Closeable
+                        (close [_]
+                          (.cancel task true)
+                          (.join worker 5000)
+                          (ensure! (not (.isAlive worker))
+                                   "Authentication certification leaked a renewal task" {})))]
+    (try
+      (.start worker)
+      (await-condition!
+        #(or (> (long (get @(:hits proxy) :authentication-timeout 0)) (long hits-before))
+             (.isDone task))
+        10000 "Authentication timeout certification never reached a withheld reply")
+      (when (.isDone task) (.get task))
+      (ensure! (> (long (get @(:hits proxy) :authentication-timeout 0)) (long hits-before))
+               "Authentication renewal completed without a withheld reply"
+               {:hits-before hits-before :hits @(:hits proxy)})
+      (let [start (System/nanoTime)
+            error (try (cl/list-databases client) nil (catch Exception e e))
+            elapsed (- (System/nanoTime) start)]
+        (ensure! (= :socket/timeout (:error (ex-data error)))
+                 "Withheld authentication did not time out the ordinary request"
+                 {:error (ex-data error)})
+        (ensure! (< elapsed 1500000000)
+                 "Withheld authentication exceeded the short request budget"
+                 {:elapsed-ms (quot elapsed 1000000)})
+        (event! proxy {:fault :authentication-timeout
+                       :certification-elapsed-ms (quot elapsed 1000000)}))
+      certification
+      (catch Throwable t
+        (resources/close-suppressing! t #(.close certification))
+        (throw t)))))
 
 (defn- fault-cycle! [ctx cycle fault history all-outcomes]
   (let [proxy (:proxy ctx)
@@ -568,7 +594,8 @@
         _ (progress! ctx :fault)
         _ (d/transact-kv (:kv ctx) "counts"
                          (mapv (fn [op] [:put (:id op) 0]) increment-ops) :long :long)
-        staged (when (= :kill fault) (stage-transactions-before-kill! ctx cycle))]
+        staged (when (= :kill fault) (stage-transactions-before-kill! ctx cycle))
+        certification (volatile! nil)]
     (try
       (when staged (event! proxy {:fault :kill :staged-transactions 2}))
       (case fault
@@ -589,7 +616,7 @@
                                          :arrived arrived :release release)))
       (when (#{:reset :registration-timeout} fault) (cut-flows! proxy))
       (when (= :authentication-timeout fault)
-        (exercise-authentication-timeout! ctx hits-before))
+        (vreset! certification (exercise-authentication-timeout! ctx hits-before)))
       (let [outcomes (run-wave! ctx operations)]
         (swap! all-outcomes into outcomes)
         (doseq [outcome outcomes]
@@ -625,7 +652,8 @@
       (finally
         (when release (.countDown ^CountDownLatch release))
         (when staged (.countDown ^CountDownLatch (:release staged)))
-        (policy! proxy {:mode :pass})))))
+        (policy! proxy {:mode :pass})
+        (when-let [^Closeable resource @certification] (.close resource))))))
 
 (defn- start-health-monitor! [ctx]
   (.submit ^ExecutorService (:workers ctx)

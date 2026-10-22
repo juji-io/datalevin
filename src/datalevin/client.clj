@@ -1773,6 +1773,7 @@
     :closed?
     :last-modified
     :schema
+    :schema-snapshot
     :rschema
     :set-schema
     :index-attr

@@ -548,6 +548,7 @@
   (defremote-forward (datalog-request read-floor-tx client)
     (last-modified [_])
     (schema [_])
+    (schema-snapshot [_])
     (rschema [_])
     (set-schema [_ new-schema del-attrs rename-map])
     (index-attr [_ attr])
@@ -556,6 +557,17 @@
 
   (set-schema [this new-schema]
     (.set-schema this new-schema nil nil))
+
+  (set-schema [_ new-schema del-attrs rename-map expected-revision]
+    (try
+      (datalog-request read-floor-tx client :set-schema
+                       [db-name new-schema del-attrs rename-map expected-revision] writing?)
+      (catch clojure.lang.ExceptionInfo e
+        (let [data (:err-data (ex-data e))]
+          (if (= :schema/revision-conflict (:error data))
+            (throw (ex-info "Schema revision has changed"
+                            (select-keys data [:error :expected :actual]) e))
+            (throw e))))))
 
   (swap-attr [this attr f]
     (.swap-attr this attr f nil nil))
