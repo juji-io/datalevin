@@ -51,6 +51,82 @@
       (QueryKey/equals expected actual)
       (.equals ^QueryKey$KeyMap (bag expected) (bag actual)))))
 
+(defn mapped-scan-semantics!
+  "Shared scan gate for providers with their own accepted nominal identities.
+  Supply a reusable source and complete eager EAV facts for exactly its view;
+  attribute roles are :identity, :value, :many, and optional :reference. This
+  exercises only input-free scans, with bindings/residuals/joins in core. It
+  does not certify dependent access paths or provider-specific acquisition."
+  [source facts {:keys [identity value many reference]}]
+  (let [value-fact (first (filter #(= value (second %)) facts))
+        entity (first value-fact) sample (nth value-fact 2)
+        cases
+        [[{:find '[?e ?v] :in '[$s] :where [['$s '?e value '?v]]} []]
+         [{:find '[[?v ...]] :in '[$s] :where [['$s '_ value '?v]]} []]
+         [{:find '[(count ?e) .] :in '[$s] :where [['$s '?e value '_]]} []]
+         [{:find '[?id ?v] :in '[$s] :where [['$s '?e identity '?id] ['$s '?e value '?v]]} []]
+         [{:find '[?v ?m] :in '[$s] :where [['$s '?e value '?v] ['$s '?e many '?m]]} []]
+         [{:find '[(count ?e) .] :with '[?m] :in '[$s]
+           :where [['$s '?e value '_] ['$s '?e many '?m]]} []]
+         [{:find '[?e] :in '[$s ?v] :where [['$s '?e value '?v]]} [sample]]
+         [{:find '[?v] :in '[$s ?e] :where [['$s '?e value '?v]]} [entity]]
+         [{:find '[?e ?v] :in '[$s [?v ...]] :where [['$s '?e value '?v]]} [[sample sample]]]
+         [{:find '[?v] :in '[$s]
+           :where [(list 'or ['$s '_ value '?v] ['$s '_ many '?v])]} []]
+         [{:find '[?v ?m] :in '[$a $b]
+           :where [['$a '?e value '?v] ['$b '?e many '?m]]} ::aliases]]]
+    (is (some? value-fact) "The scan fixture must include a value fact")
+    (doseq [[query inputs] cases]
+      (testing (str "mapped scan: " (pr-str query))
+        (is (let [expected (if (= ::aliases inputs) (d/q query facts facts) (apply d/q query facts inputs))
+                  actual (if (= ::aliases inputs) (d/q query source source) (apply d/q query source inputs))]
+              (same-result? query expected actual)))))
+    (when reference
+      (let [query {:find '[?e ?ref] :in '[$s] :where [['$s '?e reference '?ref]]}]
+        (is (same-result? query (d/q query facts) (d/q query source)))))
+    (let [query {:find '[?e ?m] :in '[$s] :where [['$s '?e many '?m]]
+                 :query-source {:limits {:batch-rows 1}}}
+          explanation (d/explain {:run? true} query source)]
+      (is (= (count (d/q query facts)) (:result-rows explanation)))
+      (is (seq (:cursors explanation)))
+      (is (every? #(= :attribute-enumeration (get-in % [:access :kind]))
+                  (mapcat :selected (:sources explanation)))))))
+
+(defn mapped-lookup-semantics!
+  "Shared entity-lookup gate using the provider's own nominal types. Supply
+  complete eager EAV facts and :identity, :value, :many, optional :reference
+  attribute roles. Every read has an entity seed; no scan is required. This
+  checks typed dependent association, multiplicity, joins, aliases and bounds
+  through ordinary d/q. Provider-specific acquisition/fault gates are separate."
+  [source facts {:keys [identity value many reference]}]
+  (let [entities (vec (distinct (map first (filter #(= identity (second %)) facts))))
+        witnesses (into [] (mapcat (fn [e] [[e :a] [e :b]])) entities)
+        cases [{:find '[?e ?v] :in '[$s [?e ...]] :where [['$s '?e value '?v]]}
+               {:find '[?e ?key] :in '[$s [?e ...]] :where [['$s '?e identity '?key]]}
+               {:find '[?e ?v ?m] :in '[$s [?e ...]]
+                :where [['$s '?e value '?v] ['$s '?e many '?m]]}
+               {:find '[(count ?e) .] :with '[?m] :in '[$s [?e ...]]
+                :where [['$s '?e value '_] ['$s '?e many '?m]]}]
+        run! (fn [query & inputs]
+               (let [expected (apply d/q query facts inputs)
+                     actual (apply d/q (assoc query :query-source
+                                             {:consistency :best-effort
+                                              :limits {:binding-rows 1 :batch-rows 1}}) source inputs)]
+                 (is (same-result? query expected actual) (pr-str query))))]
+    (is (seq entities) "The lookup fixture must include identity facts")
+    (doseq [query cases] (run! query entities))
+    (run! {:find '[(count ?e) .] :with '[?witness] :in '[$s [[?e ?witness]]]
+           :where [['$s '?e value '_]]} witnesses)
+    (when reference
+      (run! {:find '[?e ?ref] :in '[$s [?e ...]] :where [['$s '?e reference '?ref]]} entities))
+    (doseq [entity entities]
+      (run! {:find '[?v] :in '[$s ?e] :where [['$s '?e value '?v]]} entity))
+    (let [query {:find '[?e ?v ?m] :in '[$a $b [?e ...]]
+                 :where [['$a '?e value '?v] ['$b '?e many '?m]]}
+          expected (d/q query facts facts entities)
+          actual (d/q (assoc query :query-source {:consistency :best-effort}) source source entities)]
+      (is (same-result? query expected actual)))))
+
 (defrecord ObservedSession [delegate events hook request envelopes]
   spi/IQuerySourceSession
   (-session-info [_]
