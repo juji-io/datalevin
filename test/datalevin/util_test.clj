@@ -12,3 +12,9 @@
            ["User42" "user42"] ["UPPER_CASE" "upper-case"]
            ["résumé" "r-sum"] ["" ""] [" -_ / " ""]]]
     (is (= expected (u/lisp-case input)) input)))
+
+(deftest empty-parallel-map-preserves-worker-pool-test
+  (let [pool @u/worker-thread-pool-atom]
+    (doseq [input [nil [] '()]]
+      (is (= [] (u/map+ (fn [_] (throw (AssertionError. "Empty map invoked its function"))) input)))
+      (is (identical? pool @u/worker-thread-pool-atom)))))

@@ -44,6 +44,7 @@
    [datalevin.query.tuple :as qtuple]
    [datalevin.relation :as r]
    [datalevin.rules :as rules]
+   [datalevin.rules.clause :as rule-clause]
    [datalevin.storage :as storage]
    [datalevin.util :as u :refer [raise concatv]])
   (:import
@@ -757,8 +758,14 @@
              bound (bound-vars context)
                ready (into []
                            (keep-indexed
-                             (fn [i clause]
-                               (when (clause-bindings-ready? bound clause) i)))
+                             (if (::rule-clause/required-heads? (meta (:rules context)))
+                               (fn [i clause]
+                                 (when (and (clause-bindings-ready? bound clause)
+                                            (or (not (rule-clause/rule-call? context clause))
+                                                (set/subset? (rule-clause/required-rule-vars context clause) bound)))
+                                   i))
+                               (fn [i clause]
+                                 (when (clause-bindings-ready? bound clause) i))))
                            pending)
                selected (when (and selector (seq ready))
                           (selector context pending ready))

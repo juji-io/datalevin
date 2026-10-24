@@ -613,7 +613,7 @@
                                                     (or (:rule-reference spec) (:native-rule-program spec))
                                                     (rule-factory runtime check! node spec)
                                                     native? (native-plan/factory! runtime snapshots (:database spec) node spec
-                                                              (:core-clauses r) check! #(joined! runtime check! %1 %2))
+                                                              (:core-clauses r) (:bindings r) check! #(joined! runtime check! %1 %2))
                                                     :else (pure-factory runtime check! node spec literal-output))]
                                   (add! path (:requires spec) (:columns spec) factory)))
                               (doseq [[index site] (map-indexed vector (:sites compiled))

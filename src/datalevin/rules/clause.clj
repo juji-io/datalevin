@@ -77,10 +77,26 @@
            (not (qu/rule-head head))
            ((:rules context) head)))))
 
+(defn required-count
+  "Number of leading input arguments on a normalized rule head."
+  ^long [branches]
+  (long (or (::required-count (meta (ffirst branches))) 0)))
+
+(defn required-rule-vars
+  "Required call arguments that must be supplied by the surrounding context."
+  [context clause]
+  (into #{} (filter qu/free-var?)
+        (take (required-count (get (:rules context) (rule-head clause)))
+              (rule-args clause))))
+
 (defn clause-required-vars
   "Vars that must be bound before evaluating a clause."
   [clause context]
   (cond
+    (and (::required-heads? (meta (:rules context)))
+         (rule-call? context clause))
+    (required-rule-vars context clause)
+
     ;; or-join: only the binding vector vars that appear in input positions
     ;; are required, not all internal vars
     (and (sequential? clause)

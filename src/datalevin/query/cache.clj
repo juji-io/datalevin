@@ -31,7 +31,8 @@
 
 (def ^:dynamic *cache?* true)
 
-(defn- run-query
+(defn run-query
+  "Execute a cache miss, after the caller establishes its query runtime."
   [parsed-q inputs execute]
   ;; Prepared access paths inspect schema before reading data. A retained Store
   ;; may predate any schema change, including cardinality changes on indexed
@@ -224,16 +225,17 @@
                   (pull-deps-reader parsed-q)))
 
 (defn parsed-q
-  [q]
-  (or (.get ^LRUCache *query-cache* q)
-      (let [parsed (qexec/prepare-query (dp/parse-query q))
-            ;; Keep structural analysis with the bounded parse-cache entry.
-            ;; Metadata leaves query equality/hash unchanged, and the delay
-            ;; avoids these walks for explain or result-cache-disabled calls.
-            res (vary-meta parsed assoc ::cache-analysis
-                           (delay (analyze-query parsed)))]
-        (.put ^LRUCache *query-cache* q res)
-        res)))
+  ([q] (parsed-q q *query-cache*))
+  ([q ^LRUCache cache]
+   (or (.get cache q)
+       (let [parsed (qexec/prepare-query (dp/parse-query q))
+             ;; Keep structural analysis with the bounded parse-cache entry.
+             ;; Metadata leaves query equality/hash unchanged, and the delay
+             ;; avoids these walks for explain or result-cache-disabled calls.
+             res (vary-meta parsed assoc ::cache-analysis
+                            (delay (analyze-query parsed)))]
+         (.put cache q res)
+         res))))
 
 (defn- query-analysis
   [parsed-q]
@@ -256,11 +258,15 @@
 
 (defn q-result
   ([parsed-q inputs]
-   (q-result parsed-q inputs
-             (when (cache-enabled?) (query-analysis parsed-q)) nil))
-  ([parsed-q inputs ^CacheAnalysis analysis execute]
+   (q-result parsed-q inputs nil (cache-enabled?) run-query))
+  ([parsed-q inputs analysis execute]
+   (q-result parsed-q inputs analysis execute (cache-enabled?) run-query))
+  ([parsed-q inputs execute cache? run]
+   (q-result parsed-q inputs (when cache? (query-analysis parsed-q))
+             execute cache? run))
+  ([parsed-q inputs ^CacheAnalysis analysis execute cache? run]
    (let [parsed-q (qexec/resolve-window parsed-q inputs)]
-     (if (and (cache-enabled?)
+     (if (and cache?
               (not (if analysis (.-nested? analysis)
                        (contains-nested-query? parsed-q))))
        (if-let [store (when-let [store (single-input-store inputs)]
@@ -287,16 +293,20 @@
                           (mapv cache-input-token inputs)]]
            (if-let [cached (db/cache-get store k)]
              cached
-             (let [res (run-query parsed-q inputs execute)]
+             (let [res (run parsed-q inputs execute)]
                (db/cache-put-if-current store token k res)
                res)))
-         (run-query parsed-q inputs execute))
-       (run-query parsed-q inputs execute)))))
+         (run parsed-q inputs execute))
+       (run parsed-q inputs execute)))))
 
 (defn prepare-result-reader
   "Retain query-invariant cache analysis and execution metadata. Input tokens,
-  function implementations, UDF bindings and database revisions stay dynamic."
-  [parsed-q]
-  (let [analysis (query-analysis parsed-q)
-        execute (qexec/query-runner parsed-q)]
-    (fn [inputs] (q-result parsed-q inputs analysis execute))))
+  function implementations, UDF bindings and database revisions stay dynamic.
+  An optional runner establishes the caller's runtime only on cache misses."
+  ([parsed-q] (prepare-result-reader parsed-q run-query))
+  ([parsed-q run]
+   (let [analysis (query-analysis parsed-q)
+         execute (qexec/query-runner parsed-q)]
+     (fn
+       ([inputs] (q-result parsed-q inputs analysis execute (cache-enabled?) run))
+       ([inputs cache?] (q-result parsed-q inputs analysis execute cache? run))))))

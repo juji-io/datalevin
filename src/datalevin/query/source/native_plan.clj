@@ -73,16 +73,19 @@
             (if (and (#{:db.type/float :db.type/double} type) (zero? (double x)))
               (if (= type :db.type/float) (float 0.0) 0.0) x)))))
 
-(defn- predicate-constraints [node core-clauses props check!]
+(defn- predicate-constraints [node core-clauses props bindings check!]
   (let [v (:symbol (nth (:pattern node) 2))]
     (if-not v []
       (into []
         (keep (fn [{:keys [node]}]
                 (check!)
                 (let [operator (get-in node [:fn :symbol]) [a b :as args] (:args node)
-                      first? (and (instance? Variable a) (= v (:symbol a)) (instance? Constant b))
-                      last? (and (instance? Constant a) (instance? Variable b) (= v (:symbol b)))
-                      bound (when (or first? last?) (:value (if first? b a)))
+                      fixed? #(or (instance? Constant %)
+                                  (and (instance? Variable %) (contains? bindings (:symbol %))))
+                      first? (and (instance? Variable a) (= v (:symbol a)) (fixed? b))
+                      last? (and (fixed? a) (instance? Variable b) (= v (:symbol b)))
+                      term (when (or first? last?) (if first? b a))
+                      bound (if (instance? Constant term) (:value term) (get bindings (:symbol term)))
                       physical (when (#{'= '< '<= '> '>=} operator) (bound-value props bound (= '= operator)))]
                   (when (and (instance? Predicate node) (= 2 (count args)) (or first? last?)
                              ;; Bare symbols can resolve to host values in the
@@ -92,7 +95,8 @@
                              (or (= '= operator)
                                  (#{:db.type/long :db.type/ref :db.type/float :db.type/double :db.type/instant}
                                    (:db/valueType props))))
-                    {:variable v :bound physical :equality? (= '= operator)
+                    {:variables (cond-> [v] (instance? Variable term) (conj (:symbol term)))
+                     :bound physical :equality? (= '= operator)
                      :range (first (query-range/constant-predicate-ranges operator v physical first?))
                      :test (query-range/activate-var-pred
                              {:make-call resolve/make-call :resolve-pred resolve/resolve-pred}
@@ -116,7 +120,7 @@
                 (native/value-visitor (:control runtime) snapshot attribute))
         ;; The resolver checks host Vars before tuple bindings. A provider
         ;; planning callback may install one after emission, so check here.
-        constraints (if (and (seq constraints) (ns-resolve *ns* (:variable (first constraints)))) [] constraints)
+        constraints (filterv #(not-any? (fn [v] (ns-resolve *ns* v)) (:variables %)) constraints)
         literal? (instance? Constant v)
         runtime-value? (#{:value :entity-value} mode)
         policy {:schema (:schema snapshot)
@@ -197,7 +201,7 @@
   "Compile a single native pattern with the existing native planner. Native
   InitSteps and entity-bound MergeScanSteps use controlled storage. Other plan
   shapes reject before provider acquisition until their admission paths exist."
-  [runtime snapshots database node {:keys [requires columns value-type source-symbol region-id]} core-clauses check! join!]
+  [runtime snapshots database node {:keys [requires columns value-type source-symbol region-id]} core-clauses bindings check! join!]
   (let [snapshot (get snapshots (.-store ^DB database))
         _ (native/check-view! (:control runtime) snapshot)
         token (rt/charge! runtime (mapv :variable columns) (+ 16384 (* 1024 (count core-clauses))) 1)
@@ -216,7 +220,7 @@
         init (plan-build/initialization-step entity (:value attribute) value-var)
         lookup (plan-build/entity-lookup-step entity (:value attribute) value-var)
         value-lookup (when value-var (plan-build/value-lookup-step entity (:value attribute) value-var))
-        constraints (predicate-constraints node core-clauses (get-in snapshot [:schema (:value attribute)]) check!)]
+        constraints (predicate-constraints node core-clauses (get-in snapshot [:schema (:value attribute)]) bindings check!)]
     (assoc (->NativeFactory (set (map :variable requires)) variables
       (fn [input-cols]
         (let [lookup? (or (instance? Constant e) (and (instance? Variable e) (some #{entity} input-cols)))

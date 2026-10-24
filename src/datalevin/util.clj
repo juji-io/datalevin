@@ -793,6 +793,7 @@
   ([f coll]
    (let [n (count coll)]
      (cond
+       (zero? n) []
        (= 1 n) [(f (first coll))]
        (= 2 n) [(f (first coll)) (f (last coll))]
        :else   (let [bindings (get-thread-bindings)

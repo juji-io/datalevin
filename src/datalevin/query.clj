@@ -56,12 +56,19 @@
             :query-id (str (random-uuid))}))
   (@source-executor query inputs options))
 
+(defn- run-native-query
+  [parsed-q inputs execute]
+  ;; Cache hits use explicit settings. Establish compatibility bindings only
+  ;; when planning/execution (and user callbacks) actually need the runtime.
+  (with-query-runtime
+    (qcache/run-query parsed-q inputs execute)))
+
 (defn- perform
   [q & inputs]
-  (with-query-runtime
-    (let [parsed-q (qcache/parsed-q q)]
-      (qexec/mark-parsing-finished!)
-      (qcache/q-result parsed-q inputs))))
+  (let [parsed-q (qcache/parsed-q q *query-cache*)]
+    (qexec/mark-parsing-finished!)
+    (qcache/q-result parsed-q inputs nil
+                    (and qcache/*cache?* *cache?*) run-native-query)))
 
 (defn- plan-only
   [q & inputs]
@@ -124,7 +131,7 @@
       (apply perform query inputs))))
 
 (defn- prepared-query [query]
-  (let [parsed-q (with-query-runtime (qcache/parsed-q query))
+  (let [parsed-q (qcache/parsed-q query *query-cache*)
         source (first (:qin parsed-q))]
     (when-not (and (instance? BindScalar source)
                   (instance? SrcVar (:variable source)))
@@ -143,7 +150,7 @@
     (raise "Prepared query sources are unsupported" {:error :query-source/unsupported})))
 
 (defn- result-reader [parsed-q]
-  (let [execute (qcache/prepare-result-reader parsed-q)
+  (let [execute (qcache/prepare-result-reader parsed-q run-native-query)
         encoded-point (point/prepared-executor
                         parsed-q (point/point-lookup-projection-shape parsed-q) true)
         encoded-range (ordered-range/prepared-encoded-executor parsed-q)
@@ -161,9 +168,9 @@
                        (encoded-point inputs))
                      point/unsupported)]
         (if (identical? result point/unsupported)
-          (with-query-runtime
+          (do
             (qexec/mark-parsing-finished!)
-            (execute inputs))
+            (execute inputs (and qcache/*cache?* *cache?*)))
           result)))))
 
 (defn query-reader

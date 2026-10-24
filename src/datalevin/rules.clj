@@ -20,6 +20,7 @@
    [datalevin.query-util :as qu]
    [datalevin.relation :as r]
    [datalevin.rules.clause
+    :as clause
     :refer [bound-arg-indices clause-bound-vars clause-required-vars
             context-bound-vars ensure-src ensure-src-where external-rule-heads
             recursive-branch? rename-rule rule-args rule-call? rule-head
@@ -67,11 +68,35 @@
 
 (declare solve-stratified solve-stratified* recursive? expand-clauses)
 
+(defn- normalize-required-branch
+  [[head & body :as branch]]
+  (let [[name required & free] head]
+    (if (sequential? required)
+      (into [(with-meta (apply list name (concat required free))
+               (assoc (meta head) ::clause/required-count (count required)))]
+            body)
+      branch)))
+
+(defn- required-annotation?
+  [found? branch]
+  (or found? (some? (:required (:vars branch)))))
+
+(defn- normalize-required-rule
+  [rules parsed-rule]
+  (if (reduce required-annotation? false (:branches parsed-rule))
+    (let [name (:symbol (:name parsed-rule))]
+      (-> rules
+          (update name #(mapv normalize-required-branch %))
+          (vary-meta assoc ::clause/required-heads? true)))
+    rules))
+
 (defn parse-rules
   [rules]
-  (let [rules (if (string? rules) (edn/read-string rules) rules)]
-    (dp/parse-rules rules) ;; validation
-    (group-by ffirst rules)))
+  (let [rules (if (string? rules) (edn/read-string rules) rules)
+        parsed (dp/parse-rules rules)]
+    ;; Reuse validation's parsed headers. Ordinary rules keep their original
+    ;; grouped branches without an additional copying/normalization pass.
+    (reduce normalize-required-rule (group-by ffirst rules) parsed)))
 
 (defprotocol INode
   (lowlink [this])
@@ -814,6 +839,10 @@
           (nil? branches)                        m
           (contains? (:rule-rels context) rname) m
           (recursive? deps rname)                m
+          ;; A required input can exist only in a predicate/function. Such a
+          ;; relation has no unseeded interpretation to precompute globally.
+          (and (::clause/required-heads? (meta full-renamed-rules))
+               (pos? (clause/required-count branches))) m
           :else
           (let [head-vars (rest (ffirst branches))]
             (assoc m rname
@@ -943,7 +972,7 @@
      :empty-stratum-rels empty-stratum-rels}))
 
 (defn- eval-stratum-base-cases
-  [context rule-name stratum base-branches-map clean-context
+  [_context rule-name stratum base-branches-map clean-context
    full-renamed-rules seed-rels base-rule-rels warm-start magic-seeds
    stratum-set resolve-clause-fn]
   (let [start-totals
@@ -1165,6 +1194,18 @@
 
 (defn solve-stratified
   [context rule-name args resolve-clause-fn]
+  (when (::clause/required-heads? (meta (:rules context)))
+    (let [n (clause/required-count (get (:rules context) rule-name))]
+      (when (pos? n)
+        (let [bound (context-bound-vars context)
+              missing (into #{} (filter #(or (= '_ %)
+                                             (and (qu/free-var? %) (not (bound %)))))
+                            (take n args))]
+          (when (seq missing)
+            (raise "Insufficient bindings: " missing " must be bound in "
+                   (cons rule-name args)
+                   {:error :query/where :form (cons rule-name args)
+                    :vars missing}))))))
   (let [specialized (specialized-rule-result context rule-name args)]
     (if-not (identical? specialized no-specialized-rule-result)
       specialized
@@ -1330,6 +1371,11 @@
           ;; Non-recursive rule call
           (and (rule-call? context clause)
                (not (recursive? deps head))
+               ;; Keep the input contract until the call is evaluated. Its
+               ;; body may produce a required variable, which cannot satisfy
+               ;; the caller's obligation to supply that argument.
+               (not (and (::clause/required-heads? (meta rules))
+                         (pos? (clause/required-count (get rules head)))))
                (not (and (rule-needs-set-boundary? rules head)
                          (or nested-rule?
                              (rule-depends-on-derived-relation?

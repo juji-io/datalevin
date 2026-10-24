@@ -23,6 +23,7 @@
    [datalevin.query.plan :as qplan]
    [datalevin.query.resolve :as qresolve]
    [datalevin.relation :as r]
+   [datalevin.rules.clause :as rule-clause]
    [datalevin.util :as u])
   (:import
    [java.util List]))
@@ -121,7 +122,16 @@
   ([initial-bound rules clauses]
    (sort-late-clauses initial-bound rules clauses {}))
   ([initial-bound rules clauses sources]
-   (let [entries (mapv #(assoc (bound-field-deps sources %) :clause %) clauses)]
+   (let [entries (mapv #(assoc (bound-field-deps sources %) :clause %) clauses)
+         entries (if (::rule-clause/required-heads? (meta rules))
+                   (mapv (fn [{:keys [clause] :as entry}]
+                           (cond-> entry
+                             (pos? (rule-clause/required-count
+                                     (get rules (rule-clause/rule-head clause))))
+                             (assoc :requires (rule-clause/required-rule-vars
+                                                {:rules rules} clause))))
+                         entries)
+                   entries)]
      (loop [bound initial-bound
             todo  entries
             acc   []]
